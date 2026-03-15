@@ -25,7 +25,7 @@ interface FactFinding {
   cpf_medisave?: number
   property_value?: number
   other_assets?: number
-  // Liabilitie
+  // Liabilities
   mortgage_outstanding?: number
   car_loan?: number
   personal_loan?: number
@@ -237,11 +237,13 @@ export default function FactFindingPage() {
     const c = clients[0]
     setClient(c)
 
-    const { data: existing } = await supabase
-      .from('fact_finding').select('*').eq('client_id', c.id).single()
+    const { data: rows } = await supabase
+      .from('fact_finding').select('*').eq('client_id', c.id)
 
-    if (existing) {
-      setFf(existing)
+    if (rows && rows.length > 0) {
+      const merged: FactFinding = { client_id: c.id }
+      for (const row of rows) { Object.assign(merged, row.data || {}) }
+      setFf(merged)
     } else {
       setFf({ client_id: c.id })
     }
@@ -258,14 +260,22 @@ export default function FactFindingPage() {
   async function save() {
     if (!ff || !client) return
     setSaving(true)
-    const payload = { ...ff, updated_at: new Date().toISOString() }
-
-    if (ff.id) {
-      await supabase.from('fact_finding').update(payload).eq('id', ff.id)
-    } else {
-      const { data } = await supabase.from('fact_finding').insert(payload).select().single()
-      if (data) setFf(data)
-    }
+    const { occupation, employer, monthly_income, other_income, employment_type,
+            monthly_expenses, monthly_commitments, rent_mortgage,
+            cash_savings, cpf_ordinary, cpf_special, cpf_medisave, property_value, other_assets,
+            mortgage_outstanding, car_loan, personal_loan, credit_card_debt, other_liabilities,
+            risk_profile, investment_experience, investment_horizon,
+            smoker, pre_existing, advisor_notes } = ff
+    const data = { occupation, employer, monthly_income, other_income, employment_type,
+                   monthly_expenses, monthly_commitments, rent_mortgage,
+                   cash_savings, cpf_ordinary, cpf_special, cpf_medisave, property_value, other_assets,
+                   mortgage_outstanding, car_loan, personal_loan, credit_card_debt, other_liabilities,
+                   risk_profile, investment_experience, investment_horizon,
+                   smoker, pre_existing, advisor_notes }
+    await supabase.from('fact_finding').upsert(
+      { client_id: client.id, section: 'all', data, updated_at: new Date().toISOString() },
+      { onConflict: 'client_id,section' }
+    )
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
