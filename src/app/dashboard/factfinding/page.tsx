@@ -47,7 +47,7 @@ interface Client {
   id: string
   name: string
   age?: number
-  gender?: strin
+  gender?: string
   dob?: string
   occupation?: string
   employer?: string
