@@ -328,7 +328,7 @@ export default function FactFindingPage() {
       'd_childcare', 'd_school_fees', 'd_school_transport', 'd_allowance_children', 'd_other_children',
       'd_holidays', 'd_hobbies', 'd_allowance_parents', 'd_others_lifestyle',
     ]
-        moExp = dkeys.reduce((s: number, k: string) => s + (((ff as unknown as Record<string,unknown>)[k] as number) || 0), 0)
+    moExp = dkeys.reduce((s: number, k: string) => s + (((ff as unknown as Record<string,unknown>)[k] as number) || 0), 0)
     anExp = moExp * 12
   }
 
@@ -693,7 +693,7 @@ export default function FactFindingPage() {
                       ]
                     },
                   ].map(group => {
-                    const groupTotal = group.items.reduce((s: number, [, k]: string[]) => s + (((ff as Record<string,unknown>)[k] as number) || 0), 0)
+                    const groupTotal = group.items.reduce((s: number, [, k]: string[]) => s + (((ff as unknown as Record<string,unknown>)[k] as number) || 0), 0)
                     return (
                       <div key={group.title} style={{ background: 'white', border: '1px solid var(--line)' }}>
                         <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: `3px solid ${group.color}` }}>
@@ -707,7 +707,7 @@ export default function FactFindingPage() {
                             <div style={{ width: 100, textAlign: 'right' }}>Annual</div>
                           </div>
                           {group.items.map(([label, key]) => (
-                            <ExpRow key={key} label={label} value={((ff as Record<string,unknown>)[key] as number)} onChange={v => upd(key as keyof FactFinding, n(v))} mo={((ff as Record<string,unknown>)[key] as number) || 0} />
+                            <ExpRow key={key} label={label} value={((ff as unknown as Record<string,unknown>)[key] as number)} onChange={v => upd(key as keyof FactFinding, n(v))} mo={((ff as unknown as Record<string,unknown>)[key] as number) || 0} />
                           ))}
                         </div>
                       </div>
@@ -720,11 +720,11 @@ export default function FactFindingPage() {
                   <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                     <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Annual Cash Expenses</div>
                     {[
-                      { label: 'Financial Obligations', val: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'].reduce((s: number, k: string)=>s+(((ff as Record<string,unknown>)[k] as number)||0),0), color: 'var(--rouge)' },
-                      { label: 'Household & Living', val: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'].reduce((s: number, k: string)=>s+(((ff as Record<string,unknown>)[k] as number)||0),0), color: '#4A7C9E' },
-                      { label: 'Personal', val: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'].reduce((s: number, k: string)=>s+(((ff as Record<string,unknown>)[k] as number)||0),0), color: '#7A6AAA' },
-                      { label: 'Children', val: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'].reduce((s: number, k: string)=>s+(((ff as Record<string,unknown>)[k] as number)||0),0), color: 'var(--emerald)' },
-                      { label: 'Lifestyle & Misc', val: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'].reduce((s: number, k: string)=>s+(((ff as Record<string,unknown>)[k] as number)||0),0), color: '#C4A464' },
+                      { label: 'Financial Obligations', val: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'].reduce((s: number, k: string)=>s+(((ff as unknown as Record<string,unknown>)[k] as number)||0),0), color: 'var(--rouge)' },
+                      { label: 'Household & Living', val: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'].reduce((s: number, k: string)=>s+(((ff as unknown as Record<string,unknown>)[k] as number)||0),0), color: '#4A7C9E' },
+                      { label: 'Personal', val: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'].reduce((s: number, k: string)=>s+(((ff as unknown as Record<string,unknown>)[k] as number)||0),0), color: '#7A6AAA' },
+                      { label: 'Children', val: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'].reduce((s: number, k: string)=>s+(((ff as unknown as Record<string,unknown>)[k] as number)||0),0), color: 'var(--emerald)' },
+                      { label: 'Lifestyle & Misc', val: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'].reduce((s: number, k: string)=>s+(((ff as unknown as Record<string,unknown>)[k] as number)||0),0), color: '#C4A464' },
                     ].map(r => (
                       <div key={r.label} className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                         <span style={{ color: 'var(--ink2)' }}>{r.label}</span>
