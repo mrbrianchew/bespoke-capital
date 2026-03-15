@@ -321,7 +321,7 @@ export default function FactFindingPage() {
     anExp = moExp * 12
   } else {
     const dkeys: (keyof FactFinding)[] = [
-            'd_mortgage_cpf', 'd_mortgage_cash', 'd_vehicle_repay', 'd_personal_loan_repay',
+                const dkeys = [
             'd_rental_expense', 'd_income_tax', 'd_insurance', 'd_regular_savings',
             'd_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household',
             'd_personal_food', 'd_transport', 'd_car_petrol', 'd_car_insurance',
