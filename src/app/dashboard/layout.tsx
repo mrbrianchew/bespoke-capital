@@ -24,9 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const supabase = createClient()
 
-  useEffect(() => {
-    checkAuth()
-  }, [])
+  useEffect(() => { checkAuth() }, [])
 
   async function checkAuth() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -35,10 +33,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).single()
     if (adv) setAdvisor(adv)
     const { data: cls } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
-    if (cls) {
-      setClients(cls)
-      if (cls.length > 0) setActiveClient(cls[0])
-    }
+    if (cls) { setClients(cls); if (cls.length > 0) setActiveClient(cls[0]) }
   }
 
   async function signOut() {
@@ -51,8 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--cream)' }}>
-      <aside className="sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0"
-        style={{ width: 240, background: 'white', borderRight: '1px solid var(--line)' }}>
+      <aside className="sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0" style={{ width: 240, background: 'white', borderRight: '1px solid var(--line)' }}>
         <div className="px-6 py-7" style={{ borderBottom: '1px solid var(--line)' }}>
           <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>Bespoke Capital</div>
           <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
@@ -65,33 +59,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--line)'}>
             {activeClient ? (
               <>
-                <div className="w-8 h-8 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0"
-                  style={{ background: '#C4A882' }}>
-                  {initials(activeClient.name)}
-                </div>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: '#C4A882' }}>{initials(activeClient.name)}</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>{activeClient.name}</div>
                   <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Age {activeClient.age || '?'} · Since {activeClient.start_year || '?'}</div>
                 </div>
                 <span className="text-xs" style={{ color: 'var(--ink3)' }}>⌄</span>
               </>
-            ) : (
-              <span className="text-sm" style={{ color: 'var(--ink3)' }}>Select client…</span>
-            )}
+            ) : (<span className="text-sm" style={{ color: 'var(--ink3)' }}>Select client…</span>)}
           </button>
           {showClientDrop && (
-            <div className="absolute left-3 right-3 top-full mt-1 z-50 overflow-hidden shadow-lg"
-              style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 6 }}>
+            <div className="absolute left-3 right-3 top-full mt-1 z-50 overflow-hidden shadow-lg" style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 6 }}>
               {clients.map(c => (
                 <button key={c.id} onClick={() => { setActiveClient(c); setShowClientDrop(false) }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors"
                   style={{ background: activeClient?.id === c.id ? 'var(--gold-l)' : 'transparent', borderLeft: activeClient?.id === c.id ? '2px solid var(--gold)' : '2px solid transparent' }}
                   onMouseEnter={e => { if (activeClient?.id !== c.id) (e.currentTarget as HTMLElement).style.background = 'var(--cream)' }}
                   onMouseLeave={e => { if (activeClient?.id !== c.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0"
-                    style={{ background: activeClient?.id === c.id ? 'var(--gold)' : 'var(--ink2)' }}>
-                    {initials(c.name)}
-                  </div>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: activeClient?.id === c.id ? 'var(--gold)' : 'var(--ink2)' }}>{initials(c.name)}</div>
                   <div>
                     <div className="text-sm font-medium" style={{ color: activeClient?.id === c.id ? 'var(--gold-tag)' : 'var(--ink)' }}>{c.name}</div>
                     <div className="text-xs" style={{ color: 'var(--ink3)' }}>Age {c.age || '?'}</div>
@@ -101,8 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               ))}
               <div style={{ borderTop: '1px solid var(--line)', padding: '8px' }}>
                 <button onClick={() => { setShowClientModal(true); setShowClientDrop(false) }}
-                  className="w-full text-left text-xs px-2 py-2 transition-colors"
-                  style={{ color: 'var(--ink3)' }}
+                  className="w-full text-left text-xs px-2 py-2 transition-colors" style={{ color: 'var(--ink3)' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
                   + Add New Client
@@ -130,18 +114,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--cream)' }}>
-        {children}
-      </main>
+      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--cream)' }}>{children}</main>
       {showClientDrop && (<div className="fixed inset-0 z-40" onClick={() => setShowClientDrop(false)} />)}
       {showClientModal && (
-        <AddClientModal onClose={() => setShowClientModal(false)} onSaved={async (client) => { setClients(prev => [client, ...prev]); setActiveClient(client); setShowClientModal(false) }} />
+        <AddClientModal
+          userId={user?.id}
+          onClose={() => setShowClientModal(false)}
+          onSaved={async (client) => { setClients(prev => [client, ...prev]); setActiveClient(client); setShowClientModal(false) }}
+        />
       )}
     </div>
   )
 }
 
-function AddClientModal({ onClose, onSaved }: { onClose: () => void; onSaved: (c: any) => void }) {
+function AddClientModal({ userId, onClose, onSaved }: { userId: string; onClose: () => void; onSaved: (c: any) => void }) {
   const [name, setName] = useState('')
   const [dob, setDob] = useState('')
   const [gender, setGender] = useState('')
@@ -162,9 +148,14 @@ function AddClientModal({ onClose, onSaved }: { onClose: () => void; onSaved: (c
 
   async function save() {
     if (!name.trim()) { setError('Name is required'); return }
+    if (!userId) { setError('Not logged in'); return }
     setLoading(true)
     const age = dob ? calcAge(dob) : null
-    const { data, error: err } = await supabase.from('clients').insert({ name: name.trim(), dob: dob || null, gender: gender || null, age, start_year: startYear ? parseInt(startYear) : null }).select().single()
+    const { data, error: err } = await supabase.from('clients').insert({
+      name: name.trim(), dob: dob || null, gender: gender || null,
+      age, start_year: startYear ? parseInt(startYear) : null,
+      advisor_id: userId
+    }).select().single()
     if (err) { setError(err.message); setLoading(false); return }
     const categories = ['Will / Estate Planning', 'Investments Planning', 'Wealth Protection (Life)', 'Health / Medical Insurance', 'Critical Illness Coverage', 'Disability Income Protection', 'Education Planning']
     await supabase.from('planning_checklist').insert(categories.map(category => ({ client_id: data.id, category, status: 'pending' })))
