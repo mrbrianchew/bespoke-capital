@@ -129,11 +129,11 @@ function calcCpf(gross: number, bonus: number, age: number, citizenship: string,
   const employee = Math.floor(owBase * tier.employee / 100)
   const employer = Math.round(owBase * tier.employer / 100)
   const total = employee + employer
+  // OA/SA/MA: % of wage credited to each account (from total combined contributions)
   const oa = Math.round(owBase * tier.oa / 100)
   const sa = Math.round(owBase * tier.sa / 100)
   const ma = total - oa - sa
   const takeHome = gross - employee
-  // Annual: 12 months OW + bonus (bonus CPF also applies)
   const bonusCpfEmp = Math.floor(bonus * tier.employee / 100)
   const annualTakeHome = (takeHome * 12) + (bonus - bonusCpfEmp)
   return { employee, employer, takeHome, annualTakeHome, owBase, tier, oa, sa, ma }
@@ -521,24 +521,18 @@ export default function FactFindingPage() {
                       <div className="py-2 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>Employee Contribution ({cpf.tier?.employee}%)</div>
                       {[
                         { label: 'Ordinary Account (OA)', mo: cpf.oa, color: 'var(--emerald)' },
-                        { label: 'Special Account (SA)', mo: Math.round(cpf.owBase * (cpf.tier?.sa || 0) / 100), color: '#4A7C9E' },
-                        { label: 'MediSave (MA)', mo: cpf.ma - Math.round(cpf.owBase * (cpf.tier?.sa || 0) / 100) + Math.round(cpf.owBase * (cpf.tier?.sa || 0) / 100), color: '#7A6AAA' },
-                      ].map((r, i, arr) => {
-                        const saAmt = Math.round(cpf.owBase * (cpf.tier?.sa || 0) / 100)
-                        const oaAmt = cpf.oa
-                        const maAmt = cpf.employee - oaAmt - saAmt
-                        const amounts = [oaAmt, saAmt, maAmt]
-                        return (
-                          <div key={r.label} className="flex items-center py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                            <div className="flex-1 flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div>
-                              <span style={{ color: 'var(--ink2)' }}>{r.label}</span>
-                            </div>
-                            <div className="w-24 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(amounts[i])}</div>
-                            <div className="w-28 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(amounts[i] * 12)}</div>
+                        { label: 'Special Account (SA)', mo: cpf.sa, color: '#4A7C9E' },
+                        { label: 'MediSave (MA)', mo: Math.max(cpf.ma, 0), color: '#7A6AAA' },
+                      ].map((r) => (
+                        <div key={r.label} className="flex items-center py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                          <div className="flex-1 flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div>
+                            <span style={{ color: 'var(--ink2)' }}>{r.label}</span>
                           </div>
-                        )
-                      })}
+                          <div className="w-24 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(r.mo)}</div>
+                          <div className="w-28 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(r.mo * 12)}</div>
+                        </div>
+                      ))}
                       <div className="flex items-center py-1.5 text-xs font-medium" style={{ borderBottom: '1px solid var(--line2)' }}>
                         <div className="flex-1" style={{ color: 'var(--ink)' }}>Total Employee</div>
                         <div className="w-24 text-right" style={{ color: 'var(--rouge)' }}>− {fmt(cpf.employee)}</div>
