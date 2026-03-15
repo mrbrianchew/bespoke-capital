@@ -80,7 +80,7 @@ function Label({ children }: { children: React.ReactNode }) {
 function Field({
   label, value, onChange, type = 'text', prefix, placeholder, hint,
 }: {
-  label: string; value: string | number | undefined; onChange: (v: string) => void
+  label: string; value: string | number | boolean | null | undefined; onChange: (v: string) => void
   type?: string; prefix?: string; placeholder?: string; hint?: string
 }) {
   return (
