@@ -328,7 +328,7 @@ export default function FactFindingPage() {
       'd_childcare', 'd_school_fees', 'd_school_transport', 'd_allowance_children', 'd_other_children',
       'd_holidays', 'd_hobbies', 'd_allowance_parents', 'd_others_lifestyle',
     ]
-    moExp = dkeys.reduce((s: number, k: string) => s + (((ff as Record<string,unknown>)[k] as number) || 0), 0)
+        moExp = dkeys.reduce((s: number, k: string) => s + (((ff as unknown as Record<string,unknown>)[k] as number) || 0), 0)
     anExp = moExp * 12
   }
 
