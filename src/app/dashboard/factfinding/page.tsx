@@ -320,15 +320,15 @@ export default function FactFindingPage() {
     moExp = (ff.simple_living || 0) + (ff.simple_commitments || 0) + (ff.simple_savings || 0)
     anExp = moExp * 12
   } else {
-    const items = [
-      ff.d_mortgage_cpf, ff.d_mortgage_cash, ff.d_vehicle_repay, ff.d_personal_loan_repay,
-      ff.d_rental_expense, ff.d_income_tax, ff.d_insurance, ff.d_regular_savings,
-      ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household,
-      ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance,
-      ff.d_childcare, ff.d_school_fees, ff.d_school_transport, ff.d_allowance_children, ff.d_other_children,
-      ff.d_holidays, ff.d_hobbies, ff.d_allowance_parents, ff.d_others_lifestyle,
-    ]
-    moExp = items.reduce((s, v) => s + (v || 0), 0)
+    const dkeys: (keyof FactFinding)[] = [
+            'd_mortgage_cpf', 'd_mortgage_cash', 'd_vehicle_repay', 'd_personal_loan_repay',
+            'd_rental_expense', 'd_income_tax', 'd_insurance', 'd_regular_savings',
+            'd_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household',
+            'd_personal_food', 'd_transport', 'd_car_petrol', 'd_car_insurance',
+            'd_childcare', 'd_school_fees', 'd_school_transport', 'd_allowance_children', 'd_other_children',
+            'd_holidays', 'd_hobbies', 'd_allowance_parents', 'd_others_lifestyle',
+          ]
+          moExp = dkeys.reduce((s, k) => s + ((ff[k] as number) || 0), 0))
     anExp = moExp * 12
   }
 
