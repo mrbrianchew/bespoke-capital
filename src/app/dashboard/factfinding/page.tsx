@@ -25,7 +25,7 @@ interface FactFinding {
   cpf_medisave?: number
   property_value?: number
   other_assets?: number
-  // Liabilities
+  // Liabilitie
   mortgage_outstanding?: number
   car_loan?: number
   personal_loan?: number
@@ -47,7 +47,7 @@ interface Client {
   id: string
   name: string
   age?: number
-  gender?: string
+  gender?: strin
   dob?: string
   occupation?: string
   employer?: string
@@ -253,7 +253,7 @@ export default function FactFindingPage() {
     setSaved(false)
   }, [])
 
-  const num = (v: string) => v === '' ? undefined : parseFloat(v) || 0
+  const num = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
 
   async function save() {
     if (!ff || !client) return
