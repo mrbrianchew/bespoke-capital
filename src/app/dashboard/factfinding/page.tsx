@@ -94,7 +94,7 @@ function Field({
         )}
         <input
           type={type}
-          value={value ?? ''}
+          value={value === null || value === undefined || value === false ? '' : String(value)}
           onChange={e => onChange(e.target.value)}
           placeholder={placeholder}
           className="w-full px-3 py-2.5 text-sm outline-none transition-colors"
