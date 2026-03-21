@@ -4,6 +4,8 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 
+const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
+
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: '⊞', id: 'overview' },
   { href: '/dashboard/factfinding', label: 'Fact Finding', icon: '◎', id: 'factfinding' },
