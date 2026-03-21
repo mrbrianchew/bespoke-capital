@@ -100,7 +100,7 @@ export default function CpfSettingsPage() {
     if (loading) return (
           <div style={{ maxWidth: 760, margin: "0 auto", padding: "2.5rem 2rem", fontFamily: "Inter, sans-serif" }}>
                   <p style={{ color: "#9A9690", fontSize: 14 }}>Loading...</p>p>
-          </div>div>
+          </div></div>
         )
 
   return (
