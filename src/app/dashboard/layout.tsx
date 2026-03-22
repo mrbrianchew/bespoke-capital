@@ -107,6 +107,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </Link>
           ))}
         </nav>
+        {user?.id === process.env.NEXT_PUBLIC_CREATOR_ID && (
+          <div className="px-3 py-3" style={{ borderTop: '1px solid var(--line)' }}>
+            <div className="px-3 mb-1 text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)' }}>Admin</div>
+            <Link href="/admin" className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all text-sm" style={{ color: pathname.startsWith('/admin') ? 'var(--gold-tag)' : 'var(--ink3)', background: pathname.startsWith('/admin') ? 'var(--gold-l)' : 'transparent' }}>
+              <span className="text-base w-4 text-center">&#9881;</span> Admin Hub
+            </Link>
+          </div>
+        )}
         <div className="px-6 py-4" style={{ borderTop: '1px solid var(--line)' }}>
           <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>{advisor?.name || user?.email}</div>
           <button onClick={signOut} className="text-xs transition-colors" style={{ color: 'var(--ink3)' }}
