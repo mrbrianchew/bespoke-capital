@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { createClient } from "@/lib/supabase"
 
 interface Row {
@@ -63,6 +64,12 @@ export default function CpfSettingsPage() {
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "2.5rem 2rem", fontFamily: "Inter, sans-serif" }}>
       <div style={{ marginBottom: 32 }}>
+        <Link href="/admin" style={{ fontSize: 12, color: "#9A9690", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 16 }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "#A8834A"}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "#9A9690"}
+        >
+          ← Back to Admin Hub
+        </Link>
         <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "#9A9690", margin: "0 0 6px" }}>Admin - CPF Settings</p>
         <h1 style={{ fontSize: 26, fontFamily: "Cormorant Garamond, serif", fontWeight: 600, color: "#1A1816", margin: "0 0 8px" }}>CPF Ceiling Manager</h1>
         <p style={{ fontSize: 14, color: "#4A4740", margin: 0 }}>Update annually when CPF Board announces new Ordinary Wage ceilings.</p>
