@@ -12,6 +12,8 @@ export default function OverviewPage() {
   const [investments, setInvestments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [advisor, setAdvisor] = useState<any>(null)
+  const [showEditClient, setShowEditClient] = useState(false)
+  const [showAddMember, setShowAddMember] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -84,7 +86,11 @@ export default function OverviewPage() {
               {client.start_year && <span>Investing since {client.start_year}</span>}
             </div>
           </div>
-          <button className="ml-auto text-xs px-4 py-1.5" style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}>Edit Client</button>
+          <button
+            onClick={() => setShowEditClient(true)}
+            className="ml-auto text-xs px-4 py-1.5"
+            style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >Edit Client</button>
         </div>
         <div className="flex py-5 gap-0">
           {[
@@ -102,6 +108,7 @@ export default function OverviewPage() {
           ))}
         </div>
       </div>
+
       <div style={{ padding: '36px 48px', flex: 1 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
           <div>
@@ -118,20 +125,34 @@ export default function OverviewPage() {
                 </div>
               </div>
             ))}
-            <button className="mt-3 text-sm px-3 py-1.5" style={{ color: 'var(--ink2)', border: '1px solid var(--line2)' }}>+ Add Member</button>
+            <button
+              onClick={() => setShowAddMember(true)}
+              className="mt-3 text-sm px-3 py-1.5"
+              style={{ color: 'var(--ink2)', border: '1px solid var(--line2)' }}
+            >+ Add Member</button>
           </div>
+
           <div className="space-y-6">
             <div>
               <div className="flex items-end justify-between mb-4">
-                <div><div className="text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Investment Plan</div><div className="font-serif text-xl" style={{ color: 'var(--ink)' }}>Goals Summary</div></div>
-                <button className="text-xs px-3 py-1.5" style={{ color: 'var(--ink3)', border: '1px solid var(--line2)' }}>View all →</button>
+                <div>
+                  <div className="text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Investment Plan</div>
+                  <div className="font-serif text-xl" style={{ color: 'var(--ink)' }}>Goals Summary</div>
+                </div>
+                <button
+                  onClick={() => router.push('/dashboard/goals')}
+                  className="text-xs px-3 py-1.5"
+                  style={{ color: 'var(--ink3)', border: '1px solid var(--line2)' }}
+                >View all →</button>
               </div>
               {goals.length === 0 ? (
                 <div className="text-sm py-4" style={{ color: 'var(--ink3)', borderTop: '1px solid var(--line)' }}>No goals yet. Add goals in the Investment Goals tab.</div>
               ) : goals.map((g, i) => {
                 const mo = goalMonthly(g)
                 const col = GOAL_COLORS[i % GOAL_COLORS.length]
-                const meta = g.type === 'retirement' ? fmt(retirementCorpus(g.monthly_income || 0, client.age || 35, g.ret_age || 65, g.life_exp || 85, g.inflation_rate || globalInf, g.post_rate || 3, g.legacy_amt || 0, g.cont_inv || false)) + ' by age ' + (g.ret_age || 65) : fmt(g.target_amount || 0) + ' by age ' + (g.target_age || 65)
+                const meta = g.type === 'retirement'
+                  ? fmt(retirementCorpus(g.monthly_income || 0, client.age || 35, g.ret_age || 65, g.life_exp || 85, g.inflation_rate || globalInf, g.post_rate || 3, g.legacy_amt || 0, g.cont_inv || false)) + ' by age ' + (g.ret_age || 65)
+                  : fmt(g.target_amount || 0) + ' by age ' + (g.target_age || 65)
                 return (
                   <div key={g.id} className="flex items-center py-3.5 gap-3" style={{ borderBottom: '1px solid var(--line)' }}>
                     <div className="w-0.5 h-9 rounded flex-shrink-0" style={{ background: col }}></div>
@@ -147,6 +168,7 @@ export default function OverviewPage() {
                 )
               })}
             </div>
+
             <div>
               <div className="text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Planning Checklist</div>
               <div className="font-serif text-xl mb-3" style={{ color: 'var(--ink)' }}>What&apos;s Been Done</div>
@@ -159,6 +181,187 @@ export default function OverviewPage() {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      {showEditClient && (
+        <EditClientModal
+          client={client}
+          onClose={() => setShowEditClient(false)}
+          onSaved={async () => { setShowEditClient(false); await load() }}
+        />
+      )}
+      {showAddMember && (
+        <AddMemberModal
+          clientId={client.id}
+          onClose={() => setShowAddMember(false)}
+          onSaved={async () => { setShowAddMember(false); await load() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditClientModal({ client, onClose, onSaved }: any) {
+  const [name, setName] = useState(client.name || '')
+  const [gender, setGender] = useState(client.gender || '')
+  const [age, setAge] = useState(client.age || '')
+  const [startYear, setStartYear] = useState(client.start_year || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const supabase = createClient()
+
+  async function save() {
+    if (!name.trim()) { setError('Name is required'); return }
+    setLoading(true)
+    const { error: err } = await supabase.from('clients').update({
+      name: name.trim(),
+      gender: gender || null,
+      age: parseInt(String(age)) || null,
+      start_year: parseInt(String(startYear)) || null,
+    }).eq('id', client.id)
+    if (err) { setError(err.message); setLoading(false); return }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}>
+      <div className="w-full max-w-md" style={{ background: 'white', borderRadius: 8 }}>
+        <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)' }}>
+          <div className="font-serif text-xl">Edit Client</div>
+          <button onClick={onClose} style={{ color: 'var(--ink3)', fontSize: 20 }}>×</button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Full Name</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full px-3 py-2.5 text-sm outline-none"
+              style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+              placeholder="e.g. John Tan"
+            />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Gender</label>
+              <select
+                value={gender}
+                onChange={e => setGender(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm outline-none"
+                style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+              >
+                <option value="">—</option>
+                <option>Male</option>
+                <option>Female</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Age</label>
+              <input
+                type="number"
+                value={age}
+                onChange={e => setAge(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm outline-none"
+                style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+                placeholder="e.g. 42"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Investing Since (Year)</label>
+            <input
+              type="number"
+              value={startYear}
+              onChange={e => setStartYear(e.target.value)}
+              className="w-full px-3 py-2.5 text-sm outline-none"
+              style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+              placeholder="e.g. 2018"
+            />
+          </div>
+          {error && <div className="text-sm px-3 py-2" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)' }}>{error}</div>}
+        </div>
+        <div className="px-6 py-4 flex gap-3 justify-end" style={{ borderTop: '1px solid var(--line)' }}>
+          <button onClick={onClose} className="px-4 py-2 text-sm" style={{ color: 'var(--ink2)', border: '1px solid var(--line2)' }}>Cancel</button>
+          <button onClick={save} disabled={loading} className="px-4 py-2 text-sm font-medium text-white" style={{ background: 'var(--ink)' }}>
+            {loading ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AddMemberModal({ clientId, onClose, onSaved }: any) {
+  const [name, setName] = useState('')
+  const [relationship, setRelationship] = useState('Spouse')
+  const [age, setAge] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const supabase = createClient()
+
+  async function save() {
+    if (!name.trim()) { setError('Name is required'); return }
+    setLoading(true)
+    const { error: err } = await supabase.from('family_members').insert({
+      client_id: clientId,
+      name: name.trim(),
+      relationship,
+      age: parseInt(String(age)) || null,
+    })
+    if (err) { setError(err.message); setLoading(false); return }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}>
+      <div className="w-full max-w-md" style={{ background: 'white', borderRadius: 8 }}>
+        <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)' }}>
+          <div className="font-serif text-xl">Add Family Member</div>
+          <button onClick={onClose} style={{ color: 'var(--ink3)', fontSize: 20 }}>×</button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Full Name</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full px-3 py-2.5 text-sm outline-none"
+              style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+              placeholder="e.g. Sarah Tan"
+            />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Relationship</label>
+              <select
+                value={relationship}
+                onChange={e => setRelationship(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm outline-none"
+                style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+              >
+                {['Spouse', 'Child', 'Parent', 'Sibling', 'Other'].map(r => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Age</label>
+              <input
+                type="number"
+                value={age}
+                onChange={e => setAge(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm outline-none"
+                style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+                placeholder="e.g. 38"
+              />
+            </div>
+          </div>
+          {error && <div className="text-sm px-3 py-2" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)' }}>{error}</div>}
+        </div>
+        <div className="px-6 py-4 flex gap-3 justify-end" style={{ borderTop: '1px solid var(--line)' }}>
+          <button onClick={onClose} className="px-4 py-2 text-sm" style={{ color: 'var(--ink2)', border: '1px solid var(--line2)' }}>Cancel</button>
+          <button onClick={save} disabled={loading} className="px-4 py-2 text-sm font-medium text-white" style={{ background: 'var(--ink)' }}>
+            {loading ? 'Adding…' : 'Add Member'}
+          </button>
         </div>
       </div>
     </div>
