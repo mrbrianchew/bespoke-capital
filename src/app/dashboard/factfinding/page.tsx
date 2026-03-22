@@ -573,9 +573,44 @@ export default function FactFindingPage() {
   const an1 = cpf1.annualTakeHome + other1 * 12; const an2 = cpf2 ? cpf2.annualTakeHome + other2 * 12 : 0; const anTotal = an1 + an2
 
   const expMode = ff.expense_mode || 'simple'
-  const getAnn1 = (cat: typeof EXP_CATEGORIES[0]) => (ff[cat.key] as number) || 0
-  const getAnn2 = (cat: typeof EXP_CATEGORIES[0]) => isCouple ? ((ff[cat.key2] as number) || 0) : 0
-  const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
+
+// Detailed mode subtotals per category
+const detailedSum = (keys: string[], customKey: keyof FactFinding) => {
+  const std = keys.reduce((s, k) => s + ((ff[k as keyof FactFinding] as number) || 0), 0)
+  const custom = ((ff[customKey] as CustomExpenseItem[]) || []).reduce((s, i) => s + (i.amount || 0), 0)
+  return std + custom
+}
+const detailedSum2 = (keys: string[], customKey: keyof FactFinding) => {
+  if (!isCouple) return 0
+  const std = keys.reduce((s, k) => s + ((ff[k as keyof FactFinding] as number) || 0), 0)
+  const custom = ((ff[customKey] as CustomExpenseItem[]) || []).reduce((s, i) => s + (i.amount2 || 0), 0)
+  return std + custom
+}
+
+const DETAILED_KEYS_BY_CAT: Record<string, { keys: string[], keys2: string[], customKey: keyof FactFinding }> = {
+  financial: { keys: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'], keys2: ['d2_mortgage_cpf','d2_mortgage_cash','d2_vehicle_repay','d2_personal_loan_repay','d2_rental_expense','d2_income_tax','d2_insurance','d2_regular_savings'], customKey: 'd_custom_financial' },
+  cpf_oa:    { keys: [], keys2: [], customKey: 'd_custom_financial' }, // no detailed for cpf_oa
+  mortgage:  { keys: [], keys2: [], customKey: 'd_custom_financial' }, // no detailed for mortgage/rent cash
+  household: { keys: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'], keys2: ['d2_conservancy','d2_utilities','d2_family_food','d2_maid','d2_other_household'], customKey: 'd_custom_household' },
+  personal:  { keys: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'], keys2: ['d2_personal_food','d2_transport','d2_car_petrol','d2_car_insurance'], customKey: 'd_custom_personal' },
+  children:  { keys: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'], keys2: ['d2_childcare','d2_school_fees','d2_school_transport','d2_allowance_children','d2_other_children'], customKey: 'd_custom_children' },
+  lifestyle: { keys: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'], keys2: ['d2_holidays','d2_hobbies','d2_allowance_parents','d2_others_lifestyle'], customKey: 'd_custom_lifestyle' },
+}
+
+const getAnn1 = (cat: typeof EXP_CATEGORIES[0]) => {
+  if (expMode === 'detailed' && DETAILED_KEYS_BY_CAT[cat.id]?.keys.length > 0) {
+    return detailedSum(DETAILED_KEYS_BY_CAT[cat.id].keys, DETAILED_KEYS_BY_CAT[cat.id].customKey) * 12
+  }
+  return (ff[cat.key] as number) || 0
+}
+const getAnn2 = (cat: typeof EXP_CATEGORIES[0]) => {
+  if (!isCouple) return 0
+  if (expMode === 'detailed' && DETAILED_KEYS_BY_CAT[cat.id]?.keys2.length > 0) {
+    return detailedSum2(DETAILED_KEYS_BY_CAT[cat.id].keys2, DETAILED_KEYS_BY_CAT[cat.id].customKey) * 12
+  }
+  return (ff[cat.key2] as number) || 0
+}
+const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
   const cpfOaCat = EXP_CATEGORIES.find(c => c.id === 'cpf_oa')!
   const annCpfOaTotal = getAnnSum(cpfOaCat)
   const nonCpfCats = EXP_CATEGORIES.filter(c => c.id !== 'cpf_oa')
