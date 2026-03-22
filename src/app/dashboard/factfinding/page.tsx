@@ -4,53 +4,28 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface OtherIncomeItem { label: string; amount: number }
 interface CustomAssetItem { label: string; amount: number }
+interface CustomExpenseItem { label: string; amount: number; amount2?: number }
 
 interface PersonData {
-  // Employment
-  occupation?: string
-  employer?: string
-  employment_type?: string
-  citizenship?: string        // 'SC' | 'PR' | 'Foreigner'
-  pr_year?: string            // '1' | '2' | '3+'
-  // Income
-  gross_monthly?: number
-  gross_bonus?: number
-  other_incomes?: OtherIncomeItem[]
-  // Risk
-  risk_profile?: string
-  investment_experience?: string
-  investment_horizon?: string
-  // Health
-  smoker?: boolean
-  pre_existing?: string
+  occupation?: string; employer?: string; employment_type?: string
+  citizenship?: string; pr_year?: string
+  gross_monthly?: number; gross_bonus?: number; other_incomes?: OtherIncomeItem[]
+  risk_profile?: string; investment_experience?: string; investment_horizon?: string
+  smoker?: boolean; pre_existing?: string
 }
 
 interface FactFinding {
-  client_id: string
-  mode?: 'single' | 'couple'  // single or couple view
-  person1?: PersonData
-  person2?: PersonData
-  // Expenses (shared or per person)
+  client_id: string; mode?: 'single' | 'couple'; person1?: PersonData; person2?: PersonData
   expense_mode?: 'simple' | 'detailed'
-  expense_view?: 'combined' | 'split'
-  // Simple expenses
-  s_financial?: number
-  s_mortgage?: number
-  s_household?: number
-  s_personal?: number
-  s_children?: number
-  s_lifestyle?: number
-  // P2 simple expenses (if split)
-  s2_financial?: number
-  s2_mortgage?: number
-  s2_household?: number
-  s2_personal?: number
-  s2_children?: number
-  s2_lifestyle?: number
-  // Detailed expenses (combined)
+  s_financial?: number; s2_financial?: number
+  s_cpf_oa?: number;   s2_cpf_oa?: number
+  s_mortgage?: number; s2_mortgage?: number
+  s_household?: number; s2_household?: number
+  s_personal?: number; s2_personal?: number
+  s_children?: number; s2_children?: number
+  s_lifestyle?: number; s2_lifestyle?: number
   d_mortgage_cpf?: number; d_mortgage_cash?: number; d_vehicle_repay?: number
   d_personal_loan_repay?: number; d_rental_expense?: number; d_income_tax?: number
   d_insurance?: number; d_regular_savings?: number
@@ -60,24 +35,29 @@ interface FactFinding {
   d_childcare?: number; d_school_fees?: number; d_school_transport?: number
   d_allowance_children?: number; d_other_children?: number
   d_holidays?: number; d_hobbies?: number; d_allowance_parents?: number; d_others_lifestyle?: number
-  // Assets - standard
+  d2_mortgage_cpf?: number; d2_mortgage_cash?: number; d2_vehicle_repay?: number
+  d2_personal_loan_repay?: number; d2_rental_expense?: number; d2_income_tax?: number
+  d2_insurance?: number; d2_regular_savings?: number
+  d2_conservancy?: number; d2_utilities?: number; d2_family_food?: number
+  d2_maid?: number; d2_other_household?: number
+  d2_personal_food?: number; d2_transport?: number; d2_car_petrol?: number; d2_car_insurance?: number
+  d2_childcare?: number; d2_school_fees?: number; d2_school_transport?: number
+  d2_allowance_children?: number; d2_other_children?: number
+  d2_holidays?: number; d2_hobbies?: number; d2_allowance_parents?: number; d2_others_lifestyle?: number
+  d_custom_financial?: CustomExpenseItem[]; d_custom_household?: CustomExpenseItem[]
+  d_custom_personal?: CustomExpenseItem[]; d_custom_children?: CustomExpenseItem[]
+  d_custom_lifestyle?: CustomExpenseItem[]
   a_savings?: number; a_fixed_deposit?: number
   a_cpf_oa?: number; a_cpf_sa?: number; a_cpf_ma?: number; a_cpf_ra?: number
   a_srs?: number; a_shares?: number; a_etf?: number; a_unit_trust?: number
   a_bonds?: number; a_alternatives?: number
   a_inv_property_res?: number; a_inv_property_com?: number; a_business?: number
   a_residential?: number; a_vehicles?: number; a_club?: number
-  // Assets - custom rows per category
-  a_cash_custom?: CustomAssetItem[]
-  a_invested_custom?: CustomAssetItem[]
-  a_personal_custom?: CustomAssetItem[]
-  // Liabilities
+  a_cash_custom?: CustomAssetItem[]; a_invested_custom?: CustomAssetItem[]; a_personal_custom?: CustomAssetItem[]
   l_credit_card?: number; l_business_loan?: number; l_renovation_st?: number
   l_mortgage_residing?: number; l_mortgage_investment?: number; l_car_loan?: number
   l_study_loan?: number; l_personal_loan?: number; l_renovation_lt?: number
-  l_lt_custom?: CustomAssetItem[]
-  l_st_custom?: CustomAssetItem[]
-  // Notes
+  l_lt_custom?: CustomAssetItem[]; l_st_custom?: CustomAssetItem[]
   advisor_notes?: string
 }
 
@@ -86,7 +66,6 @@ interface FamilyMember { id: string; name: string; relationship: string; age?: n
 interface CpfTier { max_age: number; employee: number; employer: number; oa: number; sa: number; ma: number }
 interface CpfConfig { ow_ceiling: number; annual_ceiling: number; effective_date: string; sc_rates: CpfTier[] }
 
-// ─── CPF Config (Jan 2026 rates) ──────────────────────────────────────────────
 const DEFAULT_CPF_CONFIG: CpfConfig = {
   ow_ceiling: 8000, annual_ceiling: 102000, effective_date: '2026-01-01',
   sc_rates: [
@@ -101,7 +80,6 @@ const DEFAULT_CPF_CONFIG: CpfConfig = {
   ],
 }
 
-// PR graduated rates (no changes in 2026)
 const PR_YEAR1_RATES: CpfTier[] = [
   { max_age: 35,  employee: 5,   employer: 4,   oa: 3.5, sa: 1,   ma: 4.5 },
   { max_age: 45,  employee: 5,   employer: 4,   oa: 3.5, sa: 1,   ma: 4.5 },
@@ -125,12 +103,11 @@ const PR_YEAR2_RATES: CpfTier[] = [
 ]
 
 function getCpfTier(age: number, citizenship: string, prYear: string, config: CpfConfig): CpfTier | null {
-  if (!['SC', 'PR'].includes(citizenship)) return null
+  if (!['SC','PR'].includes(citizenship)) return null
   let tiers = config.sc_rates
   if (citizenship === 'PR') {
     if (prYear === '1') tiers = PR_YEAR1_RATES
     else if (prYear === '2') tiers = PR_YEAR2_RATES
-    // 3+ uses sc_rates same as SC
   }
   return tiers.find(t => age <= t.max_age) || tiers[tiers.length - 1]
 }
@@ -151,17 +128,11 @@ function calcCpf(gross: number, bonus: number, age: number, citizenship: string,
   return { employee, employer, takeHome, annualTakeHome, owBase, tier, oa, sa, ma }
 }
 
-// ─── Expense benchmarks (Singapore DOS avg household, per month) ──────────────
-const BENCHMARKS: Record<string, number> = {
-  financial: 2200,   // financial obligations
-  mortgage: 1500,    // mortgage/rent
-  household: 1800,   // household & living
-  personal: 800,     // personal expenses
-  children: 600,     // children
-  lifestyle: 500,    // lifestyle & misc
+// Singapore benchmarks as % of gross income (DOS HES)
+const BENCHMARKS_PCT: Record<string, number> = {
+  financial: 18, cpf_oa: 12, mortgage: 10, household: 14, personal: 7, children: 5, lifestyle: 4,
 }
 
-// ─── Formatting ───────────────────────────────────────────────────────────────
 const fmt = (n: number) => {
   if (n === undefined || n === null || isNaN(n) || !isFinite(n)) return 'S$0'
   return 'S$' + Math.round(n).toLocaleString()
@@ -169,36 +140,13 @@ const fmt = (n: number) => {
 const pct = (n: number, t: number) => t > 0 ? Math.round((n / t) * 100) : 0
 
 const EXP_CATEGORIES = [
-  {
-    id: 'financial', label: 'Financial Obligations', color: '#E08080',
-    hint: 'Income tax, insurance premiums, regular investments/savings',
-    key: 's_financial' as const,
-  },
-  {
-    id: 'mortgage', label: 'Mortgage / Rent', color: '#C4A464',
-    hint: 'Home loan repayment (CPF + cash), rental payments',
-    key: 's_mortgage' as const,
-  },
-  {
-    id: 'household', label: 'Household & Living', color: '#4A7C9E',
-    hint: 'Conservancy fees, utilities, groceries, maid salary',
-    key: 's_household' as const,
-  },
-  {
-    id: 'personal', label: 'Personal Expenses', color: '#7A6AAA',
-    hint: 'Personal food & dining, transport, car expenses',
-    key: 's_personal' as const,
-  },
-  {
-    id: 'children', label: 'Children Expenses', color: 'var(--emerald)',
-    hint: 'Childcare, school & tuition fees, transport, pocket money',
-    key: 's_children' as const,
-  },
-  {
-    id: 'lifestyle', label: 'Lifestyle & Miscellaneous', color: '#9A7C5A',
-    hint: 'Holidays, hobbies, allowance to parents, donations, shopping',
-    key: 's_lifestyle' as const,
-  },
+  { id: 'financial', label: 'Financial Obligations',   color: '#E08080', hint: 'Income tax, insurance premiums, regular investments/savings', key: 's_financial' as const, key2: 's2_financial' as const },
+  { id: 'cpf_oa',   label: 'Mortgage (CPF OA)',        color: '#5A8A6A', hint: 'Home loan repayment via CPF Ordinary Account',              key: 's_cpf_oa'   as const, key2: 's2_cpf_oa'   as const },
+  { id: 'mortgage', label: 'Mortgage / Rent (Cash)',   color: '#C4A464', hint: 'Cash home loan repayment, rental payments',                 key: 's_mortgage' as const, key2: 's2_mortgage' as const },
+  { id: 'household',label: 'Household & Living',       color: '#4A7C9E', hint: 'Conservancy fees, utilities, groceries, maid salary',       key: 's_household'as const, key2: 's2_household'as const },
+  { id: 'personal', label: 'Personal Expenses',        color: '#7A6AAA', hint: 'Personal food & dining, transport, car expenses',           key: 's_personal' as const, key2: 's2_personal' as const },
+  { id: 'children', label: 'Children Expenses',        color: 'var(--emerald)', hint: 'Childcare, school & tuition fees, transport, pocket money', key: 's_children' as const, key2: 's2_children' as const },
+  { id: 'lifestyle',label: 'Lifestyle & Miscellaneous',color: '#9A7C5A', hint: 'Holidays, hobbies, allowance to parents, donations, shopping', key: 's_lifestyle'as const, key2: 's2_lifestyle'as const },
 ]
 
 const SECTIONS = [
@@ -211,7 +159,6 @@ const SECTIONS = [
   { id: 'notes',       label: 'Notes',       icon: '⊡' },
 ]
 
-// ─── UI Atoms ─────────────────────────────────────────────────────────────────
 function Lbl({ children }: { children: React.ReactNode }) {
   return <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>{children}</label>
 }
@@ -266,47 +213,21 @@ function Card({ title, subtitle, children, right }: { title: string; subtitle?: 
   )
 }
 
-// Mini bar chart for expenses
-function ExpenseBar({ label, amount, benchmark, color, total }: { label: string; amount: number; benchmark: number; color: string; total: number }) {
-  const amtPct = total > 0 ? Math.min((amount / total) * 100, 100) : 0
-  const overBenchmark = amount > benchmark
-  return (
-    <div className="mb-3">
-      <div className="flex items-center justify-between mb-1">
-        <div className="text-xs" style={{ color: 'var(--ink2)' }}>{label}</div>
-        <div className="flex items-center gap-2 text-xs">
-          <span style={{ color: overBenchmark ? 'var(--rouge)' : 'var(--emerald)', fontWeight: 500 }}>{fmt(amount)}</span>
-          <span style={{ color: 'var(--ink3)' }}>vs {fmt(benchmark)} avg</span>
-          {overBenchmark && <span style={{ color: 'var(--rouge)', fontSize: 9 }}>▲ HIGH</span>}
-        </div>
-      </div>
-      <div className="h-2 rounded-full overflow-hidden relative" style={{ background: 'var(--line)' }}>
-        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${amtPct}%`, background: color }} />
-      </div>
-    </div>
-  )
-}
-
-// Donut-style pie for liabilities
 function LiabilityDonut({ items }: { items: { label: string; val: number; color: string }[] }) {
   const total = items.reduce((s, i) => s + i.val, 0)
   if (total === 0) return <div className="text-xs text-center py-4" style={{ color: 'var(--ink3)' }}>No liabilities entered</div>
   let cumPct = 0
   const segments = items.filter(i => i.val > 0).map(i => {
-    const p = (i.val / total) * 100
-    const start = cumPct; cumPct += p
+    const p = (i.val / total) * 100; const start = cumPct; cumPct += p
     return { ...i, pct: p, start }
   })
-  // SVG donut
-  const r = 40, cx = 50, cy = 50, stroke = 22
-  const circ = 2 * Math.PI * r
+  const r = 40, cx = 50, cy = 50, stroke = 22, circ = 2 * Math.PI * r
   return (
     <div>
       <div className="flex justify-center mb-3">
         <svg viewBox="0 0 100 100" width={120} height={120}>
           {segments.map((s, i) => (
-            <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color}
-              strokeWidth={stroke}
+            <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth={stroke}
               strokeDasharray={`${(s.pct / 100) * circ} ${circ}`}
               strokeDashoffset={-((s.start / 100) * circ)}
               style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }} />
@@ -322,9 +243,7 @@ function LiabilityDonut({ items }: { items: { label: string; val: number; color:
               <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }}></div>
               <span style={{ color: 'var(--ink2)' }}>{s.label}</span>
             </div>
-            <div style={{ color: 'var(--ink)', fontWeight: 500 }}>
-              {fmt(s.val)} <span style={{ color: 'var(--ink3)' }}>({Math.round(s.pct)}%)</span>
-            </div>
+            <div style={{ color: 'var(--ink)', fontWeight: 500 }}>{fmt(s.val)} <span style={{ color: 'var(--ink3)' }}>({Math.round(s.pct)}%)</span></div>
           </div>
         ))}
       </div>
@@ -332,63 +251,36 @@ function LiabilityDonut({ items }: { items: { label: string; val: number; color:
   )
 }
 
-// ─── CPF Card Component ───────────────────────────────────────────────────────
 function CpfCard({ p, age, config, label }: { p: PersonData; age: number; config: CpfConfig; label?: string }) {
-  const cit = p.citizenship || 'SC'
-  const prY = p.pr_year || '3+'
-  const gross = p.gross_monthly || 0
-  const bonus = p.gross_bonus || 0
+  const cit = p.citizenship || 'SC'; const prY = p.pr_year || '3+'
+  const gross = p.gross_monthly || 0; const bonus = p.gross_bonus || 0
   const cpf = calcCpf(gross, bonus, age, cit, prY, config)
   const isCpf = ['SC', 'PR'].includes(cit)
   const anEmployee = cpf.employee * 12 + (isCpf && cpf.tier ? Math.floor(bonus * cpf.tier.employee / 100) : 0)
   const anEmployer = cpf.employer * 12 + (isCpf && cpf.tier ? Math.round(bonus * cpf.tier.employer / 100) : 0)
-
   if (!isCpf) return (
     <div style={{ background: 'white', border: '1px solid var(--line)', padding: '16px 20px' }}>
       {label && <div className="text-xs font-medium mb-2" style={{ color: 'var(--gold-tag)' }}>{label}</div>}
       <div className="text-xs" style={{ color: 'var(--ink3)' }}>CPF not applicable for Foreigners</div>
     </div>
   )
-
   const prLabel = cit === 'PR' && prY !== '3+' ? ` · PR Yr ${prY}` : ''
-
   return (
     <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
       <div className="flex items-center justify-between mb-3">
-        <div>
-          <div className="text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)' }}>
-            {label ? label + ' — ' : ''}CPF Breakdown
-          </div>
-        </div>
-        <div className="text-xs px-2 py-1" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)' }}>
-          Age {age}{prLabel} · {cpf.tier?.employee}% / {cpf.tier?.employer}%
-        </div>
+        <div className="text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)' }}>{label ? label + ' — ' : ''}CPF Breakdown</div>
+        <div className="text-xs px-2 py-1" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)' }}>Age {age}{prLabel} · {cpf.tier?.employee}% / {cpf.tier?.employer}%</div>
       </div>
       {gross > config.ow_ceiling && (
-        <div className="text-xs px-3 py-2 mb-3" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>
-          OW capped at {fmt(config.ow_ceiling)}
-        </div>
+        <div className="text-xs px-3 py-2 mb-3" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>OW capped at {fmt(config.ow_ceiling)}</div>
       )}
-      {/* Header */}
       <div className="flex pb-2 text-xs" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 1 }}>
-        <div className="flex-1"></div>
-        <div className="w-24 text-right">Monthly</div>
-        <div className="w-28 text-right">Annual</div>
+        <div className="flex-1"></div><div className="w-24 text-right">Monthly</div><div className="w-28 text-right">Annual</div>
       </div>
-      {/* Employee deduction */}
-      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>
-        Employee ({cpf.tier?.employee}%)
-      </div>
-      {[
-        { label: '→ Ordinary (OA)', mo: cpf.oa, color: 'var(--emerald)' },
-        { label: '→ Special (SA)', mo: cpf.sa, color: '#4A7C9E' },
-        { label: '→ MediSave (MA)', mo: cpf.ma, color: '#7A6AAA' },
-      ].map(r => (
+      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>Employee ({cpf.tier?.employee}%)</div>
+      {[{ label: '→ Ordinary (OA)', mo: cpf.oa, color: 'var(--emerald)' }, { label: '→ Special (SA)', mo: cpf.sa, color: '#4A7C9E' }, { label: '→ MediSave (MA)', mo: cpf.ma, color: '#7A6AAA' }].map(r => (
         <div key={r.label} className="flex items-center py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div className="flex-1 flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div>
-            <span style={{ color: 'var(--ink2)' }}>{r.label}</span>
-          </div>
+          <div className="flex-1 flex items-center gap-1.5"><div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label}</span></div>
           <div className="w-24 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(r.mo)}</div>
           <div className="w-28 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(r.mo * 12)}</div>
         </div>
@@ -398,30 +290,16 @@ function CpfCard({ p, age, config, label }: { p: PersonData; age: number; config
         <div className="w-24 text-right" style={{ color: 'var(--rouge)' }}>− {fmt(cpf.employee)}</div>
         <div className="w-28 text-right" style={{ color: 'var(--rouge)' }}>− {fmt(anEmployee)}</div>
       </div>
-      {/* Employer contribution */}
-      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>
-        Employer ({cpf.tier?.employer}%) — added to CPF
-      </div>
+      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>Employer ({cpf.tier?.employer}%) — added to CPF</div>
       <div className="flex items-center py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
         <div className="flex-1" style={{ color: 'var(--ink2)' }}>Total Employer CPF</div>
         <div className="w-24 text-right" style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(cpf.employer)}</div>
         <div className="w-28 text-right" style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(anEmployer)}</div>
       </div>
-      {/* Total annual CPF OA/SA/MA */}
-      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>
-        Total credited to CPF (Emp + Employer/yr)
-      </div>
-      {[
-        { label: 'OA', mo: cpf.oa, color: 'var(--emerald)' },
-        { label: 'SA', mo: cpf.sa, color: '#4A7C9E' },
-        { label: 'MA', mo: cpf.ma, color: '#7A6AAA' },
-      ].map(r => (
+      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>Total credited to CPF (Emp + Employer/yr)</div>
+      {[{ label: 'OA', mo: cpf.oa, color: 'var(--emerald)' }, { label: 'SA', mo: cpf.sa, color: '#4A7C9E' }, { label: 'MA', mo: cpf.ma, color: '#7A6AAA' }].map(r => (
         <div key={r.label} className="flex items-center py-1 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div className="flex-1 flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div>
-            <span style={{ color: 'var(--ink2)' }}>{r.label} (annual)</span>
-          </div>
-          <div className="w-24"></div>
+          <div className="flex-1 flex items-center gap-1.5"><div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label} (annual)</span></div>
           <div className="w-28 text-right" style={{ color: r.color, fontWeight: 600 }}>{fmt(r.mo * 12)}</div>
         </div>
       ))}
@@ -438,7 +316,6 @@ function CpfCard({ p, age, config, label }: { p: PersonData; age: number; config
   )
 }
 
-// ─── Income Summary Row ───────────────────────────────────────────────────────
 function SumRow({ label, mo, an, highlight, neg, dim }: { label: string; mo: number; an: number; highlight?: boolean; neg?: boolean; dim?: boolean }) {
   const c = highlight ? 'var(--gold)' : neg ? 'var(--rouge)' : 'var(--ink)'
   return (
@@ -450,10 +327,7 @@ function SumRow({ label, mo, an, highlight, neg, dim }: { label: string; mo: num
   )
 }
 
-// ─── Custom Asset/Liability Row Manager ──────────────────────────────────────
-function CustomRows({ items, onChange, placeholder }: {
-  items: CustomAssetItem[]; onChange: (items: CustomAssetItem[]) => void; placeholder?: string
-}) {
+function CustomRows({ items, onChange, placeholder }: { items: CustomAssetItem[]; onChange: (items: CustomAssetItem[]) => void; placeholder?: string }) {
   const n = (v: string) => v === '' ? 0 : parseFloat(v) || 0
   return (
     <div>
@@ -480,16 +354,12 @@ function CustomRows({ items, onChange, placeholder }: {
             onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink3)')}>×</button>
         </div>
       ))}
-      <button onClick={() => onChange([...items, { label: '', amount: 0 }])}
-        className="mt-2 text-xs px-3 py-1.5"
-        style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>
-        + Add Row
-      </button>
+      <button onClick={() => onChange([...items, { label: '', amount: 0 }])} className="mt-2 text-xs px-3 py-1.5"
+        style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Row</button>
     </div>
   )
 }
 
-// ─── Standard asset input row ─────────────────────────────────────────────────
 function AssetRow({ label, value, onChange }: { label: string; value: number | undefined; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center py-2 text-xs gap-3" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -506,7 +376,6 @@ function AssetRow({ label, value, onChange }: { label: string; value: number | u
   )
 }
 
-// ─── Asset category block ─────────────────────────────────────────────────────
 function AssetBlock({ title, color, total, children }: { title: string; color: string; total: number; children: React.ReactNode }) {
   return (
     <div style={{ background: 'white', border: '1px solid var(--line)' }}>
@@ -519,51 +388,34 @@ function AssetBlock({ title, color, total, children }: { title: string; color: s
   )
 }
 
-// ─── Person Income Panel ──────────────────────────────────────────────────────
-function PersonIncomePanel({ p, onChange, age, config, label }: {
-  p: PersonData; onChange: (key: keyof PersonData, val: unknown) => void
-  age: number; config: CpfConfig; label: string
-}) {
+function PersonIncomePanel({ p, onChange, age, config, label }: { p: PersonData; onChange: (key: keyof PersonData, val: unknown) => void; age: number; config: CpfConfig; label: string }) {
   const n = (v: string) => v === '' ? 0 : parseFloat(v) || 0
-  const gross = p.gross_monthly || 0
-  const bonus = p.gross_bonus || 0
+  const gross = p.gross_monthly || 0; const bonus = p.gross_bonus || 0
   const otherIncomes = p.other_incomes || []
   const totalOther = otherIncomes.reduce((s, i) => s + (i.amount || 0), 0)
   const cpf = calcCpf(gross, bonus, age, p.citizenship || 'SC', p.pr_year || '3+', config)
   const isCpf = ['SC', 'PR'].includes(p.citizenship || 'SC')
-  const moEmployee = cpf.employee
-  const moTakeHome = cpf.takeHome
-  const moIncome = moTakeHome + totalOther
+  const moEmployee = cpf.employee; const moTakeHome = cpf.takeHome; const moIncome = moTakeHome + totalOther
   const anEmployee = moEmployee * 12 + (isCpf && cpf.tier ? Math.floor(bonus * cpf.tier.employee / 100) : 0)
-  const anTakeHome = cpf.annualTakeHome
-  const anIncome = anTakeHome + (totalOther * 12)
-
+  const anTakeHome = cpf.annualTakeHome; const anIncome = anTakeHome + (totalOther * 12)
   return (
     <div className="space-y-4">
-      <div className="px-4 py-2 font-medium text-sm" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>
-        {label}
-      </div>
-      {/* Employment */}
+      <div className="px-4 py-2 font-medium text-sm" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{label}</div>
       <Card title="Employment">
         <div className="space-y-3">
           <Field label="Occupation" value={p.occupation} onChange={v => onChange('occupation', v)} placeholder="e.g. Engineer" />
           <Field label="Employer" value={p.employer} onChange={v => onChange('employer', v)} placeholder="e.g. DBS Bank" />
-          <Sel label="Employment Type" value={p.employment_type} onChange={v => onChange('employment_type', v)}
-            options={['Employed', 'Self-Employed', 'Business Owner', 'Commission-Based', 'Retired', 'Student', 'Homemaker']} />
-          <Sel label="Citizenship" value={p.citizenship} onChange={v => onChange('citizenship', v)} options={['SC', 'PR', 'Foreigner']} />
-          {p.citizenship === 'PR' && (
-            <Sel label="PR Status Year" value={p.pr_year} onChange={v => onChange('pr_year', v)} options={['1', '2', '3+']} />
-          )}
+          <Sel label="Employment Type" value={p.employment_type} onChange={v => onChange('employment_type', v)} options={['Employed','Self-Employed','Business Owner','Commission-Based','Retired','Student','Homemaker']} />
+          <Sel label="Citizenship" value={p.citizenship} onChange={v => onChange('citizenship', v)} options={['SC','PR','Foreigner']} />
+          {p.citizenship === 'PR' && <Sel label="PR Status Year" value={p.pr_year} onChange={v => onChange('pr_year', v)} options={['1','2','3+']} />}
         </div>
       </Card>
-      {/* Salary */}
       <Card title="Gross Salary" subtitle="Before CPF deductions">
         <div className="space-y-3">
           <Field label="Gross Monthly" value={p.gross_monthly} onChange={v => onChange('gross_monthly', n(v))} type="number" prefix="$" placeholder="0" />
           <Field label="Gross Annual Bonus" value={p.gross_bonus} onChange={v => onChange('gross_bonus', n(v))} type="number" prefix="$" placeholder="0" hint="Total bonus/yr (AWS + variable)" />
         </div>
       </Card>
-      {/* Other Income */}
       <Card title="Other Income" subtitle="Rental, dividends, commissions, etc.">
         <div className="space-y-2">
           {otherIncomes.map((item, i) => (
@@ -591,18 +443,13 @@ function PersonIncomePanel({ p, onChange, age, config, label }: {
             </div>
           ))}
           <button onClick={() => onChange('other_incomes', [...otherIncomes, { label: '', amount: 0 }])}
-            className="text-xs px-3 py-1.5" style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>
-            + Add Source
-          </button>
+            className="text-xs px-3 py-1.5" style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Source</button>
         </div>
       </Card>
-      {/* Income Summary */}
       <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
         <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Summary</div>
         <div className="flex text-xs pb-2" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase' }}>
-          <div className="flex-1"></div>
-          <div className="w-28 text-right">Monthly</div>
-          <div className="w-32 text-right">Annual</div>
+          <div className="flex-1"></div><div className="w-28 text-right">Monthly</div><div className="w-32 text-right">Annual</div>
         </div>
         <SumRow label="Gross Salary" mo={gross} an={gross * 12 + bonus} />
         {isCpf && <SumRow label={`Employee CPF (${cpf.tier?.employee || 0}%)`} mo={moEmployee} an={anEmployee} neg />}
@@ -620,7 +467,33 @@ function PersonIncomePanel({ p, onChange, age, config, label }: {
   )
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+function AnnInput({ value, onChange, accentColor }: { value: number | undefined; onChange: (v: string) => void; accentColor?: string }) {
+  return (
+    <div className="relative" style={{ width: '100%' }}>
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
+      <input type="number" value={value || ''} placeholder="0" onChange={e => onChange(e.target.value)}
+        className="w-full text-sm outline-none py-2 text-right pr-3"
+        style={{ paddingLeft: 28, border: '1px solid var(--line)', background: 'var(--cream)', color: accentColor || 'var(--ink)' }}
+        onFocus={e => { e.currentTarget.style.borderColor = accentColor || 'var(--gold)' }}
+        onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }} />
+    </div>
+  )
+}
+
+function DetInput({ value, onChange, accentColor }: { value: number | undefined; onChange: (v: string) => void; accentColor?: string }) {
+  return (
+    <div className="relative" style={{ width: 118 }}>
+      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
+      <input type="number" value={value || ''} placeholder="0" onChange={e => onChange(e.target.value)}
+        className="w-full text-xs outline-none py-1.5 text-right pr-2"
+        style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: accentColor || 'var(--ink)' }}
+        onFocus={e => { e.currentTarget.style.borderColor = accentColor || 'var(--gold)' }}
+        onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }} />
+    </div>
+  )
+}
+
+
 export default function FactFindingPage() {
   const [client, setClient] = useState<Client | null>(null)
   const [spouse, setSpouse] = useState<FamilyMember | null>(null)
@@ -643,7 +516,6 @@ export default function FactFindingPage() {
     const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(1)
     if (!clients || clients.length === 0) { setLoading(false); return }
     const c = clients[0]; setClient(c)
-    // Find spouse from family_members
     const { data: fam } = await supabase.from('family_members').select('*').eq('client_id', c.id)
     const sp = fam?.find((f: FamilyMember) => f.relationship === 'Spouse')
     if (sp) setSpouse(sp)
@@ -659,22 +531,18 @@ export default function FactFindingPage() {
         person2: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
         a_cash_custom: [], a_invested_custom: [], a_personal_custom: [],
         l_st_custom: [], l_lt_custom: [],
+        d_custom_financial: [], d_custom_household: [], d_custom_personal: [], d_custom_children: [], d_custom_lifestyle: [],
       })
     }
     setLoading(false)
   }
 
   const upd = useCallback((key: keyof FactFinding, val: unknown) => {
-    setFf(prev => prev ? { ...prev, [key]: val } : prev)
-    setSaved(false)
+    setFf(prev => prev ? { ...prev, [key]: val } : prev); setSaved(false)
   }, [])
 
   const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
-    setFf(prev => {
-      if (!prev) return prev
-      return { ...prev, [person]: { ...prev[person], [key]: val } }
-    })
-    setSaved(false)
+    setFf(prev => { if (!prev) return prev; return { ...prev, [person]: { ...prev[person], [key]: val } } }); setSaved(false)
   }, [])
 
   const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
@@ -694,78 +562,87 @@ export default function FactFindingPage() {
   if (!client) return <div className="flex flex-col items-center justify-center h-full gap-4"><div className="font-serif text-2xl" style={{ color: 'var(--ink)' }}>No Client Selected</div></div>
   if (!ff) return null
 
-  const mode = ff.mode || 'single'
-  const isCouple = mode === 'couple'
-  const p1 = ff.person1 || {}
-  const p2 = ff.person2 || {}
-  const age1 = client.age || 35
-  const age2 = spouse?.age || 35
+  const mode = ff.mode || 'single'; const isCouple = mode === 'couple'
+  const p1 = ff.person1 || {}; const p2 = ff.person2 || {}
+  const age1 = client.age || 35; const age2 = spouse?.age || 35
   const cpf1 = calcCpf(p1.gross_monthly || 0, p1.gross_bonus || 0, age1, p1.citizenship || 'SC', p1.pr_year || '3+', cpfConfig)
   const cpf2 = isCouple ? calcCpf(p2.gross_monthly || 0, p2.gross_bonus || 0, age2, p2.citizenship || 'SC', p2.pr_year || '3+', cpfConfig) : null
   const other1 = (p1.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0)
   const other2 = isCouple ? (p2.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0) : 0
-  const mo1 = cpf1.takeHome + other1
-  const mo2 = cpf2 ? cpf2.takeHome + other2 : 0
-  const moTotal = mo1 + mo2
-  const an1 = cpf1.annualTakeHome + other1 * 12
-  const an2 = cpf2 ? cpf2.annualTakeHome + other2 * 12 : 0
-  const anTotal = an1 + an2
+  const mo1 = cpf1.takeHome + other1; const mo2 = cpf2 ? cpf2.takeHome + other2 : 0; const moTotal = mo1 + mo2
+  const an1 = cpf1.annualTakeHome + other1 * 12; const an2 = cpf2 ? cpf2.annualTakeHome + other2 * 12 : 0; const anTotal = an1 + an2
 
-  // Expenses
   const expMode = ff.expense_mode || 'simple'
-  const catVals1 = EXP_CATEGORIES.map(c => (ff[c.key] as number) || 0)
-  const catVals2 = EXP_CATEGORIES.map(c => {
-    const k2 = c.key.replace('s_', 's2_') as keyof FactFinding
-    return isCouple ? ((ff[k2] as number) || 0) : 0
-  })
-  const catTotals = catVals1.map((v, i) => v + catVals2[i])
-  const moExp = catTotals.reduce((s, v) => s + v, 0)
-  const anExp = moExp * 12
+  const getAnn1 = (cat: typeof EXP_CATEGORIES[0]) => (ff[cat.key] as number) || 0
+  const getAnn2 = (cat: typeof EXP_CATEGORIES[0]) => isCouple ? ((ff[cat.key2] as number) || 0) : 0
+  const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
+  const cpfOaCat = EXP_CATEGORIES.find(c => c.id === 'cpf_oa')!
+  const annCpfOaTotal = getAnnSum(cpfOaCat)
+  const nonCpfCats = EXP_CATEGORIES.filter(c => c.id !== 'cpf_oa')
+  const annExpNoCpf = nonCpfCats.reduce((s, cat) => s + getAnnSum(cat), 0)
+  const moExpNoCpf = annExpNoCpf / 12
+  const annExpAll = EXP_CATEGORIES.reduce((s, cat) => s + getAnnSum(cat), 0)
+  const annGross1 = (p1.gross_monthly || 0) * 12 + (p1.gross_bonus || 0)
+  const annGross2 = isCouple ? (p2.gross_monthly || 0) * 12 + (p2.gross_bonus || 0) : 0
+  const moGrossTotal = (annGross1 + annGross2) / 12
 
-  // Assets
-  const cashItems = [ff.a_savings || 0, ff.a_fixed_deposit || 0]
+  const DETAILED_GROUPS = [
+    { id: 'financial', title: 'Financial Obligations', color: '#E08080', hint: 'Income tax, insurance, regular savings/investments',
+      keys: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'],
+      keys2: ['d2_mortgage_cpf','d2_mortgage_cash','d2_vehicle_repay','d2_personal_loan_repay','d2_rental_expense','d2_income_tax','d2_insurance','d2_regular_savings'],
+      labels: ['Mortgage Loan (CPF OA)','Mortgage Loan (Cash)','Motor Vehicle Repayment','Personal Loan Repayment','Rental Expenses','Income Tax','Insurance Payments','Regular Savings / Investments'],
+      customKey: 'd_custom_financial' as keyof FactFinding },
+    { id: 'household', title: 'Household & Living', color: '#4A7C9E', hint: 'Conservancy, utilities, food, maid',
+      keys: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'],
+      keys2: ['d2_conservancy','d2_utilities','d2_family_food','d2_maid','d2_other_household'],
+      labels: ['Conservancy / MCST / Property Tax','Utilities & Bills','Family Food & Groceries','Maid Services (incl. Levy)','Other Household Expenses'],
+      customKey: 'd_custom_household' as keyof FactFinding },
+    { id: 'personal', title: 'Personal Expenses', color: '#7A6AAA', hint: 'Personal dining, transport, car',
+      keys: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'],
+      keys2: ['d2_personal_food','d2_transport','d2_car_petrol','d2_car_insurance'],
+      labels: ['Personal Food & Groceries','Public Transport','Car Petrol / Parking / Road Tax','Car Insurance'],
+      customKey: 'd_custom_personal' as keyof FactFinding },
+    { id: 'children', title: 'Children Expenses', color: 'var(--emerald)', hint: 'Childcare, school, transport, pocket money',
+      keys: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'],
+      keys2: ['d2_childcare','d2_school_fees','d2_school_transport','d2_allowance_children','d2_other_children'],
+      labels: ['Childcare / DayCare','School & Tuition Fees','School Transport','Allowance / Pocket Money','Other Children Expenses'],
+      customKey: 'd_custom_children' as keyof FactFinding },
+    { id: 'lifestyle', title: 'Lifestyle & Miscellaneous', color: '#9A7C5A', hint: 'Holidays, hobbies, parents allowance, donations',
+      keys: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'],
+      keys2: ['d2_holidays','d2_hobbies','d2_allowance_parents','d2_others_lifestyle'],
+      labels: ['Holidays / Tours','Hobbies / Recreation','Allowance to Parents','Others (Shopping, Tithes, Donations)'],
+      customKey: 'd_custom_lifestyle' as keyof FactFinding },
+  ]
+
   const cashCustom = (ff.a_cash_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const cashTotal = cashItems.reduce((s, v) => s + v, 0) + cashCustom
-  const cpfItems = [ff.a_cpf_oa || 0, ff.a_cpf_sa || 0, ff.a_cpf_ma || 0, ff.a_cpf_ra || 0]
-  const investedStd = [ff.a_srs || 0, ff.a_shares || 0, ff.a_etf || 0, ff.a_unit_trust || 0, ff.a_bonds || 0, ff.a_alternatives || 0, ff.a_inv_property_res || 0, ff.a_inv_property_com || 0, ff.a_business || 0]
+  const cashTotal = (ff.a_savings || 0) + (ff.a_fixed_deposit || 0) + cashCustom
+  const cpfItems = [ff.a_cpf_oa||0,ff.a_cpf_sa||0,ff.a_cpf_ma||0,ff.a_cpf_ra||0]
+  const investedStd = [ff.a_srs||0,ff.a_shares||0,ff.a_etf||0,ff.a_unit_trust||0,ff.a_bonds||0,ff.a_alternatives||0,ff.a_inv_property_res||0,ff.a_inv_property_com||0,ff.a_business||0]
   const investedCustom = (ff.a_invested_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const investedTotal = [...cpfItems, ...investedStd].reduce((s, v) => s + v, 0) + investedCustom
-  const personalStd = [ff.a_residential || 0, ff.a_vehicles || 0, ff.a_club || 0]
+  const investedTotal = [...cpfItems,...investedStd].reduce((s,v)=>s+v,0)+investedCustom
   const personalCustom = (ff.a_personal_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const personalTotal = personalStd.reduce((s, v) => s + v, 0) + personalCustom
+  const personalTotal = (ff.a_residential||0)+(ff.a_vehicles||0)+(ff.a_club||0)+personalCustom
   const totalAssets = cashTotal + investedTotal + personalTotal
-  // Liabilities
-  const stItems = [ff.l_credit_card || 0, ff.l_business_loan || 0, ff.l_renovation_st || 0]
   const stCustom = (ff.l_st_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const stTotal = stItems.reduce((s, v) => s + v, 0) + stCustom
-  const ltItems = [ff.l_mortgage_residing || 0, ff.l_mortgage_investment || 0, ff.l_car_loan || 0, ff.l_study_loan || 0, ff.l_personal_loan || 0, ff.l_renovation_lt || 0]
+  const stTotal = (ff.l_credit_card||0)+(ff.l_business_loan||0)+(ff.l_renovation_st||0)+stCustom
   const ltCustom = (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const ltTotal = ltItems.reduce((s, v) => s + v, 0) + ltCustom
-  const totalLiab = stTotal + ltTotal
-  const netWorth = totalAssets - totalLiab
-
+  const ltTotal = (ff.l_mortgage_residing||0)+(ff.l_mortgage_investment||0)+(ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom
+  const totalLiab = stTotal + ltTotal; const netWorth = totalAssets - totalLiab
   const RISK_COLORS: Record<string, string> = { Conservative: 'var(--emerald)', Moderate: '#C4A464', Balanced: '#4A7C9E', Growth: '#7A6AAA', Aggressive: 'var(--rouge)' }
-
-  const assetRow = (label: string, key: keyof FactFinding) => (
-    <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} />
-  )
+  const assetRow = (label: string, key: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} />
+  const clientName = client.name; const spouseName = spouse?.name || 'Spouse'
 
   return (
     <div className="flex flex-col min-h-full">
-      {/* ── Hero Band ─────────────────────────────────────────────── */}
       <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
         <div className="flex items-center gap-4 py-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div>
             <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'rgba(255,255,255,0.28)' }}>Fact Finding</div>
-            <div className="font-serif text-2xl font-light" style={{ color: '#F0EDE8' }}>
-              {client.name}{isCouple && spouse ? ` & ${spouse.name}` : ''}
-            </div>
+            <div className="font-serif text-2xl font-light" style={{ color: '#F0EDE8' }}>{clientName}{isCouple && spouse ? ` & ${spouseName}` : ''}</div>
           </div>
-          {/* Mode toggle */}
           <div className="flex gap-1 ml-4">
             {[{ id: 'single', label: '👤 Single' }, { id: 'couple', label: '👫 Couple' }].map(m => (
-              <button key={m.id} onClick={() => upd('mode', m.id)}
-                className="px-3 py-1.5 text-xs transition-all"
+              <button key={m.id} onClick={() => upd('mode', m.id)} className="px-3 py-1.5 text-xs transition-all"
                 style={{ border: mode === m.id ? '1.5px solid rgba(168,131,74,0.8)' : '1px solid rgba(255,255,255,0.15)', background: mode === m.id ? 'rgba(168,131,74,0.25)' : 'transparent', color: mode === m.id ? '#C4A464' : 'rgba(255,255,255,0.45)' }}>
                 {m.label}
               </button>
@@ -780,12 +657,8 @@ export default function FactFindingPage() {
               ].map((s, idx, arr) => (
                 <div key={s.label} className="flex flex-col items-end justify-center"
                   style={{ padding: '8px 22px', borderRight: idx < arr.length - 1 ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
-                  <div style={{ fontSize: 9, letterSpacing: '0.11em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.32)', marginBottom: 5 }}>
-                    {s.label}
-                  </div>
-                  <div className="font-serif" style={{ fontSize: 22, fontWeight: 300, lineHeight: 1, color: s.color, letterSpacing: '-0.01em' }}>
-                    {s.val}
-                  </div>
+                  <div style={{ fontSize: 9, letterSpacing: '0.11em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.32)', marginBottom: 5 }}>{s.label}</div>
+                  <div className="font-serif" style={{ fontSize: 22, fontWeight: 300, lineHeight: 1, color: s.color, letterSpacing: '-0.01em' }}>{s.val}</div>
                 </div>
               ))}
             </div>
@@ -797,8 +670,7 @@ export default function FactFindingPage() {
         </div>
         <div className="flex">
           {SECTIONS.map(s => (
-            <button key={s.id} onClick={() => setActiveSection(s.id)}
-              className="flex items-center gap-2 px-4 py-3 text-xs tracking-wide"
+            <button key={s.id} onClick={() => setActiveSection(s.id)} className="flex items-center gap-2 px-4 py-3 text-xs tracking-wide"
               style={{ color: activeSection === s.id ? '#C4A464' : 'rgba(255,255,255,0.35)', borderBottom: activeSection === s.id ? '1px solid #C4A464' : '1px solid transparent', background: 'transparent' }}>
               <span>{s.icon}</span>{s.label}
             </button>
@@ -808,29 +680,26 @@ export default function FactFindingPage() {
 
       <div style={{ padding: '32px 48px', flex: 1 }}>
 
-        {/* ═══ INCOME ════════════════════════════════════════════════ */}
         {activeSection === 'income' && (
           isCouple ? (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
                 <div className="space-y-4">
-                  <PersonIncomePanel p={p1} onChange={(k, v) => updP('person1', k, v)} age={age1} config={cpfConfig} label={`${client.name} (Client)`} />
-                  <CpfCard p={p1} age={age1} config={cpfConfig} label={client.name} />
+                  <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={age1} config={cpfConfig} label={`${clientName} (Client)`} />
+                  <CpfCard p={p1} age={age1} config={cpfConfig} label={clientName} />
                 </div>
                 <div className="space-y-4">
-                  <PersonIncomePanel p={p2} onChange={(k, v) => updP('person2', k, v)} age={age2} config={cpfConfig} label={spouse?.name || 'Spouse'} />
-                  <CpfCard p={p2} age={age2} config={cpfConfig} label={spouse?.name || 'Spouse'} />
+                  <PersonIncomePanel p={p2} onChange={(k,v)=>updP('person2',k,v)} age={age2} config={cpfConfig} label={spouseName} />
+                  <CpfCard p={p2} age={age2} config={cpfConfig} label={spouseName} />
                 </div>
               </div>
               <div style={{ background: 'white', border: '2px solid var(--gold)', padding: '20px 24px', marginTop: 24 }}>
                 <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--gold-tag)' }}>Combined Income Summary</div>
                 <div className="flex text-xs pb-2" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase' }}>
-                  <div className="flex-1"></div>
-                  <div className="w-28 text-right">Monthly</div>
-                  <div className="w-32 text-right">Annual</div>
+                  <div className="flex-1"></div><div className="w-28 text-right">Monthly</div><div className="w-32 text-right">Annual</div>
                 </div>
-                <SumRow label={client.name} mo={mo1} an={an1} />
-                <SumRow label={spouse?.name || 'Spouse'} mo={mo2} an={an2} />
+                <SumRow label={clientName} mo={mo1} an={an1} />
+                <SumRow label={spouseName} mo={mo2} an={an2} />
                 <div className="flex items-center justify-between pt-3 mt-1" style={{ borderTop: '2px solid var(--gold)' }}>
                   <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Total Combined</span>
                   <div className="flex gap-4">
@@ -842,16 +711,15 @@ export default function FactFindingPage() {
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, alignItems: 'start' }}>
-              <PersonIncomePanel p={p1} onChange={(k, v) => updP('person1', k, v)} age={age1} config={cpfConfig} label={client.name} />
+              <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={age1} config={cpfConfig} label={clientName} />
               <CpfCard p={p1} age={age1} config={cpfConfig} />
             </div>
           )
         )}
 
-        {/* ═══ EXPENSES ══════════════════════════════════════════════ */}
+
         {activeSection === 'expenses' && (
           <div className="space-y-5">
-            {/* Mode + view toggle */}
             <div style={{ background: 'white', border: '1px solid var(--line)', padding: '16px 24px' }}>
               <div className="flex items-center justify-between">
                 <div>
@@ -871,102 +739,162 @@ export default function FactFindingPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
               <div className="space-y-4">
-                {expMode === 'simple' ? (
+
+                {expMode === 'simple' && (
                   <div style={{ background: 'white', border: '1px solid var(--line)' }}>
                     <div className="px-6 py-4" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <div className="font-serif text-lg" style={{ color: 'var(--ink)' }}>Monthly Expenses</div>
-                      <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Enter combined household expenses</div>
+                      <div className="font-serif text-lg" style={{ color: 'var(--ink)' }}>Annual Expenses</div>
+                      <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Enter annual amounts — monthly auto-calculated</div>
                     </div>
-                    <div className="px-6 py-5 space-y-0">
-                      {EXP_CATEGORIES.map(cat => (
-                        <div key={cat.id} className="py-3" style={{ borderBottom: '1px solid var(--line)' }}>
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--ink)' }}>
-                                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5" style={{ background: cat.color }}></div>
-                                {cat.label}
+                    {isCouple && (
+                      <div className="px-6 pt-4">
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 145px 145px 130px', gap: 8 }}>
+                          <div />
+                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'rgba(168,131,74,0.08)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{clientName}</div>
+                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'rgba(74,124,158,0.08)', color: '#4A7C9E', border: '1px solid rgba(74,124,158,0.2)' }}>{spouseName}</div>
+                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'var(--cream2)', color: 'var(--ink2)', border: '1px solid var(--line2)' }}>Combined</div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="px-6 py-2">
+                      {EXP_CATEGORIES.map(cat => {
+                        const ann1 = getAnn1(cat); const ann2 = getAnn2(cat); const annSum = ann1 + ann2
+                        const isCpfOa = cat.id === 'cpf_oa'
+                        return (
+                          <div key={cat.id} className="py-3" style={{ borderBottom: '1px solid var(--line)' }}>
+                            <div className="flex items-center gap-3">
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: cat.color }}></div>
+                                  <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{cat.label}</span>
+                                  {isCpfOa && <span className="text-xs px-1.5 py-0.5 flex-shrink-0" style={{ background: '#5A8A6A18', color: '#5A8A6A', border: '1px solid #5A8A6A30' }}>CPF</span>}
+                                </div>
+                                <div className="text-xs mt-0.5 ml-4" style={{ color: 'var(--ink3)' }}>{cat.hint}</div>
                               </div>
-                              <div className="text-xs mt-0.5 ml-4" style={{ color: 'var(--ink3)' }}>{cat.hint}</div>
+                              {isCouple ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: '145px 145px 130px', gap: 8, flexShrink: 0 }}>
+                                  <AnnInput value={ann1 || undefined} onChange={v => upd(cat.key, n(v))} />
+                                  <AnnInput value={ann2 || undefined} onChange={v => upd(cat.key2, n(v))} accentColor="#4A7C9E" />
+                                  <div className="flex items-center justify-end px-3 text-sm font-medium"
+                                    style={{ background: annSum > 0 ? 'var(--cream2)' : 'var(--cream)', border: '1px solid var(--line2)', color: annSum > 0 ? 'var(--ink)' : 'var(--ink3)', minHeight: 38 }}>
+                                    {annSum > 0 ? fmt(annSum) : '—'}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ width: 150, flexShrink: 0 }}>
+                                  <AnnInput value={ann1 || undefined} onChange={v => upd(cat.key, n(v))} />
+                                </div>
+                              )}
                             </div>
-                            <div className="relative" style={{ width: 140 }}>
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-                              <input type="number" value={(ff[cat.key] as number) || ''} placeholder="0"
-                                onChange={e => upd(cat.key, n(e.target.value))}
-                                className="w-full text-sm outline-none py-2 text-right pr-3"
-                                style={{ paddingLeft: 28, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
-                                onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                                onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                            {annSum > 0 && (
+                              <div className="flex items-center gap-3 mt-1.5 ml-4">
+                                <span className="text-xs" style={{ color: 'var(--ink3)' }}>{fmt(annSum / 12)}<span style={{ opacity: 0.6 }}>/mo</span></span>
+                                <span style={{ color: 'var(--line2)', fontSize: 10 }}>·</span>
+                                <span className="text-xs" style={{ color: 'var(--ink3)' }}>{fmt(annSum)}<span style={{ opacity: 0.6 }}>/yr</span></span>
+                                {isCpfOa && <span className="text-xs" style={{ color: '#5A8A6A' }}>not included in cash expenses</span>}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div className="pt-4 pb-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Total Annually</span>
+                          <div className="flex gap-6 items-end">
+                            <div className="text-right">
+                              <div className="text-xs mb-0.5" style={{ color: 'var(--ink3)' }}>Monthly</div>
+                              <div className="font-serif text-lg" style={{ color: 'var(--rouge)' }}>{fmt(moExpNoCpf)}/mo</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs mb-0.5" style={{ color: 'var(--ink3)' }}>Annual</div>
+                              <div className="font-serif text-lg" style={{ color: 'var(--ink2)' }}>{fmt(annExpNoCpf)}/yr</div>
                             </div>
                           </div>
-                          {isCouple && (
-                            <div className="flex items-center justify-end gap-2 mt-1">
-                              <div className="text-xs" style={{ color: 'var(--ink3)' }}>
-                                Split: {client.name} $
-                              </div>
-                              <input type="number" value={(ff[cat.key] as number) || ''} placeholder="0"
-                                onChange={e => upd(cat.key, n(e.target.value))}
-                                className="text-xs outline-none py-1 text-right"
-                                style={{ width: 80, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', paddingRight: 8 }}
-                                onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                                onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-                              <div className="text-xs" style={{ color: 'var(--ink3)' }}>{spouse?.name || 'Spouse'} $</div>
-                              <input type="number" value={(ff[cat.key.replace('s_', 's2_') as keyof FactFinding] as number) || ''}
-                                placeholder="0" onChange={e => upd(cat.key.replace('s_', 's2_') as keyof FactFinding, n(e.target.value))}
-                                className="text-xs outline-none py-1 text-right"
-                                style={{ width: 80, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', paddingRight: 8 }}
-                                onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                                onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-                            </div>
-                          )}
                         </div>
-                      ))}
-                      <div className="flex items-center justify-between pt-4">
-                        <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Total Monthly</span>
-                        <div className="flex gap-4">
-                          <span className="font-serif text-lg" style={{ color: 'var(--rouge)' }}>{fmt(moExp)}/mo</span>
-                          <span className="font-serif text-lg" style={{ color: 'var(--ink2)' }}>{fmt(anExp)}/yr</span>
-                        </div>
+                        {annCpfOaTotal > 0 && (
+                          <div className="text-xs mt-1" style={{ color: '#5A8A6A' }}>
+                            * Excludes CPF OA mortgage ({fmt(annCpfOaTotal / 12)}/mo · {fmt(annCpfOaTotal)}/yr)
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
-                ) : (
-                  /* DETAILED */
+                )}
+
+                {expMode === 'detailed' && (
                   <div className="space-y-4">
-                    {[
-                      { title: 'Financial Obligations', color: '#E08080', hint: 'Income tax, insurance, regular savings/investments', keys: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'], labels: ['Mortgage Loan (CPF OA)','Mortgage Loan (Cash)','Motor Vehicle Repayment','Personal Loan Repayment','Rental Expenses','Income Tax','Insurance Payments','Regular Savings / Investments'] },
-                      { title: 'Household & Living', color: '#4A7C9E', hint: 'Conservancy, utilities, food, maid', keys: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'], labels: ['Conservancy / MCST / Property Tax','Utilities & Bills','Family Food & Groceries','Maid Services (incl. Levy)','Other Household Expenses'] },
-                      { title: 'Personal Expenses', color: '#7A6AAA', hint: 'Personal dining, transport, car', keys: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'], labels: ['Personal Food & Groceries','Public Transport','Car Petrol / Parking / Road Tax','Car Insurance'] },
-                      { title: 'Children Expenses', color: 'var(--emerald)', hint: 'Childcare, school, transport, pocket money', keys: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'], labels: ['Childcare / DayCare','School & Tuition Fees','School Transport','Allowance / Pocket Money','Other Children Expenses'] },
-                      { title: 'Lifestyle & Miscellaneous', color: '#9A7C5A', hint: 'Holidays, hobbies, parents allowance, donations', keys: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'], labels: ['Holidays / Tours','Hobbies / Recreation','Allowance to Parents','Others (Shopping, Tithes, Donations)'] },
-                    ].map(group => {
-                      const groupTotal = group.keys.reduce((s, k) => s + ((ff[k as keyof FactFinding] as number) || 0), 0)
+                    {DETAILED_GROUPS.map(group => {
+                      const customItems = (ff[group.customKey] as CustomExpenseItem[]) || []
+                      const g1 = group.keys.reduce((s,k)=>s+((ff[k as keyof FactFinding] as number)||0),0)+customItems.reduce((s,i)=>s+(i.amount||0),0)
+                      const g2 = isCouple ? group.keys2.reduce((s,k)=>s+((ff[k as keyof FactFinding] as number)||0),0)+customItems.reduce((s,i)=>s+(i.amount2||0),0) : 0
+                      const gSum = g1 + g2
                       return (
-                        <div key={group.title} style={{ background: 'white', border: '1px solid var(--line)' }}>
+                        <div key={group.id} style={{ background: 'white', border: '1px solid var(--line)' }}>
                           <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: `3px solid ${group.color}` }}>
                             <div>
                               <div className="text-sm font-medium" style={{ color: group.color }}>{group.title}</div>
                               <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>{group.hint}</div>
                             </div>
-                            <div className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color: group.color, fontWeight: 600 }}>{fmt(groupTotal)}/mo</span></div>
+                            <div className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color: group.color, fontWeight: 600 }}>{fmt(gSum)}/mo</span></div>
                           </div>
                           <div className="px-5 py-2">
-                            {group.keys.map((k, i) => (
-                              <div key={k} className="flex items-center py-2 gap-3" style={{ borderBottom: '1px solid var(--line)' }}>
-                                <div className="flex-1 text-xs" style={{ color: 'var(--ink2)' }}>{group.labels[i]}</div>
-                                <div className="relative" style={{ width: 130 }}>
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-                                  <input type="number" value={(ff[k as keyof FactFinding] as number) || ''} placeholder="0"
-                                    onChange={e => upd(k as keyof FactFinding, n(e.target.value))}
-                                    className="w-full text-xs outline-none py-1.5 text-right pr-2"
-                                    style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
-                                    onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                                    onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-                                </div>
-                                <div className="text-xs w-20 text-right" style={{ color: 'var(--ink3)' }}>
-                                  {(ff[k as keyof FactFinding] as number) > 0 ? fmt(((ff[k as keyof FactFinding] as number) || 0) * 12) + '/yr' : '—'}
-                                </div>
+                            {isCouple && (
+                              <div className="flex items-center gap-2 py-2 mb-1" style={{ borderBottom: '2px solid var(--line2)' }}>
+                                <div className="flex-1 text-xs" style={{ color: 'var(--ink3)' }}>Item</div>
+                                <div className="text-xs font-medium text-center" style={{ width: 118, color: 'var(--gold-tag)' }}>{clientName}</div>
+                                <div className="text-xs font-medium text-center" style={{ width: 118, color: '#4A7C9E' }}>{spouseName}</div>
+                                <div className="text-xs font-medium text-center" style={{ width: 90, color: 'var(--ink2)' }}>Combined</div>
+                                <div style={{ width: 28 }}></div>
                               </div>
-                            ))}
+                            )}
+                            {group.keys.map((k, i) => {
+                              const k2 = group.keys2[i]
+                              const v1 = (ff[k as keyof FactFinding] as number) || 0
+                              const v2 = isCouple ? ((ff[k2 as keyof FactFinding] as number) || 0) : 0
+                              const vSum = v1 + v2
+                              return (
+                                <div key={k} className="flex items-center py-2 gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
+                                  <div className="flex-1 text-xs" style={{ color: 'var(--ink2)' }}>{group.labels[i]}</div>
+                                  <DetInput value={v1||undefined} onChange={v=>upd(k as keyof FactFinding,n(v))} />
+                                  {isCouple && <DetInput value={v2||undefined} onChange={v=>upd(k2 as keyof FactFinding,n(v))} accentColor="#4A7C9E" />}
+                                  {isCouple
+                                    ? <div className="text-xs text-right font-medium" style={{ width: 90, color: vSum>0?'var(--ink)':'var(--ink3)' }}>{vSum>0?fmt(vSum):'—'}</div>
+                                    : <div className="text-xs text-right" style={{ width: 80, color: 'var(--ink3)' }}>{v1>0?fmt(v1*12)+'/yr':'—'}</div>}
+                                  {isCouple && <div style={{ width: 28 }}></div>}
+                                </div>
+                              )
+                            })}
+                            {customItems.map((item, i) => {
+                              const v2 = isCouple ? (item.amount2||0) : 0
+                              const vSum = (item.amount||0) + v2
+                              return (
+                                <div key={`cx-${i}`} className="flex items-center py-2 gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
+                                  <input type="text" value={item.label} placeholder="Custom expense"
+                                    onChange={e=>{const u=[...customItems];u[i]={...u[i],label:e.target.value};upd(group.customKey,u)}}
+                                    className="flex-1 px-2 py-1.5 text-xs outline-none"
+                                    style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
+                                    onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
+                                    onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
+                                  <DetInput value={item.amount||undefined} onChange={v=>{const u=[...customItems];u[i]={...u[i],amount:n(v)};upd(group.customKey,u)}} />
+                                  {isCouple && <DetInput value={item.amount2||undefined} onChange={v=>{const u=[...customItems];u[i]={...u[i],amount2:n(v)};upd(group.customKey,u)}} accentColor="#4A7C9E" />}
+                                  {isCouple
+                                    ? <div className="text-xs text-right font-medium" style={{ width:90,color:vSum>0?'var(--ink)':'var(--ink3)' }}>{vSum>0?fmt(vSum):'—'}</div>
+                                    : <div className="text-xs text-right" style={{ width:80,color:'var(--ink3)' }}>{(item.amount||0)>0?fmt((item.amount||0)*12)+'/yr':'—'}</div>}
+                                  <button onClick={()=>upd(group.customKey,customItems.filter((_,j)=>j!==i))}
+                                    className="flex items-center justify-center text-sm flex-shrink-0"
+                                    style={{ width:28,height:28,color:'var(--ink3)',border:'1px solid var(--line)',background:'white' }}
+                                    onMouseEnter={e=>(e.currentTarget.style.color='var(--rouge)')}
+                                    onMouseLeave={e=>(e.currentTarget.style.color='var(--ink3)')}>×</button>
+                                </div>
+                              )
+                            })}
+                            <div className="pt-2 pb-1">
+                              <button onClick={()=>upd(group.customKey,[...customItems,{label:'',amount:0,amount2:0}])}
+                                className="text-xs px-3 py-1.5"
+                                style={{ color:'var(--gold-tag)',border:'1px solid rgba(168,131,74,0.3)',background:'var(--gold-l)' }}>
+                                + Add Row
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )
@@ -975,71 +903,111 @@ export default function FactFindingPage() {
                 )}
               </div>
 
-              {/* Right sidebar — cash flow + benchmark chart */}
               <div className="space-y-4">
-                {/* Cash Flow */}
                 <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                   <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Cash Flow</div>
-                  {[
-                    { label: 'Total Income/mo', val: moTotal, color: 'var(--emerald)' },
-                    { label: 'Total Expenses/mo', val: moExp, color: 'var(--rouge)' },
-                  ].map(r => (
-                    <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <span style={{ color: 'var(--ink3)' }}>{r.label}</span>
-                      <span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
+                  <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                    <span style={{ color: 'var(--ink3)' }}>Total Income/mo</span>
+                    <span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(moTotal)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                    <span style={{ color: 'var(--ink3)' }}>Total Expenses/mo</span>
+                    <span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(moExpNoCpf)}</span>
+                  </div>
+                  {annCpfOaTotal > 0 && (<>
+                    <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                      <span style={{ color: '#5A8A6A' }}>CPF OA Outflow/mo</span>
+                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>−{fmt(annCpfOaTotal/12)}</span>
                     </div>
-                  ))}
+                    <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                      <span style={{ color: '#5A8A6A' }}>CPF OA Inflow/mo</span>
+                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>+{fmt(cpf1.oa+(cpf2?.oa||0))}</span>
+                    </div>
+                  </>)}
                   <div className="flex items-center justify-between pt-3 mb-2">
                     <span className="text-xs" style={{ color: 'var(--ink2)' }}>Surplus / Deficit</span>
-                    <span className="font-serif text-xl" style={{ color: moTotal - moExp >= 0 ? 'var(--emerald)' : 'var(--rouge)' }}>
-                      {moTotal - moExp >= 0 ? '+' : '−'}{fmt(Math.abs(moTotal - moExp))}/mo
+                    <span className="font-serif text-xl" style={{ color: moTotal-moExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
+                      {moTotal-moExpNoCpf>=0?'+':'−'}{fmt(Math.abs(moTotal-moExpNoCpf))}/mo
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs" style={{ color: 'var(--ink2)' }}>Annual surplus</span>
-                    <span className="font-serif text-base" style={{ color: anTotal - anExp >= 0 ? 'var(--emerald)' : 'var(--rouge)' }}>
-                      {anTotal - anExp >= 0 ? '+' : '−'}{fmt(Math.abs(anTotal - anExp))}/yr
+                    <span className="font-serif text-base" style={{ color: anTotal-annExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
+                      {anTotal-annExpNoCpf>=0?'+':'−'}{fmt(Math.abs(anTotal-annExpNoCpf))}/yr
                     </span>
                   </div>
                   {moTotal > 0 && (
                     <div className="mt-3">
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${Math.min((moExp / moTotal) * 100, 100)}%`, background: moExp / moTotal > 0.9 ? 'var(--rouge)' : moExp / moTotal > 0.7 ? '#C4A464' : 'var(--emerald)' }} />
+                        <div className="h-full rounded-full" style={{ width:`${Math.min((moExpNoCpf/moTotal)*100,100)}%`, background: moExpNoCpf/moTotal>0.9?'var(--rouge)':moExpNoCpf/moTotal>0.7?'#C4A464':'var(--emerald)' }} />
                       </div>
                       <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--ink3)' }}>
-                        <span>Expense ratio</span>
-                        <span>{pct(moExp, moTotal)}%</span>
+                        <span>Expense ratio</span><span>{pct(moExpNoCpf,moTotal)}%</span>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Benchmark Chart */}
                 <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                   <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--ink3)' }}>vs Singapore Average</div>
-                  <div className="text-xs mb-4" style={{ color: 'var(--ink3)' }}>Based on DOS household expenditure survey</div>
-                  {EXP_CATEGORIES.map((cat, i) => (
-                    <ExpenseBar key={cat.id} label={cat.label} amount={catTotals[i]} benchmark={BENCHMARKS[cat.id]} color={cat.color} total={moExp || 1} />
-                  ))}
-                  <div className="mt-2 pt-2 text-xs" style={{ borderTop: '1px solid var(--line)', color: 'var(--ink3)' }}>
-                    ▲ HIGH = above Singapore household average
-                  </div>
+                  <div className="text-xs mb-4" style={{ color: 'var(--ink3)' }}>% of gross income (DOS HES benchmark)</div>
+                  {EXP_CATEGORIES.map(cat => {
+                    const moAmt = getAnnSum(cat) / 12
+                    const actualPct = moGrossTotal > 0 ? (moAmt / moGrossTotal) * 100 : 0
+                    const benchPct = BENCHMARKS_PCT[cat.id] ?? 5
+                    const over = actualPct > benchPct
+                    const barW = Math.min((actualPct / (benchPct * 2)) * 100, 100)
+                    return (
+                      <div key={cat.id} className="mb-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="text-xs" style={{ color: 'var(--ink2)' }}>{cat.label}</div>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span style={{ color: over?'var(--rouge)':'var(--emerald)', fontWeight: 500 }}>{actualPct.toFixed(1)}%</span>
+                            <span style={{ color: 'var(--ink3)' }}>vs {benchPct}%</span>
+                            {over && <span style={{ color: 'var(--rouge)', fontSize: 9 }}>▲ HIGH</span>}
+                          </div>
+                        </div>
+                        <div className="relative h-2 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
+                          <div className="absolute top-0 bottom-0 w-px z-10" style={{ left: '50%', background: 'rgba(0,0,0,0.18)' }} />
+                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barW}%`, background: cat.color }} />
+                        </div>
+                        <div className="flex justify-between mt-0.5" style={{ fontSize: 9, color: 'var(--ink3)' }}>
+                          <span>0%</span><span>{benchPct}% avg</span><span>{benchPct * 2}%</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div className="pt-2 text-xs" style={{ borderTop: '1px solid var(--line)', color: 'var(--ink3)' }}>▲ HIGH = above Singapore income benchmark</div>
                 </div>
 
-                {/* Annual breakdown */}
                 <div style={{ background: 'white', border: '1px solid var(--line)', padding: '16px 20px' }}>
                   <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Annual Breakdown</div>
-                  {EXP_CATEGORIES.map((cat, i) => catTotals[i] > 0 && (
-                    <div key={cat.id} className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2 h-2 rounded-full" style={{ background: cat.color }}></div>
-                        <span style={{ color: 'var(--ink2)' }}>{cat.label}</span>
+                  {EXP_CATEGORIES.map(cat => {
+                    const annAmt = getAnnSum(cat); if (!annAmt) return null
+                    const isCpfOa = cat.id === 'cpf_oa'
+                    return (
+                      <div key={cat.id} className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full" style={{ background: cat.color }}></div>
+                          <span style={{ color: isCpfOa?'#5A8A6A':'var(--ink2)' }}>{cat.label}</span>
+                          {isCpfOa && <span style={{ color: '#5A8A6A', fontSize: 9 }}>CPF</span>}
+                        </div>
+                        <span style={{ color: isCpfOa?'#5A8A6A':'var(--ink)', fontWeight: 500 }}>{fmt(annAmt)}</span>
                       </div>
-                      <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{fmt(catTotals[i] * 12)}</span>
+                    )
+                  })}
+                  <div className="flex justify-between pt-2 text-xs" style={{ borderTop: '1px solid var(--line)', marginTop: 4 }}>
+                    <span style={{ color: 'var(--ink3)' }}>Cash Expenses</span>
+                    <span style={{ color: 'var(--rouge)', fontWeight: 600 }}>{fmt(annExpNoCpf)}</span>
+                  </div>
+                  {annCpfOaTotal > 0 && (
+                    <div className="flex justify-between pt-1 text-xs">
+                      <span style={{ color: '#5A8A6A' }}>+ CPF OA</span>
+                      <span style={{ color: '#5A8A6A', fontWeight: 600 }}>{fmt(annCpfOaTotal)}</span>
                     </div>
-                  ))}
-                  <div className="flex justify-between pt-2 font-semibold text-sm" style={{ color: 'var(--rouge)' }}>
-                    <span>Total Annual</span><span>{fmt(anExp)}</span>
+                  )}
+                  <div className="flex justify-between pt-2 font-semibold text-sm" style={{ borderTop: '1px solid var(--line)', marginTop: 4, color: 'var(--ink)' }}>
+                    <span>Total Annual</span><span>{fmt(annExpAll)}</span>
                   </div>
                 </div>
               </div>
@@ -1047,7 +1015,7 @@ export default function FactFindingPage() {
           </div>
         )}
 
-        {/* ═══ ASSETS ════════════════════════════════════════════════ */}
+
         {activeSection === 'assets' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
@@ -1079,34 +1047,30 @@ export default function FactFindingPage() {
                 <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" />
               </AssetBlock>
             </div>
-            {/* Assets Summary */}
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Total Assets</div>
-                {[{ label: 'Cash / Near Cash', val: cashTotal, color: 'var(--emerald)' }, { label: 'Invested Assets', val: investedTotal, color: '#4A7C9E' }, { label: 'Personal Use', val: personalTotal, color: '#C4A464' }].map(r => (
+                {[{label:'Cash / Near Cash',val:cashTotal,color:'var(--emerald)'},{label:'Invested Assets',val:investedTotal,color:'#4A7C9E'},{label:'Personal Use',val:personalTotal,color:'#C4A464'}].map(r=>(
                   <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label}</span></div>
                     <span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
                   </div>
                 ))}
-                <div className="flex justify-between pt-3 font-semibold text-sm" style={{ color: 'var(--emerald)' }}>
-                  <span>Total Assets</span><span>{fmt(totalAssets)}</span>
-                </div>
+                <div className="flex justify-between pt-3 font-semibold text-sm" style={{ color: 'var(--emerald)' }}><span>Total Assets</span><span>{fmt(totalAssets)}</span></div>
               </div>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Net Worth</div>
                 <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Assets</span><span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(totalAssets)}</span></div>
                 <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Liabilities</span><span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(totalLiab)}</span></div>
-                <div className="flex justify-between pt-3 font-serif text-2xl" style={{ color: netWorth >= 0 ? 'var(--emerald)' : 'var(--rouge)' }}>
+                <div className="flex justify-between pt-3 font-serif text-2xl" style={{ color: netWorth>=0?'var(--emerald)':'var(--rouge)' }}>
                   <span className="text-sm font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Worth</span>
-                  <span>{netWorth >= 0 ? '' : '−'}{fmt(Math.abs(netWorth))}</span>
+                  <span>{netWorth>=0?'':'−'}{fmt(Math.abs(netWorth))}</span>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ═══ LIABILITIES ═══════════════════════════════════════════ */}
         {activeSection === 'liabilities' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
@@ -1126,23 +1090,22 @@ export default function FactFindingPage() {
                 <CustomRows items={ff.l_lt_custom || []} onChange={v => upd('l_lt_custom', v)} placeholder="e.g. BNPL, Other Loan" />
               </AssetBlock>
             </div>
-            {/* Liabilities Summary + Chart */}
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Liability Breakdown</div>
                 <LiabilityDonut items={[
-                  { label: 'Mortgage (Residing)', val: ff.l_mortgage_residing || 0, color: '#E08080' },
-                  { label: 'Mortgage (Investment)', val: ff.l_mortgage_investment || 0, color: '#C47070' },
-                  { label: 'Car Loan', val: ff.l_car_loan || 0, color: '#C4A464' },
-                  { label: 'Credit Card', val: ff.l_credit_card || 0, color: '#7A6AAA' },
-                  { label: 'Personal Loan', val: ff.l_personal_loan || 0, color: '#4A7C9E' },
-                  { label: 'Study Loan', val: ff.l_study_loan || 0, color: 'var(--emerald)' },
-                  { label: 'Others', val: (ff.l_business_loan || 0) + (ff.l_renovation_st || 0) + (ff.l_renovation_lt || 0) + ltCustom + stCustom, color: '#9A9690' },
+                  { label: 'Mortgage (Residing)', val: ff.l_mortgage_residing||0, color: '#E08080' },
+                  { label: 'Mortgage (Investment)', val: ff.l_mortgage_investment||0, color: '#C47070' },
+                  { label: 'Car Loan', val: ff.l_car_loan||0, color: '#C4A464' },
+                  { label: 'Credit Card', val: ff.l_credit_card||0, color: '#7A6AAA' },
+                  { label: 'Personal Loan', val: ff.l_personal_loan||0, color: '#4A7C9E' },
+                  { label: 'Study Loan', val: ff.l_study_loan||0, color: 'var(--emerald)' },
+                  { label: 'Others', val: (ff.l_business_loan||0)+(ff.l_renovation_st||0)+(ff.l_renovation_lt||0)+ltCustom+stCustom, color: '#9A9690' },
                 ]} />
               </div>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Summary</div>
-                {[{ label: 'Short Term (<5yr)', val: stTotal, color: 'var(--rouge)' }, { label: 'Long Term (>5yr)', val: ltTotal, color: '#8A5E3A' }].map(r => (
+                {[{label:'Short Term (<5yr)',val:stTotal,color:'var(--rouge)'},{label:'Long Term (>5yr)',val:ltTotal,color:'#8A5E3A'}].map(r=>(
                   <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <span style={{ color: 'var(--ink2)' }}>{r.label}</span><span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
                   </div>
@@ -1150,72 +1113,63 @@ export default function FactFindingPage() {
                 <div className="flex justify-between pt-3 font-semibold text-sm mb-4" style={{ color: 'var(--rouge)', borderBottom: '1px solid var(--line)', paddingBottom: 12 }}>
                   <span>Total Liabilities</span><span>{fmt(totalLiab)}</span>
                 </div>
-                {totalAssets > 0 && (
-                  <>
-                    <div className="text-xs mb-2" style={{ color: 'var(--ink3)' }}>Debt-to-Asset Ratio</div>
-                    <div className="h-2.5 rounded-full overflow-hidden mb-1" style={{ background: 'var(--line)' }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(pct(totalLiab, totalAssets), 100)}%`, background: totalLiab / totalAssets > 0.5 ? 'var(--rouge)' : totalLiab / totalAssets > 0.3 ? '#C4A464' : 'var(--emerald)' }} />
-                    </div>
-                    <div className="flex justify-between text-xs" style={{ color: 'var(--ink3)' }}>
-                      <span>{pct(totalLiab, totalAssets)}% of assets</span>
-                      <span style={{ color: totalLiab / totalAssets > 0.5 ? 'var(--rouge)' : totalLiab / totalAssets > 0.3 ? '#C4A464' : 'var(--emerald)' }}>
-                        {totalLiab / totalAssets > 0.5 ? 'High' : totalLiab / totalAssets > 0.3 ? 'Moderate' : 'Healthy'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between pt-3 font-serif text-xl mt-3 pt-3" style={{ color: netWorth >= 0 ? 'var(--emerald)' : 'var(--rouge)', borderTop: '1px solid var(--line)' }}>
-                      <span className="text-sm font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Worth</span>
-                      <span>{netWorth >= 0 ? '' : '−'}{fmt(Math.abs(netWorth))}</span>
-                    </div>
-                  </>
-                )}
+                {totalAssets > 0 && (<>
+                  <div className="text-xs mb-2" style={{ color: 'var(--ink3)' }}>Debt-to-Asset Ratio</div>
+                  <div className="h-2.5 rounded-full overflow-hidden mb-1" style={{ background: 'var(--line)' }}>
+                    <div className="h-full rounded-full transition-all" style={{ width:`${Math.min(pct(totalLiab,totalAssets),100)}%`, background: totalLiab/totalAssets>0.5?'var(--rouge)':totalLiab/totalAssets>0.3?'#C4A464':'var(--emerald)' }} />
+                  </div>
+                  <div className="flex justify-between text-xs" style={{ color: 'var(--ink3)' }}>
+                    <span>{pct(totalLiab,totalAssets)}% of assets</span>
+                    <span style={{ color: totalLiab/totalAssets>0.5?'var(--rouge)':totalLiab/totalAssets>0.3?'#C4A464':'var(--emerald)' }}>
+                      {totalLiab/totalAssets>0.5?'High':totalLiab/totalAssets>0.3?'Moderate':'Healthy'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-3 font-serif text-xl mt-3" style={{ color: netWorth>=0?'var(--emerald)':'var(--rouge)', borderTop: '1px solid var(--line)' }}>
+                    <span className="text-sm font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Worth</span>
+                    <span>{netWorth>=0?'':'−'}{fmt(Math.abs(netWorth))}</span>
+                  </div>
+                </>)}
               </div>
             </div>
           </div>
         )}
 
-        {/* ═══ RISK ══════════════════════════════════════════════════ */}
         {activeSection === 'risk' && (
-          <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr 340px', gap: 20, alignItems: 'start' }}>
-            {/* P1 Risk */}
+          <div style={{ display: 'grid', gridTemplateColumns: isCouple?'1fr 1fr':'1fr 340px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-5">
-              {isCouple && <div className="text-sm font-medium px-4 py-2" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{client.name}</div>}
+              {isCouple && <div className="text-sm font-medium px-4 py-2" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{clientName}</div>}
               <Card title="Risk Tolerance">
                 <Lbl>Risk Profile</Lbl>
                 <div className="flex gap-2 mt-1">
-                  {['Conservative', 'Moderate', 'Balanced', 'Growth', 'Aggressive'].map(r => (
-                    <button key={r} onClick={() => updP('person1', 'risk_profile', r)} className="flex-1 py-2.5 text-xs font-medium"
-                      style={{ border: p1.risk_profile === r ? `1.5px solid ${RISK_COLORS[r]}` : '1px solid var(--line)', background: p1.risk_profile === r ? RISK_COLORS[r] + '18' : 'white', color: p1.risk_profile === r ? RISK_COLORS[r] : 'var(--ink3)' }}>
-                      {r}
-                    </button>
+                  {['Conservative','Moderate','Balanced','Growth','Aggressive'].map(r=>(
+                    <button key={r} onClick={()=>updP('person1','risk_profile',r)} className="flex-1 py-2.5 text-xs font-medium"
+                      style={{ border:p1.risk_profile===r?`1.5px solid ${RISK_COLORS[r]}`:'1px solid var(--line)', background:p1.risk_profile===r?RISK_COLORS[r]+'18':'white', color:p1.risk_profile===r?RISK_COLORS[r]:'var(--ink3)' }}>{r}</button>
                   ))}
                 </div>
               </Card>
               <Card title="Investment Experience">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <Sel label="Experience" value={p1.investment_experience} onChange={v => updP('person1', 'investment_experience', v)} options={['None', 'Beginner (<2yr)', 'Intermediate (2-5yr)', 'Experienced (5-10yr)', 'Advanced (10+yr)']} />
-                  <Sel label="Horizon" value={p1.investment_horizon} onChange={v => updP('person1', 'investment_horizon', v)} options={['Short (<3yr)', 'Medium (3-7yr)', 'Long (7-15yr)', 'Very Long (15+yr)']} />
+                  <Sel label="Experience" value={p1.investment_experience} onChange={v=>updP('person1','investment_experience',v)} options={['None','Beginner (<2yr)','Intermediate (2-5yr)','Experienced (5-10yr)','Advanced (10+yr)']} />
+                  <Sel label="Horizon" value={p1.investment_horizon} onChange={v=>updP('person1','investment_horizon',v)} options={['Short (<3yr)','Medium (3-7yr)','Long (7-15yr)','Very Long (15+yr)']} />
                 </div>
               </Card>
             </div>
-            {/* P2 Risk or summary */}
             {isCouple ? (
               <div className="space-y-5">
-                <div className="text-sm font-medium px-4 py-2" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{spouse?.name || 'Spouse'}</div>
+                <div className="text-sm font-medium px-4 py-2" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{spouseName}</div>
                 <Card title="Risk Tolerance">
                   <Lbl>Risk Profile</Lbl>
                   <div className="flex gap-2 mt-1">
-                    {['Conservative', 'Moderate', 'Balanced', 'Growth', 'Aggressive'].map(r => (
-                      <button key={r} onClick={() => updP('person2', 'risk_profile', r)} className="flex-1 py-2.5 text-xs font-medium"
-                        style={{ border: p2.risk_profile === r ? `1.5px solid ${RISK_COLORS[r]}` : '1px solid var(--line)', background: p2.risk_profile === r ? RISK_COLORS[r] + '18' : 'white', color: p2.risk_profile === r ? RISK_COLORS[r] : 'var(--ink3)' }}>
-                        {r}
-                      </button>
+                    {['Conservative','Moderate','Balanced','Growth','Aggressive'].map(r=>(
+                      <button key={r} onClick={()=>updP('person2','risk_profile',r)} className="flex-1 py-2.5 text-xs font-medium"
+                        style={{ border:p2.risk_profile===r?`1.5px solid ${RISK_COLORS[r]}`:'1px solid var(--line)', background:p2.risk_profile===r?RISK_COLORS[r]+'18':'white', color:p2.risk_profile===r?RISK_COLORS[r]:'var(--ink3)' }}>{r}</button>
                     ))}
                   </div>
                 </Card>
                 <Card title="Investment Experience">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                    <Sel label="Experience" value={p2.investment_experience} onChange={v => updP('person2', 'investment_experience', v)} options={['None', 'Beginner (<2yr)', 'Intermediate (2-5yr)', 'Experienced (5-10yr)', 'Advanced (10+yr)']} />
-                    <Sel label="Horizon" value={p2.investment_horizon} onChange={v => updP('person2', 'investment_horizon', v)} options={['Short (<3yr)', 'Medium (3-7yr)', 'Long (7-15yr)', 'Very Long (15+yr)']} />
+                    <Sel label="Experience" value={p2.investment_experience} onChange={v=>updP('person2','investment_experience',v)} options={['None','Beginner (<2yr)','Intermediate (2-5yr)','Experienced (5-10yr)','Advanced (10+yr)']} />
+                    <Sel label="Horizon" value={p2.investment_horizon} onChange={v=>updP('person2','investment_horizon',v)} options={['Short (<3yr)','Medium (3-7yr)','Long (7-15yr)','Very Long (15+yr)']} />
                   </div>
                 </Card>
               </div>
@@ -1223,90 +1177,88 @@ export default function FactFindingPage() {
               p1.risk_profile && (
                 <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                   <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Profile</div>
-                  <div className="font-serif text-2xl mb-2" style={{ color: RISK_COLORS[p1.risk_profile] || 'var(--ink)' }}>{p1.risk_profile}</div>
+                  <div className="font-serif text-2xl mb-2" style={{ color: RISK_COLORS[p1.risk_profile]||'var(--ink)' }}>{p1.risk_profile}</div>
                   <div className="text-xs leading-relaxed" style={{ color: 'var(--ink2)' }}>
-                    {p1.risk_profile === 'Conservative' && 'Preserves capital. Bonds, money markets, fixed deposits.'}
-                    {p1.risk_profile === 'Moderate' && 'Accepts modest fluctuations. Balanced mix of bonds and equities.'}
-                    {p1.risk_profile === 'Balanced' && 'Comfortable with medium-term volatility. Diversified portfolio.'}
-                    {p1.risk_profile === 'Growth' && 'Capital appreciation focus. Higher equity allocation.'}
-                    {p1.risk_profile === 'Aggressive' && 'Maximum growth. Predominantly equities incl. emerging markets.'}
+                    {p1.risk_profile==='Conservative'&&'Preserves capital. Bonds, money markets, fixed deposits.'}
+                    {p1.risk_profile==='Moderate'&&'Accepts modest fluctuations. Balanced mix of bonds and equities.'}
+                    {p1.risk_profile==='Balanced'&&'Comfortable with medium-term volatility. Diversified portfolio.'}
+                    {p1.risk_profile==='Growth'&&'Capital appreciation focus. Higher equity allocation.'}
+                    {p1.risk_profile==='Aggressive'&&'Maximum growth. Predominantly equities incl. emerging markets.'}
                   </div>
-                  {p1.investment_horizon && <div className="mt-3 pt-3 text-xs" style={{ borderTop: '1px solid var(--line)', color: 'var(--ink3)' }}>Horizon: <span style={{ color: 'var(--ink2)', fontWeight: 500 }}>{p1.investment_horizon}</span></div>}
+                  {p1.investment_horizon&&<div className="mt-3 pt-3 text-xs" style={{ borderTop:'1px solid var(--line)',color:'var(--ink3)' }}>Horizon: <span style={{ color:'var(--ink2)',fontWeight:500 }}>{p1.investment_horizon}</span></div>}
                 </div>
               )
             )}
           </div>
         )}
 
-        {/* ═══ HEALTH ════════════════════════════════════════════════ */}
         {activeSection === 'health' && (
-          <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr 340px', gap: 20, alignItems: 'start' }}>
-            {[{ person: 'person1' as const, p: p1, name: client.name, age: age1 }, ...(isCouple ? [{ person: 'person2' as const, p: p2, name: spouse?.name || 'Spouse', age: age2 }] : [])].map(({ person, p, name }) => (
-              <Card key={person} title="Health Declarations" subtitle={isCouple ? name : undefined}>
+          <div style={{ display: 'grid', gridTemplateColumns: isCouple?'1fr 1fr':'1fr 340px', gap: 20, alignItems: 'start' }}>
+            {[{person:'person1' as const,p:p1,name:clientName},...(isCouple?[{person:'person2' as const,p:p2,name:spouseName}]:[])].map(({person,p,name})=>(
+              <Card key={person} title="Health Declarations" subtitle={isCouple?name:undefined}>
                 <div className="space-y-5">
                   <div>
                     <Lbl>Smoking Status</Lbl>
                     <div className="flex gap-3 mt-1">
-                      {[{ label: 'Non-Smoker', val: false }, { label: 'Smoker', val: true }].map(opt => (
-                        <button key={opt.label} onClick={() => updP(person, 'smoker', opt.val)} className="px-5 py-2.5 text-sm"
-                          style={{ border: p.smoker === opt.val ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: p.smoker === opt.val ? 'var(--gold-l)' : 'white', color: p.smoker === opt.val ? 'var(--gold-tag)' : 'var(--ink3)' }}>
+                      {[{label:'Non-Smoker',val:false},{label:'Smoker',val:true}].map(opt=>(
+                        <button key={opt.label} onClick={()=>updP(person,'smoker',opt.val)} className="px-5 py-2.5 text-sm"
+                          style={{ border:p.smoker===opt.val?'1.5px solid var(--gold)':'1px solid var(--line)', background:p.smoker===opt.val?'var(--gold-l)':'white', color:p.smoker===opt.val?'var(--gold-tag)':'var(--ink3)' }}>
                           {opt.label}
                         </button>
                       ))}
                     </div>
-                    {p.smoker && <div className="mt-2 text-xs px-3 py-2" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)' }}>Smoker loadings ~25–50% on life and CI premiums.</div>}
+                    {p.smoker&&<div className="mt-2 text-xs px-3 py-2" style={{ background:'var(--rouge-l)',color:'var(--rouge)' }}>Smoker loadings ~25–50% on life and CI premiums.</div>}
                   </div>
                   <div>
                     <Lbl>Pre-existing Conditions</Lbl>
-                    <textarea value={p.pre_existing ?? ''} onChange={e => updP(person, 'pre_existing', e.target.value)} rows={4}
+                    <textarea value={p.pre_existing??''} onChange={e=>updP(person,'pre_existing',e.target.value)} rows={4}
                       placeholder="Conditions, surgeries, medications, family history…"
                       className="w-full px-3 py-2.5 text-sm outline-none resize-none"
-                      style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-                      onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                      onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                      style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
+                      onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
+                      onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
                   </div>
                 </div>
               </Card>
             ))}
-            {!isCouple && (
-              <div style={{ background: 'var(--gold-l)', border: '1px solid rgba(168,131,74,0.2)', padding: '16px 20px' }}>
-                <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--gold-tag)' }}>Disclosure Reminder</div>
-                <div className="text-xs leading-relaxed" style={{ color: 'var(--ink2)' }}>Clients are under duty of disclosure. Non-disclosure may result in policy avoidance. If in doubt, declare.</div>
+            {!isCouple&&(
+              <div style={{ background:'var(--gold-l)',border:'1px solid rgba(168,131,74,0.2)',padding:'16px 20px' }}>
+                <div className="text-xs tracking-widest uppercase mb-1" style={{ color:'var(--gold-tag)' }}>Disclosure Reminder</div>
+                <div className="text-xs leading-relaxed" style={{ color:'var(--ink2)' }}>Clients are under duty of disclosure. Non-disclosure may result in policy avoidance. If in doubt, declare.</div>
               </div>
             )}
           </div>
         )}
 
-        {/* ═══ NOTES ═════════════════════════════════════════════════ */}
         {activeSection === 'notes' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
             <Card title="Advisor Notes" subtitle="Private — not shared with client">
-              <textarea value={ff.advisor_notes ?? ''} onChange={e => upd('advisor_notes', e.target.value)} rows={14}
+              <textarea value={ff.advisor_notes??''} onChange={e=>upd('advisor_notes',e.target.value)} rows={14}
                 placeholder="Observations, priorities, follow-up items, next steps…"
                 className="w-full px-3 py-2.5 text-sm outline-none resize-none"
-                style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
+                onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
+                onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
             </Card>
-            <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-              <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Summary</div>
+            <div style={{ background:'white',border:'1px solid var(--line)',padding:'20px 24px' }}>
+              <div className="text-xs tracking-widest uppercase mb-3" style={{ color:'var(--ink3)' }}>Summary</div>
               {[
-                { label: 'Mode', val: isCouple ? 'Couple' : 'Single' },
-                { label: 'Client Gross/mo', val: p1.gross_monthly ? fmt(p1.gross_monthly) : '—' },
-                { label: isCouple ? 'Spouse Gross/mo' : '', val: isCouple && p2.gross_monthly ? fmt(p2.gross_monthly) : '' },
-                { label: 'Combined Income/mo', val: moTotal > 0 ? fmt(moTotal) : '—' },
-                { label: 'Combined Income/yr', val: anTotal > 0 ? fmt(anTotal) : '—' },
-                { label: 'Total Expenses/mo', val: moExp > 0 ? fmt(moExp) : '—' },
-                { label: 'Net Surplus/yr', val: anTotal > 0 || anExp > 0 ? fmt(anTotal - anExp) : '—' },
-                { label: 'Total Assets', val: totalAssets > 0 ? fmt(totalAssets) : '—' },
-                { label: 'Total Liabilities', val: totalLiab > 0 ? fmt(totalLiab) : '—' },
-                { label: 'Net Worth', val: (totalAssets + totalLiab) > 0 ? fmt(netWorth) : '—' },
-                { label: 'Risk (Client)', val: p1.risk_profile || '—' },
-                { label: isCouple ? 'Risk (Spouse)' : '', val: isCouple ? (p2.risk_profile || '—') : '' },
-              ].filter(r => r.label).map(r => (
-                <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                  <span style={{ color: 'var(--ink3)' }}>{r.label}</span>
-                  <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{r.val}</span>
+                { label:'Mode', val:isCouple?'Couple':'Single' },
+                { label:'Client Gross/mo', val:p1.gross_monthly?fmt(p1.gross_monthly):'—' },
+                { label:isCouple?'Spouse Gross/mo':'', val:isCouple&&p2.gross_monthly?fmt(p2.gross_monthly):'' },
+                { label:'Combined Income/mo', val:moTotal>0?fmt(moTotal):'—' },
+                { label:'Combined Income/yr', val:anTotal>0?fmt(anTotal):'—' },
+                { label:'Total Expenses/mo', val:moExpNoCpf>0?fmt(moExpNoCpf):'—' },
+                { label:'Net Surplus/yr', val:anTotal>0||annExpNoCpf>0?fmt(anTotal-annExpNoCpf):'—' },
+                { label:'Total Assets', val:totalAssets>0?fmt(totalAssets):'—' },
+                { label:'Total Liabilities', val:totalLiab>0?fmt(totalLiab):'—' },
+                { label:'Net Worth', val:(totalAssets+totalLiab)>0?fmt(netWorth):'—' },
+                { label:'Risk (Client)', val:p1.risk_profile||'—' },
+                { label:isCouple?'Risk (Spouse)':'', val:isCouple?(p2.risk_profile||'—'):'' },
+              ].filter(r=>r.label).map(r=>(
+                <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom:'1px solid var(--line)' }}>
+                  <span style={{ color:'var(--ink3)' }}>{r.label}</span>
+                  <span style={{ color:'var(--ink)',fontWeight:500 }}>{r.val}</span>
                 </div>
               ))}
             </div>
