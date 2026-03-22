@@ -421,6 +421,7 @@ function CpfCard({ p, age, config, label }: { p: PersonData; age: number; config
             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div>
             <span style={{ color: 'var(--ink2)' }}>{r.label} (annual)</span>
           </div>
+          <div className="w-24"></div>
           <div className="w-28 text-right" style={{ color: r.color, fontWeight: 600 }}>{fmt(r.mo * 12)}</div>
         </div>
       ))}
