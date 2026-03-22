@@ -544,7 +544,7 @@ function PersonIncomePanel({ p, onChange, age, config, label }: {
       </div>
       {/* Employment */}
       <Card title="Employment">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div className="space-y-3">
           <Field label="Occupation" value={p.occupation} onChange={v => onChange('occupation', v)} placeholder="e.g. Engineer" />
           <Field label="Employer" value={p.employer} onChange={v => onChange('employer', v)} placeholder="e.g. DBS Bank" />
           <Sel label="Employment Type" value={p.employment_type} onChange={v => onChange('employment_type', v)}
@@ -557,7 +557,7 @@ function PersonIncomePanel({ p, onChange, age, config, label }: {
       </Card>
       {/* Salary */}
       <Card title="Gross Salary" subtitle="Before CPF deductions">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div className="space-y-3">
           <Field label="Gross Monthly" value={p.gross_monthly} onChange={v => onChange('gross_monthly', n(v))} type="number" prefix="$" placeholder="0" />
           <Field label="Gross Annual Bonus" value={p.gross_bonus} onChange={v => onChange('gross_bonus', n(v))} type="number" prefix="$" placeholder="0" hint="Total bonus/yr (AWS + variable)" />
         </div>
@@ -770,18 +770,25 @@ export default function FactFindingPage() {
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-5">
-            {[
-              { label: isCouple ? 'Combined/mo' : 'Income/mo', val: fmt(moTotal), color: '#C4A464' },
-              { label: 'Annual', val: fmt(anTotal), color: '#80C4A0' },
-              { label: 'Net Worth', val: netWorth !== 0 ? fmt(netWorth) : '—', color: netWorth >= 0 ? '#80C4A0' : '#E08080' },
-            ].map(s => (
-              <div key={s.label} className="text-right">
-                <div className="text-xs tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.28)', fontSize: 9 }}>{s.label}</div>
-                <div className="font-serif text-base mt-0.5" style={{ color: s.color }}>{s.val}</div>
-              </div>
-            ))}
-            <button onClick={save} disabled={saving} className="ml-3 px-5 py-2 text-sm font-medium"
+          <div className="ml-auto flex items-center">
+            <div className="flex items-stretch" style={{ borderRight: '1px solid rgba(255,255,255,0.08)', marginRight: 16 }}>
+              {[
+                { label: isCouple ? 'Combined/mo' : 'Income/mo', val: fmt(moTotal), color: '#C4A464' },
+                { label: 'Annual', val: fmt(anTotal), color: '#80C4A0' },
+                { label: 'Net Worth', val: netWorth !== 0 ? fmt(netWorth) : '—', color: netWorth >= 0 ? '#80C4A0' : '#E08080' },
+              ].map((s, idx, arr) => (
+                <div key={s.label} className="flex flex-col items-end justify-center"
+                  style={{ padding: '8px 22px', borderRight: idx < arr.length - 1 ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
+                  <div style={{ fontSize: 9, letterSpacing: '0.11em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.32)', marginBottom: 5 }}>
+                    {s.label}
+                  </div>
+                  <div className="font-serif" style={{ fontSize: 22, fontWeight: 300, lineHeight: 1, color: s.color, letterSpacing: '-0.01em' }}>
+                    {s.val}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={save} disabled={saving} className="px-5 py-2 text-sm font-medium"
               style={{ background: saved ? 'var(--emerald)' : saving ? 'rgba(255,255,255,0.1)' : 'rgba(168,131,74,0.9)', color: 'white', border: 'none' }}>
               {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save'}
             </button>
@@ -803,17 +810,18 @@ export default function FactFindingPage() {
         {/* ═══ INCOME ════════════════════════════════════════════════ */}
         {activeSection === 'income' && (
           isCouple ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-              <PersonIncomePanel p={p1} onChange={(k, v) => updP('person1', k, v)} age={age1} config={cpfConfig} label={`${client.name} (Client)`} />
-              <div>
-                <PersonIncomePanel p={p2} onChange={(k, v) => updP('person2', k, v)} age={age2} config={cpfConfig} label={`${spouse?.name || 'Spouse'}`} />
-                {/* CPF for P2 */}
-                <div className="mt-4"><CpfCard p={p2} age={age2} config={cpfConfig} label={spouse?.name || 'Spouse'} /></div>
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+                <div className="space-y-4">
+                  <PersonIncomePanel p={p1} onChange={(k, v) => updP('person1', k, v)} age={age1} config={cpfConfig} label={`${client.name} (Client)`} />
+                  <CpfCard p={p1} age={age1} config={cpfConfig} label={client.name} />
+                </div>
+                <div className="space-y-4">
+                  <PersonIncomePanel p={p2} onChange={(k, v) => updP('person2', k, v)} age={age2} config={cpfConfig} label={spouse?.name || 'Spouse'} />
+                  <CpfCard p={p2} age={age2} config={cpfConfig} label={spouse?.name || 'Spouse'} />
+                </div>
               </div>
-              {/* CPF for P1 below */}
-              <CpfCard p={p1} age={age1} config={cpfConfig} label={client.name} />
-              {/* Combined summary */}
-              <div style={{ background: 'white', border: '2px solid var(--gold)', padding: '20px 24px' }}>
+              <div style={{ background: 'white', border: '2px solid var(--gold)', padding: '20px 24px', marginTop: 24 }}>
                 <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--gold-tag)' }}>Combined Income Summary</div>
                 <div className="flex text-xs pb-2" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase' }}>
                   <div className="flex-1"></div>
