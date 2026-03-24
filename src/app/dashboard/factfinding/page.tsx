@@ -395,9 +395,12 @@ function PersonIncomePanel({ p, onChange, age, config, label }: { p: PersonData;
   const totalOther = otherIncomes.reduce((s, i) => s + (i.amount || 0), 0)
   const cpf = calcCpf(gross, bonus, age, p.citizenship || 'SC', p.pr_year || '3+', config)
   const isCpf = ['SC', 'PR'].includes(p.citizenship || 'SC')
-  const moEmployee = cpf.employee; const moTakeHome = cpf.takeHome; const moIncome = moTakeHome + totalOther
+  const moEmployee = cpf.employee
+  const moTakeHome = cpf.takeHome
+  const moIncome = moTakeHome + totalOther
   const anEmployee = moEmployee * 12 + (isCpf && cpf.tier ? Math.floor(bonus * cpf.tier.employee / 100) : 0)
-  const anTakeHome = cpf.annualTakeHome; const anIncome = anTakeHome + (totalOther * 12)
+  const anTakeHome = cpf.annualTakeHome
+  const anIncome = anTakeHome + (totalOther * 12)
   return (
     <div className="space-y-4">
       <div className="px-4 py-2 font-medium text-sm" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{label}</div>
