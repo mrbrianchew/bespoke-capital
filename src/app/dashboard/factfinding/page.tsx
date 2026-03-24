@@ -407,7 +407,16 @@ function PersonIncomePanel({ p, onChange, age, config, label }: { p: PersonData;
           <Field label="Employer" value={p.employer} onChange={v => onChange('employer', v)} placeholder="e.g. DBS Bank" />
           <Sel label="Employment Type" value={p.employment_type} onChange={v => onChange('employment_type', v)} options={['Employed','Self-Employed','Business Owner','Commission-Based','Retired','Student','Homemaker']} />
           <Sel label="Citizenship" value={p.citizenship} onChange={v => onChange('citizenship', v)} options={['SC','PR','Foreigner']} />
-          {p.citizenship === 'PR' && <Sel label="PR Status Year" value={p.pr_year} onChange={v => onChange('pr_year', v)} options={['1','2','3+']} />}
+         {p.citizenship === 'PR' && (
+            <div>
+              <Sel label="PR Status Year" value={p.pr_year} onChange={v => onChange('pr_year', v)} options={['1', '2', '3+']} />
+              <div className="mt-1.5 px-3 py-2 text-xs" style={{ background: 'var(--gold-l)', border: '1px solid rgba(168,131,74,0.2)', color: 'var(--gold-tag)', lineHeight: 1.6 }}>
+                {(!p.pr_year || p.pr_year === '1') && <span>Year 1 — Employee 5% / Employer 4% (reduced rates)</span>}
+                {p.pr_year === '2' && <span>Year 2 — Employee 15% / Employer 9% (graduated rates)</span>}
+                {p.pr_year === '3+' && <span>Year 3+ — Full SC rates: Employee 20% / Employer 17%</span>}
+              </div>
+            </div>
+          )}
         </div>
       </Card>
       <Card title="Gross Salary" subtitle="Before CPF deductions">
