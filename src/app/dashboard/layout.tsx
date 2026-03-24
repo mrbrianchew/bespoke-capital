@@ -8,11 +8,12 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
 const NAV = [
   { href: '/dashboard', label: 'Executive Summary', icon: '⊞', id: 'overview' },
-  { href: '/dashboard/factfinding', label: 'Client Discovery', icon: '◎', id: 'factfinding' },
-  { href: '/dashboard/protection', label: 'Asset Preservation', icon: '◈', id: 'protection' },
+  { href: '/dashboard/factfinding', label: 'Financial Profile', icon: '◎', id: 'factfinding' },
+  { href: '/dashboard/objectives', label: 'Strategic Objectives', icon: '◉', id: 'objectives' },
+  { href: '/dashboard/protection', label: 'Risk Management', icon: '◈', id: 'protection' },
   { href: '/dashboard/goals', label: 'Capital Mandate', icon: '◲', id: 'goals' },
-  { href: '/dashboard/recommendations', label: 'Strategic Proposals', icon: '◇', id: 'recommendations' },
-  { href: '/dashboard/report', label: 'Wealth Statement', icon: '⊡', id: 'report' },
+  { href: '/dashboard/recommendations', label: 'Strategic Recommendations', icon: '◇', id: 'recommendations' },
+  { href: '/dashboard/report', label: 'Financial Report', icon: '⊡', id: 'report' },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
