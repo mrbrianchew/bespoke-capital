@@ -312,7 +312,7 @@ function EditClientModal({ client, onClose, onSaved }: any) {
 }
 
 const RELATIONSHIPS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister', 'Grandfather', 'Grandmother', 'Others']
-const CITIZENSHIPS = ['Singapore Citizen', 'Singapore PR', 'Malaysia', 'China', 'India', 'Indonesia', 'Philippines', 'Myanmar', 'Other']
+const CITIZENSHIPS = ['Singapore Citizen', 'Singapore PR', 'Others']
 
 function MemberForm({ data, onChange }: any) {
   const derivedAge = data.dob ? ageFromDob(data.dob) : null
@@ -340,13 +340,27 @@ function MemberForm({ data, onChange }: any) {
             <option value="">—</option><option>Male</option><option>Female</option>
           </select>
         </div>
-        <div>
-          <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Citizenship</label>
-          <select value={data.citizenship} onChange={e => onChange({ ...data, citizenship: e.target.value })} className="w-full px-3 py-2.5 text-sm outline-none" style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}>
-            <option value="">—</option>
-            {CITIZENSHIPS.map(c => <option key={c}>{c}</option>)}
-          </select>
-        </div>
+      <div>
+  <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Citizenship</label>
+  <select
+    value={data.citizenship === 'Singapore Citizen' || data.citizenship === 'Singapore PR' || !data.citizenship ? data.citizenship : 'Others'}
+    onChange={e => onChange({ ...data, citizenship: e.target.value })}
+    className="w-full px-3 py-2.5 text-sm outline-none"
+    style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+  >
+    <option value="">—</option>
+    {CITIZENSHIPS.map(c => <option key={c}>{c}</option>)}
+  </select>
+  {data.citizenship !== 'Singapore Citizen' && data.citizenship !== 'Singapore PR' && !!data.citizenship && (
+    <input
+      value={data.citizenship === 'Others' ? '' : data.citizenship}
+      onChange={e => onChange({ ...data, citizenship: e.target.value })}
+      className="w-full px-3 py-2.5 text-sm outline-none mt-2"
+      style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+      placeholder="Enter citizenship…"
+    />
+  )}
+</div>
       </div>
       <div>
         <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Date of Birth</label>
