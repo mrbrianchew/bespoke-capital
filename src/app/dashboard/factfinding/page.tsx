@@ -131,8 +131,7 @@ function fmtCurrency(val?: number): string {
 }
 
 function sectionCompletion(section: string, data: AllSections): number {
-  const d = data as Record<string, Record<string, unknown>>
-  const s = d[section]
+const s = (data as Record<string, unknown>)[section] as Record<string, unknown> | undefined
   if (!s) return 0
   const vals = Object.values(s).filter(v => v !== undefined && v !== '' && v !== null)
   const total = Object.keys(s).length || 1
