@@ -111,6 +111,7 @@ interface AllSections {
   education: EducationData
   estate: EstateData
   planningMode?: 'individual' | 'couple'
+  [key: string]: unknown
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -131,11 +132,10 @@ function fmtCurrency(val?: number): string {
 }
 
 function sectionCompletion(section: string, data: AllSections): number {
-  const d = data as Record<string, Record<string, unknown>>
-  const s = d[section]
-  if (!s) return 0
-  const vals = Object.values(s).filter(v => v !== undefined && v !== '' && v !== null)
-  const total = Object.keys(s).length || 1
+  const s = data[section] as Record<string, unknown> | undefined
+  if (!s || typeof s !== 'object') return 0
+  const vals = Object.values(s as Record<string, unknown>).filter(v => v !== undefined && v !== '' && v !== null)
+  const total = Object.keys(s as Record<string, unknown>).length || 1
   return Math.round((vals.length / total) * 100)
 }
 
@@ -295,8 +295,9 @@ export default function ObjectivesPage() {
       const updated = { ...prev[section] as Record<string, unknown>, [field]: value }
       const updatedAll = { ...prev, [section]: updated }
 
-      if (debounceRef.current[section]) clearTimeout(debounceRef.current[section])
-      debounceRef.current[section] = setTimeout(() => {
+      const sectionKey = section as string
+      if (debounceRef.current[sectionKey]) clearTimeout(debounceRef.current[sectionKey])
+      debounceRef.current[sectionKey] = setTimeout(() => {
         saveSection(section, updated)
       }, 800)
 
