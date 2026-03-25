@@ -1,1317 +1,1278 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
-interface OtherIncomeItem { label: string; amount: number }
-interface CustomAssetItem { label: string; amount: number }
-interface CustomExpenseItem { label: string; amount: number; amount2?: number }
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-interface PersonData {
-  occupation?: string; employer?: string; employment_type?: string
-  citizenship?: string; pr_year?: string
-  gross_monthly?: number; gross_bonus?: number; other_incomes?: OtherIncomeItem[]
-  risk_profile?: string; investment_experience?: string; investment_horizon?: string
-  smoker?: boolean; pre_existing?: string
+interface ClientData {
+  id: string
+  full_name: string
+  date_of_birth?: string
+  advisor_id: string
 }
 
-interface FactFinding {
-  client_id: string; mode?: 'single' | 'couple'; person1?: PersonData; person2?: PersonData
-  expense_mode?: 'simple' | 'detailed'
-  s_financial?: number; s2_financial?: number
-  s_cpf_oa?: number;   s2_cpf_oa?: number
-  s_mortgage?: number; s2_mortgage?: number
-  s_household?: number; s2_household?: number
-  s_personal?: number; s2_personal?: number
-  s_children?: number; s2_children?: number
-  s_lifestyle?: number; s2_lifestyle?: number
-  d_mortgage_cpf?: number; d_mortgage_cash?: number; d_vehicle_repay?: number
-  d_personal_loan_repay?: number; d_rental_expense?: number; d_income_tax?: number
-  d_insurance?: number; d_regular_savings?: number
-  d_conservancy?: number; d_utilities?: number; d_family_food?: number
-  d_maid?: number; d_other_household?: number
-  d_personal_food?: number; d_transport?: number; d_car_petrol?: number; d_car_insurance?: number
-  d_childcare?: number; d_school_fees?: number; d_school_transport?: number
-  d_allowance_children?: number; d_other_children?: number
-  d_holidays?: number; d_hobbies?: number; d_allowance_parents?: number; d_others_lifestyle?: number
-  d2_mortgage_cpf?: number; d2_mortgage_cash?: number; d2_vehicle_repay?: number
-  d2_personal_loan_repay?: number; d2_rental_expense?: number; d2_income_tax?: number
-  d2_insurance?: number; d2_regular_savings?: number
-  d2_conservancy?: number; d2_utilities?: number; d2_family_food?: number
-  d2_maid?: number; d2_other_household?: number
-  d2_personal_food?: number; d2_transport?: number; d2_car_petrol?: number; d2_car_insurance?: number
-  d2_childcare?: number; d2_school_fees?: number; d2_school_transport?: number
-  d2_allowance_children?: number; d2_other_children?: number
-  d2_holidays?: number; d2_hobbies?: number; d2_allowance_parents?: number; d2_others_lifestyle?: number
-  d_custom_financial?: CustomExpenseItem[]; d_custom_household?: CustomExpenseItem[]
-  d_custom_personal?: CustomExpenseItem[]; d_custom_children?: CustomExpenseItem[]
-  d_custom_lifestyle?: CustomExpenseItem[]
-  a_savings?: number; a_fixed_deposit?: number
-  a_cpf_oa?: number; a_cpf_sa?: number; a_cpf_ma?: number; a_cpf_ra?: number
-  a_srs?: number; a_shares?: number; a_etf?: number; a_unit_trust?: number
-  a_bonds?: number; a_alternatives?: number
-  a_inv_property_res?: number; a_inv_property_com?: number; a_business?: number
-  a_residential?: number; a_vehicles?: number; a_club?: number
-  a_cash_custom?: CustomAssetItem[]; a_invested_custom?: CustomAssetItem[]; a_personal_custom?: CustomAssetItem[]
-  l_credit_card?: number; l_business_loan?: number; l_renovation_st?: number
-  l_mortgage_residing?: number; l_mortgage_investment?: number; l_car_loan?: number
-  l_study_loan?: number; l_personal_loan?: number; l_renovation_lt?: number
-  l_lt_custom?: CustomAssetItem[]; l_st_custom?: CustomAssetItem[]
-  advisor_notes?: string
+interface FamilyMember {
+  id: string
+  client_id: string
+  name: string
+  relationship: string
+  date_of_birth?: string
+  age?: number
 }
 
-interface Client { id: string; name: string; age?: number; citizenship?: string; dob?: string }
-interface FamilyMember { id: string; name: string; relationship: string; age?: number }
-interface CpfTier { max_age: number; employee: number; employer: number; oa: number; sa: number; ma: number }
-interface CpfConfig { ow_ceiling: number; annual_ceiling: number; effective_date: string; sc_rates: CpfTier[] }
-
-const DEFAULT_CPF_CONFIG: CpfConfig = {
-  ow_ceiling: 8000, annual_ceiling: 102000, effective_date: '2026-01-01',
-  sc_rates: [
-    { max_age: 35,  employee: 20,   employer: 17,   oa: 23,   sa: 6,    ma: 8    },
-    { max_age: 45,  employee: 20,   employer: 17,   oa: 21,   sa: 7,    ma: 9    },
-    { max_age: 50,  employee: 20,   employer: 17,   oa: 19,   sa: 8,    ma: 10   },
-    { max_age: 55,  employee: 20,   employer: 17,   oa: 15,   sa: 11.5, ma: 10.5 },
-    { max_age: 60,  employee: 18,   employer: 16,   oa: 12,   sa: 3.5,  ma: 10.5 },
-    { max_age: 65,  employee: 14.5, employer: 15.5, oa: 3.5,  sa: 0.5,  ma: 10.5 },
-    { max_age: 70,  employee: 7.5,  employer: 9,    oa: 1,    sa: 0,    ma: 7.5  },
-    { max_age: 999, employee: 5,    employer: 7.5,  oa: 1,    sa: 0,    ma: 6.5  },
-  ],
+interface ProtectionData {
+  monthlyIncomeClient?: number
+  monthlyIncomeSpouse?: number
+  monthlyHouseholdExpenses?: number
+  monthlyMortgageRent?: number
+  outstandingMortgage?: number
+  otherLoans?: number
+  yearsToClearMortgage?: number
+  incomeReplacementClient?: number
+  incomeReplacementSpouse?: number
+  yearsOfCoverage?: number
+  ciRecoveryPeriod?: string
+  lifeCoverClient?: number
+  lifeCoverSpouse?: number
+  ciCoverClient?: number
+  ciCoverSpouse?: number
+  disabilityIncomeClient?: number
+  disabilityIncomeSpouse?: number
+  advisorNotes?: string
 }
 
-const PR_YEAR1_RATES: CpfTier[] = [
-  { max_age: 35,  employee: 5,   employer: 4,   oa: 3.5, sa: 1,   ma: 4.5 },
-  { max_age: 45,  employee: 5,   employer: 4,   oa: 3.5, sa: 1,   ma: 4.5 },
-  { max_age: 50,  employee: 5,   employer: 4,   oa: 3.5, sa: 1,   ma: 4.5 },
-  { max_age: 55,  employee: 5,   employer: 4,   oa: 3.5, sa: 1,   ma: 4.5 },
-  { max_age: 60,  employee: 5,   employer: 4,   oa: 2.5, sa: 0,   ma: 6.5 },
-  { max_age: 65,  employee: 5,   employer: 4,   oa: 1,   sa: 0,   ma: 8   },
-  { max_age: 70,  employee: 5,   employer: 4,   oa: 1,   sa: 0,   ma: 8   },
-  { max_age: 999, employee: 5,   employer: 4,   oa: 1,   sa: 0,   ma: 8   },
-]
-
-const PR_YEAR2_RATES: CpfTier[] = [
-  { max_age: 35,  employee: 15,  employer: 9,   oa: 12.5, sa: 3.5, ma: 8    },
-  { max_age: 45,  employee: 15,  employer: 9,   oa: 11,   sa: 4,   ma: 9    },
-  { max_age: 50,  employee: 15,  employer: 9,   oa: 9.5,  sa: 4.5, ma: 10   },
-  { max_age: 55,  employee: 15,  employer: 9,   oa: 8.5,  sa: 6,   ma: 9.5  },
-  { max_age: 60,  employee: 12,  employer: 7,   oa: 6.5,  sa: 2,   ma: 10.5 },
-  { max_age: 65,  employee: 9.5, employer: 8.5, oa: 2,    sa: 0.5, ma: 9.5  },
-  { max_age: 70,  employee: 5,   employer: 6.5, oa: 1,    sa: 0,   ma: 6.5  },
-  { max_age: 999, employee: 5,   employer: 6,   oa: 1,    sa: 0,   ma: 6    },
-]
-
-function getCpfTier(age: number, citizenship: string, prYear: string, config: CpfConfig): CpfTier | null {
-  if (!['SC','PR'].includes(citizenship)) return null
-  let tiers = config.sc_rates
-  if (citizenship === 'PR') {
-    if (prYear === '1') tiers = PR_YEAR1_RATES
-    else if (prYear === '2') tiers = PR_YEAR2_RATES
-  }
-  return tiers.find(t => age <= t.max_age) || tiers[tiers.length - 1]
+interface AccumulationData {
+  monthlySurplus?: number
+  lumpSumAvailable?: number
+  currentInvestments?: number
+  riskAppetite?: string
+  investmentTimeHorizon?: string
+  expectedReturnRate?: number
+  financialGoals?: string[]
+  advisorNotes?: string
 }
 
-function calcCpf(gross: number, bonus: number, age: number, citizenship: string, prYear: string, config: CpfConfig) {
-  const tier = getCpfTier(age, citizenship, prYear, config)
-  if (!tier) return { employee: 0, employer: 0, takeHome: gross, annualTakeHome: gross * 12 + bonus, owBase: 0, tier: null, oa: 0, sa: 0, ma: 0 }
-  const owBase = Math.min(gross, config.ow_ceiling)
-  const employee = Math.floor(owBase * tier.employee / 100)
-  const employer = Math.round(owBase * tier.employer / 100)
-  const total = employee + employer
-  const oa = Math.round(owBase * tier.oa / 100)
-  const sa = Math.round(owBase * tier.sa / 100)
-  const ma = Math.max(total - oa - sa, 0)
-  const takeHome = gross - employee
-  const bonusCpfEmp = Math.floor(bonus * tier.employee / 100)
-  const annualTakeHome = takeHome * 12 + (bonus - bonusCpfEmp)
-  return { employee, employer, takeHome, annualTakeHome, owBase, tier, oa, sa, ma }
+interface RetirementData {
+  retirementAgeClient?: number
+  retirementAgeSpouse?: number
+  lifeExpectancyClient?: number
+  lifeExpectancySpouse?: number
+  monthlyRetirementIncomeClient?: number
+  monthlyRetirementIncomeSpouse?: number
+  inflationRate?: number
+  postRetirementReturn?: number
+  leaveALegacy?: string
+  legacyAmountTarget?: number
+  continueCpfInRetirement?: string
+  advisorNotes?: string
 }
 
-// Singapore benchmarks as % of gross income (DOS HES)
-const BENCHMARKS_PCT: Record<string, number> = {
-  financial: 18, cpf_oa: 12, mortgage: 10, household: 14, personal: 7, children: 5, lifestyle: 4,
+interface ChildEducation {
+  childId: string
+  name: string
+  currentAge: number
+  studyDestination?: string
+  courseDuration?: number
+  estimatedTotalCost?: number
+  currentSavings?: number
+  monthlySavings?: number
+  protectionOnFund?: string
 }
 
-const fmt = (n: number) => {
-  if (n === undefined || n === null || isNaN(n) || !isFinite(n)) return 'S$0'
-  return 'S$' + Math.round(n).toLocaleString()
-}
-const pct = (n: number, t: number) => t > 0 ? Math.round((n / t) * 100) : 0
-
-const EXP_CATEGORIES = [
-  { id: 'financial', label: 'Financial Obligations',   color: '#E08080', hint: 'Income tax, insurance premiums, regular investments/savings', key: 's_financial' as const, key2: 's2_financial' as const },
-  { id: 'cpf_oa',   label: 'Mortgage (CPF OA)',        color: '#5A8A6A', hint: 'Home loan repayment via CPF Ordinary Account',              key: 's_cpf_oa'   as const, key2: 's2_cpf_oa'   as const },
-  { id: 'mortgage', label: 'Mortgage / Rent (Cash)',   color: '#C4A464', hint: 'Cash home loan repayment, rental payments',                 key: 's_mortgage' as const, key2: 's2_mortgage' as const },
-  { id: 'household',label: 'Household & Living',       color: '#4A7C9E', hint: 'Conservancy fees, utilities, groceries, maid salary',       key: 's_household'as const, key2: 's2_household'as const },
-  { id: 'personal', label: 'Personal Expenses',        color: '#7A6AAA', hint: 'Personal food & dining, transport, car expenses',           key: 's_personal' as const, key2: 's2_personal' as const },
-  { id: 'children', label: 'Children Expenses',        color: 'var(--emerald)', hint: 'Childcare, school & tuition fees, transport, pocket money', key: 's_children' as const, key2: 's2_children' as const },
-  { id: 'lifestyle',label: 'Lifestyle & Miscellaneous',color: '#9A7C5A', hint: 'Holidays, hobbies, allowance to parents, donations, shopping', key: 's_lifestyle'as const, key2: 's2_lifestyle'as const },
-]
-
-const SECTIONS = [
-  { id: 'income',      label: 'Income',      icon: '◈' },
-  { id: 'expenses',    label: 'Expenses',    icon: '◉' },
-  { id: 'assets',      label: 'Assets',      icon: '◲' },
-  { id: 'liabilities', label: 'Liabilities', icon: '◇' },
-  { id: 'risk',        label: 'Risk Profile',icon: '◎' },
-  { id: 'health',      label: 'Health',      icon: '⊞' },
-  { id: 'notes',       label: 'Notes',       icon: '⊡' },
-]
-
-function Lbl({ children }: { children: React.ReactNode }) {
-  return <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>{children}</label>
+interface EducationData {
+  children?: ChildEducation[]
+  advisorNotes?: string
 }
 
-function Field({ label, value, onChange, type = 'text', prefix, placeholder, hint }: {
-  label: string; value: string | number | undefined; onChange: (v: string) => void
-  type?: string; prefix?: string; placeholder?: string; hint?: string
-}) {
-  return (
-    <div>
-      <Lbl>{label}</Lbl>
-      <div className="relative">
-        {prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--ink3)' }}>{prefix}</span>}
-        <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-          className="w-full px-3 py-2.5 text-sm outline-none"
-          style={{ paddingLeft: prefix ? 28 : 12, border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-          onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-          onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-      </div>
-      {hint && <div className="text-xs mt-1" style={{ color: 'var(--ink3)' }}>{hint}</div>}
-    </div>
-  )
+interface EstateData {
+  willClient?: string
+  willSpouse?: string
+  willLastUpdatedClient?: string
+  willLastUpdatedSpouse?: string
+  preferredGuardian?: string
+  trustSetUp?: string
+  trustPurposeNotes?: string
+  policyNominationsClient?: string
+  policyNominationsSpouse?: string
+  cpfNominationClient?: string
+  cpfNominationSpouse?: string
+  lpaClient?: string
+  lpaSpouse?: string
+  doneeClient?: string
+  doneeSpouse?: string
+  advisorNotes?: string
 }
 
-function Sel({ label, value, onChange, options }: { label: string; value: string | undefined; onChange: (v: string) => void; options: string[] }) {
-  return (
-    <div>
-      <Lbl>{label}</Lbl>
-      <select value={value ?? ''} onChange={e => onChange(e.target.value)} className="w-full px-3 py-2.5 text-sm outline-none"
-        style={{ border: '1px solid var(--line)', background: 'white', color: value ? 'var(--ink)' : 'var(--ink3)' }}
-        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}>
-        <option value="">— Select —</option>
-        {options.map(o => <option key={o}>{o}</option>)}
-      </select>
-    </div>
-  )
+interface AllSections {
+  protection: ProtectionData
+  accumulation: AccumulationData
+  retirement: RetirementData
+  education: EducationData
+  estate: EstateData
+  planningMode?: 'individual' | 'couple'
 }
 
-function Card({ title, subtitle, children, right }: { title: string; subtitle?: string; children: React.ReactNode; right?: React.ReactNode }) {
-  return (
-    <div style={{ background: 'white', border: '1px solid var(--line)' }}>
-      <div className="px-6 py-4 flex items-start justify-between" style={{ borderBottom: '1px solid var(--line)' }}>
-        <div>
-          <div className="font-serif text-lg" style={{ color: 'var(--ink)' }}>{title}</div>
-          {subtitle && <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>{subtitle}</div>}
-        </div>
-        {right}
-      </div>
-      <div className="px-6 py-5">{children}</div>
-    </div>
-  )
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function calcAge(dob?: string): number {
+  if (!dob) return 0
+  const birth = new Date(dob)
+  const now = new Date()
+  let age = now.getFullYear() - birth.getFullYear()
+  const m = now.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--
+  return age
 }
 
-function LiabilityDonut({ items }: { items: { label: string; val: number; color: string }[] }) {
-  const total = items.reduce((s, i) => s + i.val, 0)
-  if (total === 0) return <div className="text-xs text-center py-4" style={{ color: 'var(--ink3)' }}>No liabilities entered</div>
-  let cumPct = 0
-  const segments = items.filter(i => i.val > 0).map(i => {
-    const p = (i.val / total) * 100; const start = cumPct; cumPct += p
-    return { ...i, pct: p, start }
+function fmtCurrency(val?: number): string {
+  if (!val) return '—'
+  return `S$${val.toLocaleString('en-SG')}`
+}
+
+function sectionCompletion(section: string, data: AllSections): number {
+  const d = data as Record<string, Record<string, unknown>>
+  const s = d[section]
+  if (!s) return 0
+  const vals = Object.values(s).filter(v => v !== undefined && v !== '' && v !== null)
+  const total = Object.keys(s).length || 1
+  return Math.round((vals.length / total) * 100)
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export default function ObjectivesPage() {
+  const supabase = createClient()
+  const [userId, setUserId] = useState<string | null>(null)
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  const [client, setClient] = useState<ClientData | null>(null)
+  const [spouse, setSpouse] = useState<FamilyMember | null>(null)
+  const [children, setChildren] = useState<FamilyMember[]>([])
+  const [planningMode, setPlanningMode] = useState<'individual' | 'couple'>('individual')
+  const [activeSection, setActiveSection] = useState<number>(0)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const [data, setData] = useState<AllSections>({
+    protection: {},
+    accumulation: {},
+    retirement: {},
+    education: {},
+    estate: {},
+    planningMode: 'individual',
   })
-  const r = 40, cx = 50, cy = 50, stroke = 22, circ = 2 * Math.PI * r
-  return (
-    <div>
-      <div className="flex justify-center mb-3">
-        <svg viewBox="0 0 100 100" width={120} height={120}>
-          {segments.map((s, i) => (
-            <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth={stroke}
-              strokeDasharray={`${(s.pct / 100) * circ} ${circ}`}
-              strokeDashoffset={-((s.start / 100) * circ)}
-              style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }} />
-          ))}
-          <text x="50" y="54" textAnchor="middle" fontSize="9" fill="var(--ink3)">Total</text>
-          <text x="50" y="45" textAnchor="middle" fontSize="7" fill="var(--ink2)">{fmt(total)}</text>
-        </svg>
+
+  const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  // ─── Auth & client ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setUserId(user.id)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!userId) return
+    const stored = localStorage.getItem('selectedClientId')
+    if (stored) setSelectedClientId(stored)
+  }, [userId])
+
+  useEffect(() => {
+    if (!selectedClientId || !userId) return
+    loadAll()
+  }, [selectedClientId, userId])
+
+  // ─── Load data ───────────────────────────────────────────────────────────
+
+  async function loadAll() {
+    if (!selectedClientId) return
+    setLoading(true)
+
+    const [clientRes, familyRes, factRes] = await Promise.all([
+      supabase.from('clients').select('*').eq('id', selectedClientId).single(),
+      supabase.from('family_members').select('*').eq('client_id', selectedClientId),
+      supabase.from('fact_finding').select('*').eq('client_id', selectedClientId),
+    ])
+
+    if (clientRes.data) setClient(clientRes.data)
+
+    if (familyRes.data) {
+      const spouseRec = familyRes.data.find(m => m.relationship === 'Spouse')
+      const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
+      setSpouse(spouseRec || null)
+      setChildren(childRecs)
+
+      // Auto-detect planning mode from DB
+      if (spouseRec) setPlanningMode('couple')
+    }
+
+    if (factRes.data && factRes.data.length > 0) {
+      const newData: AllSections = {
+        protection: {},
+        accumulation: {},
+        retirement: {},
+        education: { children: [] },
+        estate: {},
+      }
+
+      factRes.data.forEach(row => {
+        const section = row.section as keyof AllSections
+        if (section && row.data) {
+          if (section === 'planningMode') {
+            // planningMode saved as a meta section
+          } else {
+            (newData as Record<string, unknown>)[section] = row.data
+          }
+          // Restore planning mode if stored
+          if (row.data?.planningMode) {
+            setPlanningMode(row.data.planningMode)
+          }
+        }
+      })
+
+      // Pre-populate education children from family_members if not already set
+      if (!newData.education?.children?.length && familyRes.data) {
+        const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
+        newData.education.children = childRecs.map(c => ({
+          childId: c.id,
+          name: c.name,
+          currentAge: c.age ?? calcAge(c.date_of_birth),
+        }))
+      }
+
+      setData(newData)
+    } else {
+      // Pre-populate education from family_members
+      if (familyRes.data) {
+        const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
+        setData(prev => ({
+          ...prev,
+          education: {
+            children: childRecs.map(c => ({
+              childId: c.id,
+              name: c.name,
+              currentAge: c.age ?? calcAge(c.date_of_birth),
+            }))
+          }
+        }))
+      }
+    }
+
+    setLoading(false)
+  }
+
+  // ─── Save ────────────────────────────────────────────────────────────────
+
+  const saveSection = useCallback(async (
+    section: keyof AllSections,
+    sectionData: Record<string, unknown>,
+    mode?: 'individual' | 'couple'
+  ) => {
+    if (!selectedClientId) return
+    setSaveStatus('saving')
+
+    const payload = mode ? { ...sectionData, planningMode: mode } : sectionData
+
+    await supabase.from('fact_finding').upsert(
+      { client_id: selectedClientId, section, data: payload, updated_at: new Date().toISOString() },
+      { onConflict: 'client_id,section' }
+    )
+
+    setSaveStatus('saved')
+    setLastSaved(new Date())
+    setTimeout(() => setSaveStatus('idle'), 2000)
+  }, [selectedClientId])
+
+  function updateSection<T extends keyof AllSections>(
+    section: T,
+    field: string,
+    value: unknown
+  ) {
+    setData(prev => {
+      const updated = { ...prev[section] as Record<string, unknown>, [field]: value }
+      const updatedAll = { ...prev, [section]: updated }
+
+      if (debounceRef.current[section]) clearTimeout(debounceRef.current[section])
+      debounceRef.current[section] = setTimeout(() => {
+        saveSection(section, updated)
+      }, 800)
+
+      return updatedAll
+    })
+  }
+
+  function updatePlanningMode(mode: 'individual' | 'couple') {
+    setPlanningMode(mode)
+    // Save mode alongside protection section
+    if (debounceRef.current['mode']) clearTimeout(debounceRef.current['mode'])
+    debounceRef.current['mode'] = setTimeout(() => {
+      saveSection('protection', { ...(data.protection as Record<string, unknown>), planningMode: mode })
+    }, 800)
+  }
+
+  async function saveAll() {
+    if (!selectedClientId) return
+    setSaveStatus('saving')
+
+    const sections: Array<keyof AllSections> = ['protection', 'accumulation', 'retirement', 'education', 'estate']
+    await Promise.all(sections.map(s =>
+      supabase.from('fact_finding').upsert(
+        {
+          client_id: selectedClientId,
+          section: s,
+          data: { ...(data[s] as Record<string, unknown>), planningMode: s === 'protection' ? planningMode : undefined },
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'client_id,section' }
+      )
+    ))
+
+    setSaveStatus('saved')
+    setLastSaved(new Date())
+    showToast('Discovery saved — Risk Management and Capital Mandate tabs have been updated.')
+    setTimeout(() => setSaveStatus('idle'), 2000)
+  }
+
+  function showToast(msg: string) {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(null), 4000)
+  }
+
+  // ─── Calculated previews ─────────────────────────────────────────────────
+
+  const p = data.protection
+  const a = data.accumulation
+  const r = data.retirement
+  const edu = data.education
+  const clientAge = calcAge(client?.date_of_birth)
+
+  const lifeCoverNeeded = ((p.monthlyIncomeClient || 0) * 12 * (p.yearsOfCoverage || 10))
+  const ciCoverNeeded = ((p.monthlyIncomeClient || 0) * 12 * 5)
+  const yearsToRetirement = Math.max(0, (r.retirementAgeClient || 65) - clientAge)
+  const retirementYears = Math.max(0, (r.lifeExpectancyClient || 85) - (r.retirementAgeClient || 65))
+  const monthlyIncome = r.monthlyRetirementIncomeClient || 0
+  const postReturn = (r.postRetirementReturn || 4) / 100
+  const inflation = (r.inflationRate || 3) / 100
+  const realReturn = postReturn - inflation
+  const retirementCorpus = retirementYears > 0 && realReturn > 0
+    ? monthlyIncome * 12 * ((1 - Math.pow(1 + realReturn, -retirementYears)) / realReturn)
+    : monthlyIncome * 12 * retirementYears
+
+  const eduFundNeeded = edu.children?.reduce((sum, c) => sum + (c.estimatedTotalCost || 0), 0) || 0
+
+  // ─── Section completion ──────────────────────────────────────────────────
+
+  const sections = ['protection', 'accumulation', 'retirement', 'education', 'estate']
+  const sectionLabels = ['Wealth Protection', 'Wealth Accumulation', 'Retirement', 'Education Planning', 'Estate Planning']
+
+  function getSectionPct(i: number): number {
+    return sectionCompletion(sections[i], data)
+  }
+
+  const completedCount = sections.filter((_, i) => getSectionPct(i) > 80).length
+
+  // ─── Estate flags ────────────────────────────────────────────────────────
+
+  const estate = data.estate
+  const estateFlags: string[] = []
+  if (!estate.willClient || estate.willClient === 'No' || estate.willClient === 'Outdated')
+    estateFlags.push(`Will (Client)${estate.willClient === 'Outdated' ? ' — Outdated' : ' — Not done'}`)
+  if (planningMode === 'couple' && (!estate.willSpouse || estate.willSpouse === 'No' || estate.willSpouse === 'Outdated'))
+    estateFlags.push(`Will (Spouse)${estate.willSpouse === 'Outdated' ? ' — Outdated' : ' — Not done'}`)
+  if (estate.cpfNominationClient === 'Not done' || !estate.cpfNominationClient)
+    estateFlags.push('CPF Nomination (Client) — Not done')
+  if (planningMode === 'couple' && estate.cpfNominationSpouse === 'Not done')
+    estateFlags.push('CPF Nomination (Spouse) — Not done')
+  if (!estate.lpaClient || estate.lpaClient === 'Not done')
+    estateFlags.push('LPA (Client) — Not done')
+  if (planningMode === 'couple' && (!estate.lpaSpouse || estate.lpaSpouse === 'Not done'))
+    estateFlags.push('LPA (Spouse) — Not done')
+
+  // ─── Render guards ───────────────────────────────────────────────────────
+
+  if (!userId) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
+        <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', fontSize: '1.1rem' }}>Loading session…</p>
       </div>
-      <div className="space-y-1">
-        {segments.map(s => (
-          <div key={s.label} className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }}></div>
-              <span style={{ color: 'var(--ink2)' }}>{s.label}</span>
+    )
+  }
+
+  if (!selectedClientId || !client) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.4rem', color: 'var(--ink2)', marginBottom: '0.5rem' }}>No client selected</p>
+          <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '0.85rem', color: 'var(--ink3)' }}>Select a client from the sidebar to begin discovery.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const spouseName = spouse?.name || 'Spouse'
+
+  // ─── Input helpers ───────────────────────────────────────────────────────
+
+  function CurrencyInput({ section, field, label, placeholder = '0' }: {
+    section: keyof AllSections, field: string, label: string, placeholder?: string
+  }) {
+    const val = ((data[section] as Record<string, unknown>)?.[field] as number) || ''
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <label style={styles.label}>{label}</label>
+        <div style={styles.currencyWrap}>
+          <span style={styles.currencyPrefix}>SGD $</span>
+          <input
+            type="number"
+            placeholder={placeholder}
+            value={val}
+            onChange={e => updateSection(section, field, e.target.value ? Number(e.target.value) : undefined)}
+            style={styles.currencyInput}
+            onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
+            onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  function NumInput({ section, field, label, suffix = '', placeholder = '0' }: {
+    section: keyof AllSections, field: string, label: string, suffix?: string, placeholder?: string
+  }) {
+    const val = ((data[section] as Record<string, unknown>)?.[field] as number) || ''
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <label style={styles.label}>{label}</label>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+          <input
+            type="number"
+            placeholder={placeholder}
+            value={val}
+            onChange={e => updateSection(section, field, e.target.value ? Number(e.target.value) : undefined)}
+            style={{ ...styles.input, width: suffix ? '70px' : '100%' }}
+            onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
+            onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+          />
+          {suffix && <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>{suffix}</span>}
+        </div>
+      </div>
+    )
+  }
+
+  function SelectInput({ section, field, label, options }: {
+    section: keyof AllSections, field: string, label: string, options: string[]
+  }) {
+    const val = ((data[section] as Record<string, unknown>)?.[field] as string) || ''
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <label style={styles.label}>{label}</label>
+        <select
+          value={val}
+          onChange={e => updateSection(section, field, e.target.value)}
+          style={styles.select}
+          onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
+          onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+        >
+          <option value="">Select…</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+    )
+  }
+
+  function TextInput({ section, field, label, placeholder = '' }: {
+    section: keyof AllSections, field: string, label: string, placeholder?: string
+  }) {
+    const val = ((data[section] as Record<string, unknown>)?.[field] as string) || ''
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <label style={styles.label}>{label}</label>
+        <input
+          type="text"
+          placeholder={placeholder}
+          value={val}
+          onChange={e => updateSection(section, field, e.target.value)}
+          style={styles.input}
+          onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
+          onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+        />
+      </div>
+    )
+  }
+
+  function NotesTextarea({ section, placeholder }: { section: keyof AllSections, placeholder: string }) {
+    const val = ((data[section] as Record<string, unknown>)?.advisorNotes as string) || ''
+    return (
+      <div style={styles.notesBar}>
+        <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', fontFamily: 'Inter, sans-serif' }}>
+          Advisor Notes
+        </div>
+        <textarea
+          placeholder={placeholder}
+          value={val}
+          onChange={e => updateSection(section, 'advisorNotes', e.target.value)}
+          rows={3}
+          style={styles.notesInput}
+          onFocus={e => { e.target.style.borderBottomColor = 'rgba(168,131,74,0.6)' }}
+          onBlur={e => { e.target.style.borderBottomColor = 'rgba(255,255,255,0.15)' }}
+        />
+      </div>
+    )
+  }
+
+  function SubSectionTitle({ label, color = 'var(--gold)' }: { label: string, color?: string }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', marginTop: '24px' }}>
+        <div style={{ width: '3px', height: '14px', background: color, borderRadius: '2px' }} />
+        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
+      </div>
+    )
+  }
+
+  function PersonHeader() {
+    if (planningMode === 'individual') return null
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+        {[
+          { name: client?.full_name || 'Client', age: clientAge, label: 'Client' },
+          { name: spouseName, age: spouse ? calcAge(spouse.date_of_birth) : null, label: 'Spouse' }
+        ].map((p, i) => (
+          <div key={i} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: i === 0 ? 'var(--gold-l)' : 'var(--emerald-l)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: i === 0 ? 'var(--gold-tag)' : 'var(--emerald)', fontFamily: 'Inter, sans-serif' }}>
+              {p.name.charAt(0)}
             </div>
-            <div style={{ color: 'var(--ink)', fontWeight: 500 }}>{fmt(s.val)} <span style={{ color: 'var(--ink3)' }}>({Math.round(s.pct)}%)</span></div>
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif' }}>{p.name}</div>
+              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>{p.label}{p.age ? ` · Age ${p.age}` : ''}</div>
+            </div>
           </div>
         ))}
       </div>
-    </div>
-  )
-}
+    )
+  }
 
-function CpfCard({ p, age, config, label }: { p: PersonData; age: number; config: CpfConfig; label?: string }) {
-  const cit = p.citizenship || 'SC'; const prY = p.pr_year || '3+'
-  const gross = p.gross_monthly || 0; const bonus = p.gross_bonus || 0
-  const cpf = calcCpf(gross, bonus, age, cit, prY, config)
-  const isCpf = ['SC', 'PR'].includes(cit)
-  const anEmployee = cpf.employee * 12 + (isCpf && cpf.tier ? Math.floor(bonus * cpf.tier.employee / 100) : 0)
-  const anEmployer = cpf.employer * 12 + (isCpf && cpf.tier ? Math.round(bonus * cpf.tier.employer / 100) : 0)
-  if (!isCpf) return (
-    <div style={{ background: 'white', border: '1px solid var(--line)', padding: '16px 20px' }}>
-      {label && <div className="text-xs font-medium mb-2" style={{ color: 'var(--gold-tag)' }}>{label}</div>}
-      <div className="text-xs" style={{ color: 'var(--ink3)' }}>CPF not applicable for Foreigners</div>
-    </div>
-  )
-  const prLabel = cit === 'PR' && prY !== '3+' ? ` · PR Yr ${prY}` : ''
-  return (
-    <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)' }}>{label ? label + ' — ' : ''}CPF Breakdown</div>
-        <div className="text-xs px-2 py-1" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)' }}>Age {age}{prLabel} · {cpf.tier?.employee}% / {cpf.tier?.employer}%</div>
-      </div>
-      {gross > config.ow_ceiling && (
-        <div className="text-xs px-3 py-2 mb-3" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>OW capped at {fmt(config.ow_ceiling)}</div>
-      )}
-      <div className="flex pb-2 text-xs" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 1 }}>
-        <div className="flex-1"></div><div className="w-24 text-right">Monthly</div><div className="w-28 text-right">Annual</div>
-      </div>
-      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>Employee ({cpf.tier?.employee}%)</div>
-      {[{ label: '→ Ordinary (OA)', mo: cpf.oa, color: 'var(--emerald)' }, { label: '→ Special (SA)', mo: cpf.sa, color: '#4A7C9E' }, { label: '→ MediSave (MA)', mo: cpf.ma, color: '#7A6AAA' }].map(r => (
-        <div key={r.label} className="flex items-center py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div className="flex-1 flex items-center gap-1.5"><div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label}</span></div>
-          <div className="w-24 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(r.mo)}</div>
-          <div className="w-28 text-right" style={{ color: r.color, fontWeight: 500 }}>{fmt(r.mo * 12)}</div>
-        </div>
-      ))}
-      <div className="flex items-center py-1.5 text-xs font-medium" style={{ borderBottom: '1px solid var(--line2)' }}>
-        <div className="flex-1" style={{ color: 'var(--ink)' }}>Total Employee (deducted)</div>
-        <div className="w-24 text-right" style={{ color: 'var(--rouge)' }}>− {fmt(cpf.employee)}</div>
-        <div className="w-28 text-right" style={{ color: 'var(--rouge)' }}>− {fmt(anEmployee)}</div>
-      </div>
-      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>Employer ({cpf.tier?.employer}%) — added to CPF</div>
-      <div className="flex items-center py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-        <div className="flex-1" style={{ color: 'var(--ink2)' }}>Total Employer CPF</div>
-        <div className="w-24 text-right" style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(cpf.employer)}</div>
-        <div className="w-28 text-right" style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(anEmployer)}</div>
-      </div>
-      <div className="py-1.5 text-xs font-medium mt-1" style={{ color: 'var(--ink3)', borderBottom: '1px solid var(--line)' }}>Total credited to CPF (Emp + Employer/yr)</div>
-      {[{ label: 'OA', mo: cpf.oa, color: 'var(--emerald)' }, { label: 'SA', mo: cpf.sa, color: '#4A7C9E' }, { label: 'MA', mo: cpf.ma, color: '#7A6AAA' }].map(r => (
-        <div key={r.label} className="flex items-center py-1 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div className="flex-1 flex items-center gap-1.5"><div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label} (annual)</span></div>
-          <div className="w-28 text-right" style={{ color: r.color, fontWeight: 600 }}>{fmt(r.mo * 12)}</div>
-        </div>
-      ))}
-      <div className="flex items-center justify-between pt-3">
-        <div className="text-xs" style={{ color: 'var(--ink3)' }}>Take-Home Pay</div>
-        <div className="font-serif text-xl" style={{ color: 'var(--emerald)' }}>{fmt(cpf.takeHome)}/mo</div>
-      </div>
-      {bonus > 0 && cpf.tier && (
-        <div className="mt-2 pt-2 text-xs" style={{ borderTop: '1px solid var(--line)', color: 'var(--ink3)' }}>
-          Bonus CPF: Employee {fmt(Math.floor(bonus * cpf.tier.employee / 100))} · Employer {fmt(Math.round(bonus * cpf.tier.employer / 100))}
-        </div>
-      )}
-    </div>
-  )
-}
+  function TwoCol({ children }: { children: React.ReactNode }) {
+    return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>{children}</div>
+  }
 
-function SumRow({ label, mo, an, highlight, neg, dim }: { label: string; mo: number; an: number; highlight?: boolean; neg?: boolean; dim?: boolean }) {
-  const c = highlight ? 'var(--gold)' : neg ? 'var(--rouge)' : 'var(--ink)'
-  return (
-    <div className="flex items-center py-2 text-xs" style={{ borderBottom: '1px solid var(--line)', opacity: dim ? 0.4 : 1 }}>
-      <div className="flex-1" style={{ color: 'var(--ink2)', fontWeight: highlight ? 600 : 400 }}>{label}</div>
-      <div className="w-28 text-right" style={{ color: c, fontWeight: highlight ? 700 : 500 }}>{neg ? `− ${fmt(mo)}` : fmt(mo)}</div>
-      <div className="w-32 text-right" style={{ color: c, fontWeight: highlight ? 700 : 500 }}>{neg ? `− ${fmt(an)}` : fmt(an)}</div>
-    </div>
-  )
-}
+  function SectionIntro({ eyebrow, title, subtitle }: { eyebrow: string, title: string, subtitle: string }) {
+    return (
+      <div style={{ marginBottom: '28px' }}>
+        <div style={{ fontSize: '9px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>{eyebrow}</div>
+        <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.7rem', fontWeight: 300, color: 'var(--ink)', margin: '0 0 8px' }}>{title}</h2>
+        <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '0.95rem', color: 'var(--ink3)', lineHeight: 1.6, margin: 0 }}>{subtitle}</p>
+      </div>
+    )
+  }
 
-function CustomRows({ items, onChange, placeholder }: { items: CustomAssetItem[]; onChange: (items: CustomAssetItem[]) => void; placeholder?: string }) {
-  const n = (v: string) => v === '' ? 0 : parseFloat(v) || 0
-  return (
-    <div>
-      {items.map((item, i) => (
-        <div key={i} className="flex gap-2 py-1.5 items-center" style={{ borderBottom: '1px solid var(--line)' }}>
-          <input type="text" value={item.label} placeholder={placeholder || 'Custom item'}
-            onChange={e => { const u = [...items]; u[i] = { ...u[i], label: e.target.value }; onChange(u) }}
-            className="flex-1 px-2 py-1.5 text-xs outline-none"
-            style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-            onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-            onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-          <div className="relative" style={{ width: 120 }}>
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-            <input type="number" value={item.amount || ''} placeholder="0"
-              onChange={e => { const u = [...items]; u[i] = { ...u[i], amount: n(e.target.value) }; onChange(u) }}
-              className="w-full text-xs outline-none py-1.5 text-right pr-2"
-              style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
-              onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-              onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+  // ─── SECTIONS ────────────────────────────────────────────────────────────
+
+  function Section1() {
+    return (
+      <div>
+        <SectionIntro
+          eyebrow="Section 1 · Wealth Protection"
+          title="Protection Needs"
+          subtitle="Understanding what needs to be protected — income, debts, family obligations — if either of you were unable to work."
+        />
+        <PersonHeader />
+
+        <SubSectionTitle label="Monthly Income & Expenses" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr' : '1fr 1fr', gap: '20px' }}>
+          <CurrencyInput section="protection" field="monthlyIncomeClient" label={planningMode === 'couple' ? `Monthly Income — ${client?.full_name?.split(' ')[0]}` : 'Monthly Income'} />
+          {planningMode === 'couple' && <CurrencyInput section="protection" field="monthlyIncomeSpouse" label={`Monthly Income — ${spouseName.split(' ')[0]}`} />}
+          <CurrencyInput section="protection" field="monthlyHouseholdExpenses" label="Monthly Household Expenses" />
+          <CurrencyInput section="protection" field="monthlyMortgageRent" label="Monthly Mortgage / Rent" />
+        </div>
+
+        <SubSectionTitle label="Liabilities & Debts" color="var(--ink3)" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+          <CurrencyInput section="protection" field="outstandingMortgage" label="Outstanding Mortgage" />
+          <CurrencyInput section="protection" field="otherLoans" label="Other Loans / Debts" />
+          <NumInput section="protection" field="yearsToClearMortgage" label="Years to Clear Mortgage" suffix="yrs" />
+        </div>
+
+        <SubSectionTitle label="Income Replacement Needs" color="var(--emerald)" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
+          <CurrencyInput section="protection" field="incomeReplacementClient" label={planningMode === 'couple' ? `Replacement Needed — ${client?.full_name?.split(' ')[0]}` : 'Income Replacement Needed'} />
+          {planningMode === 'couple' && <CurrencyInput section="protection" field="incomeReplacementSpouse" label={`Replacement Needed — ${spouseName.split(' ')[0]}`} />}
+          <NumInput section="protection" field="yearsOfCoverage" label="Years of Coverage Needed" suffix="yrs" />
+          <SelectInput section="protection" field="ciRecoveryPeriod" label="CI Recovery Period" options={['3 years', '5 years', 'Until retirement']} />
+        </div>
+
+        <SubSectionTitle label="Existing Coverage" color="var(--gold-tag)" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
+          <CurrencyInput section="protection" field="lifeCoverClient" label={`Life Cover — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
+          {planningMode === 'couple' && <CurrencyInput section="protection" field="lifeCoverSpouse" label={`Life Cover — ${spouseName.split(' ')[0]}`} />}
+          <CurrencyInput section="protection" field="ciCoverClient" label={`CI Cover — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
+          {planningMode === 'couple' && <CurrencyInput section="protection" field="ciCoverSpouse" label={`CI Cover — ${spouseName.split(' ')[0]}`} />}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr' : '1fr 1fr', gap: '20px', marginTop: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={styles.label}>{`Disability Income — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`}</label>
+            <div style={styles.currencyWrap}>
+              <span style={styles.currencyPrefix}>SGD $</span>
+              <input
+                type="number"
+                placeholder="0"
+                value={(data.protection.disabilityIncomeClient as number) || ''}
+                onChange={e => updateSection('protection', 'disabilityIncomeClient', e.target.value ? Number(e.target.value) : undefined)}
+                style={{ ...styles.currencyInput, flex: 1 }}
+                onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
+                onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+              />
+              <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '2px' }}>/mo</span>
+            </div>
           </div>
-          <button onClick={() => onChange(items.filter((_, j) => j !== i))} className="w-7 h-7 flex items-center justify-center text-sm flex-shrink-0"
-            style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--rouge)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink3)')}>×</button>
-        </div>
-      ))}
-      <button onClick={() => onChange([...items, { label: '', amount: 0 }])} className="mt-2 text-xs px-3 py-1.5"
-        style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Row</button>
-    </div>
-  )
-}
-
-function AssetRow({ label, value, onChange }: { label: string; value: number | undefined; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center py-2 text-xs gap-3" style={{ borderBottom: '1px solid var(--line)' }}>
-      <div className="flex-1" style={{ color: 'var(--ink2)' }}>{label}</div>
-      <div className="relative" style={{ width: 140 }}>
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-        <input type="number" value={value || ''} onChange={e => onChange(e.target.value)} placeholder="0"
-          className="w-full text-xs outline-none py-1.5 text-right pr-2"
-          style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
-          onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-          onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-      </div>
-    </div>
-  )
-}
-
-function AssetBlock({ title, color, total, children }: { title: string; color: string; total: number; children: React.ReactNode }) {
-  return (
-    <div style={{ background: 'white', border: '1px solid var(--line)' }}>
-      <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: `3px solid ${color}` }}>
-        <span className="text-sm font-medium" style={{ color }}>{title}</span>
-        <span className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color, fontWeight: 600 }}>{fmt(total)}</span></span>
-      </div>
-      <div className="px-5 py-3">{children}</div>
-    </div>
-  )
-}
-
-function PersonIncomePanel({ p, onChange, age, config, label }: { p: PersonData; onChange: (key: keyof PersonData, val: unknown) => void; age: number; config: CpfConfig; label: string }) {
-  const n = (v: string) => v === '' ? 0 : parseFloat(v) || 0
-  const gross = p.gross_monthly || 0; const bonus = p.gross_bonus || 0
-  const otherIncomes = p.other_incomes || []
-  const totalOther = otherIncomes.reduce((s, i) => s + (i.amount || 0), 0)
-  const cpf = calcCpf(gross, bonus, age, p.citizenship || 'SC', p.pr_year || '3+', config)
-  const isCpf = ['SC', 'PR'].includes(p.citizenship || 'SC')
-  const moEmployee = cpf.employee
-  const moTakeHome = cpf.takeHome
-  const moIncome = moTakeHome + totalOther
-  const anEmployee = moEmployee * 12 + (isCpf && cpf.tier ? Math.floor(bonus * cpf.tier.employee / 100) : 0)
-  const anTakeHome = cpf.annualTakeHome
-  const anIncome = anTakeHome + (totalOther * 12)
-  return (
-    <div className="space-y-4">
-      <div className="px-4 py-2 font-medium text-sm" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{label}</div>
-      <Card title="Employment">
-        <div className="space-y-3">
-          <Field label="Occupation" value={p.occupation} onChange={v => onChange('occupation', v)} placeholder="e.g. Engineer" />
-          <Field label="Employer" value={p.employer} onChange={v => onChange('employer', v)} placeholder="e.g. DBS Bank" />
-          <Sel label="Employment Type" value={p.employment_type} onChange={v => onChange('employment_type', v)} options={['Employed','Self-Employed','Business Owner','Commission-Based','Retired','Student','Homemaker']} />
-          <Sel label="Citizenship" value={p.citizenship} onChange={v => onChange('citizenship', v)} options={['SC','PR','Foreigner']} />
-         {p.citizenship === 'PR' && (
-            <div>
-              <Sel label="PR Status Year" value={p.pr_year} onChange={v => onChange('pr_year', v)} options={['1', '2', '3+']} />
-              <div className="mt-1.5 px-3 py-2 text-xs" style={{ background: 'var(--gold-l)', border: '1px solid rgba(168,131,74,0.2)', color: 'var(--gold-tag)', lineHeight: 1.6 }}>
-                {(!p.pr_year || p.pr_year === '1') && <span>Year 1 — Employee 5% / Employer 4% (reduced rates)</span>}
-                {p.pr_year === '2' && <span>Year 2 — Employee 15% / Employer 9% (graduated rates)</span>}
-                {p.pr_year === '3+' && <span>Year 3+ — Full SC rates: Employee 20% / Employer 17%</span>}
+          {planningMode === 'couple' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={styles.label}>{`Disability Income — ${spouseName.split(' ')[0]}`}</label>
+              <div style={styles.currencyWrap}>
+                <span style={styles.currencyPrefix}>SGD $</span>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={(data.protection.disabilityIncomeSpouse as number) || ''}
+                  onChange={e => updateSection('protection', 'disabilityIncomeSpouse', e.target.value ? Number(e.target.value) : undefined)}
+                  style={{ ...styles.currencyInput, flex: 1 }}
+                  onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
+                  onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+                />
+                <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '2px' }}>/mo</span>
               </div>
             </div>
           )}
         </div>
-      </Card>
-      <Card title="Gross Salary" subtitle="Before CPF deductions">
-        <div className="space-y-3">
-          <Field label="Gross Monthly" value={p.gross_monthly} onChange={v => onChange('gross_monthly', n(v))} type="number" prefix="$" placeholder="0" />
-          <Field label="Gross Annual Bonus" value={p.gross_bonus} onChange={v => onChange('gross_bonus', n(v))} type="number" prefix="$" placeholder="0" hint="Total bonus/yr (AWS + variable)" />
-        </div>
-      </Card>
-      <Card title="Other Income" subtitle="Rental, dividends, commissions, etc.">
-        <div className="space-y-2">
-          {otherIncomes.map((item, i) => (
-            <div key={i} className="flex gap-2">
-              <input type="text" value={item.label} placeholder="Source (e.g. Rental)"
-                onChange={e => { const u = [...otherIncomes]; u[i] = { ...u[i], label: e.target.value }; onChange('other_incomes', u) }}
-                className="flex-1 px-3 py-2 text-sm outline-none"
-                style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-                onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-              <div className="relative" style={{ width: 130 }}>
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-                <input type="number" value={item.amount || ''} placeholder="0/mo"
-                  onChange={e => { const u = [...otherIncomes]; u[i] = { ...u[i], amount: n(e.target.value) }; onChange('other_incomes', u) }}
-                  className="w-full px-3 py-2 text-sm outline-none"
-                  style={{ paddingLeft: 22, border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-              </div>
-              <button onClick={() => onChange('other_incomes', otherIncomes.filter((_, j) => j !== i))}
-                className="w-9 h-9 flex items-center justify-center text-lg flex-shrink-0"
-                style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--rouge)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink3)')}>×</button>
-            </div>
-          ))}
-          <button onClick={() => onChange('other_incomes', [...otherIncomes, { label: '', amount: 0 }])}
-            className="text-xs px-3 py-1.5" style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Source</button>
-        </div>
-      </Card>
-      <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-        <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Summary</div>
-        <div className="flex text-xs pb-2" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase' }}>
-          <div className="flex-1"></div><div className="w-28 text-right">Monthly</div><div className="w-32 text-right">Annual</div>
-        </div>
-        <SumRow label="Gross Salary" mo={gross} an={gross * 12 + bonus} />
-        {isCpf && <SumRow label={`Employee CPF (${cpf.tier?.employee || 0}%)`} mo={moEmployee} an={anEmployee} neg />}
-        <SumRow label={isCpf ? 'Take-Home Pay' : 'Salary'} mo={moTakeHome} an={anTakeHome} highlight />
-        {totalOther > 0 && <SumRow label="Other Income" mo={totalOther} an={totalOther * 12} />}
-        <div className="flex items-center justify-between pt-3 mt-1" style={{ borderTop: '2px solid var(--gold)' }}>
-          <span className="text-xs font-semibold" style={{ color: 'var(--ink)' }}>Total Spendable</span>
-          <div className="flex gap-4">
-            <span className="font-serif text-base" style={{ color: 'var(--gold)' }}>{fmt(moIncome)}/mo</span>
-            <span className="font-serif text-base" style={{ color: 'var(--gold)' }}>{fmt(anIncome)}/yr</span>
-          </div>
+
+        <div style={{ marginTop: '32px' }}>
+          <NotesTextarea section="protection" placeholder="Record any context, client concerns, or details discussed during this section…" />
         </div>
       </div>
-    </div>
-  )
-}
+    )
+  }
 
-function AnnInput({ value, onChange, accentColor }: { value: number | undefined; onChange: (v: string) => void; accentColor?: string }) {
-  return (
-    <div className="relative" style={{ width: '100%' }}>
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-      <input type="number" value={value || ''} placeholder="0" onChange={e => onChange(e.target.value)}
-        className="w-full text-sm outline-none py-2 text-right pr-3"
-        style={{ paddingLeft: 28, border: '1px solid var(--line)', background: 'var(--cream)', color: accentColor || 'var(--ink)' }}
-        onFocus={e => { e.currentTarget.style.borderColor = accentColor || 'var(--gold)' }}
-        onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }} />
-    </div>
-  )
-}
+  function Section2() {
+    const goals: string[] = data.accumulation.financialGoals || []
+    const goalChips = ['Retirement', "Children's education", 'Pay off mortgage', 'Second property', 'Passive income', 'Leave a legacy', 'Business', 'Travel fund']
 
-function DetInput({ value, onChange, accentColor }: { value: number | undefined; onChange: (v: string) => void; accentColor?: string }) {
-  return (
-    <div className="relative" style={{ width: 118 }}>
-      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-      <input type="number" value={value || ''} placeholder="0" onChange={e => onChange(e.target.value)}
-        className="w-full text-xs outline-none py-1.5 text-right pr-2"
-        style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: accentColor || 'var(--ink)' }}
-        onFocus={e => { e.currentTarget.style.borderColor = accentColor || 'var(--gold)' }}
-        onBlur={e => { e.currentTarget.style.borderColor = 'var(--line)' }} />
-    </div>
-  )
-}
+    function toggleGoal(g: string) {
+      const current = data.accumulation.financialGoals || []
+      const updated = current.includes(g) ? current.filter(x => x !== g) : [...current, g]
+      updateSection('accumulation', 'financialGoals', updated)
+    }
 
+    return (
+      <div>
+        <SectionIntro
+          eyebrow="Section 2 · Wealth Accumulation"
+          title="Savings & Investment Needs"
+          subtitle="Understanding the client's savings capacity, risk appetite, and investment goals."
+        />
 
-export default function FactFindingPage() {
-  const [client, setClient] = useState<Client | null>(null)
-  const [spouse, setSpouse] = useState<FamilyMember | null>(null)
-  const [ff, setFf] = useState<FactFinding | null>(null)
-  const [cpfConfig, setCpfConfig] = useState<CpfConfig>(DEFAULT_CPF_CONFIG)
-  const [activeSection, setActiveSection] = useState('income')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const router = useRouter()
-  const supabase = createClient()
+        <SubSectionTitle label="Savings Capacity" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+          <CurrencyInput section="accumulation" field="monthlySurplus" label="Monthly Surplus Available" />
+          <CurrencyInput section="accumulation" field="lumpSumAvailable" label="Lump Sum Available Now" />
+          <CurrencyInput section="accumulation" field="currentInvestments" label="Current Total Investments" />
+        </div>
 
-  useEffect(() => { load() }, [])
+        <SubSectionTitle label="Risk Profile" color="var(--emerald)" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+          <SelectInput section="accumulation" field="riskAppetite" label="Risk Appetite" options={['Very Conservative (1)', 'Conservative (2)', 'Balanced (3)', 'Growth (4)', 'Aggressive (5)']} />
+          <SelectInput section="accumulation" field="investmentTimeHorizon" label="Investment Time Horizon" options={['Under 5 years', '5–10 years', '10–20 years', '20+ years']} />
+          <NumInput section="accumulation" field="expectedReturnRate" label="Expected Return Rate" suffix="% p.a." placeholder="6" />
+        </div>
 
-  async function load() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/auth'); return }
-    const { data: cfgRow } = await supabase.from('config').select('value').eq('key', 'cpf_rates').maybeSingle()
-    if (cfgRow?.value) setCpfConfig(cfgRow.value as CpfConfig)
-    const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(1)
-    if (!clients || clients.length === 0) { setLoading(false); return }
-    const c = clients[0]; setClient(c)
-    const { data: fam } = await supabase.from('family_members').select('*').eq('client_id', c.id)
-    const sp = fam?.find((f: FamilyMember) => f.relationship === 'Spouse')
-    if (sp) setSpouse(sp)
-    const { data: rows } = await supabase.from('fact_finding').select('*').eq('client_id', c.id)
-    if (rows && rows.length > 0) {
-      const merged: FactFinding = { client_id: c.id }
-      for (const row of rows) Object.assign(merged, row.data || {})
-      setFf(merged)
-    } else {
-      setFf({
-        client_id: c.id, mode: 'single', expense_mode: 'simple',
-        person1: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
-        person2: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
-        a_cash_custom: [], a_invested_custom: [], a_personal_custom: [],
-        l_st_custom: [], l_lt_custom: [],
-        d_custom_financial: [], d_custom_household: [], d_custom_personal: [], d_custom_children: [], d_custom_lifestyle: [],
+        <SubSectionTitle label="Financial Goals" color="var(--ink3)" />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
+          {goalChips.map(g => (
+            <button
+              key={g}
+              onClick={() => toggleGoal(g)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '20px',
+                border: goals.includes(g) ? '1.5px solid var(--gold)' : '1.5px solid var(--line2)',
+                background: goals.includes(g) ? 'var(--gold-l)' : 'transparent',
+                color: goals.includes(g) ? 'var(--gold-tag)' : 'var(--ink3)',
+                fontSize: '12px',
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: goals.includes(g) ? 600 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+
+        <NotesTextarea section="accumulation" placeholder="Investment preferences, constraints, prior experience, concerns discussed…" />
+      </div>
+    )
+  }
+
+  function Section3() {
+    const legacyVal = data.retirement.leaveALegacy || ''
+    return (
+      <div>
+        <SectionIntro
+          eyebrow="Section 3 · Retirement Planning"
+          title="Retirement Needs"
+          subtitle="Planning the income and capital required to sustain your desired lifestyle from retirement through to end of life."
+        />
+        <PersonHeader />
+
+        <SubSectionTitle label="Retirement Parameters" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
+          <NumInput section="retirement" field="retirementAgeClient" label={`Retirement Age — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} suffix="yrs" placeholder="65" />
+          {planningMode === 'couple' && <NumInput section="retirement" field="retirementAgeSpouse" label={`Retirement Age — ${spouseName.split(' ')[0]}`} suffix="yrs" placeholder="65" />}
+          <NumInput section="retirement" field="lifeExpectancyClient" label={`Life Expectancy — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} suffix="yrs" placeholder="85" />
+          {planningMode === 'couple' && <NumInput section="retirement" field="lifeExpectancySpouse" label={`Life Expectancy — ${spouseName.split(' ')[0]}`} suffix="yrs" placeholder="85" />}
+        </div>
+
+        <SubSectionTitle label="Retirement Income Desired (Today's $)" color="var(--emerald)" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
+          <CurrencyInput section="retirement" field="monthlyRetirementIncomeClient" label={`Monthly Income — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
+          {planningMode === 'couple' && <CurrencyInput section="retirement" field="monthlyRetirementIncomeSpouse" label={`Monthly Income — ${spouseName.split(' ')[0]}`} />}
+          <NumInput section="retirement" field="inflationRate" label="Inflation Rate" suffix="%" placeholder="3" />
+          <NumInput section="retirement" field="postRetirementReturn" label="Post-Retirement Return Rate" suffix="%" placeholder="4" />
+        </div>
+
+        <SubSectionTitle label="Legacy" color="var(--gold-tag)" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+          <SelectInput section="retirement" field="leaveALegacy" label="Leave a Legacy?" options={['No', 'Yes — specific amount', 'Nice to have']} />
+          {legacyVal === 'Yes — specific amount' && <CurrencyInput section="retirement" field="legacyAmountTarget" label="Legacy Amount Target" />}
+          <SelectInput section="retirement" field="continueCpfInRetirement" label="Continue Investing CPF in Retirement?" options={['Yes', 'No']} />
+        </div>
+
+        <div style={{ marginTop: '32px' }}>
+          <NotesTextarea section="retirement" placeholder="Retirement lifestyle aspirations, travel plans, healthcare concerns, family obligations…" />
+        </div>
+      </div>
+    )
+  }
+
+  function Section4() {
+    const eduChildren: ChildEducation[] = data.education.children || []
+
+    function updateChild(idx: number, field: string, value: unknown) {
+      const updated = [...eduChildren]
+      updated[idx] = { ...updated[idx], [field]: value }
+      setData(prev => {
+        const updatedData = { ...prev, education: { ...prev.education, children: updated } }
+        if (debounceRef.current['education']) clearTimeout(debounceRef.current['education'])
+        debounceRef.current['education'] = setTimeout(() => {
+          saveSection('education', { children: updated, advisorNotes: prev.education.advisorNotes })
+        }, 800)
+        return updatedData
       })
     }
-    setLoading(false)
-  }
 
-  const upd = useCallback((key: keyof FactFinding, val: unknown) => {
-    setFf(prev => prev ? { ...prev, [key]: val } : prev); setSaved(false)
-  }, [])
+    function addChild() {
+      const newChild: ChildEducation = { childId: `new-${Date.now()}`, name: '', currentAge: 0 }
+      const updated = [...eduChildren, newChild]
+      setData(prev => ({
+        ...prev,
+        education: { ...prev.education, children: updated }
+      }))
+    }
 
-  const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
-    setFf(prev => { if (!prev) return prev; return { ...prev, [person]: { ...prev[person], [key]: val } } }); setSaved(false)
-  }, [])
+    const studyOptions = ['Singapore — Local', 'Singapore — Private', 'Australia', 'UK', 'US', 'Other']
 
-  const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
+    return (
+      <div>
+        <SectionIntro
+          eyebrow="Section 4 · Education Planning"
+          title="University Education Fund"
+          subtitle="Planning the savings required to fund each child's tertiary education — both accumulation and protection."
+        />
 
-  async function save() {
-    if (!ff || !client) return
-    setSaving(true)
-    const { client_id, ...data } = ff
-    await supabase.from('fact_finding').upsert(
-      { client_id: client.id, section: 'all', data, updated_at: new Date().toISOString() },
-      { onConflict: 'client_id,section' }
-    )
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500)
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-full"><div className="text-sm" style={{ color: 'var(--ink3)' }}>Loading…</div></div>
-  if (!client) return <div className="flex flex-col items-center justify-center h-full gap-4"><div className="font-serif text-2xl" style={{ color: 'var(--ink)' }}>No Client Selected</div></div>
-  if (!ff) return null
-
-  const mode = ff.mode || 'single'; const isCouple = mode === 'couple'
-  const p1 = ff.person1 || {}; const p2 = ff.person2 || {}
-  const age1 = client.age || 35; const age2 = spouse?.age || 35
-  const cpf1 = calcCpf(p1.gross_monthly || 0, p1.gross_bonus || 0, age1, p1.citizenship || 'SC', p1.pr_year || '3+', cpfConfig)
-  const cpf2 = isCouple ? calcCpf(p2.gross_monthly || 0, p2.gross_bonus || 0, age2, p2.citizenship || 'SC', p2.pr_year || '3+', cpfConfig) : null
-  const other1 = (p1.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const other2 = isCouple ? (p2.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0) : 0
-  const mo1 = cpf1.takeHome + other1; const mo2 = cpf2 ? cpf2.takeHome + other2 : 0; const moTotal = mo1 + mo2
-  const an1 = cpf1.annualTakeHome + other1 * 12; const an2 = cpf2 ? cpf2.annualTakeHome + other2 * 12 : 0; const anTotal = an1 + an2
-
-  const expMode = ff.expense_mode || 'simple'
-
-// Detailed mode subtotals per category
-const detailedSum = (keys: string[], customKey: keyof FactFinding) => {
-  const std = keys.reduce((s, k) => s + ((ff[k as keyof FactFinding] as number) || 0), 0)
-  const custom = ((ff[customKey] as CustomExpenseItem[]) || []).reduce((s, i) => s + (i.amount || 0), 0)
-  return std + custom
-}
-const detailedSum2 = (keys: string[], customKey: keyof FactFinding) => {
-  if (!isCouple) return 0
-  const std = keys.reduce((s, k) => s + ((ff[k as keyof FactFinding] as number) || 0), 0)
-  const custom = ((ff[customKey] as CustomExpenseItem[]) || []).reduce((s, i) => s + (i.amount2 || 0), 0)
-  return std + custom
-}
-
-const DETAILED_KEYS_BY_CAT: Record<string, { keys: string[], keys2: string[], customKey: keyof FactFinding }> = {
-  financial: { keys: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'], keys2: ['d2_mortgage_cpf','d2_mortgage_cash','d2_vehicle_repay','d2_personal_loan_repay','d2_rental_expense','d2_income_tax','d2_insurance','d2_regular_savings'], customKey: 'd_custom_financial' },
-  cpf_oa:    { keys: [], keys2: [], customKey: 'd_custom_financial' }, // no detailed for cpf_oa
-  mortgage:  { keys: [], keys2: [], customKey: 'd_custom_financial' }, // no detailed for mortgage/rent cash
-  household: { keys: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'], keys2: ['d2_conservancy','d2_utilities','d2_family_food','d2_maid','d2_other_household'], customKey: 'd_custom_household' },
-  personal:  { keys: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'], keys2: ['d2_personal_food','d2_transport','d2_car_petrol','d2_car_insurance'], customKey: 'd_custom_personal' },
-  children:  { keys: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'], keys2: ['d2_childcare','d2_school_fees','d2_school_transport','d2_allowance_children','d2_other_children'], customKey: 'd_custom_children' },
-  lifestyle: { keys: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'], keys2: ['d2_holidays','d2_hobbies','d2_allowance_parents','d2_others_lifestyle'], customKey: 'd_custom_lifestyle' },
-}
-
-const getAnn1 = (cat: typeof EXP_CATEGORIES[0]) => {
-  if (expMode === 'detailed' && DETAILED_KEYS_BY_CAT[cat.id]?.keys.length > 0) {
-    return detailedSum(DETAILED_KEYS_BY_CAT[cat.id].keys, DETAILED_KEYS_BY_CAT[cat.id].customKey) * 12
-  }
-  return (ff[cat.key] as number) || 0
-}
-const getAnn2 = (cat: typeof EXP_CATEGORIES[0]) => {
-  if (!isCouple) return 0
-  if (expMode === 'detailed' && DETAILED_KEYS_BY_CAT[cat.id]?.keys2.length > 0) {
-    return detailedSum2(DETAILED_KEYS_BY_CAT[cat.id].keys2, DETAILED_KEYS_BY_CAT[cat.id].customKey) * 12
-  }
-  return (ff[cat.key2] as number) || 0
-}
-const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
-  const cpfOaCat = EXP_CATEGORIES.find(c => c.id === 'cpf_oa')!
-  const annCpfOaTotal = getAnnSum(cpfOaCat)
-  const nonCpfCats = EXP_CATEGORIES.filter(c => c.id !== 'cpf_oa')
-  const annExpNoCpf = nonCpfCats.reduce((s, cat) => s + getAnnSum(cat), 0)
-  const moExpNoCpf = annExpNoCpf / 12
-  const annExpAll = EXP_CATEGORIES.reduce((s, cat) => s + getAnnSum(cat), 0)
-  const annGross1 = (p1.gross_monthly || 0) * 12 + (p1.gross_bonus || 0)
-  const annGross2 = isCouple ? (p2.gross_monthly || 0) * 12 + (p2.gross_bonus || 0) : 0
-  const moGrossTotal = (annGross1 + annGross2) / 12
-
-  const DETAILED_GROUPS = [
-    { id: 'financial', title: 'Financial Obligations', color: '#E08080', hint: 'Income tax, insurance, regular savings/investments',
-      keys: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'],
-      keys2: ['d2_mortgage_cpf','d2_mortgage_cash','d2_vehicle_repay','d2_personal_loan_repay','d2_rental_expense','d2_income_tax','d2_insurance','d2_regular_savings'],
-      labels: ['Mortgage Loan (CPF OA)','Mortgage Loan (Cash)','Motor Vehicle Repayment','Personal Loan Repayment','Rental Expenses','Income Tax','Insurance Payments','Regular Savings / Investments'],
-      customKey: 'd_custom_financial' as keyof FactFinding },
-    { id: 'household', title: 'Household & Living', color: '#4A7C9E', hint: 'Conservancy, utilities, food, maid',
-      keys: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'],
-      keys2: ['d2_conservancy','d2_utilities','d2_family_food','d2_maid','d2_other_household'],
-      labels: ['Conservancy / MCST / Property Tax','Utilities & Bills','Family Food & Groceries','Maid Services (incl. Levy)','Other Household Expenses'],
-      customKey: 'd_custom_household' as keyof FactFinding },
-    { id: 'personal', title: 'Personal Expenses', color: '#7A6AAA', hint: 'Personal dining, transport, car',
-      keys: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'],
-      keys2: ['d2_personal_food','d2_transport','d2_car_petrol','d2_car_insurance'],
-      labels: ['Personal Food & Groceries','Public Transport','Car Petrol / Parking / Road Tax','Car Insurance'],
-      customKey: 'd_custom_personal' as keyof FactFinding },
-    { id: 'children', title: 'Children Expenses', color: 'var(--emerald)', hint: 'Childcare, school, transport, pocket money',
-      keys: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'],
-      keys2: ['d2_childcare','d2_school_fees','d2_school_transport','d2_allowance_children','d2_other_children'],
-      labels: ['Childcare / DayCare','School & Tuition Fees','School Transport','Allowance / Pocket Money','Other Children Expenses'],
-      customKey: 'd_custom_children' as keyof FactFinding },
-    { id: 'lifestyle', title: 'Lifestyle & Miscellaneous', color: '#9A7C5A', hint: 'Holidays, hobbies, parents allowance, donations',
-      keys: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'],
-      keys2: ['d2_holidays','d2_hobbies','d2_allowance_parents','d2_others_lifestyle'],
-      labels: ['Holidays / Tours','Hobbies / Recreation','Allowance to Parents','Others (Shopping, Tithes, Donations)'],
-      customKey: 'd_custom_lifestyle' as keyof FactFinding },
-  ]
-
-  const cashCustom = (ff.a_cash_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const cashTotal = (ff.a_savings || 0) + (ff.a_fixed_deposit || 0) + cashCustom
-  const cpfItems = [ff.a_cpf_oa||0,ff.a_cpf_sa||0,ff.a_cpf_ma||0,ff.a_cpf_ra||0]
-  const investedStd = [ff.a_srs||0,ff.a_shares||0,ff.a_etf||0,ff.a_unit_trust||0,ff.a_bonds||0,ff.a_alternatives||0,ff.a_inv_property_res||0,ff.a_inv_property_com||0,ff.a_business||0]
-  const investedCustom = (ff.a_invested_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const investedTotal = [...cpfItems,...investedStd].reduce((s,v)=>s+v,0)+investedCustom
-  const personalCustom = (ff.a_personal_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const personalTotal = (ff.a_residential||0)+(ff.a_vehicles||0)+(ff.a_club||0)+personalCustom
-  const totalAssets = cashTotal + investedTotal + personalTotal
-  const stCustom = (ff.l_st_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const stTotal = (ff.l_credit_card||0)+(ff.l_business_loan||0)+(ff.l_renovation_st||0)+stCustom
-  const ltCustom = (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const ltTotal = (ff.l_mortgage_residing||0)+(ff.l_mortgage_investment||0)+(ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom
-  const totalLiab = stTotal + ltTotal; const netWorth = totalAssets - totalLiab
-  const RISK_COLORS: Record<string, string> = { Conservative: 'var(--emerald)', Moderate: '#C4A464', Balanced: '#4A7C9E', Growth: '#7A6AAA', Aggressive: 'var(--rouge)' }
-  const assetRow = (label: string, key: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} />
-  const clientName = client.name; const spouseName = spouse?.name || 'Spouse'
-
-  return (
-    <div className="flex flex-col min-h-full">
-      <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
-        <div className="flex items-center gap-4 py-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div>
-            <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'rgba(255,255,255,0.28)' }}>Fact Finding</div>
-            <div className="font-serif text-2xl font-light" style={{ color: '#F0EDE8' }}>{clientName}{isCouple && spouse ? ` & ${spouseName}` : ''}</div>
+        {eduChildren.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', border: '1.5px dashed var(--line2)', borderRadius: '8px', marginBottom: '24px' }}>
+            <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', marginBottom: '16px' }}>No children found in the client profile.</p>
+            <button onClick={addChild} style={styles.addChildBtn}>+ Add Child</button>
           </div>
-          <div className="flex gap-1 ml-4">
-            {[{ id: 'single', label: '👤 Single' }, { id: 'couple', label: '👫 Couple' }].map(m => (
-              <button key={m.id} onClick={() => upd('mode', m.id)} className="px-3 py-1.5 text-xs transition-all"
-                style={{ border: mode === m.id ? '1.5px solid rgba(168,131,74,0.8)' : '1px solid rgba(255,255,255,0.15)', background: mode === m.id ? 'rgba(168,131,74,0.25)' : 'transparent', color: mode === m.id ? '#C4A464' : 'rgba(255,255,255,0.45)' }}>
-                {m.label}
-              </button>
+        ) : (
+          <>
+            {eduChildren.map((child, idx) => (
+              <div key={child.childId} style={{ border: '1px solid var(--line)', borderRadius: '8px', padding: '20px 24px', marginBottom: '16px', background: 'white' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--emerald-l)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600, color: 'var(--emerald)', fontFamily: 'Inter, sans-serif' }}>
+                    {(child.name || '?').charAt(0)}
+                  </div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>
+                    Child {idx + 1} {child.name ? `— ${child.name}` : ''}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={styles.label}>Child's Name</label>
+                    <input type="text" value={child.name} onChange={e => updateChild(idx, 'name', e.target.value)} style={styles.input} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={styles.label}>Current Age</label>
+                    <input type="number" value={child.currentAge || ''} onChange={e => updateChild(idx, 'currentAge', Number(e.target.value))} style={{ ...styles.input, width: '60px' }} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={styles.label}>Study Destination</label>
+                    <select value={child.studyDestination || ''} onChange={e => updateChild(idx, 'studyDestination', e.target.value)} style={styles.select} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}>
+                      <option value="">Select…</option>
+                      {studyOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={styles.label}>Course Duration</label>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                      <input type="number" value={child.courseDuration || ''} onChange={e => updateChild(idx, 'courseDuration', Number(e.target.value))} style={{ ...styles.input, width: '50px' }} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
+                      <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>yrs</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
+                  {[
+                    { field: 'estimatedTotalCost', label: 'Estimated Total Cost' },
+                    { field: 'currentSavings', label: 'Current Savings for Child' },
+                    { field: 'monthlySavings', label: 'Monthly Savings Available' },
+                  ].map(({ field, label }) => (
+                    <div key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={styles.label}>{label}</label>
+                      <div style={styles.currencyWrap}>
+                        <span style={styles.currencyPrefix}>SGD $</span>
+                        <input type="number" value={(child as Record<string, unknown>)[field] as number || ''} onChange={e => updateChild(idx, field, e.target.value ? Number(e.target.value) : undefined)} style={styles.currencyInput} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={styles.label}>Protection on Fund?</label>
+                    <select value={child.protectionOnFund || ''} onChange={e => updateChild(idx, 'protectionOnFund', e.target.value)} style={styles.select} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}>
+                      <option value="">Select…</option>
+                      <option>Yes — waiver of premium</option>
+                      <option>No</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <button onClick={addChild} style={styles.addChildBtn}>+ Add another child</button>
+          </>
+        )}
+
+        <div style={{ marginTop: '24px' }}>
+          <NotesTextarea section="education" placeholder="Education preferences, overseas vs local, scholarship plans, existing savings vehicles…" />
+        </div>
+      </div>
+    )
+  }
+
+  function Section5() {
+    const willClientVal = estate.willClient || ''
+    const willSpouseVal = estate.willSpouse || ''
+
+    return (
+      <div>
+        <SectionIntro
+          eyebrow="Section 5 · Estate Planning"
+          title="Estate & Legacy"
+          subtitle="Ensuring assets are protected, distributed as intended, and the right people are empowered to act on your behalf."
+        />
+        <PersonHeader />
+
+        {/* Urgent flags */}
+        {estateFlags.length > 0 && (
+          <div style={{ background: 'var(--rouge-l)', border: '3px solid var(--rouge)', borderRadius: '8px', padding: '16px 20px', marginBottom: '28px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>
+              ⚠ Urgent Estate Gaps
+            </div>
+            {estateFlags.map(f => (
+              <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--rouge)', flexShrink: 0 }} />
+                <span style={{ fontSize: '12px', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif' }}>{f}</span>
+              </div>
             ))}
           </div>
-          <div className="ml-auto flex items-center">
-            <div className="flex items-stretch" style={{ borderRight: '1px solid rgba(255,255,255,0.08)', marginRight: 16 }}>
-              {[
-                { label: isCouple ? 'Combined/mo' : 'Income/mo', val: fmt(moTotal), color: '#C4A464' },
-                { label: 'Annual', val: fmt(anTotal), color: '#80C4A0' },
-                { label: 'Net Worth', val: netWorth !== 0 ? fmt(netWorth) : '—', color: netWorth >= 0 ? '#80C4A0' : '#E08080' },
-              ].map((s, idx, arr) => (
-                <div key={s.label} className="flex flex-col items-end justify-center"
-                  style={{ padding: '8px 22px', borderRight: idx < arr.length - 1 ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
-                  <div style={{ fontSize: 9, letterSpacing: '0.11em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.32)', marginBottom: 5 }}>{s.label}</div>
-                  <div className="font-serif" style={{ fontSize: 22, fontWeight: 300, lineHeight: 1, color: s.color, letterSpacing: '-0.01em' }}>{s.val}</div>
-                </div>
-              ))}
+        )}
+
+        <SubSectionTitle label="Will" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
+          <SelectInput section="estate" field="willClient" label={`Will Written — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['No', 'Yes', 'Outdated']} />
+          {planningMode === 'couple' && <SelectInput section="estate" field="willSpouse" label={`Will Written — ${spouseName.split(' ')[0]}`} options={['No', 'Yes', 'Outdated']} />}
+          <TextInput section="estate" field="willLastUpdatedClient" label={`Last Updated — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} placeholder="e.g. Jan 2020" />
+          {planningMode === 'couple' && <TextInput section="estate" field="willLastUpdatedSpouse" label={`Last Updated — ${spouseName.split(' ')[0]}`} placeholder="e.g. Jan 2020" />}
+          <TextInput section="estate" field="preferredGuardian" label="Preferred Guardian for Children" placeholder="Full name" />
+        </div>
+
+        <SubSectionTitle label="Trust" color="var(--emerald)" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
+          <SelectInput section="estate" field="trustSetUp" label="Trust Set Up?" options={['No', 'Yes — testamentary', 'Yes — living trust', 'Interested to explore']} />
+          <TextInput section="estate" field="trustPurposeNotes" label="Trust Purpose / Notes" placeholder="Describe the trust purpose or intentions" />
+        </div>
+
+        <SubSectionTitle label="Insurance Nominations & CPF" color="var(--gold-tag)" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
+          <SelectInput section="estate" field="policyNominationsClient" label={`Policy Nominations — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done', 'Partially done']} />
+          {planningMode === 'couple' && <SelectInput section="estate" field="policyNominationsSpouse" label={`Policy Nominations — ${spouseName.split(' ')[0]}`} options={['Not done', 'Done', 'Partially done']} />}
+          <SelectInput section="estate" field="cpfNominationClient" label={`CPF Nomination — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done']} />
+          {planningMode === 'couple' && <SelectInput section="estate" field="cpfNominationSpouse" label={`CPF Nomination — ${spouseName.split(' ')[0]}`} options={['Not done', 'Done']} />}
+        </div>
+
+        <SubSectionTitle label="Lasting Power of Attorney (LPA)" color="var(--ink3)" />
+        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
+          <SelectInput section="estate" field="lpaClient" label={`LPA — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done', 'In progress']} />
+          {planningMode === 'couple' && <SelectInput section="estate" field="lpaSpouse" label={`LPA — ${spouseName.split(' ')[0]}`} options={['Not done', 'Done', 'In progress']} />}
+          <TextInput section="estate" field="doneeClient" label={`Donee (LPA) — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} placeholder="Name of donee" />
+          {planningMode === 'couple' && <TextInput section="estate" field="doneeSpouse" label={`Donee (LPA) — ${spouseName.split(' ')[0]}`} placeholder="Name of donee" />}
+        </div>
+
+        <div style={{ marginTop: '32px' }}>
+          <NotesTextarea section="estate" placeholder="Family dynamics, beneficiary preferences, business succession needs, special considerations…" />
+        </div>
+      </div>
+    )
+  }
+
+  const sectionComponents = [<Section1 />, <Section2 />, <Section3 />, <Section4 />, <Section5 />]
+
+  // ─── Main render ─────────────────────────────────────────────────────────
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--cream)', display: 'flex', flexDirection: 'column' }}>
+
+      {/* Toast */}
+      {toastMsg && (
+        <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999, background: 'var(--charcoal)', color: 'white', padding: '12px 20px', borderRadius: '8px', fontFamily: 'Inter, sans-serif', fontSize: '13px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxWidth: '360px' }}>
+          {toastMsg}
+        </div>
+      )}
+
+      {/* Hero band */}
+      <div style={{ background: 'var(--charcoal)', padding: '28px 40px 0', color: 'white' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+          <div>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 300, margin: '0 0 4px', letterSpacing: '0.01em' }}>Strategic Objectives</h1>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+              {client?.full_name} · {planningMode === 'couple' ? 'Joint Planning' : 'Individual Planning'}
             </div>
-            <button onClick={save} disabled={saving} className="px-5 py-2 text-sm font-medium"
-              style={{ background: saved ? 'var(--emerald)' : saving ? 'rgba(255,255,255,0.1)' : 'rgba(168,131,74,0.9)', color: 'white', border: 'none' }}>
-              {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', color: 'var(--gold)', lineHeight: 1 }}>
+                {Math.round((completedCount / 5) * 100)}%
+              </div>
+              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter, sans-serif', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Complete</div>
+            </div>
+            <button onClick={saveAll} style={{ padding: '10px 20px', background: 'transparent', border: '1.5px solid rgba(168,131,74,0.5)', color: 'var(--gold)', borderRadius: '6px', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.05em' }}>
+              Save Draft
             </button>
           </div>
         </div>
-        <div className="flex">
-          {SECTIONS.map(s => (
-            <button key={s.id} onClick={() => setActiveSection(s.id)} className="flex items-center gap-2 px-4 py-3 text-xs tracking-wide"
-              style={{ color: activeSection === s.id ? '#C4A464' : 'rgba(255,255,255,0.35)', borderBottom: activeSection === s.id ? '1px solid #C4A464' : '1px solid transparent', background: 'transparent' }}>
-              <span>{s.icon}</span>{s.label}
+
+        {/* Hero stats */}
+        <div style={{ display: 'flex', gap: '24px', marginBottom: '20px' }}>
+          {[
+            { label: 'Client', value: client?.full_name || '—' },
+            ...(planningMode === 'couple' ? [{ label: 'Spouse', value: spouseName }] : []),
+            { label: 'Children', value: String(children.length) },
+            { label: 'Sections Complete', value: `${completedCount} / 5` },
+            { label: 'Last Saved', value: lastSaved ? lastSaved.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }) : '—' },
+          ].map((stat, i) => (
+            <div key={i} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', minWidth: '100px' }}>
+              <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', marginBottom: '4px' }}>{stat.label}</div>
+              <div style={{ fontSize: '13px', fontWeight: 500, color: 'white', fontFamily: 'Inter, sans-serif' }}>{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Planning mode toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '0', marginBottom: '0' }}>
+          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter, sans-serif' }}>Planning for:</span>
+          {(['individual', 'couple'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => updatePlanningMode(mode)}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '4px 4px 0 0',
+                border: 'none',
+                background: planningMode === mode ? 'rgba(168,131,74,0.15)' : 'transparent',
+                color: planningMode === mode ? 'var(--gold)' : 'rgba(255,255,255,0.4)',
+                fontSize: '12px',
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: planningMode === mode ? 600 : 400,
+                cursor: 'pointer',
+                borderBottom: planningMode === mode ? '2px solid var(--gold)' : '2px solid transparent',
+                letterSpacing: '0.02em',
+              }}
+            >
+              {mode === 'individual' ? 'Individual' : 'Couple / Family'}
             </button>
           ))}
         </div>
+
+        {/* Section nav */}
+        <div style={{ display: 'flex', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: '0', paddingTop: '0' }}>
+          {sectionLabels.map((label, i) => {
+            const pct = getSectionPct(i)
+            const isActive = activeSection === i
+            const isDone = pct > 80
+            const isStarted = pct > 0
+            return (
+              <button
+                key={i}
+                onClick={() => setActiveSection(i)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '14px 20px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: isActive ? '2px solid white' : '2px solid transparent',
+                  color: isActive ? 'white' : 'rgba(255,255,255,0.45)',
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: '12px',
+                  fontWeight: isActive ? 500 : 400,
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s',
+                  marginBottom: '-1px',
+                }}
+              >
+                <div style={{
+                  width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 700, flexShrink: 0,
+                  background: isDone ? 'var(--emerald)' : isStarted ? 'var(--gold)' : 'rgba(255,255,255,0.12)',
+                  color: isDone || isStarted ? 'white' : 'rgba(255,255,255,0.4)',
+                }}>
+                  {isDone ? '✓' : i + 1}
+                </div>
+                {label}
+              </button>
+            )
+          })}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 20px', color: 'rgba(255,255,255,0.35)', fontSize: '11px', fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap' }}>
+            <div style={{ width: '80px', height: '3px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${(completedCount / 5) * 100}%`, background: 'var(--gold)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+            </div>
+            {completedCount} of 5
+          </div>
+        </div>
       </div>
 
-      <div style={{ padding: '32px 48px', flex: 1 }}>
+      {/* Main body */}
+      <div style={{ flex: 1, display: 'flex', gap: '0', maxWidth: '100%' }}>
 
-        {activeSection === 'income' && (
-          isCouple ? (
-            <div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
-                <div className="space-y-4">
-                  <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={age1} config={cpfConfig} label={`${clientName} (Client)`} />
-                  <CpfCard p={p1} age={age1} config={cpfConfig} label={clientName} />
-                </div>
-                <div className="space-y-4">
-                  <PersonIncomePanel p={p2} onChange={(k,v)=>updP('person2',k,v)} age={age2} config={cpfConfig} label={spouseName} />
-                  <CpfCard p={p2} age={age2} config={cpfConfig} label={spouseName} />
-                </div>
-              </div>
-              <div style={{ background: 'white', border: '2px solid var(--gold)', padding: '20px 24px', marginTop: 24 }}>
-                <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--gold-tag)' }}>Combined Income Summary</div>
-                <div className="flex text-xs pb-2" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase' }}>
-                  <div className="flex-1"></div><div className="w-28 text-right">Monthly</div><div className="w-32 text-right">Annual</div>
-                </div>
-                <SumRow label={clientName} mo={mo1} an={an1} />
-                <SumRow label={spouseName} mo={mo2} an={an2} />
-                <div className="flex items-center justify-between pt-3 mt-1" style={{ borderTop: '2px solid var(--gold)' }}>
-                  <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Total Combined</span>
-                  <div className="flex gap-4">
-                    <span className="font-serif text-lg" style={{ color: 'var(--gold)' }}>{fmt(moTotal)}/mo</span>
-                    <span className="font-serif text-lg" style={{ color: 'var(--gold)' }}>{fmt(anTotal)}/yr</span>
-                  </div>
-                </div>
-              </div>
+        {/* Left: form */}
+        <div style={{ flex: 1, padding: '40px', overflowY: 'auto', minWidth: 0 }}>
+          {loading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px' }}>
+              <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)' }}>Loading discovery data…</p>
             </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, alignItems: 'start' }}>
-              <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={age1} config={cpfConfig} label={clientName} />
-              <CpfCard p={p1} age={age1} config={cpfConfig} />
-            </div>
-          )
-        )}
+          ) : sectionComponents[activeSection]}
+        </div>
 
+        {/* Right sidebar */}
+        <div style={{ width: '260px', flexShrink: 0, background: 'white', borderLeft: '1px solid var(--line)', padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-        {activeSection === 'expenses' && (
-          <div className="space-y-5">
-            <div style={{ background: 'white', border: '1px solid var(--line)', padding: '16px 24px' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Cashflow Detail</div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Choose how much detail to capture</div>
-                </div>
-                <div className="flex gap-2">
-                  {[{ id: 'simple', label: '⚡ Simplified' }, { id: 'detailed', label: '📋 Detailed' }].map(m => (
-                    <button key={m.id} onClick={() => upd('expense_mode', m.id)}
-                      className="px-4 py-2 text-sm" style={{ border: expMode === m.id ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: expMode === m.id ? 'var(--gold-l)' : 'white', color: expMode === m.id ? 'var(--gold-tag)' : 'var(--ink2)', minWidth: 130 }}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
-              <div className="space-y-4">
-
-                {expMode === 'simple' && (
-                  <div style={{ background: 'white', border: '1px solid var(--line)' }}>
-                    <div className="px-6 py-4" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <div className="font-serif text-lg" style={{ color: 'var(--ink)' }}>Annual Expenses</div>
-                      <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Enter annual amounts — monthly auto-calculated</div>
-                    </div>
-                    {isCouple && (
-                      <div className="px-6 pt-4">
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 145px 145px 130px', gap: 8 }}>
-                          <div />
-                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'rgba(168,131,74,0.08)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{clientName}</div>
-                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'rgba(74,124,158,0.08)', color: '#4A7C9E', border: '1px solid rgba(74,124,158,0.2)' }}>{spouseName}</div>
-                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'var(--cream2)', color: 'var(--ink2)', border: '1px solid var(--line2)' }}>Combined</div>
-                        </div>
-                      </div>
-                    )}
-                    <div className="px-6 py-2">
-                      {EXP_CATEGORIES.map(cat => {
-                        const ann1 = getAnn1(cat); const ann2 = getAnn2(cat); const annSum = ann1 + ann2
-                        const isCpfOa = cat.id === 'cpf_oa'
-                        return (
-                          <div key={cat.id} className="py-3" style={{ borderBottom: '1px solid var(--line)' }}>
-                            <div className="flex items-center gap-3">
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: cat.color }}></div>
-                                  <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{cat.label}</span>
-                                  {isCpfOa && <span className="text-xs px-1.5 py-0.5 flex-shrink-0" style={{ background: '#5A8A6A18', color: '#5A8A6A', border: '1px solid #5A8A6A30' }}>CPF</span>}
-                                </div>
-                                <div className="text-xs mt-0.5 ml-4" style={{ color: 'var(--ink3)' }}>{cat.hint}</div>
-                              </div>
-                              {isCouple ? (
-                                <div style={{ display: 'grid', gridTemplateColumns: '145px 145px 130px', gap: 8, flexShrink: 0 }}>
-                                  <AnnInput value={ann1 || undefined} onChange={v => upd(cat.key, n(v))} />
-                                  <AnnInput value={ann2 || undefined} onChange={v => upd(cat.key2, n(v))} accentColor="#4A7C9E" />
-                                  <div className="flex items-center justify-end px-3 text-sm font-medium"
-                                    style={{ background: annSum > 0 ? 'var(--cream2)' : 'var(--cream)', border: '1px solid var(--line2)', color: annSum > 0 ? 'var(--ink)' : 'var(--ink3)', minHeight: 38 }}>
-                                    {annSum > 0 ? fmt(annSum) : '—'}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={{ width: 150, flexShrink: 0 }}>
-                                  <AnnInput value={ann1 || undefined} onChange={v => upd(cat.key, n(v))} />
-                                </div>
-                              )}
-                            </div>
-                            {annSum > 0 && (
-                              <div className="flex items-center gap-3 mt-1.5 ml-4">
-                                <span className="text-xs" style={{ color: 'var(--ink3)' }}>{fmt(annSum / 12)}<span style={{ opacity: 0.6 }}>/mo</span></span>
-                                <span style={{ color: 'var(--line2)', fontSize: 10 }}>·</span>
-                                <span className="text-xs" style={{ color: 'var(--ink3)' }}>{fmt(annSum)}<span style={{ opacity: 0.6 }}>/yr</span></span>
-                                {isCpfOa && <span className="text-xs" style={{ color: '#5A8A6A' }}>not included in cash expenses</span>}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                      <div className="pt-4 pb-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Total Annually</span>
-                          <div className="flex gap-6 items-end">
-                            <div className="text-right">
-                              <div className="text-xs mb-0.5" style={{ color: 'var(--ink3)' }}>Monthly</div>
-                              <div className="font-serif text-lg" style={{ color: 'var(--rouge)' }}>{fmt(moExpNoCpf)}/mo</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-xs mb-0.5" style={{ color: 'var(--ink3)' }}>Annual</div>
-                              <div className="font-serif text-lg" style={{ color: 'var(--ink2)' }}>{fmt(annExpNoCpf)}/yr</div>
-                            </div>
-                          </div>
-                        </div>
-                        {annCpfOaTotal > 0 && (
-                          <div className="text-xs mt-1" style={{ color: '#5A8A6A' }}>
-                            * Excludes CPF OA mortgage ({fmt(annCpfOaTotal / 12)}/mo · {fmt(annCpfOaTotal)}/yr)
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {expMode === 'detailed' && (
-                  <div className="space-y-4">
-                    {DETAILED_GROUPS.map(group => {
-                      const customItems = (ff[group.customKey] as CustomExpenseItem[]) || []
-                      const g1 = group.keys.reduce((s,k)=>s+((ff[k as keyof FactFinding] as number)||0),0)+customItems.reduce((s,i)=>s+(i.amount||0),0)
-                      const g2 = isCouple ? group.keys2.reduce((s,k)=>s+((ff[k as keyof FactFinding] as number)||0),0)+customItems.reduce((s,i)=>s+(i.amount2||0),0) : 0
-                      const gSum = g1 + g2
-                      return (
-                        <div key={group.id} style={{ background: 'white', border: '1px solid var(--line)' }}>
-                          <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: `3px solid ${group.color}` }}>
-                            <div>
-                              <div className="text-sm font-medium" style={{ color: group.color }}>{group.title}</div>
-                              <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>{group.hint}</div>
-                            </div>
-                            <div className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color: group.color, fontWeight: 600 }}>{fmt(gSum)}/mo</span></div>
-                          </div>
-                          <div className="px-5 py-2">
-                            {isCouple && (
-                              <div className="flex items-center gap-2 py-2 mb-1" style={{ borderBottom: '2px solid var(--line2)' }}>
-                                <div className="flex-1 text-xs" style={{ color: 'var(--ink3)' }}>Item</div>
-                                <div className="text-xs font-medium text-center" style={{ width: 118, color: 'var(--gold-tag)' }}>{clientName}</div>
-                                <div className="text-xs font-medium text-center" style={{ width: 118, color: '#4A7C9E' }}>{spouseName}</div>
-                                <div className="text-xs font-medium text-center" style={{ width: 90, color: 'var(--ink2)' }}>Combined</div>
-                                <div style={{ width: 28 }}></div>
-                              </div>
-                            )}
-                            {group.keys.map((k, i) => {
-                              const k2 = group.keys2[i]
-                              const v1 = (ff[k as keyof FactFinding] as number) || 0
-                              const v2 = isCouple ? ((ff[k2 as keyof FactFinding] as number) || 0) : 0
-                              const vSum = v1 + v2
-                              return (
-                                <div key={k} className="flex items-center py-2 gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
-                                  <div className="flex-1 text-xs" style={{ color: 'var(--ink2)' }}>{group.labels[i]}</div>
-                                  <DetInput value={v1||undefined} onChange={v=>upd(k as keyof FactFinding,n(v))} />
-                                  {isCouple && <DetInput value={v2||undefined} onChange={v=>upd(k2 as keyof FactFinding,n(v))} accentColor="#4A7C9E" />}
-                                  {isCouple
-                                    ? <div className="text-xs text-right font-medium" style={{ width: 90, color: vSum>0?'var(--ink)':'var(--ink3)' }}>{vSum>0?fmt(vSum):'—'}</div>
-                                    : <div className="text-xs text-right" style={{ width: 80, color: 'var(--ink3)' }}>{v1>0?fmt(v1*12)+'/yr':'—'}</div>}
-                                  {isCouple && <div style={{ width: 28 }}></div>}
-                                </div>
-                              )
-                            })}
-                            {customItems.map((item, i) => {
-                              const v2 = isCouple ? (item.amount2||0) : 0
-                              const vSum = (item.amount||0) + v2
-                              return (
-                                <div key={`cx-${i}`} className="flex items-center py-2 gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
-                                  <input type="text" value={item.label} placeholder="Custom expense"
-                                    onChange={e=>{const u=[...customItems];u[i]={...u[i],label:e.target.value};upd(group.customKey,u)}}
-                                    className="flex-1 px-2 py-1.5 text-xs outline-none"
-                                    style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
-                                    onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
-                                    onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
-                                  <DetInput value={item.amount||undefined} onChange={v=>{const u=[...customItems];u[i]={...u[i],amount:n(v)};upd(group.customKey,u)}} />
-                                  {isCouple && <DetInput value={item.amount2||undefined} onChange={v=>{const u=[...customItems];u[i]={...u[i],amount2:n(v)};upd(group.customKey,u)}} accentColor="#4A7C9E" />}
-                                  {isCouple
-                                    ? <div className="text-xs text-right font-medium" style={{ width:90,color:vSum>0?'var(--ink)':'var(--ink3)' }}>{vSum>0?fmt(vSum):'—'}</div>
-                                    : <div className="text-xs text-right" style={{ width:80,color:'var(--ink3)' }}>{(item.amount||0)>0?fmt((item.amount||0)*12)+'/yr':'—'}</div>}
-                                  <button onClick={()=>upd(group.customKey,customItems.filter((_,j)=>j!==i))}
-                                    className="flex items-center justify-center text-sm flex-shrink-0"
-                                    style={{ width:28,height:28,color:'var(--ink3)',border:'1px solid var(--line)',background:'white' }}
-                                    onMouseEnter={e=>(e.currentTarget.style.color='var(--rouge)')}
-                                    onMouseLeave={e=>(e.currentTarget.style.color='var(--ink3)')}>×</button>
-                                </div>
-                              )
-                            })}
-                            <div className="pt-2 pb-1">
-                              <button onClick={()=>upd(group.customKey,[...customItems,{label:'',amount:0,amount2:0}])}
-                                className="text-xs px-3 py-1.5"
-                                style={{ color:'var(--gold-tag)',border:'1px solid rgba(168,131,74,0.3)',background:'var(--gold-l)' }}>
-                                + Add Row
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Cash Flow</div>
-                  <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                    <span style={{ color: 'var(--ink3)' }}>Total Income/mo</span>
-                    <span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(moTotal)}</span>
-                  </div>
-                  <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                    <span style={{ color: 'var(--ink3)' }}>Total Expenses/mo</span>
-                    <span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(moExpNoCpf)}</span>
-                  </div>
-                  {annCpfOaTotal > 0 && (<>
-                    <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <span style={{ color: '#5A8A6A' }}>CPF OA Outflow/mo</span>
-                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>−{fmt(annCpfOaTotal/12)}</span>
-                    </div>
-                    <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                      <span style={{ color: '#5A8A6A' }}>CPF OA Inflow/mo</span>
-                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>+{fmt(cpf1.oa+(cpf2?.oa||0))}</span>
-                    </div>
-                  </>)}
-                  <div className="flex items-center justify-between pt-3 mb-2">
-                    <span className="text-xs" style={{ color: 'var(--ink2)' }}>Surplus / Deficit</span>
-                    <span className="font-serif text-xl" style={{ color: moTotal-moExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
-                      {moTotal-moExpNoCpf>=0?'+':'−'}{fmt(Math.abs(moTotal-moExpNoCpf))}/mo
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs" style={{ color: 'var(--ink2)' }}>Annual surplus</span>
-                    <span className="font-serif text-base" style={{ color: anTotal-annExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
-                      {anTotal-annExpNoCpf>=0?'+':'−'}{fmt(Math.abs(anTotal-annExpNoCpf))}/yr
-                    </span>
-                  </div>
-                  {moTotal > 0 && (
-                    <div className="mt-3">
-                      <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
-                        <div className="h-full rounded-full" style={{ width:`${Math.min((moExpNoCpf/moTotal)*100,100)}%`, background: moExpNoCpf/moTotal>0.9?'var(--rouge)':moExpNoCpf/moTotal>0.7?'#C4A464':'var(--emerald)' }} />
-                      </div>
-                      <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--ink3)' }}>
-                        <span>Expense ratio</span><span>{pct(moExpNoCpf,moTotal)}%</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                  <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--ink3)' }}>vs Singapore Average</div>
-                  <div className="text-xs mb-4" style={{ color: 'var(--ink3)' }}>% of gross income (DOS HES benchmark)</div>
-                  {EXP_CATEGORIES.map(cat => {
-                    const moAmt = getAnnSum(cat) / 12
-                    const actualPct = moGrossTotal > 0 ? (moAmt / moGrossTotal) * 100 : 0
-                    const benchPct = BENCHMARKS_PCT[cat.id] ?? 5
-                    const over = actualPct > benchPct
-                    const barW = Math.min((actualPct / (benchPct * 2)) * 100, 100)
-                    return (
-                      <div key={cat.id} className="mb-4">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="text-xs" style={{ color: 'var(--ink2)' }}>{cat.label}</div>
-                          <div className="flex items-center gap-2 text-xs">
-                            <span style={{ color: over?'var(--rouge)':'var(--emerald)', fontWeight: 500 }}>{actualPct.toFixed(1)}%</span>
-                            <span style={{ color: 'var(--ink3)' }}>vs {benchPct}%</span>
-                            {over && <span style={{ color: 'var(--rouge)', fontSize: 9 }}>▲ HIGH</span>}
-                          </div>
-                        </div>
-                        <div className="relative h-2 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
-                          <div className="absolute top-0 bottom-0 w-px z-10" style={{ left: '50%', background: 'rgba(0,0,0,0.18)' }} />
-                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barW}%`, background: cat.color }} />
-                        </div>
-                        <div className="flex justify-between mt-0.5" style={{ fontSize: 9, color: 'var(--ink3)' }}>
-                          <span>0%</span><span>{benchPct}% avg</span><span>{benchPct * 2}%</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <div className="pt-2 text-xs" style={{ borderTop: '1px solid var(--line)', color: 'var(--ink3)' }}>▲ HIGH = above Singapore income benchmark</div>
-                </div>
-
-                <div style={{ background: 'white', border: '1px solid var(--line)', padding: '16px 20px' }}>
-                  <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Annual Breakdown</div>
-                  {EXP_CATEGORIES.map(cat => {
-                    const annAmt = getAnnSum(cat); if (!annAmt) return null
-                    const isCpfOa = cat.id === 'cpf_oa'
-                    return (
-                      <div key={cat.id} className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full" style={{ background: cat.color }}></div>
-                          <span style={{ color: isCpfOa?'#5A8A6A':'var(--ink2)' }}>{cat.label}</span>
-                          {isCpfOa && <span style={{ color: '#5A8A6A', fontSize: 9 }}>CPF</span>}
-                        </div>
-                        <span style={{ color: isCpfOa?'#5A8A6A':'var(--ink)', fontWeight: 500 }}>{fmt(annAmt)}</span>
-                      </div>
-                    )
-                  })}
-                  <div className="flex justify-between pt-2 text-xs" style={{ borderTop: '1px solid var(--line)', marginTop: 4 }}>
-                    <span style={{ color: 'var(--ink3)' }}>Cash Expenses</span>
-                    <span style={{ color: 'var(--rouge)', fontWeight: 600 }}>{fmt(annExpNoCpf)}</span>
-                  </div>
-                  {annCpfOaTotal > 0 && (
-                    <div className="flex justify-between pt-1 text-xs">
-                      <span style={{ color: '#5A8A6A' }}>+ CPF OA</span>
-                      <span style={{ color: '#5A8A6A', fontWeight: 600 }}>{fmt(annCpfOaTotal)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between pt-2 font-semibold text-sm" style={{ borderTop: '1px solid var(--line)', marginTop: 4, color: 'var(--ink)' }}>
-                    <span>Total Annual</span><span>{fmt(annExpAll)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+          {/* Save status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : saveStatus === 'saved' ? 'var(--emerald)' : 'var(--line2)' }} />
+            <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>
+              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : lastSaved ? `Saved ${lastSaved.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}` : 'Auto-saves on every change'}
+            </span>
           </div>
-        )}
 
-
-        {activeSection === 'assets' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
-            <div className="space-y-4">
-              <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal}>
-                {assetRow('Savings / Current Account(s)', 'a_savings')}
-                {assetRow('Fixed Deposit(s)', 'a_fixed_deposit')}
-                <CustomRows items={ff.a_cash_custom || []} onChange={v => upd('a_cash_custom', v)} placeholder="e.g. Singapore Savings Bonds" />
-              </AssetBlock>
-              <AssetBlock title="INVESTED ASSET(S)" color="#4A7C9E" total={investedTotal}>
-                {assetRow('CPF Ordinary Account (OA)', 'a_cpf_oa')}
-                {assetRow('CPF Special Account (SA)', 'a_cpf_sa')}
-                {assetRow('CPF Medisave Account (MA)', 'a_cpf_ma')}
-                {assetRow('CPF Retirement Account (RA)', 'a_cpf_ra')}
-                {assetRow('SRS', 'a_srs')}
-                {assetRow('Shares', 'a_shares')}
-                {assetRow('ETF(s)', 'a_etf')}
-                {assetRow('Unit Trust(s)', 'a_unit_trust')}
-                {assetRow('Bonds / Treasury Bills', 'a_bonds')}
-                {assetRow('Alternative Investments (Hedge Funds, Gold, etc.)', 'a_alternatives')}
-                {assetRow('Investment Property (Residential)', 'a_inv_property_res')}
-                {assetRow('Investment Property (Commercial)', 'a_inv_property_com')}
-                {assetRow('Business Venture(s)', 'a_business')}
-                <CustomRows items={ff.a_invested_custom || []} onChange={v => upd('a_invested_custom', v)} placeholder="e.g. Crypto, Wine Collection" />
-              </AssetBlock>
-              <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal}>
-                {assetRow('Residential Property', 'a_residential')}
-                {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles')}
-                {assetRow('Club Membership', 'a_club')}
-                <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" />
-              </AssetBlock>
-            </div>
-            <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
-              <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Total Assets</div>
-                {[{label:'Cash / Near Cash',val:cashTotal,color:'var(--emerald)'},{label:'Invested Assets',val:investedTotal,color:'#4A7C9E'},{label:'Personal Use',val:personalTotal,color:'#C4A464'}].map(r=>(
-                  <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label}</span></div>
-                    <span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
+          {/* Progress */}
+          <div>
+            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginBottom: '12px' }}>Discovery Progress</div>
+            {sectionLabels.map((label, i) => {
+              const pct = getSectionPct(i)
+              const status = pct > 80 ? 'Complete' : pct > 0 ? 'In progress' : 'Not started'
+              return (
+                <div key={i} style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '11px', color: pct > 80 ? 'var(--emerald)' : pct > 0 ? 'var(--gold-tag)' : 'var(--ink3)', fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>{label}</span>
+                    <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>{pct}%</span>
                   </div>
-                ))}
-                <div className="flex justify-between pt-3 font-semibold text-sm" style={{ color: 'var(--emerald)' }}><span>Total Assets</span><span>{fmt(totalAssets)}</span></div>
-              </div>
-              <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Net Worth</div>
-                <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Assets</span><span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(totalAssets)}</span></div>
-                <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Liabilities</span><span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(totalLiab)}</span></div>
-                <div className="flex justify-between pt-3 font-serif text-2xl" style={{ color: netWorth>=0?'var(--emerald)':'var(--rouge)' }}>
-                  <span className="text-sm font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Worth</span>
-                  <span>{netWorth>=0?'':'−'}{fmt(Math.abs(netWorth))}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'liabilities' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
-            <div className="space-y-4">
-              <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal}>
-                {assetRow('Credit Card / Credit Line', 'l_credit_card')}
-                {assetRow('Business Loan', 'l_business_loan')}
-                {assetRow('Renovation Loan', 'l_renovation_st')}
-                <CustomRows items={ff.l_st_custom || []} onChange={v => upd('l_st_custom', v)} placeholder="e.g. Personal Line of Credit" />
-              </AssetBlock>
-              <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal}>
-                {assetRow('Mortgage Loan – Residing', 'l_mortgage_residing')}
-                {assetRow('Mortgage Loan – Investment', 'l_mortgage_investment')}
-                {assetRow('Car / Motor Vehicle Loan', 'l_car_loan')}
-                {assetRow('Study Loan', 'l_study_loan')}
-                {assetRow('Personal Loan', 'l_personal_loan')}
-                {assetRow('Renovation Loan', 'l_renovation_lt')}
-                <CustomRows items={ff.l_lt_custom || []} onChange={v => upd('l_lt_custom', v)} placeholder="e.g. BNPL, Other Loan" />
-              </AssetBlock>
-            </div>
-            <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
-              <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Liability Breakdown</div>
-                <LiabilityDonut items={[
-                  { label: 'Mortgage (Residing)', val: ff.l_mortgage_residing||0, color: '#E08080' },
-                  { label: 'Mortgage (Investment)', val: ff.l_mortgage_investment||0, color: '#C47070' },
-                  { label: 'Car Loan', val: ff.l_car_loan||0, color: '#C4A464' },
-                  { label: 'Credit Card', val: ff.l_credit_card||0, color: '#7A6AAA' },
-                  { label: 'Personal Loan', val: ff.l_personal_loan||0, color: '#4A7C9E' },
-                  { label: 'Study Loan', val: ff.l_study_loan||0, color: 'var(--emerald)' },
-                  { label: 'Others', val: (ff.l_business_loan||0)+(ff.l_renovation_st||0)+(ff.l_renovation_lt||0)+ltCustom+stCustom, color: '#9A9690' },
-                ]} />
-              </div>
-              <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Summary</div>
-                {[{label:'Short Term (<5yr)',val:stTotal,color:'var(--rouge)'},{label:'Long Term (>5yr)',val:ltTotal,color:'#8A5E3A'}].map(r=>(
-                  <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                    <span style={{ color: 'var(--ink2)' }}>{r.label}</span><span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
+                  <div style={{ height: '3px', background: 'var(--cream2)', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: pct > 80 ? 'var(--emerald)' : 'var(--gold)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
                   </div>
-                ))}
-                <div className="flex justify-between pt-3 font-semibold text-sm mb-4" style={{ color: 'var(--rouge)', borderBottom: '1px solid var(--line)', paddingBottom: 12 }}>
-                  <span>Total Liabilities</span><span>{fmt(totalLiab)}</span>
-                </div>
-                {totalAssets > 0 && (<>
-                  <div className="text-xs mb-2" style={{ color: 'var(--ink3)' }}>Debt-to-Asset Ratio</div>
-                  <div className="h-2.5 rounded-full overflow-hidden mb-1" style={{ background: 'var(--line)' }}>
-                    <div className="h-full rounded-full transition-all" style={{ width:`${Math.min(pct(totalLiab,totalAssets),100)}%`, background: totalLiab/totalAssets>0.5?'var(--rouge)':totalLiab/totalAssets>0.3?'#C4A464':'var(--emerald)' }} />
-                  </div>
-                  <div className="flex justify-between text-xs" style={{ color: 'var(--ink3)' }}>
-                    <span>{pct(totalLiab,totalAssets)}% of assets</span>
-                    <span style={{ color: totalLiab/totalAssets>0.5?'var(--rouge)':totalLiab/totalAssets>0.3?'#C4A464':'var(--emerald)' }}>
-                      {totalLiab/totalAssets>0.5?'High':totalLiab/totalAssets>0.3?'Moderate':'Healthy'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between pt-3 font-serif text-xl mt-3" style={{ color: netWorth>=0?'var(--emerald)':'var(--rouge)', borderTop: '1px solid var(--line)' }}>
-                    <span className="text-sm font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Worth</span>
-                    <span>{netWorth>=0?'':'−'}{fmt(Math.abs(netWorth))}</span>
-                  </div>
-                </>)}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'risk' && (
-          <div style={{ display: 'grid', gridTemplateColumns: isCouple?'1fr 1fr':'1fr 340px', gap: 20, alignItems: 'start' }}>
-            <div className="space-y-5">
-              {isCouple && <div className="text-sm font-medium px-4 py-2" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{clientName}</div>}
-              <Card title="Risk Tolerance">
-                <Lbl>Risk Profile</Lbl>
-                <div className="flex gap-2 mt-1">
-                  {['Conservative','Moderate','Balanced','Growth','Aggressive'].map(r=>(
-                    <button key={r} onClick={()=>updP('person1','risk_profile',r)} className="flex-1 py-2.5 text-xs font-medium"
-                      style={{ border:p1.risk_profile===r?`1.5px solid ${RISK_COLORS[r]}`:'1px solid var(--line)', background:p1.risk_profile===r?RISK_COLORS[r]+'18':'white', color:p1.risk_profile===r?RISK_COLORS[r]:'var(--ink3)' }}>{r}</button>
-                  ))}
-                </div>
-              </Card>
-              <Card title="Investment Experience">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <Sel label="Experience" value={p1.investment_experience} onChange={v=>updP('person1','investment_experience',v)} options={['None','Beginner (<2yr)','Intermediate (2-5yr)','Experienced (5-10yr)','Advanced (10+yr)']} />
-                  <Sel label="Horizon" value={p1.investment_horizon} onChange={v=>updP('person1','investment_horizon',v)} options={['Short (<3yr)','Medium (3-7yr)','Long (7-15yr)','Very Long (15+yr)']} />
-                </div>
-              </Card>
-            </div>
-            {isCouple ? (
-              <div className="space-y-5">
-                <div className="text-sm font-medium px-4 py-2" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{spouseName}</div>
-                <Card title="Risk Tolerance">
-                  <Lbl>Risk Profile</Lbl>
-                  <div className="flex gap-2 mt-1">
-                    {['Conservative','Moderate','Balanced','Growth','Aggressive'].map(r=>(
-                      <button key={r} onClick={()=>updP('person2','risk_profile',r)} className="flex-1 py-2.5 text-xs font-medium"
-                        style={{ border:p2.risk_profile===r?`1.5px solid ${RISK_COLORS[r]}`:'1px solid var(--line)', background:p2.risk_profile===r?RISK_COLORS[r]+'18':'white', color:p2.risk_profile===r?RISK_COLORS[r]:'var(--ink3)' }}>{r}</button>
-                    ))}
-                  </div>
-                </Card>
-                <Card title="Investment Experience">
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                    <Sel label="Experience" value={p2.investment_experience} onChange={v=>updP('person2','investment_experience',v)} options={['None','Beginner (<2yr)','Intermediate (2-5yr)','Experienced (5-10yr)','Advanced (10+yr)']} />
-                    <Sel label="Horizon" value={p2.investment_horizon} onChange={v=>updP('person2','investment_horizon',v)} options={['Short (<3yr)','Medium (3-7yr)','Long (7-15yr)','Very Long (15+yr)']} />
-                  </div>
-                </Card>
-              </div>
-            ) : (
-              p1.risk_profile && (
-                <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                  <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Profile</div>
-                  <div className="font-serif text-2xl mb-2" style={{ color: RISK_COLORS[p1.risk_profile]||'var(--ink)' }}>{p1.risk_profile}</div>
-                  <div className="text-xs leading-relaxed" style={{ color: 'var(--ink2)' }}>
-                    {p1.risk_profile==='Conservative'&&'Preserves capital. Bonds, money markets, fixed deposits.'}
-                    {p1.risk_profile==='Moderate'&&'Accepts modest fluctuations. Balanced mix of bonds and equities.'}
-                    {p1.risk_profile==='Balanced'&&'Comfortable with medium-term volatility. Diversified portfolio.'}
-                    {p1.risk_profile==='Growth'&&'Capital appreciation focus. Higher equity allocation.'}
-                    {p1.risk_profile==='Aggressive'&&'Maximum growth. Predominantly equities incl. emerging markets.'}
-                  </div>
-                  {p1.investment_horizon&&<div className="mt-3 pt-3 text-xs" style={{ borderTop:'1px solid var(--line)',color:'var(--ink3)' }}>Horizon: <span style={{ color:'var(--ink2)',fontWeight:500 }}>{p1.investment_horizon}</span></div>}
+                  <div style={{ fontSize: '9px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginTop: '2px' }}>{status}</div>
                 </div>
               )
-            )}
+            })}
           </div>
-        )}
 
-        {activeSection === 'health' && (
-          <div style={{ display: 'grid', gridTemplateColumns: isCouple?'1fr 1fr':'1fr 340px', gap: 20, alignItems: 'start' }}>
-            {[{person:'person1' as const,p:p1,name:clientName},...(isCouple?[{person:'person2' as const,p:p2,name:spouseName}]:[])].map(({person,p,name})=>(
-              <Card key={person} title="Health Declarations" subtitle={isCouple?name:undefined}>
-                <div className="space-y-5">
-                  <div>
-                    <Lbl>Smoking Status</Lbl>
-                    <div className="flex gap-3 mt-1">
-                      {[{label:'Non-Smoker',val:false},{label:'Smoker',val:true}].map(opt=>(
-                        <button key={opt.label} onClick={()=>updP(person,'smoker',opt.val)} className="px-5 py-2.5 text-sm"
-                          style={{ border:p.smoker===opt.val?'1.5px solid var(--gold)':'1px solid var(--line)', background:p.smoker===opt.val?'var(--gold-l)':'white', color:p.smoker===opt.val?'var(--gold-tag)':'var(--ink3)' }}>
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    {p.smoker&&<div className="mt-2 text-xs px-3 py-2" style={{ background:'var(--rouge-l)',color:'var(--rouge)' }}>Smoker loadings ~25–50% on life and CI premiums.</div>}
-                  </div>
-                  <div>
-                    <Lbl>Pre-existing Conditions</Lbl>
-                    <textarea value={p.pre_existing??''} onChange={e=>updP(person,'pre_existing',e.target.value)} rows={4}
-                      placeholder="Conditions, surgeries, medications, family history…"
-                      className="w-full px-3 py-2.5 text-sm outline-none resize-none"
-                      style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
-                      onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
-                      onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
-                  </div>
-                </div>
-              </Card>
-            ))}
-            {!isCouple&&(
-              <div style={{ background:'var(--gold-l)',border:'1px solid rgba(168,131,74,0.2)',padding:'16px 20px' }}>
-                <div className="text-xs tracking-widest uppercase mb-1" style={{ color:'var(--gold-tag)' }}>Disclosure Reminder</div>
-                <div className="text-xs leading-relaxed" style={{ color:'var(--ink2)' }}>Clients are under duty of disclosure. Non-disclosure may result in policy avoidance. If in doubt, declare.</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeSection === 'notes' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20, alignItems: 'start' }}>
-            <Card title="Advisor Notes" subtitle="Private — not shared with client">
-              <textarea value={ff.advisor_notes??''} onChange={e=>upd('advisor_notes',e.target.value)} rows={14}
-                placeholder="Observations, priorities, follow-up items, next steps…"
-                className="w-full px-3 py-2.5 text-sm outline-none resize-none"
-                style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
-                onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
-                onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
-            </Card>
-            <div style={{ background:'white',border:'1px solid var(--line)',padding:'20px 24px' }}>
-              <div className="text-xs tracking-widest uppercase mb-3" style={{ color:'var(--ink3)' }}>Summary</div>
-              {[
-                { label:'Mode', val:isCouple?'Couple':'Single' },
-                { label:'Client Gross/mo', val:p1.gross_monthly?fmt(p1.gross_monthly):'—' },
-                { label:isCouple?'Spouse Gross/mo':'', val:isCouple&&p2.gross_monthly?fmt(p2.gross_monthly):'' },
-                { label:'Combined Income/mo', val:moTotal>0?fmt(moTotal):'—' },
-                { label:'Combined Income/yr', val:anTotal>0?fmt(anTotal):'—' },
-                { label:'Total Expenses/mo', val:moExpNoCpf>0?fmt(moExpNoCpf):'—' },
-                { label:'Net Surplus/yr', val:anTotal>0||annExpNoCpf>0?fmt(anTotal-annExpNoCpf):'—' },
-                { label:'Total Assets', val:totalAssets>0?fmt(totalAssets):'—' },
-                { label:'Total Liabilities', val:totalLiab>0?fmt(totalLiab):'—' },
-                { label:'Net Worth', val:(totalAssets+totalLiab)>0?fmt(netWorth):'—' },
-                { label:'Risk (Client)', val:p1.risk_profile||'—' },
-                { label:isCouple?'Risk (Spouse)':'', val:isCouple?(p2.risk_profile||'—'):'' },
-              ].filter(r=>r.label).map(r=>(
-                <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom:'1px solid var(--line)' }}>
-                  <span style={{ color:'var(--ink3)' }}>{r.label}</span>
-                  <span style={{ color:'var(--ink)',fontWeight:500 }}>{r.val}</span>
-                </div>
-              ))}
+          {/* Feeds into */}
+          <div>
+            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginBottom: '10px' }}>Feeds Into</div>
+            <div style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '12px', marginBottom: '10px', paddingTop: '4px', paddingBottom: '4px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Risk Management Tab</div>
+              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>Protection needs, coverage gap, human life value</div>
+            </div>
+            <div style={{ borderLeft: '3px solid #4A7FA5', paddingLeft: '12px', paddingTop: '4px', paddingBottom: '4px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Capital Mandate Tab</div>
+              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>Retirement corpus, education targets, investment gap</div>
             </div>
           </div>
-        )}
+
+          {/* Live preview */}
+          <div style={{ background: 'var(--charcoal)', borderRadius: '8px', padding: '16px' }}>
+            <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter, sans-serif', marginBottom: '12px' }}>Live Preview</div>
+            {[
+              { label: 'Life Cover Needed', value: fmtCurrency(lifeCoverNeeded || undefined) },
+              { label: 'CI Cover Needed', value: fmtCurrency(ciCoverNeeded || undefined) },
+              { label: 'Retirement Corpus', value: fmtCurrency(retirementCorpus || undefined) },
+              { label: 'Education Fund', value: fmtCurrency(eduFundNeeded || undefined) },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
+                <span style={{ fontSize: '13px', fontFamily: 'DM Mono, monospace', color: value === '—' ? 'rgba(255,255,255,0.2)' : 'var(--gold)', fontWeight: 500 }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Estate flags */}
+          {estateFlags.length > 0 && (
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>Estate Flags</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {estateFlags.map(f => (
+                  <div key={f} style={{ background: 'var(--rouge-l)', padding: '6px 10px', borderRadius: '4px', fontSize: '10px', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', lineHeight: 1.3 }}>
+                    {f}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ background: 'white', borderTop: '1px solid var(--line)', padding: '16px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : 'var(--emerald)' }} />
+          <span style={{ fontSize: '12px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>
+            {saveStatus === 'saving' ? 'Saving…' : `Auto-saved · ${completedCount} of 5 sections complete`}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => showToast('Coming soon')}
+            style={{ padding: '10px 20px', background: 'transparent', border: '1.5px solid var(--line2)', borderRadius: '6px', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
+          >
+            Review Annual History
+          </button>
+          <button
+            onClick={saveAll}
+            style={{ padding: '10px 24px', background: 'var(--charcoal)', border: 'none', borderRadius: '6px', color: 'white', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}
+          >
+            Complete & Push to Plan →
+          </button>
+        </div>
       </div>
     </div>
   )
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styles = {
+  label: {
+    fontSize: '8px',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase' as const,
+    color: 'var(--ink3)',
+    fontFamily: 'Inter, sans-serif',
+    fontWeight: 500,
+  },
+  input: {
+    width: '100%',
+    border: 'none',
+    borderBottom: '1px solid var(--line2)',
+    background: 'transparent',
+    padding: '6px 0',
+    fontSize: '13px',
+    color: 'var(--ink)',
+    fontFamily: 'Inter, sans-serif',
+    outline: 'none',
+    transition: 'border-bottom-color 0.15s',
+    boxSizing: 'border-box' as const,
+  },
+  select: {
+    width: '100%',
+    border: 'none',
+    borderBottom: '1px solid var(--line2)',
+    background: 'transparent',
+    padding: '6px 0',
+    fontSize: '13px',
+    color: 'var(--ink)',
+    fontFamily: 'Inter, sans-serif',
+    outline: 'none',
+    transition: 'border-bottom-color 0.15s',
+    cursor: 'pointer',
+    appearance: 'none' as const,
+    boxSizing: 'border-box' as const,
+  },
+  currencyWrap: {
+    display: 'flex',
+    alignItems: 'baseline',
+    borderBottom: '1px solid var(--line2)',
+    transition: 'border-bottom-color 0.15s',
+    gap: '4px',
+  },
+  currencyPrefix: {
+    fontSize: '11px',
+    color: 'var(--ink3)',
+    fontFamily: 'Inter, sans-serif',
+    flexShrink: 0,
+    paddingBottom: '6px',
+  },
+  currencyInput: {
+    flex: 1,
+    border: 'none',
+    background: 'transparent',
+    padding: '6px 0',
+    fontSize: '13px',
+    color: 'var(--ink)',
+    fontFamily: 'Inter, sans-serif',
+    outline: 'none',
+    width: '100%',
+  },
+  notesBar: {
+    background: 'var(--charcoal)',
+    borderRadius: '6px',
+    padding: '16px 20px',
+  },
+  notesInput: {
+    width: '100%',
+    background: 'transparent',
+    border: 'none',
+    borderBottom: '1px solid rgba(255,255,255,0.15)',
+    color: 'white',
+    fontFamily: 'var(--font-serif)',
+    fontStyle: 'italic',
+    fontSize: '14px',
+    lineHeight: 1.6,
+    outline: 'none',
+    resize: 'none' as const,
+    padding: '4px 0',
+    boxSizing: 'border-box' as const,
+    transition: 'border-bottom-color 0.15s',
+  },
+  addChildBtn: {
+    background: 'transparent',
+    border: '1.5px dashed var(--line2)',
+    borderRadius: '6px',
+    padding: '10px 20px',
+    color: 'var(--ink3)',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '12px',
+    cursor: 'pointer',
+    width: '100%',
+    textAlign: 'center' as const,
+  },
 }
