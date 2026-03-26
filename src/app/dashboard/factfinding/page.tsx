@@ -131,7 +131,8 @@ function fmtCurrency(val?: number): string {
 }
 
 function sectionCompletion(section: string, data: AllSections): number {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any  const s = (data as any)[section]
+// // eslint-disable-next-line @typescript-eslint/no-explicit-any  
+  const s = (data as any)[section]
   if (!s) return 0
   const vals = Object.values(s).filter(v => v !== undefined && v !== '' && v !== null)
   const total = Object.keys(s).length || 1
