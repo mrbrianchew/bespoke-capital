@@ -48,15 +48,24 @@ interface FactFinding {
   d_custom_personal?: CustomExpenseItem[]; d_custom_children?: CustomExpenseItem[]
   d_custom_lifestyle?: CustomExpenseItem[]
   a_savings?: number; a_fixed_deposit?: number
+  a2_savings?: number; a2_fixed_deposit?: number
   a_cpf_oa?: number; a_cpf_sa?: number; a_cpf_ma?: number; a_cpf_ra?: number
+  a2_cpf_oa?: number; a2_cpf_sa?: number; a2_cpf_ma?: number; a2_cpf_ra?: number
   a_srs?: number; a_shares?: number; a_etf?: number; a_unit_trust?: number
+  a2_srs?: number; a2_shares?: number; a2_etf?: number; a2_unit_trust?: number
   a_bonds?: number; a_alternatives?: number
+  a2_bonds?: number; a2_alternatives?: number
   a_inv_property_res?: number; a_inv_property_com?: number; a_business?: number
+  a2_inv_property_res?: number; a2_inv_property_com?: number; a2_business?: number
   a_residential?: number; a_vehicles?: number; a_club?: number
+  a2_residential?: number; a2_vehicles?: number; a2_club?: number
   a_cash_custom?: CustomAssetItem[]; a_invested_custom?: CustomAssetItem[]; a_personal_custom?: CustomAssetItem[]
   l_credit_card?: number; l_business_loan?: number; l_renovation_st?: number
+  l2_credit_card?: number; l2_business_loan?: number; l2_renovation_st?: number
   l_mortgage_residing?: number; l_mortgage_investment?: number; l_car_loan?: number
+  l2_mortgage_residing?: number; l2_mortgage_investment?: number; l2_car_loan?: number
   l_study_loan?: number; l_personal_loan?: number; l_renovation_lt?: number
+  l2_study_loan?: number; l2_personal_loan?: number; l2_renovation_lt?: number
   l_lt_custom?: CustomAssetItem[]; l_st_custom?: CustomAssetItem[]
   advisor_notes?: string
 }
