@@ -174,10 +174,11 @@ export default function ObjectivesPage() {
     })
   }, [])
 
-  useEffect(() => {
+ useEffect(() => {
     if (!userId) return
-    const stored = localStorage.getItem('selectedClientId')
-    if (stored) setSelectedClientId(stored)
+    supabase.from('clients').select('*').eq('advisor_id', userId).order('created_at', { ascending: false }).limit(1).then(({ data }) => {
+      if (data && data.length > 0) setSelectedClientId(data[0].id)
+    })
   }, [userId])
 
   useEffect(() => {
