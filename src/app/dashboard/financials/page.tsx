@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
@@ -13,6 +13,30 @@ interface MortgageProperty {
   interestRate?: number; loanType?: 'Fixed' | 'Floating' | 'Split'
   lockInYears?: number; lockInExpiry?: string
   monthlyRepayment?: number; tenure?: number; notes?: string
+}
+
+type PropertyType = 'HDB' | 'Private Condo' | 'Landed' | 'Commercial' | 'Industrial' | 'Overseas'
+type OwnershipType = 'Client Only' | 'Spouse Only' | 'Joint Tenancy' | 'Tenancy-in-Common'
+
+interface PropertyItem {
+  id: string
+  label: string
+  propertyType?: PropertyType
+  isPrimaryResidence?: boolean
+  ownershipType?: OwnershipType
+  ownershipSplit?: string  // e.g. "60/40"
+  propertyValue?: number
+  // Mortgage
+  bank?: string
+  outstanding?: number
+  interestRate?: number
+  loanType?: 'Fixed' | 'Floating' | 'Split'
+  loanStartDate?: string  // mm/yyyy
+  remainingTenure?: number  // years
+  lockInYears?: number  // years
+  lockInExpiry?: string  // mm/yyyy  stored as YYYY-MM for date comparison
+  monthlyRepayment?: number  // auto-calculated via PMT
+  notes?: string
 }
 
 interface PersonData {
@@ -75,6 +99,7 @@ interface FactFinding {
   l2_study_loan?: number; l2_personal_loan?: number; l2_renovation_lt?: number
   l_lt_custom?: CustomAssetItem[]; l_st_custom?: CustomAssetItem[]
   mortgages?: MortgageProperty[]
+  properties?: PropertyItem[]
   advisor_notes?: string
 }
 
@@ -156,6 +181,25 @@ const fmt = (n: number) => {
 }
 const pct = (n: number, t: number) => t > 0 ? Math.round((n / t) * 100) : 0
 
+// Mortgage PMT formula: monthly repayment given outstanding, annual rate %, tenure years
+function calcPMT(outstanding: number, annualRate: number, tenureYears: number): number {
+  if (!outstanding || !tenureYears) return 0
+  if (!annualRate) return Math.round(outstanding / (tenureYears * 12))
+  const r = annualRate / 100 / 12
+  const n = tenureYears * 12
+  return Math.round(outstanding * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1))
+}
+
+// Parse mm/yyyy string to a Date (first day of that month)
+function parseMonthYear(mmyyyy: string): Date | null {
+  if (!mmyyyy) return null
+  const parts = mmyyyy.split('/')
+  if (parts.length !== 2) return null
+  const mm = parseInt(parts[0], 10); const yyyy = parseInt(parts[1], 10)
+  if (isNaN(mm) || isNaN(yyyy)) return null
+  return new Date(yyyy, mm - 1, 1)
+}
+
 const EXP_CATEGORIES = [
   { id: 'financial', label: 'Financial Obligations',   color: '#E08080', hint: 'Income tax, insurance premiums, regular investments/savings', key: 's_financial' as const, key2: 's2_financial' as const },
   { id: 'cpf_oa',   label: 'Mortgage (CPF OA)',        color: '#5A8A6A', hint: 'Home loan repayment via CPF Ordinary Account',              key: 's_cpf_oa'   as const, key2: 's2_cpf_oa'   as const },
@@ -170,6 +214,7 @@ const SECTIONS = [
   { id: 'income',      label: 'Income',      icon: '◈' },
   { id: 'expenses',    label: 'Expenses',    icon: '◉' },
   { id: 'assets',      label: 'Assets',      icon: '◲' },
+  { id: 'properties',  label: 'Properties',  icon: '◫' },
   { id: 'liabilities', label: 'Liabilities', icon: '◇' },
   { id: 'risk',        label: 'Risk Profile',icon: '◎' },
   { id: 'health',      label: 'Health',      icon: '⊞' },
@@ -435,6 +480,288 @@ function MortgageBlock({ mortgages, onChange, isCouple, clientName, spouseName }
                   <div><div className="text-xs mb-1" style={{ color: isExpiringSoon||isExpired?'var(--rouge)':'var(--ink3)' }}>Lock-in Expiry {(isExpiringSoon||isExpired)?'⚠':''}</div><input type="date" value={m.lockInExpiry||''} onChange={e=>upd(m.id,'lockInExpiry',e.target.value)} className="w-full text-xs px-2 py-1.5 outline-none" style={{ border: `1px solid ${isExpiringSoon||isExpired?'var(--rouge)':'var(--line)'}`, background: 'white', color: 'var(--ink)' }} /></div>
                 </div>
                 <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Advisor Notes</div><textarea value={m.notes||''} onChange={e=>upd(m.id,'notes',e.target.value)} placeholder="Refinancing strategy, bank offers, client preferences..." rows={2} className="w-full text-xs px-2 py-1.5 outline-none resize-none" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function PropertyPortfolioBlock({
+  properties, onChange, isCouple, clientName, spouseName
+}: {
+  properties: PropertyItem[]
+  onChange: (p: PropertyItem[]) => void
+  isCouple?: boolean
+  clientName?: string
+  spouseName?: string
+}) {
+  const today = new Date()
+  const sixMonths = new Date(today); sixMonths.setMonth(sixMonths.getMonth() + 6)
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
+
+  const upd = (id: string, key: keyof PropertyItem, val: unknown) =>
+    onChange(properties.map(p => p.id === id ? { ...p, [key]: val } : p))
+
+  const remove = (id: string) => onChange(properties.filter(p => p.id !== id))
+
+  const addProperty = () => {
+    const id = Math.random().toString(36).slice(2)
+    onChange([...properties, { id, label: 'Property ' + (properties.length + 1) }])
+    setExpanded(e => ({ ...e, [id]: true }))
+  }
+
+  return (
+    <div style={{ background: 'white', border: '1px solid var(--line)' }}>
+      <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: '3px solid var(--gold)' }}>
+        <div>
+          <span className="text-sm font-medium" style={{ color: 'var(--gold-tag)' }}>PROPERTY PORTFOLIO</span>
+          <span className="text-xs ml-2" style={{ color: 'var(--ink3)' }}>Ownership & mortgage tracker</span>
+        </div>
+        <button onClick={addProperty} className="text-xs px-3 py-1.5" style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Property</button>
+      </div>
+      {properties.length === 0 && (
+        <div className="px-5 py-8 text-xs text-center" style={{ color: 'var(--ink3)' }}>
+          No properties added. Click &quot;+ Add Property&quot; to begin.
+        </div>
+      )}
+      {properties.map(prop => {
+        const expiryDate = parseMonthYear(prop.lockInExpiry || '')
+        const isExpired = expiryDate ? expiryDate < today : false
+        const isExpiringSoon = expiryDate ? expiryDate <= sixMonths && expiryDate >= today : false
+        const isOpen = expanded[prop.id] ?? false
+        const pmtCalc = (prop.outstanding && prop.remainingTenure)
+          ? calcPMT(prop.outstanding, prop.interestRate || 0, prop.remainingTenure)
+          : null
+
+        return (
+          <div key={prop.id} style={{ borderBottom: '1px solid var(--line)' }}>
+            {/* Card header */}
+            <div
+              className="px-5 py-3 flex items-center gap-3 cursor-pointer"
+              style={{ background: prop.isPrimaryResidence ? 'rgba(168,131,74,0.04)' : isExpired || isExpiringSoon ? 'rgba(138,40,40,0.04)' : 'transparent' }}
+              onClick={() => setExpanded(e => ({ ...e, [prop.id]: !isOpen }))}
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium" style={{ color: 'var(--ink)' }}>{prop.label || 'Unnamed Property'}</span>
+                  {prop.propertyType && (
+                    <span className="text-xs px-1.5 py-0.5" style={{ background: 'var(--cream2)', color: 'var(--ink2)', border: '1px solid var(--line)' }}>{prop.propertyType}</span>
+                  )}
+                  {prop.isPrimaryResidence && (
+                    <span className="text-xs px-1.5 py-0.5 font-medium" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)' }}>PRIMARY RESIDENCE</span>
+                  )}
+                  {isExpired && <span className="text-xs px-1.5 py-0.5 font-semibold" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)' }}>LOCK-IN EXPIRED</span>}
+                  {isExpiringSoon && !isExpired && <span className="text-xs px-1.5 py-0.5 font-semibold" style={{ background: 'rgba(196,164,100,0.15)', color: '#8A6C3A' }}>⚠ EXPIRING SOON</span>}
+                </div>
+                <div className="flex gap-4 mt-0.5">
+                  {prop.propertyValue ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Value: {fmt(prop.propertyValue)}</span> : null}
+                  {prop.outstanding ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Loan: {fmt(prop.outstanding)}{prop.interestRate ? ' · ' + prop.interestRate + '% ' + (prop.loanType || '') : ''}</span> : null}
+                  {prop.ownershipType && <span className="text-xs" style={{ color: 'var(--ink3)' }}>{prop.ownershipType}{prop.ownershipType === 'Tenancy-in-Common' && prop.ownershipSplit ? ' ' + prop.ownershipSplit : ''}</span>}
+                </div>
+              </div>
+              <span className="text-xs" style={{ color: 'var(--ink3)' }}>{isOpen ? '▲' : '▼'}</span>
+              <button onClick={e => { e.stopPropagation(); remove(prop.id) }}
+                className="w-6 h-6 flex items-center justify-center text-sm"
+                style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--rouge)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink3)')}>×</button>
+            </div>
+
+            {isOpen && (
+              <div className="px-5 py-5 space-y-5" style={{ background: 'var(--cream)', borderTop: '1px solid var(--line)' }}>
+                {/* Row 1: Identity */}
+                <div>
+                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--gold-tag)' }}>Property Details</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Property Label</div>
+                      <input value={prop.label || ''} onChange={e => upd(prop.id, 'label', e.target.value)}
+                        placeholder="e.g. Bishan HDB" className="w-full text-xs px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Property Type</div>
+                      <select value={prop.propertyType || ''} onChange={e => upd(prop.id, 'propertyType', e.target.value)}
+                        className="w-full text-xs px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: prop.propertyType ? 'var(--ink)' : 'var(--ink3)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}>
+                        <option value="">Select type…</option>
+                        {(['HDB','Private Condo','Landed','Commercial','Industrial','Overseas'] as PropertyType[]).map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Property Value (S$)</div>
+                      <input type="number" value={prop.propertyValue || ''} onChange={e => upd(prop.id, 'propertyValue', parseFloat(e.target.value) || 0)}
+                        placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary Residence Toggle */}
+                <div className="flex items-center justify-between px-4 py-3" style={{ background: prop.isPrimaryResidence ? 'var(--gold-l)' : 'white', border: `1px solid ${prop.isPrimaryResidence ? 'rgba(168,131,74,0.4)' : 'var(--line)'}` }}>
+                  <div>
+                    <div className="text-xs font-medium" style={{ color: prop.isPrimaryResidence ? 'var(--gold-tag)' : 'var(--ink2)' }}>Primary Residence</div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Excluded from investable wealth & retirement calculations</div>
+                  </div>
+                  <button
+                    onClick={() => upd(prop.id, 'isPrimaryResidence', !prop.isPrimaryResidence)}
+                    className="relative flex-shrink-0"
+                    style={{ width: 40, height: 22, borderRadius: 11, background: prop.isPrimaryResidence ? 'var(--gold)' : 'var(--line2)', border: 'none', cursor: 'pointer', transition: 'background 0.2s' }}>
+                    <div style={{ position: 'absolute', top: 3, left: prop.isPrimaryResidence ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: 'white', transition: 'left 0.2s' }} />
+                  </button>
+                </div>
+
+                {/* Ownership */}
+                <div>
+                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Ownership</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Ownership Type</div>
+                      <select value={prop.ownershipType || ''} onChange={e => upd(prop.id, 'ownershipType', e.target.value)}
+                        className="w-full text-xs px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: prop.ownershipType ? 'var(--ink)' : 'var(--ink3)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}>
+                        <option value="">Select…</option>
+                        {(['Client Only','Spouse Only','Joint Tenancy','Tenancy-in-Common'] as OwnershipType[]).map(o => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {prop.ownershipType === 'Tenancy-in-Common' && (
+                      <div>
+                        <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Ownership Split (e.g. 60/40)</div>
+                        <input value={prop.ownershipSplit || ''} onChange={e => upd(prop.id, 'ownershipSplit', e.target.value)}
+                          placeholder="60/40" className="w-full text-xs px-2 py-1.5 outline-none"
+                          style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                          onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                          onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Mortgage */}
+                <div>
+                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Mortgage Details</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Bank / Lender</div>
+                      <input value={prop.bank || ''} onChange={e => upd(prop.id, 'bank', e.target.value)}
+                        placeholder="e.g. DBS, OCBC, UOB" className="w-full text-xs px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Loan Type</div>
+                      <select value={prop.loanType || ''} onChange={e => upd(prop.id, 'loanType', e.target.value as PropertyItem['loanType'])}
+                        className="w-full text-xs px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: prop.loanType ? 'var(--ink)' : 'var(--ink3)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}>
+                        <option value="">Select…</option>
+                        <option>Fixed</option><option>Floating</option><option>Split</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Interest Rate (%)</div>
+                      <input type="number" step="0.01" value={prop.interestRate || ''} onChange={e => upd(prop.id, 'interestRate', parseFloat(e.target.value) || 0)}
+                        placeholder="0.00" className="w-full text-xs px-2 py-1.5 outline-none text-right"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Outstanding Loan (S$)</div>
+                      <input type="number" value={prop.outstanding || ''} onChange={e => upd(prop.id, 'outstanding', parseFloat(e.target.value) || 0)}
+                        placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Remaining Tenure (yrs)</div>
+                      <input type="number" value={prop.remainingTenure || ''} onChange={e => upd(prop.id, 'remainingTenure', parseFloat(e.target.value) || 0)}
+                        placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Loan Start Date (mm/yyyy)</div>
+                      <input value={prop.loanStartDate || ''} onChange={e => upd(prop.id, 'loanStartDate', e.target.value)}
+                        placeholder="01/2022" className="w-full text-xs px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Lock-in Period (yrs)</div>
+                      <input type="number" value={prop.lockInYears || ''} onChange={e => upd(prop.id, 'lockInYears', parseFloat(e.target.value) || 0)}
+                        placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right"
+                        style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: isExpired ? 'var(--rouge)' : isExpiringSoon ? '#8A6C3A' : 'var(--ink3)' }}>
+                        Lock-in Expiry (mm/yyyy) {isExpired ? '🔴' : isExpiringSoon ? '⚠' : ''}
+                      </div>
+                      <input value={prop.lockInExpiry || ''} onChange={e => upd(prop.id, 'lockInExpiry', e.target.value)}
+                        placeholder="06/2026" className="w-full text-xs px-2 py-1.5 outline-none"
+                        style={{ border: `1px solid ${isExpired ? 'var(--rouge)' : isExpiringSoon ? '#C4A464' : 'var(--line)'}`, background: 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = isExpired ? 'var(--rouge)' : isExpiringSoon ? '#C4A464' : 'var(--line)')} />
+                    </div>
+                    {/* Monthly repayment — auto-calculated, but overridable */}
+                    <div>
+                      <div className="text-xs mb-1 flex items-center gap-1.5" style={{ color: 'var(--ink3)' }}>
+                        Monthly Repayment (S$)
+                        {pmtCalc !== null && (
+                          <span className="px-1 py-0.5 text-xs" style={{ background: 'var(--emerald-l)', color: 'var(--emerald)', fontSize: 9 }}>AUTO</span>
+                        )}
+                      </div>
+                      <input type="number" value={prop.monthlyRepayment || pmtCalc || ''}
+                        onChange={e => upd(prop.id, 'monthlyRepayment', parseFloat(e.target.value) || 0)}
+                        placeholder={pmtCalc ? String(pmtCalc) : '0'}
+                        className="w-full text-xs px-2 py-1.5 outline-none text-right"
+                        style={{ border: '1px solid var(--line)', background: pmtCalc && !prop.monthlyRepayment ? 'var(--emerald-l)' : 'white', color: 'var(--ink)' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                      {pmtCalc !== null && (
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--emerald)' }}>
+                          PMT calc: {fmt(pmtCalc)}/mo
+                          {prop.monthlyRepayment && prop.monthlyRepayment !== pmtCalc
+                            ? <button className="ml-2 underline" style={{ color: 'var(--ink3)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10 }} onClick={() => upd(prop.id, 'monthlyRepayment', 0)}>use calc</button>
+                            : null}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Advisor Notes */}
+                <div>
+                  <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Advisor Notes</div>
+                  <textarea value={prop.notes || ''} onChange={e => upd(prop.id, 'notes', e.target.value)}
+                    placeholder="Refinancing plans, rental income, upcoming sale, client intentions…"
+                    rows={2} className="w-full text-xs px-2 py-1.5 outline-none resize-none"
+                    style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+                    onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                    onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                </div>
               </div>
             )}
           </div>
@@ -782,18 +1109,26 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
   const cashTotal = (ff.a_savings||0)+(ff.a_fixed_deposit||0)+cashCustom+(isCouple?((ff.a2_savings||0)+(ff.a2_fixed_deposit||0)):0)
   const cpfItems = [ff.a_cpf_oa||0,ff.a_cpf_sa||0,ff.a_cpf_ma||0,ff.a_cpf_ra||0]
   const cpfItems2 = isCouple ? [ff.a2_cpf_oa||0,ff.a2_cpf_sa||0,ff.a2_cpf_ma||0,ff.a2_cpf_ra||0] : []
-  const investedStd = [ff.a_srs||0,ff.a_shares||0,ff.a_etf||0,ff.a_unit_trust||0,ff.a_bonds||0,ff.a_alternatives||0,ff.a_inv_property_res||0,ff.a_inv_property_com||0,ff.a_business||0]
-  const investedStd2 = isCouple ? [ff.a2_srs||0,ff.a2_shares||0,ff.a2_etf||0,ff.a2_unit_trust||0,ff.a2_bonds||0,ff.a2_alternatives||0,ff.a2_inv_property_res||0,ff.a2_inv_property_com||0,ff.a2_business||0] : []
+  const investedStd = [ff.a_srs||0,ff.a_shares||0,ff.a_etf||0,ff.a_unit_trust||0,ff.a_bonds||0,ff.a_alternatives||0,ff.a_business||0]
+  const investedStd2 = isCouple ? [ff.a2_srs||0,ff.a2_shares||0,ff.a2_etf||0,ff.a2_unit_trust||0,ff.a2_bonds||0,ff.a2_alternatives||0,ff.a2_business||0] : []
   const investedCustom = (ff.a_invested_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
+  // investmentPropTotal comes from properties tab (computed below after allProperties)
   const investedTotal = [...cpfItems,...cpfItems2,...investedStd,...investedStd2].reduce((s,v)=>s+v,0)+investedCustom
   const personalCustom = (ff.a_personal_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
-  const personalTotal = (ff.a_residential||0)+(ff.a_vehicles||0)+(ff.a_club||0)+personalCustom+(isCouple?((ff.a2_residential||0)+(ff.a2_vehicles||0)+(ff.a2_club||0)):0)
-  const totalAssets = cashTotal + investedTotal + personalTotal
+  const personalTotal = (ff.a_vehicles||0)+(ff.a_club||0)+personalCustom+(isCouple?((ff.a2_vehicles||0)+(ff.a2_club||0)):0)
+  // Property portfolio derived values
+  const allProperties = ff.properties || []
+  const primaryResProps = allProperties.filter(p => p.isPrimaryResidence)
+  const investmentProps = allProperties.filter(p => !p.isPrimaryResidence)
+  const primaryResTotal = primaryResProps.reduce((s, p) => s + (p.propertyValue || 0), 0)
+  const investmentPropTotal = investmentProps.reduce((s, p) => s + (p.propertyValue || 0), 0)
+  const mortgageLiabTotal = allProperties.reduce((s, p) => s + (p.outstanding || 0), 0)
+  const totalAssets = cashTotal + investedTotal + personalTotal + investmentPropTotal + primaryResTotal
   const stCustom = (ff.l_st_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
   const stTotal = (ff.l_credit_card||0)+(ff.l_business_loan||0)+(ff.l_renovation_st||0)+stCustom+(isCouple?((ff.l2_credit_card||0)+(ff.l2_business_loan||0)+(ff.l2_renovation_st||0)):0)
   const ltCustom = (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
-  const ltTotal = (ff.l_mortgage_residing||0)+(ff.l_mortgage_investment||0)+(ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom+(isCouple?((ff.l2_mortgage_residing||0)+(ff.l2_mortgage_investment||0)+(ff.l2_car_loan||0)+(ff.l2_study_loan||0)+(ff.l2_personal_loan||0)+(ff.l2_renovation_lt||0)):0)
-  const totalLiab = stTotal + ltTotal; const netWorth = totalAssets - totalLiab
+  const ltTotal = (ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom+(isCouple?((ff.l2_car_loan||0)+(ff.l2_study_loan||0)+(ff.l2_personal_loan||0)+(ff.l2_renovation_lt||0)):0)
+  const totalLiab = stTotal + ltTotal + mortgageLiabTotal; const netWorth = totalAssets - totalLiab
   const RISK_COLORS: Record<string, string> = { Conservative: 'var(--emerald)', Moderate: '#C4A464', Balanced: '#4A7C9E', Growth: '#7A6AAA', Aggressive: 'var(--rouge)' }
   const assetRow = (label: string, key: keyof FactFinding, key2?: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} value2={key2 ? ff[key2] as number : undefined} onChange2={key2 ? v => upd(key2, n(v)) : undefined} isCouple={isCouple} />
   const clientName = client.name; const spouseName = spouse?.name || 'Spouse'
@@ -1201,22 +1536,68 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 {assetRow('Unit Trust(s)', 'a_unit_trust', 'a2_unit_trust')}
                 {assetRow('Bonds / Treasury Bills', 'a_bonds', 'a2_bonds')}
                 {assetRow('Alternative Investments (Hedge Funds, Gold, etc.)', 'a_alternatives', 'a2_alternatives')}
-                {assetRow('Investment Property (Residential)', 'a_inv_property_res', 'a2_inv_property_res')}
-                {assetRow('Investment Property (Commercial)', 'a_inv_property_com', 'a2_inv_property_com')}
                 {assetRow('Business Venture(s)', 'a_business', 'a2_business')}
                 <CustomRows items={ff.a_invested_custom || []} onChange={v => upd('a_invested_custom', v)} placeholder="e.g. Crypto, Wine Collection" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
-                {assetRow('Residential Property', 'a_residential', 'a2_residential')}
                 {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles', 'a2_vehicles')}
                 {assetRow('Club Membership', 'a_club', 'a2_club')}
                 <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" isCouple={isCouple} />
               </AssetBlock>
+              {/* Properties summary — read-only pull from Properties tab */}
+              <div style={{ background: 'white', border: '1px solid var(--line)' }}>
+                <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: '3px solid var(--gold)' }}>
+                  <span className="text-sm font-medium" style={{ color: 'var(--gold-tag)' }}>PROPERTIES</span>
+                  <span className="text-xs" style={{ color: 'var(--ink3)' }}>From Properties tab · read-only</span>
+                </div>
+                <div className="px-5 py-2">
+                  {allProperties.length === 0 ? (
+                    <div className="py-4 text-xs text-center" style={{ color: 'var(--ink3)' }}>No properties recorded — add them in the Properties tab.</div>
+                  ) : (
+                    <>
+                      {primaryResProps.length > 0 && (
+                        <div className="py-2" style={{ borderBottom: '1px solid var(--line)' }}>
+                          <div className="text-xs mb-1.5" style={{ color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Primary Residence (excluded from investable)</div>
+                          {primaryResProps.map(p => (
+                            <div key={p.id} className="flex items-center justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                              <div style={{ color: 'var(--ink2)' }}>{p.label || 'Unnamed'}{p.propertyType ? ` · ${p.propertyType}` : ''}</div>
+                              <div style={{ color: 'var(--gold-tag)', fontWeight: 500 }}>{p.propertyValue ? fmt(p.propertyValue) : '—'}</div>
+                            </div>
+                          ))}
+                          <div className="flex justify-between py-1.5 text-xs font-medium" style={{ color: 'var(--gold-tag)' }}>
+                            <span>Primary Residence Sub-total</span><span>{fmt(primaryResTotal)}</span>
+                          </div>
+                        </div>
+                      )}
+                      {investmentProps.length > 0 && (
+                        <div className="py-2">
+                          <div className="text-xs mb-1.5" style={{ color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Investment Properties (included in investable)</div>
+                          {investmentProps.map(p => (
+                            <div key={p.id} className="flex items-center justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                              <div style={{ color: 'var(--ink2)' }}>{p.label || 'Unnamed'}{p.propertyType ? ` · ${p.propertyType}` : ''}</div>
+                              <div style={{ color: '#4A7C9E', fontWeight: 500 }}>{p.propertyValue ? fmt(p.propertyValue) : '—'}</div>
+                            </div>
+                          ))}
+                          <div className="flex justify-between py-1.5 text-xs font-medium" style={{ color: '#4A7C9E' }}>
+                            <span>Investment Properties Sub-total</span><span>{fmt(investmentPropTotal)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Total Assets</div>
-                {[{label:'Cash / Near Cash',val:cashTotal,color:'var(--emerald)'},{label:'Invested Assets',val:investedTotal,color:'#4A7C9E'},{label:'Personal Use',val:personalTotal,color:'#C4A464'}].map(r=>(
+                {[
+                  {label:'Cash / Near Cash',val:cashTotal,color:'var(--emerald)'},
+                  {label:'Invested Assets',val:investedTotal,color:'#4A7C9E'},
+                  {label:'Investment Properties',val:investmentPropTotal,color:'var(--gold-tag)'},
+                  {label:'Primary Residence',val:primaryResTotal,color:'#9A7C5A'},
+                  {label:'Personal Use',val:personalTotal,color:'#C4A464'},
+                ].filter(r=>r.val>0).map(r=>(
                   <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label}</span></div>
                     <span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
@@ -1237,10 +1618,86 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
           </div>
         )}
 
+        {activeSection === 'properties' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
+            <div className="space-y-4">
+              <PropertyPortfolioBlock
+                properties={ff.properties || []}
+                onChange={v => upd('properties', v)}
+                isCouple={isCouple}
+                clientName={clientName}
+                spouseName={spouseName}
+              />
+            </div>
+            <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
+              {/* Portfolio summary */}
+              <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
+                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Portfolio Summary</div>
+                {allProperties.length === 0 ? (
+                  <div className="text-xs py-4 text-center" style={{ color: 'var(--ink3)' }}>No properties added yet.</div>
+                ) : (
+                  <>
+                    <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                      <span style={{ color: 'var(--ink2)' }}>Total Properties</span>
+                      <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{allProperties.length}</span>
+                    </div>
+                    <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                      <span style={{ color: 'var(--ink2)' }}>Primary Residence</span>
+                      <span style={{ color: 'var(--gold-tag)', fontWeight: 500 }}>{fmt(primaryResTotal)}</span>
+                    </div>
+                    <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                      <span style={{ color: 'var(--ink2)' }}>Investment Properties</span>
+                      <span style={{ color: '#4A7C9E', fontWeight: 500 }}>{fmt(investmentPropTotal)}</span>
+                    </div>
+                    <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                      <span style={{ color: 'var(--ink2)' }}>Total Property Value</span>
+                      <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{fmt(primaryResTotal + investmentPropTotal)}</span>
+                    </div>
+                    <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                      <span style={{ color: 'var(--ink2)' }}>Mortgage Liabilities</span>
+                      <span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(mortgageLiabTotal)}</span>
+                    </div>
+                    <div className="flex justify-between pt-3 text-sm font-semibold" style={{ color: (primaryResTotal + investmentPropTotal - mortgageLiabTotal) >= 0 ? 'var(--emerald)' : 'var(--rouge)' }}>
+                      <span className="text-xs font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Property Equity</span>
+                      <span>{fmt(primaryResTotal + investmentPropTotal - mortgageLiabTotal)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              {/* Lock-in alerts */}
+              {allProperties.some(p => {
+                const d = parseMonthYear(p.lockInExpiry || '')
+                return d && d < new Date(new Date().setMonth(new Date().getMonth() + 6))
+              }) && (
+                <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
+                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--rouge)' }}>Lock-in Alerts</div>
+                  {allProperties.filter(p => {
+                    const d = parseMonthYear(p.lockInExpiry || '')
+                    return d && d < new Date(new Date().setMonth(new Date().getMonth() + 6))
+                  }).map(p => {
+                    const d = parseMonthYear(p.lockInExpiry || '')!
+                    const expired = d < new Date()
+                    return (
+                      <div key={p.id} className="flex items-start gap-2 py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                        <span style={{ color: expired ? 'var(--rouge)' : '#8A6C3A' }}>{expired ? '🔴' : '⚠'}</span>
+                        <div>
+                          <div style={{ color: 'var(--ink)', fontWeight: 500 }}>{p.label || 'Unnamed'}</div>
+                          <div style={{ color: expired ? 'var(--rouge)' : '#8A6C3A' }}>
+                            {expired ? 'Lock-in expired' : 'Expiring'} {p.lockInExpiry}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeSection === 'liabilities' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
-              <MortgageBlock mortgages={ff.mortgages || []} onChange={v => upd('mortgages', v)} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
               <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Credit Card / Credit Line', 'l_credit_card', 'l2_credit_card')}
                 {assetRow('Business Loan', 'l_business_loan', 'l2_business_loan')}
@@ -1248,21 +1705,45 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 <CustomRows items={ff.l_st_custom || []} onChange={v => upd('l_st_custom', v)} placeholder="e.g. Personal Line of Credit" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
-                {assetRow('Mortgage Loan – Residing', 'l_mortgage_residing', 'l2_mortgage_residing')}
-                {assetRow('Mortgage Loan – Investment', 'l_mortgage_investment', 'l2_mortgage_investment')}
                 {assetRow('Car / Motor Vehicle Loan', 'l_car_loan', 'l2_car_loan')}
                 {assetRow('Study Loan', 'l_study_loan', 'l2_study_loan')}
                 {assetRow('Personal Loan', 'l_personal_loan', 'l2_personal_loan')}
                 {assetRow('Renovation Loan', 'l_renovation_lt', 'l2_renovation_lt')}
                 <CustomRows items={ff.l_lt_custom || []} onChange={v => upd('l_lt_custom', v)} placeholder="e.g. BNPL, Other Loan" isCouple={isCouple} />
               </AssetBlock>
+              {/* Mortgage Liabilities — pulled from Properties tab */}
+              <div style={{ background: 'white', border: '1px solid var(--line)' }}>
+                <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: '3px solid var(--rouge)' }}>
+                  <span className="text-sm font-medium" style={{ color: 'var(--rouge)' }}>MORTGAGE LIABILITIES</span>
+                  <span className="text-xs" style={{ color: 'var(--ink3)' }}>From Properties tab · read-only</span>
+                </div>
+                <div className="px-5 py-2">
+                  {allProperties.length === 0 ? (
+                    <div className="py-4 text-xs text-center" style={{ color: 'var(--ink3)' }}>No mortgages recorded — add properties in the Properties tab.</div>
+                  ) : (
+                    allProperties.filter(p => p.outstanding).map(p => (
+                      <div key={p.id} className="flex items-center justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
+                        <div>
+                          <div style={{ color: 'var(--ink2)' }}>{p.label || 'Unnamed'}</div>
+                          <div style={{ color: 'var(--ink3)' }}>{p.bank || ''}{p.interestRate ? ` · ${p.interestRate}% ${p.loanType || ''}` : ''}</div>
+                        </div>
+                        <span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(p.outstanding || 0)}</span>
+                      </div>
+                    ))
+                  )}
+                  {mortgageLiabTotal > 0 && (
+                    <div className="flex justify-between py-2 text-xs font-semibold" style={{ color: 'var(--rouge)' }}>
+                      <span>Total Mortgage Liabilities</span><span>{fmt(mortgageLiabTotal)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Liability Breakdown</div>
                 <LiabilityDonut items={[
-                  { label: 'Mortgage (Residing)', val: ff.l_mortgage_residing||0, color: '#E08080' },
-                  { label: 'Mortgage (Investment)', val: ff.l_mortgage_investment||0, color: '#C47070' },
+                  { label: 'Mortgages', val: mortgageLiabTotal, color: '#E08080' },
                   { label: 'Car Loan', val: ff.l_car_loan||0, color: '#C4A464' },
                   { label: 'Credit Card', val: ff.l_credit_card||0, color: '#7A6AAA' },
                   { label: 'Personal Loan', val: ff.l_personal_loan||0, color: '#4A7C9E' },
