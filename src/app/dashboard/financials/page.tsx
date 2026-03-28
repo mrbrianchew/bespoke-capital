@@ -415,7 +415,7 @@ function MortgageBlock({ mortgages, onChange, isCouple, clientName, spouseName }
                   {isExpired && <span className="text-xs px-1.5 py-0.5" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)', fontWeight: 600 }}>LOCK-IN EXPIRED</span>}
                   {isExpiringSoon && !isExpired && <span className="text-xs px-1.5 py-0.5" style={{ background: 'rgba(196,164,100,0.15)', color: '#8A6C3A', fontWeight: 600 }}>⚠ EXPIRING SOON</span>}
                 </div>
-                {m.outstanding ? <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Outstanding: {fmt(m.outstanding)}{m.interestRate ? \` · ${m.interestRate}% ${m.loanType||''}\` : ''}</div> : null}
+                {m.outstanding ? <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Outstanding: {fmt(m.outstanding)}{m.interestRate ? ' · ' + m.interestRate + '% ' + (m.loanType||'') : ''}</div> : null}
               </div>
               <span className="text-xs" style={{ color: 'var(--ink3)' }}>{isOpen ? '▲' : '▼'}</span>
               <button onClick={e => { e.stopPropagation(); remove(m.id) }} className="w-6 h-6 flex items-center justify-center text-sm" style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }} onMouseEnter={e => (e.currentTarget.style.color='var(--rouge)')} onMouseLeave={e => (e.currentTarget.style.color='var(--ink3)')}>×</button>
