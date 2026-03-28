@@ -5,8 +5,15 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 interface OtherIncomeItem { label: string; amount: number }
-interface CustomAssetItem { label: string; amount: number; amount2?: number }
-interface CustomExpenseItem { label: string; amount: number; amount2?: number }
+interface CustomAssetItem { label: string; amount: number; amount2?: number; notes?: string }
+interface CustomExpenseItem { label: string; amount: number; amount2?: number; notes?: string }
+interface MortgageProperty {
+  id: string; label: string; owner?: string
+  bank?: string; outstanding?: number
+  interestRate?: number; loanType?: 'Fixed' | 'Floating' | 'Split'
+  lockInYears?: number; lockInExpiry?: string
+  monthlyRepayment?: number; tenure?: number; notes?: string
+}
 
 interface PersonData {
   occupation?: string; employer?: string; employment_type?: string
@@ -67,6 +74,7 @@ interface FactFinding {
   l_study_loan?: number; l_personal_loan?: number; l_renovation_lt?: number
   l2_study_loan?: number; l2_personal_loan?: number; l2_renovation_lt?: number
   l_lt_custom?: CustomAssetItem[]; l_st_custom?: CustomAssetItem[]
+  mortgages?: MortgageProperty[]
   advisor_notes?: string
 }
 
@@ -365,6 +373,73 @@ function CustomRows({ items, onChange, placeholder, isCouple }: { items: CustomA
       ))}
       <button onClick={() => onChange([...items, { label: '', amount: 0 }])} className="mt-2 text-xs px-3 py-1.5"
         style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Row</button>
+    </div>
+  )
+}
+
+
+function MortgageBlock({ mortgages, onChange, isCouple, clientName, spouseName }: {
+  mortgages: MortgageProperty[]; onChange: (m: MortgageProperty[]) => void
+  isCouple?: boolean; clientName?: string; spouseName?: string
+}) {
+  const today = new Date()
+  const sixMonths = new Date(today); sixMonths.setMonth(sixMonths.getMonth() + 6)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const upd = (id: string, key: keyof MortgageProperty, val: unknown) =>
+    onChange(mortgages.map(m => m.id === id ? { ...m, [key]: val } : m))
+  const remove = (id: string) => onChange(mortgages.filter(m => m.id !== id))
+  const addMortgage = () => {
+    const id = Math.random().toString(36).slice(2)
+    onChange([...mortgages, { id, label: 'Property ' + (mortgages.length + 1) }])
+    setExpanded(e => ({ ...e, [id]: true }))
+  }
+  return (
+    <div style={{ background: 'white', border: '1px solid var(--line)' }}>
+      <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: '3px solid #4A7C9E' }}>
+        <div><span className="text-sm font-medium" style={{ color: '#4A7C9E' }}>MORTGAGE DETAIL</span><span className="text-xs ml-2" style={{ color: 'var(--ink3)' }}>Refinancing tracker</span></div>
+        <button onClick={addMortgage} className="text-xs px-3 py-1.5" style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Property</button>
+      </div>
+      {mortgages.length === 0 && <div className="px-5 py-6 text-xs text-center" style={{ color: 'var(--ink3)' }}>No mortgages added. Click &quot;+ Add Property&quot; to track mortgage details.</div>}
+      {mortgages.map(m => {
+        const expiry = m.lockInExpiry ? new Date(m.lockInExpiry) : null
+        const isExpiringSoon = expiry ? expiry <= sixMonths && expiry >= today : false
+        const isExpired = expiry ? expiry < today : false
+        const isOpen = expanded[m.id] ?? false
+        return (
+          <div key={m.id} style={{ borderBottom: '1px solid var(--line)' }}>
+            <div className="px-5 py-3 flex items-center gap-3 cursor-pointer" style={{ background: isExpiringSoon || isExpired ? 'rgba(138,40,40,0.04)' : 'transparent' }} onClick={() => setExpanded(e => ({ ...e, [m.id]: !isOpen }))}>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium" style={{ color: 'var(--ink)' }}>{m.label || 'Unnamed Property'}</span>
+                  {m.bank && <span className="text-xs" style={{ color: 'var(--ink3)' }}>· {m.bank}</span>}
+                  {isExpired && <span className="text-xs px-1.5 py-0.5" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)', fontWeight: 600 }}>LOCK-IN EXPIRED</span>}
+                  {isExpiringSoon && !isExpired && <span className="text-xs px-1.5 py-0.5" style={{ background: 'rgba(196,164,100,0.15)', color: '#8A6C3A', fontWeight: 600 }}>⚠ EXPIRING SOON</span>}
+                </div>
+                {m.outstanding ? <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Outstanding: {fmt(m.outstanding)}{m.interestRate ? \` · ${m.interestRate}% ${m.loanType||''}\` : ''}</div> : null}
+              </div>
+              <span className="text-xs" style={{ color: 'var(--ink3)' }}>{isOpen ? '▲' : '▼'}</span>
+              <button onClick={e => { e.stopPropagation(); remove(m.id) }} className="w-6 h-6 flex items-center justify-center text-sm" style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }} onMouseEnter={e => (e.currentTarget.style.color='var(--rouge)')} onMouseLeave={e => (e.currentTarget.style.color='var(--ink3)')}>×</button>
+            </div>
+            {isOpen && (
+              <div className="px-5 py-4 space-y-3" style={{ background: 'var(--cream)', borderTop: '1px solid var(--line)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Property Label</div><input value={m.label||''} onChange={e=>upd(m.id,'label',e.target.value)} placeholder="e.g. HDB Residing" className="w-full text-xs px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+                  {isCouple && <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Owner</div><select value={m.owner||'Joint'} onChange={e=>upd(m.id,'owner',e.target.value)} className="w-full text-xs px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}><option>Joint</option><option>{clientName}</option><option>{spouseName}</option></select></div>}
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Bank / Lender</div><input value={m.bank||''} onChange={e=>upd(m.id,'bank',e.target.value)} placeholder="e.g. DBS, OCBC, UOB" className="w-full text-xs px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Loan Type</div><select value={m.loanType||''} onChange={e=>upd(m.id,'loanType',e.target.value as MortgageProperty['loanType'])} className="w-full text-xs px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}><option value="">Select...</option><option>Fixed</option><option>Floating</option><option>Split</option></select></div>
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Outstanding Loan ($)</div><input type="number" value={m.outstanding||''} onChange={e=>upd(m.id,'outstanding',parseFloat(e.target.value)||0)} placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Monthly Repayment ($)</div><input type="number" value={m.monthlyRepayment||''} onChange={e=>upd(m.id,'monthlyRepayment',parseFloat(e.target.value)||0)} placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Interest Rate (%)</div><input type="number" step="0.01" value={m.interestRate||''} onChange={e=>upd(m.id,'interestRate',parseFloat(e.target.value)||0)} placeholder="0.00" className="w-full text-xs px-2 py-1.5 outline-none text-right" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Remaining Tenure (yrs)</div><input type="number" value={m.tenure||''} onChange={e=>upd(m.id,'tenure',parseFloat(e.target.value)||0)} placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+                  <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Lock-in Period (yrs)</div><input type="number" value={m.lockInYears||''} onChange={e=>upd(m.id,'lockInYears',parseFloat(e.target.value)||0)} placeholder="0" className="w-full text-xs px-2 py-1.5 outline-none text-right" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+                  <div><div className="text-xs mb-1" style={{ color: isExpiringSoon||isExpired?'var(--rouge)':'var(--ink3)' }}>Lock-in Expiry {(isExpiringSoon||isExpired)?'⚠':''}</div><input type="date" value={m.lockInExpiry||''} onChange={e=>upd(m.id,'lockInExpiry',e.target.value)} className="w-full text-xs px-2 py-1.5 outline-none" style={{ border: `1px solid ${isExpiringSoon||isExpired?'var(--rouge)':'var(--line)'}`, background: 'white', color: 'var(--ink)' }} /></div>
+                </div>
+                <div><div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Advisor Notes</div><textarea value={m.notes||''} onChange={e=>upd(m.id,'notes',e.target.value)} placeholder="Refinancing strategy, bank offers, client preferences..." rows={2} className="w-full text-xs px-2 py-1.5 outline-none resize-none" style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }} onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')} onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} /></div>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -1165,6 +1240,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         {activeSection === 'liabilities' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
+              <MortgageBlock mortgages={ff.mortgages || []} onChange={v => upd('mortgages', v)} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
               <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Credit Card / Credit Line', 'l_credit_card', 'l2_credit_card')}
                 {assetRow('Business Loan', 'l_business_loan', 'l2_business_loan')}
