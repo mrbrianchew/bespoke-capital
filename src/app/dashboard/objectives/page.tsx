@@ -21,6 +21,27 @@ interface FamilyMember {
   age?: number
 }
 
+interface Goal {
+  id: string
+  client_id: string
+  type: string
+  name: string
+  target_amount?: number
+  target_age?: number
+  ret_age?: number
+  life_exp?: number
+  monthly_income?: number
+  inflation_rate?: number
+  rate_of_return?: number
+  legacy_on?: boolean
+  legacy_amt?: number
+  cont_inv?: boolean
+  post_rate?: number
+  ret_inc?: number
+  sort_order?: number
+  created_at?: string
+}
+
 interface ProtectionData {
   monthlyIncomeClient?: number
   monthlyIncomeSpouse?: number
@@ -49,7 +70,6 @@ interface AccumulationData {
   riskAppetite?: string
   investmentTimeHorizon?: string
   expectedReturnRate?: number
-  financialGoals?: string[]
   advisorNotes?: string
 }
 
@@ -139,6 +159,14 @@ function sectionCompletion(section: string, data: AllSections): number {
   return Math.round((vals.length / total) * 100)
 }
 
+const GOAL_TYPE_META: Record<string, { label: string; color: string; accent: string; icon: string; description: string }> = {
+  retirement: { label: 'Retirement', color: 'var(--gold)', accent: 'var(--gold-l)', icon: '◎', description: 'Retirement income & corpus target' },
+  education: { label: 'Education', color: 'var(--emerald)', accent: 'var(--emerald-l)', icon: '◈', description: "Children's university fund" },
+  protection: { label: 'Protection', color: 'var(--rouge)', accent: 'var(--rouge-l)', icon: '◉', description: 'Income replacement & coverage needs' },
+  accumulation: { label: 'Wealth Accumulation', color: '#4A7FA5', accent: '#EBF2F8', icon: '◲', description: 'Savings targets & investment goals' },
+  estate: { label: 'Legacy & Estate', color: 'var(--ink2)', accent: 'var(--cream2)', icon: '◇', description: 'Wealth transfer & estate goals' },
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ObjectivesPage() {
@@ -154,12 +182,14 @@ export default function ObjectivesPage() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [expandedGoal, setExpandedGoal] = useState<string | null>(null)
 
   const [data, setData] = useState<AllSections>({
     protection: {},
     accumulation: {},
     retirement: {},
-    education: {},
+    education: { children: [] },
     estate: {},
     planningMode: 'individual',
   })
@@ -174,7 +204,7 @@ export default function ObjectivesPage() {
     })
   }, [])
 
- useEffect(() => {
+  useEffect(() => {
     if (!userId) return
     supabase.from('clients').select('*').eq('advisor_id', userId).order('created_at', { ascending: false }).limit(1).then(({ data }) => {
       if (data && data.length > 0) setSelectedClientId(data[0].id)
@@ -186,16 +216,17 @@ export default function ObjectivesPage() {
     loadAll()
   }, [selectedClientId, userId])
 
-  // ─── Load data ───────────────────────────────────────────────────────────
+  // ─── Load ────────────────────────────────────────────────────────────────
 
   async function loadAll() {
     if (!selectedClientId) return
     setLoading(true)
 
-    const [clientRes, familyRes, factRes] = await Promise.all([
+    const [clientRes, familyRes, factRes, goalsRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', selectedClientId).single(),
       supabase.from('family_members').select('*').eq('client_id', selectedClientId),
       supabase.from('fact_finding').select('*').eq('client_id', selectedClientId),
+      supabase.from('goals').select('*').eq('client_id', selectedClientId).order('sort_order', { ascending: true }),
     ])
 
     if (clientRes.data) setClient(clientRes.data)
@@ -205,10 +236,10 @@ export default function ObjectivesPage() {
       const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
       setSpouse(spouseRec || null)
       setChildren(childRecs)
-
-      // Auto-detect planning mode from DB
       if (spouseRec) setPlanningMode('couple')
     }
+
+    if (goalsRes.data) setGoals(goalsRes.data)
 
     if (factRes.data && factRes.data.length > 0) {
       const newData: AllSections = {
@@ -218,45 +249,27 @@ export default function ObjectivesPage() {
         education: { children: [] },
         estate: {},
       }
-
       factRes.data.forEach(row => {
         const section = row.section as keyof AllSections
         if (section && row.data) {
-          if (section === 'planningMode') {
-            // planningMode saved as a meta section
-          } else {
-            (newData as Record<string, unknown>)[section] = row.data
-          }
-          // Restore planning mode if stored
-          if (row.data?.planningMode) {
-            setPlanningMode(row.data.planningMode)
-          }
+          (newData as Record<string, unknown>)[section] = row.data
+          if (row.data?.planningMode) setPlanningMode(row.data.planningMode)
         }
       })
-
-      // Pre-populate education children from family_members if not already set
       if (!newData.education?.children?.length && familyRes.data) {
         const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
         newData.education.children = childRecs.map(c => ({
-          childId: c.id,
-          name: c.name,
-          currentAge: c.age ?? calcAge(c.date_of_birth),
+          childId: c.id, name: c.name, currentAge: c.age ?? calcAge(c.date_of_birth),
         }))
       }
-
       setData(newData)
     } else {
-      // Pre-populate education from family_members
       if (familyRes.data) {
         const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
         setData(prev => ({
           ...prev,
           education: {
-            children: childRecs.map(c => ({
-              childId: c.id,
-              name: c.name,
-              currentAge: c.age ?? calcAge(c.date_of_birth),
-            }))
+            children: childRecs.map(c => ({ childId: c.id, name: c.name, currentAge: c.age ?? calcAge(c.date_of_birth) }))
           }
         }))
       }
@@ -265,7 +278,7 @@ export default function ObjectivesPage() {
     setLoading(false)
   }
 
-  // ─── Save ────────────────────────────────────────────────────────────────
+  // ─── Fact-finding save ───────────────────────────────────────────────────
 
   const saveSection = useCallback(async (
     section: keyof AllSections,
@@ -274,41 +287,29 @@ export default function ObjectivesPage() {
   ) => {
     if (!selectedClientId) return
     setSaveStatus('saving')
-
     const payload = mode ? { ...sectionData, planningMode: mode } : sectionData
-
     await supabase.from('fact_finding').upsert(
       { client_id: selectedClientId, section, data: payload, updated_at: new Date().toISOString() },
       { onConflict: 'client_id,section' }
     )
-
     setSaveStatus('saved')
     setLastSaved(new Date())
     setTimeout(() => setSaveStatus('idle'), 2000)
   }, [selectedClientId])
 
-  function updateSection<T extends keyof AllSections>(
-    section: T,
-    field: string,
-    value: unknown
-  ) {
+  function updateSection<T extends keyof AllSections>(section: T, field: string, value: unknown) {
     setData(prev => {
       const updated = { ...prev[section] as Record<string, unknown>, [field]: value }
       const updatedAll = { ...prev, [section]: updated }
-
       const sectionKey = section as string
       if (debounceRef.current[sectionKey]) clearTimeout(debounceRef.current[sectionKey])
-      debounceRef.current[sectionKey] = setTimeout(() => {
-        saveSection(section, updated)
-      }, 800)
-
+      debounceRef.current[sectionKey] = setTimeout(() => saveSection(section, updated), 800)
       return updatedAll
     })
   }
 
   function updatePlanningMode(mode: 'individual' | 'couple') {
     setPlanningMode(mode)
-    // Save mode alongside protection section
     if (debounceRef.current['mode']) clearTimeout(debounceRef.current['mode'])
     debounceRef.current['mode'] = setTimeout(() => {
       saveSection('protection', { ...(data.protection as Record<string, unknown>), planningMode: mode })
@@ -318,24 +319,59 @@ export default function ObjectivesPage() {
   async function saveAll() {
     if (!selectedClientId) return
     setSaveStatus('saving')
-
     const sections: Array<keyof AllSections> = ['protection', 'accumulation', 'retirement', 'education', 'estate']
     await Promise.all(sections.map(s =>
       supabase.from('fact_finding').upsert(
-        {
-          client_id: selectedClientId,
-          section: s,
-          data: { ...(data[s] as Record<string, unknown>), planningMode: s === 'protection' ? planningMode : undefined },
-          updated_at: new Date().toISOString()
-        },
+        { client_id: selectedClientId, section: s, data: { ...(data[s] as Record<string, unknown>), planningMode: s === 'protection' ? planningMode : undefined }, updated_at: new Date().toISOString() },
         { onConflict: 'client_id,section' }
       )
     ))
-
     setSaveStatus('saved')
     setLastSaved(new Date())
-    showToast('Discovery saved — Risk Management and Capital Mandate tabs have been updated.')
+    showToast('Discovery saved — Risk Management and Capital Mandate tabs updated.')
     setTimeout(() => setSaveStatus('idle'), 2000)
+  }
+
+  // ─── Goals CRUD ──────────────────────────────────────────────────────────
+
+  async function addGoal(type: string) {
+    if (!selectedClientId) return
+    const defaultNames: Record<string, string> = {
+      retirement: 'Retirement Plan',
+      education: "Child's Education Fund",
+      protection: 'Income Protection',
+      accumulation: 'Wealth Accumulation',
+      estate: 'Legacy Goal',
+    }
+    const newGoal = {
+      client_id: selectedClientId,
+      type,
+      name: defaultNames[type] || 'New Goal',
+      sort_order: goals.filter(g => g.type === type).length,
+    }
+    const { data: inserted, error } = await supabase.from('goals').insert(newGoal).select().single()
+    if (!error && inserted) {
+      setGoals(prev => [...prev, inserted])
+      setExpandedGoal(inserted.id)
+    }
+  }
+
+  async function updateGoal(id: string, field: string, value: unknown) {
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, [field]: value } : g))
+    const key = `goal-${id}`
+    if (debounceRef.current[key]) clearTimeout(debounceRef.current[key])
+    debounceRef.current[key] = setTimeout(async () => {
+      await supabase.from('goals').update({ [field]: value }).eq('id', id)
+      setSaveStatus('saved')
+      setLastSaved(new Date())
+      setTimeout(() => setSaveStatus('idle'), 2000)
+    }, 600)
+  }
+
+  async function deleteGoal(id: string) {
+    await supabase.from('goals').delete().eq('id', id)
+    setGoals(prev => prev.filter(g => g.id !== id))
+    if (expandedGoal === id) setExpandedGoal(null)
   }
 
   function showToast(msg: string) {
@@ -343,7 +379,7 @@ export default function ObjectivesPage() {
     setTimeout(() => setToastMsg(null), 4000)
   }
 
-  // ─── Calculated previews ─────────────────────────────────────────────────
+  // ─── Derived ─────────────────────────────────────────────────────────────
 
   const p = data.protection
   const a = data.accumulation
@@ -353,7 +389,6 @@ export default function ObjectivesPage() {
 
   const lifeCoverNeeded = ((p.monthlyIncomeClient || 0) * 12 * (p.yearsOfCoverage || 10))
   const ciCoverNeeded = ((p.monthlyIncomeClient || 0) * 12 * 5)
-  const yearsToRetirement = Math.max(0, (r.retirementAgeClient || 65) - clientAge)
   const retirementYears = Math.max(0, (r.lifeExpectancyClient || 85) - (r.retirementAgeClient || 65))
   const monthlyIncome = r.monthlyRetirementIncomeClient || 0
   const postReturn = (r.postRetirementReturn || 4) / 100
@@ -362,21 +397,15 @@ export default function ObjectivesPage() {
   const retirementCorpus = retirementYears > 0 && realReturn > 0
     ? monthlyIncome * 12 * ((1 - Math.pow(1 + realReturn, -retirementYears)) / realReturn)
     : monthlyIncome * 12 * retirementYears
-
   const eduFundNeeded = edu.children?.reduce((sum, c) => sum + (c.estimatedTotalCost || 0), 0) || 0
 
-  // ─── Section completion ──────────────────────────────────────────────────
-
   const sections = ['protection', 'accumulation', 'retirement', 'education', 'estate']
-  const sectionLabels = ['Wealth Protection', 'Wealth Accumulation', 'Retirement', 'Education Planning', 'Estate Planning']
+  const sectionLabels = ['Wealth Protection', 'Wealth Accumulation', 'Retirement', 'Education', 'Estate Planning']
 
   function getSectionPct(i: number): number {
     return sectionCompletion(sections[i], data)
   }
-
   const completedCount = sections.filter((_, i) => getSectionPct(i) > 80).length
-
-  // ─── Estate flags ────────────────────────────────────────────────────────
 
   const estate = data.estate
   const estateFlags: string[] = []
@@ -395,64 +424,50 @@ export default function ObjectivesPage() {
 
   // ─── Render guards ───────────────────────────────────────────────────────
 
-  if (!userId) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
-        <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', fontSize: '1.1rem' }}>Loading session…</p>
-      </div>
-    )
-  }
+  if (!userId) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
+      <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', fontSize: '1.1rem' }}>Loading session…</p>
+    </div>
+  )
 
-  if (!selectedClientId || !client) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.4rem', color: 'var(--ink2)', marginBottom: '0.5rem' }}>No client selected</p>
-          <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '0.85rem', color: 'var(--ink3)' }}>Select a client from the sidebar to begin discovery.</p>
-        </div>
+  if (!selectedClientId || !client) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
+      <div style={{ textAlign: 'center' }}>
+        <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.4rem', color: 'var(--ink2)', marginBottom: '0.5rem' }}>No client selected</p>
+        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '0.85rem', color: 'var(--ink3)' }}>Select a client from the sidebar to begin discovery.</p>
       </div>
-    )
-  }
+    </div>
+  )
 
   const spouseName = spouse?.name || 'Spouse'
 
   // ─── Input helpers ───────────────────────────────────────────────────────
 
-  function CurrencyInput({ section, field, label, placeholder = '0' }: {
-    section: keyof AllSections, field: string, label: string, placeholder?: string
-  }) {
+  function CurrencyInput({ section, field, label, placeholder = '0' }: { section: keyof AllSections, field: string, label: string, placeholder?: string }) {
     const val = ((data[section] as Record<string, unknown>)?.[field] as number) || ''
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <label style={styles.label}>{label}</label>
         <div style={styles.currencyWrap}>
           <span style={styles.currencyPrefix}>SGD $</span>
-          <input
-            type="number"
-            placeholder={placeholder}
-            value={val}
+          <input type="number" placeholder={placeholder} value={val}
             onChange={e => updateSection(section, field, e.target.value ? Number(e.target.value) : undefined)}
             style={styles.currencyInput}
-            onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
-            onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+            onFocus={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--gold)' }}
+            onBlur={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--line2)' }}
           />
         </div>
       </div>
     )
   }
 
-  function NumInput({ section, field, label, suffix = '', placeholder = '0' }: {
-    section: keyof AllSections, field: string, label: string, suffix?: string, placeholder?: string
-  }) {
+  function NumInput({ section, field, label, suffix = '', placeholder = '0' }: { section: keyof AllSections, field: string, label: string, suffix?: string, placeholder?: string }) {
     const val = ((data[section] as Record<string, unknown>)?.[field] as number) || ''
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <label style={styles.label}>{label}</label>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-          <input
-            type="number"
-            placeholder={placeholder}
-            value={val}
+          <input type="number" placeholder={placeholder} value={val}
             onChange={e => updateSection(section, field, e.target.value ? Number(e.target.value) : undefined)}
             style={{ ...styles.input, width: suffix ? '70px' : '100%' }}
             onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
@@ -464,20 +479,14 @@ export default function ObjectivesPage() {
     )
   }
 
-  function SelectInput({ section, field, label, options }: {
-    section: keyof AllSections, field: string, label: string, options: string[]
-  }) {
+  function SelectInput({ section, field, label, options }: { section: keyof AllSections, field: string, label: string, options: string[] }) {
     const val = ((data[section] as Record<string, unknown>)?.[field] as string) || ''
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <label style={styles.label}>{label}</label>
-        <select
-          value={val}
-          onChange={e => updateSection(section, field, e.target.value)}
-          style={styles.select}
+        <select value={val} onChange={e => updateSection(section, field, e.target.value)} style={styles.select}
           onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
-          onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
-        >
+          onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}>
           <option value="">Select…</option>
           {options.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
@@ -485,17 +494,12 @@ export default function ObjectivesPage() {
     )
   }
 
-  function TextInput({ section, field, label, placeholder = '' }: {
-    section: keyof AllSections, field: string, label: string, placeholder?: string
-  }) {
+  function TextInput({ section, field, label, placeholder = '' }: { section: keyof AllSections, field: string, label: string, placeholder?: string }) {
     const val = ((data[section] as Record<string, unknown>)?.[field] as string) || ''
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <label style={styles.label}>{label}</label>
-        <input
-          type="text"
-          placeholder={placeholder}
-          value={val}
+        <input type="text" placeholder={placeholder} value={val}
           onChange={e => updateSection(section, field, e.target.value)}
           style={styles.input}
           onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
@@ -509,15 +513,10 @@ export default function ObjectivesPage() {
     const val = ((data[section] as Record<string, unknown>)?.advisorNotes as string) || ''
     return (
       <div style={styles.notesBar}>
-        <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', fontFamily: 'Inter, sans-serif' }}>
-          Advisor Notes
-        </div>
-        <textarea
-          placeholder={placeholder}
-          value={val}
+        <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', fontFamily: 'Inter, sans-serif' }}>Advisor Notes</div>
+        <textarea placeholder={placeholder} value={val}
           onChange={e => updateSection(section, 'advisorNotes', e.target.value)}
-          rows={3}
-          style={styles.notesInput}
+          rows={3} style={styles.notesInput}
           onFocus={e => { e.target.style.borderBottomColor = 'rgba(168,131,74,0.6)' }}
           onBlur={e => { e.target.style.borderBottomColor = 'rgba(255,255,255,0.15)' }}
         />
@@ -527,7 +526,7 @@ export default function ObjectivesPage() {
 
   function SubSectionTitle({ label, color = 'var(--gold)' }: { label: string, color?: string }) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', marginTop: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', marginTop: '28px' }}>
         <div style={{ width: '3px', height: '14px', background: color, borderRadius: '2px' }} />
         <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
       </div>
@@ -537,13 +536,13 @@ export default function ObjectivesPage() {
   function PersonHeader() {
     if (planningMode === 'individual') return null
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
         {[
-          { name: client?.full_name || 'Client', age: clientAge, label: 'Client' },
-          { name: spouseName, age: spouse ? calcAge(spouse.date_of_birth) : null, label: 'Spouse' }
-        ].map((p, i) => (
-          <div key={i} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: i === 0 ? 'var(--gold-l)' : 'var(--emerald-l)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: i === 0 ? 'var(--gold-tag)' : 'var(--emerald)', fontFamily: 'Inter, sans-serif' }}>
+          { name: client?.full_name || 'Client', age: clientAge, label: 'Client', idx: 0 },
+          { name: spouseName, age: spouse ? calcAge(spouse.date_of_birth) : null, label: 'Spouse', idx: 1 },
+        ].map((p) => (
+          <div key={p.idx} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: p.idx === 0 ? 'var(--gold-l)' : 'var(--emerald-l)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: p.idx === 0 ? 'var(--gold-tag)' : 'var(--emerald)', fontFamily: 'Inter, sans-serif' }}>
               {p.name.charAt(0)}
             </div>
             <div>
@@ -556,16 +555,140 @@ export default function ObjectivesPage() {
     )
   }
 
-  function TwoCol({ children }: { children: React.ReactNode }) {
-    return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>{children}</div>
-  }
-
   function SectionIntro({ eyebrow, title, subtitle }: { eyebrow: string, title: string, subtitle: string }) {
     return (
       <div style={{ marginBottom: '28px' }}>
         <div style={{ fontSize: '9px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>{eyebrow}</div>
-        <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.7rem', fontWeight: 300, color: 'var(--ink)', margin: '0 0 8px' }}>{title}</h2>
+        <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.75rem', fontWeight: 300, color: 'var(--ink)', margin: '0 0 8px', letterSpacing: '0.01em' }}>{title}</h2>
         <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '0.95rem', color: 'var(--ink3)', lineHeight: 1.6, margin: 0 }}>{subtitle}</p>
+      </div>
+    )
+  }
+
+  // ─── Goal Card ───────────────────────────────────────────────────────────
+
+  function GoalCard({ goal }: { goal: Goal }) {
+    const meta = GOAL_TYPE_META[goal.type] || GOAL_TYPE_META.accumulation
+    const isExpanded = expandedGoal === goal.id
+
+    function GField({ field, label, type = 'number', suffix = '', prefix = '', placeholder = '' }: {
+      field: keyof Goal, label: string, type?: string, suffix?: string, prefix?: string, placeholder?: string
+    }) {
+      const val = (goal[field] as string | number | boolean) ?? ''
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <label style={styles.label}>{label}</label>
+          {type === 'boolean' ? (
+            <select
+              value={val === true ? 'Yes' : val === false ? 'No' : ''}
+              onChange={e => updateGoal(goal.id, field, e.target.value === 'Yes')}
+              style={styles.select}
+              onFocus={e => { e.target.style.borderBottomColor = meta.color }}
+              onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
+            >
+              <option value="">Select…</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', borderBottom: '1px solid var(--line2)', transition: 'border-bottom-color 0.15s' }}
+              onFocus={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = meta.color }}
+              onBlur={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--line2)' }}>
+              {prefix && <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '6px', flexShrink: 0 }}>{prefix}</span>}
+              <input
+                type={type}
+                placeholder={placeholder || '0'}
+                value={val as string | number}
+                onChange={e => updateGoal(goal.id, field, type === 'text' ? e.target.value : (e.target.value ? Number(e.target.value) : undefined))}
+                style={{ flex: 1, border: 'none', background: 'transparent', padding: '6px 0', fontSize: '13px', color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none', width: '100%' }}
+              />
+              {suffix && <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '6px', flexShrink: 0 }}>{suffix}</span>}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div style={{ border: `1px solid var(--line)`, borderRadius: '8px', overflow: 'hidden', marginBottom: '10px', background: 'white', transition: 'box-shadow 0.2s', boxShadow: isExpanded ? '0 4px 20px rgba(0,0,0,0.06)' : 'none' }}>
+        {/* Card header */}
+        <div
+          onClick={() => setExpandedGoal(isExpanded ? null : goal.id)}
+          style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', cursor: 'pointer', background: isExpanded ? meta.accent : 'white', transition: 'background 0.15s' }}
+        >
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <input
+              type="text"
+              value={goal.name}
+              onChange={e => { e.stopPropagation(); updateGoal(goal.id, 'name', e.target.value) }}
+              onClick={e => e.stopPropagation()}
+              style={{ border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none', width: '100%', padding: 0, cursor: 'text' }}
+              placeholder="Goal name…"
+            />
+            {goal.target_amount && (
+              <div style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginTop: '1px' }}>
+                Target: {fmtCurrency(goal.target_amount)}
+                {goal.target_age ? ` · by age ${goal.target_age}` : ''}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={e => { e.stopPropagation(); deleteGoal(goal.id) }}
+              style={{ width: '24px', height: '24px', borderRadius: '4px', border: 'none', background: 'transparent', color: 'var(--ink3)', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              title="Delete goal"
+            >×</button>
+            <div style={{ color: 'var(--ink3)', fontSize: '10px', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</div>
+          </div>
+        </div>
+
+        {/* Expanded fields */}
+        {isExpanded && (
+          <div style={{ padding: '20px 16px', borderTop: '1px solid var(--line)', background: 'white' }}>
+            {goal.type === 'retirement' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <GField field="ret_age" label="Retirement Age" suffix="yrs" placeholder="65" />
+                <GField field="life_exp" label="Life Expectancy" suffix="yrs" placeholder="85" />
+                <GField field="monthly_income" label="Monthly Income Desired" prefix="SGD $" />
+                <GField field="inflation_rate" label="Inflation Rate" suffix="% p.a." placeholder="3" />
+                <GField field="post_rate" label="Post-Retirement Return" suffix="% p.a." placeholder="4" />
+                <GField field="ret_inc" label="Current Monthly Savings" prefix="SGD $" />
+                <GField field="legacy_on" label="Leave a Legacy?" type="boolean" />
+                {goal.legacy_on && <GField field="legacy_amt" label="Legacy Amount" prefix="SGD $" />}
+                <GField field="cont_inv" label="Continue CPF in Retirement?" type="boolean" />
+                <GField field="target_amount" label="Target Corpus" prefix="SGD $" />
+              </div>
+            )}
+            {goal.type === 'education' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <GField field="target_age" label="Child's Current Age" suffix="yrs" />
+                <GField field="target_amount" label="Estimated Total Cost" prefix="SGD $" />
+                <GField field="rate_of_return" label="Expected Return" suffix="% p.a." placeholder="5" />
+                <GField field="inflation_rate" label="Education Inflation" suffix="% p.a." placeholder="4" />
+                <GField field="ret_inc" label="Monthly Savings Available" prefix="SGD $" />
+                <GField field="legacy_on" label="Protection on Fund?" type="boolean" />
+              </div>
+            )}
+            {goal.type === 'protection' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <GField field="target_amount" label="Coverage Target" prefix="SGD $" />
+                <GField field="target_age" label="Coverage Until Age" suffix="yrs" />
+                <GField field="monthly_income" label="Monthly Income to Protect" prefix="SGD $" />
+                <GField field="rate_of_return" label="Income Replacement Years" suffix="yrs" />
+              </div>
+            )}
+            {(goal.type === 'accumulation' || goal.type === 'estate') && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <GField field="target_amount" label="Target Amount" prefix="SGD $" />
+                <GField field="target_age" label="Target Age" suffix="yrs" />
+                <GField field="rate_of_return" label="Expected Return" suffix="% p.a." placeholder="6" />
+                <GField field="monthly_income" label="Monthly Contribution" prefix="SGD $" />
+                <GField field="inflation_rate" label="Inflation Assumption" suffix="% p.a." placeholder="3" />
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -575,13 +698,9 @@ export default function ObjectivesPage() {
   function Section1() {
     return (
       <div>
-        <SectionIntro
-          eyebrow="Section 1 · Wealth Protection"
-          title="Protection Needs"
-          subtitle="Understanding what needs to be protected — income, debts, family obligations — if either of you were unable to work."
-        />
+        <SectionIntro eyebrow="Section 1 · Wealth Protection" title="Protection Needs"
+          subtitle="Understanding what needs to be protected — income, debts, family obligations — if either of you were unable to work." />
         <PersonHeader />
-
         <SubSectionTitle label="Monthly Income & Expenses" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr' : '1fr 1fr', gap: '20px' }}>
           <CurrencyInput section="protection" field="monthlyIncomeClient" label={planningMode === 'couple' ? `Monthly Income — ${client?.full_name?.split(' ')[0]}` : 'Monthly Income'} />
@@ -589,14 +708,12 @@ export default function ObjectivesPage() {
           <CurrencyInput section="protection" field="monthlyHouseholdExpenses" label="Monthly Household Expenses" />
           <CurrencyInput section="protection" field="monthlyMortgageRent" label="Monthly Mortgage / Rent" />
         </div>
-
         <SubSectionTitle label="Liabilities & Debts" color="var(--ink3)" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
           <CurrencyInput section="protection" field="outstandingMortgage" label="Outstanding Mortgage" />
           <CurrencyInput section="protection" field="otherLoans" label="Other Loans / Debts" />
           <NumInput section="protection" field="yearsToClearMortgage" label="Years to Clear Mortgage" suffix="yrs" />
         </div>
-
         <SubSectionTitle label="Income Replacement Needs" color="var(--emerald)" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
           <CurrencyInput section="protection" field="incomeReplacementClient" label={planningMode === 'couple' ? `Replacement Needed — ${client?.full_name?.split(' ')[0]}` : 'Income Replacement Needed'} />
@@ -604,7 +721,6 @@ export default function ObjectivesPage() {
           <NumInput section="protection" field="yearsOfCoverage" label="Years of Coverage Needed" suffix="yrs" />
           <SelectInput section="protection" field="ciRecoveryPeriod" label="CI Recovery Period" options={['3 years', '5 years', 'Until retirement']} />
         </div>
-
         <SubSectionTitle label="Existing Coverage" color="var(--gold-tag)" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
           <CurrencyInput section="protection" field="lifeCoverClient" label={`Life Cover — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
@@ -613,42 +729,27 @@ export default function ObjectivesPage() {
           {planningMode === 'couple' && <CurrencyInput section="protection" field="ciCoverSpouse" label={`CI Cover — ${spouseName.split(' ')[0]}`} />}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr' : '1fr 1fr', gap: '20px', marginTop: '20px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <label style={styles.label}>{`Disability Income — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`}</label>
-            <div style={styles.currencyWrap}>
-              <span style={styles.currencyPrefix}>SGD $</span>
-              <input
-                type="number"
-                placeholder="0"
-                value={(data.protection.disabilityIncomeClient as number) || ''}
-                onChange={e => updateSection('protection', 'disabilityIncomeClient', e.target.value ? Number(e.target.value) : undefined)}
-                style={{ ...styles.currencyInput, flex: 1 }}
-                onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
-                onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
-              />
-              <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '2px' }}>/mo</span>
-            </div>
-          </div>
-          {planningMode === 'couple' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <label style={styles.label}>{`Disability Income — ${spouseName.split(' ')[0]}`}</label>
-              <div style={styles.currencyWrap}>
-                <span style={styles.currencyPrefix}>SGD $</span>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={(data.protection.disabilityIncomeSpouse as number) || ''}
-                  onChange={e => updateSection('protection', 'disabilityIncomeSpouse', e.target.value ? Number(e.target.value) : undefined)}
-                  style={{ ...styles.currencyInput, flex: 1 }}
-                  onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
-                  onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
-                />
-                <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '2px' }}>/mo</span>
+          {(['Client', ...(planningMode === 'couple' ? ['Spouse'] : [])]).map((who, i) => {
+            const field = i === 0 ? 'disabilityIncomeClient' : 'disabilityIncomeSpouse'
+            const label = planningMode === 'couple' ? `Disability Income — ${i === 0 ? client?.full_name?.split(' ')[0] : spouseName.split(' ')[0]}` : 'Disability Income'
+            const val = (data.protection[field as keyof ProtectionData] as number) || ''
+            return (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={styles.label}>{label}</label>
+                <div style={styles.currencyWrap}>
+                  <span style={styles.currencyPrefix}>SGD $</span>
+                  <input type="number" placeholder="0" value={val}
+                    onChange={e => updateSection('protection', field, e.target.value ? Number(e.target.value) : undefined)}
+                    style={{ ...styles.currencyInput, flex: 1 }}
+                    onFocus={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--gold)' }}
+                    onBlur={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--line2)' }}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '2px' }}>/mo</span>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })}
         </div>
-
         <div style={{ marginTop: '32px' }}>
           <NotesTextarea section="protection" placeholder="Record any context, client concerns, or details discussed during this section…" />
         </div>
@@ -657,62 +758,89 @@ export default function ObjectivesPage() {
   }
 
   function Section2() {
-    const goals: string[] = data.accumulation.financialGoals || []
-    const goalChips = ['Retirement', "Children's education", 'Pay off mortgage', 'Second property', 'Passive income', 'Leave a legacy', 'Business', 'Travel fund']
-
-    function toggleGoal(g: string) {
-      const current = data.accumulation.financialGoals || []
-      const updated = current.includes(g) ? current.filter(x => x !== g) : [...current, g]
-      updateSection('accumulation', 'financialGoals', updated)
-    }
+    const goalTypes = ['retirement', 'education', 'protection', 'accumulation', 'estate']
 
     return (
       <div>
-        <SectionIntro
-          eyebrow="Section 2 · Wealth Accumulation"
-          title="Savings & Investment Needs"
-          subtitle="Understanding the client's savings capacity, risk appetite, and investment goals."
-        />
+        <SectionIntro eyebrow="Section 2 · Wealth Accumulation" title="Financial Goals"
+          subtitle="Define and prioritise each goal with specific targets — these feed directly into the Capital Mandate and Recommendations tabs." />
 
         <SubSectionTitle label="Savings Capacity" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '8px' }}>
           <CurrencyInput section="accumulation" field="monthlySurplus" label="Monthly Surplus Available" />
           <CurrencyInput section="accumulation" field="lumpSumAvailable" label="Lump Sum Available Now" />
           <CurrencyInput section="accumulation" field="currentInvestments" label="Current Total Investments" />
         </div>
 
         <SubSectionTitle label="Risk Profile" color="var(--emerald)" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '8px' }}>
           <SelectInput section="accumulation" field="riskAppetite" label="Risk Appetite" options={['Very Conservative (1)', 'Conservative (2)', 'Balanced (3)', 'Growth (4)', 'Aggressive (5)']} />
           <SelectInput section="accumulation" field="investmentTimeHorizon" label="Investment Time Horizon" options={['Under 5 years', '5–10 years', '10–20 years', '20+ years']} />
           <NumInput section="accumulation" field="expectedReturnRate" label="Expected Return Rate" suffix="% p.a." placeholder="6" />
         </div>
 
-        <SubSectionTitle label="Financial Goals" color="var(--ink3)" />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
-          {goalChips.map(g => (
-            <button
-              key={g}
-              onClick={() => toggleGoal(g)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '20px',
-                border: goals.includes(g) ? '1.5px solid var(--gold)' : '1.5px solid var(--line2)',
-                background: goals.includes(g) ? 'var(--gold-l)' : 'transparent',
-                color: goals.includes(g) ? 'var(--gold-tag)' : 'var(--ink3)',
-                fontSize: '12px',
-                fontFamily: 'Inter, sans-serif',
-                fontWeight: goals.includes(g) ? 600 : 400,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {g}
-            </button>
-          ))}
+        <SubSectionTitle label="Goal Planning" color="var(--ink3)" />
+
+        {/* Goal type tabs */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          {goalTypes.map(type => {
+            const meta = GOAL_TYPE_META[type]
+            const count = goals.filter(g => g.type === type).length
+            return (
+              <button
+                key={type}
+                onClick={() => addGoal(type)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '7px 14px', borderRadius: '6px',
+                  border: `1.5px solid ${count > 0 ? meta.color : 'var(--line2)'}`,
+                  background: count > 0 ? meta.accent : 'transparent',
+                  color: count > 0 ? meta.color : 'var(--ink3)',
+                  fontSize: '11px', fontFamily: 'Inter, sans-serif',
+                  fontWeight: count > 0 ? 600 : 400,
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}
+              >
+                <span style={{ fontSize: '13px' }}>{meta.icon}</span>
+                {meta.label}
+                {count > 0 && (
+                  <span style={{ width: '16px', height: '16px', borderRadius: '50%', background: meta.color, color: 'white', fontSize: '9px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{count}</span>
+                )}
+                {count === 0 && <span style={{ fontSize: '11px', opacity: 0.5 }}>+</span>}
+              </button>
+            )
+          })}
         </div>
 
-        <NotesTextarea section="accumulation" placeholder="Investment preferences, constraints, prior experience, concerns discussed…" />
+        {/* Goal cards grouped by type */}
+        {goals.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 24px', border: '1.5px dashed var(--line2)', borderRadius: '8px', background: 'white' }}>
+            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', color: 'var(--ink3)', marginBottom: '8px' }}>No goals added yet</div>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: 'var(--ink3)' }}>Click any goal type above to add one</div>
+          </div>
+        ) : (
+          <div>
+            {goalTypes.map(type => {
+              const typeGoals = goals.filter(g => g.type === type)
+              if (typeGoals.length === 0) return null
+              const meta = GOAL_TYPE_META[type]
+              return (
+                <div key={type} style={{ marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ width: '3px', height: '14px', background: meta.color, borderRadius: '2px' }} />
+                    <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>{meta.label}</span>
+                    <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>— {meta.description}</span>
+                  </div>
+                  {typeGoals.map(goal => <GoalCard key={goal.id} goal={goal} />)}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ marginTop: '24px' }}>
+          <NotesTextarea section="accumulation" placeholder="Investment preferences, constraints, prior experience, concerns discussed…" />
+        </div>
       </div>
     )
   }
@@ -721,13 +849,9 @@ export default function ObjectivesPage() {
     const legacyVal = data.retirement.leaveALegacy || ''
     return (
       <div>
-        <SectionIntro
-          eyebrow="Section 3 · Retirement Planning"
-          title="Retirement Needs"
-          subtitle="Planning the income and capital required to sustain your desired lifestyle from retirement through to end of life."
-        />
+        <SectionIntro eyebrow="Section 3 · Retirement Planning" title="Retirement Needs"
+          subtitle="Planning the income and capital required to sustain your desired lifestyle from retirement through to end of life." />
         <PersonHeader />
-
         <SubSectionTitle label="Retirement Parameters" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
           <NumInput section="retirement" field="retirementAgeClient" label={`Retirement Age — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} suffix="yrs" placeholder="65" />
@@ -735,7 +859,6 @@ export default function ObjectivesPage() {
           <NumInput section="retirement" field="lifeExpectancyClient" label={`Life Expectancy — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} suffix="yrs" placeholder="85" />
           {planningMode === 'couple' && <NumInput section="retirement" field="lifeExpectancySpouse" label={`Life Expectancy — ${spouseName.split(' ')[0]}`} suffix="yrs" placeholder="85" />}
         </div>
-
         <SubSectionTitle label="Retirement Income Desired (Today's $)" color="var(--emerald)" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
           <CurrencyInput section="retirement" field="monthlyRetirementIncomeClient" label={`Monthly Income — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
@@ -743,14 +866,12 @@ export default function ObjectivesPage() {
           <NumInput section="retirement" field="inflationRate" label="Inflation Rate" suffix="%" placeholder="3" />
           <NumInput section="retirement" field="postRetirementReturn" label="Post-Retirement Return Rate" suffix="%" placeholder="4" />
         </div>
-
         <SubSectionTitle label="Legacy" color="var(--gold-tag)" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
           <SelectInput section="retirement" field="leaveALegacy" label="Leave a Legacy?" options={['No', 'Yes — specific amount', 'Nice to have']} />
           {legacyVal === 'Yes — specific amount' && <CurrencyInput section="retirement" field="legacyAmountTarget" label="Legacy Amount Target" />}
           <SelectInput section="retirement" field="continueCpfInRetirement" label="Continue Investing CPF in Retirement?" options={['Yes', 'No']} />
         </div>
-
         <div style={{ marginTop: '32px' }}>
           <NotesTextarea section="retirement" placeholder="Retirement lifestyle aspirations, travel plans, healthcare concerns, family obligations…" />
         </div>
@@ -776,23 +897,15 @@ export default function ObjectivesPage() {
 
     function addChild() {
       const newChild: ChildEducation = { childId: `new-${Date.now()}`, name: '', currentAge: 0 }
-      const updated = [...eduChildren, newChild]
-      setData(prev => ({
-        ...prev,
-        education: { ...prev.education, children: updated }
-      }))
+      setData(prev => ({ ...prev, education: { ...prev.education, children: [...eduChildren, newChild] } }))
     }
 
     const studyOptions = ['Singapore — Local', 'Singapore — Private', 'Australia', 'UK', 'US', 'Other']
 
     return (
       <div>
-        <SectionIntro
-          eyebrow="Section 4 · Education Planning"
-          title="University Education Fund"
-          subtitle="Planning the savings required to fund each child's tertiary education — both accumulation and protection."
-        />
-
+        <SectionIntro eyebrow="Section 4 · Education Planning" title="University Education Fund"
+          subtitle="Planning the savings required to fund each child's tertiary education — both accumulation and protection." />
         {eduChildren.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', border: '1.5px dashed var(--line2)', borderRadius: '8px', marginBottom: '24px' }}>
             <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', marginBottom: '16px' }}>No children found in the client profile.</p>
@@ -807,7 +920,7 @@ export default function ObjectivesPage() {
                     {(child.name || '?').charAt(0)}
                   </div>
                   <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>
-                    Child {idx + 1} {child.name ? `— ${child.name}` : ''}
+                    Child {idx + 1}{child.name ? ` — ${child.name}` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -844,7 +957,9 @@ export default function ObjectivesPage() {
                       <label style={styles.label}>{label}</label>
                       <div style={styles.currencyWrap}>
                         <span style={styles.currencyPrefix}>SGD $</span>
-                        <input type="number" value={(child as unknown as Record<string, unknown>)[field] as number || ''} onChange={e => updateChild(idx, field, e.target.value ? Number(e.target.value) : undefined)} style={styles.currencyInput} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
+                        <input type="number" value={(child as unknown as Record<string, unknown>)[field] as number || ''} onChange={e => updateChild(idx, field, e.target.value ? Number(e.target.value) : undefined)} style={styles.currencyInput}
+                          onFocus={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--gold)' }}
+                          onBlur={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--line2)' }} />
                       </div>
                     </div>
                   ))}
@@ -862,7 +977,6 @@ export default function ObjectivesPage() {
             <button onClick={addChild} style={styles.addChildBtn}>+ Add another child</button>
           </>
         )}
-
         <div style={{ marginTop: '24px' }}>
           <NotesTextarea section="education" placeholder="Education preferences, overseas vs local, scholarship plans, existing savings vehicles…" />
         </div>
@@ -871,24 +985,14 @@ export default function ObjectivesPage() {
   }
 
   function Section5() {
-    const willClientVal = estate.willClient || ''
-    const willSpouseVal = estate.willSpouse || ''
-
     return (
       <div>
-        <SectionIntro
-          eyebrow="Section 5 · Estate Planning"
-          title="Estate & Legacy"
-          subtitle="Ensuring assets are protected, distributed as intended, and the right people are empowered to act on your behalf."
-        />
+        <SectionIntro eyebrow="Section 5 · Estate Planning" title="Estate & Legacy"
+          subtitle="Ensuring assets are protected, distributed as intended, and the right people are empowered to act on your behalf." />
         <PersonHeader />
-
-        {/* Urgent flags */}
         {estateFlags.length > 0 && (
-          <div style={{ background: 'var(--rouge-l)', border: '3px solid var(--rouge)', borderRadius: '8px', padding: '16px 20px', marginBottom: '28px' }}>
-            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>
-              ⚠ Urgent Estate Gaps
-            </div>
+          <div style={{ background: 'var(--rouge-l)', border: '1.5px solid var(--rouge)', borderRadius: '8px', padding: '16px 20px', marginBottom: '28px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>⚠ Urgent Estate Gaps</div>
             {estateFlags.map(f => (
               <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                 <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--rouge)', flexShrink: 0 }} />
@@ -897,7 +1001,6 @@ export default function ObjectivesPage() {
             ))}
           </div>
         )}
-
         <SubSectionTitle label="Will" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
           <SelectInput section="estate" field="willClient" label={`Will Written — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['No', 'Yes', 'Outdated']} />
@@ -906,13 +1009,11 @@ export default function ObjectivesPage() {
           {planningMode === 'couple' && <TextInput section="estate" field="willLastUpdatedSpouse" label={`Last Updated — ${spouseName.split(' ')[0]}`} placeholder="e.g. Jan 2020" />}
           <TextInput section="estate" field="preferredGuardian" label="Preferred Guardian for Children" placeholder="Full name" />
         </div>
-
         <SubSectionTitle label="Trust" color="var(--emerald)" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
           <SelectInput section="estate" field="trustSetUp" label="Trust Set Up?" options={['No', 'Yes — testamentary', 'Yes — living trust', 'Interested to explore']} />
           <TextInput section="estate" field="trustPurposeNotes" label="Trust Purpose / Notes" placeholder="Describe the trust purpose or intentions" />
         </div>
-
         <SubSectionTitle label="Insurance Nominations & CPF" color="var(--gold-tag)" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
           <SelectInput section="estate" field="policyNominationsClient" label={`Policy Nominations — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done', 'Partially done']} />
@@ -920,7 +1021,6 @@ export default function ObjectivesPage() {
           <SelectInput section="estate" field="cpfNominationClient" label={`CPF Nomination — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done']} />
           {planningMode === 'couple' && <SelectInput section="estate" field="cpfNominationSpouse" label={`CPF Nomination — ${spouseName.split(' ')[0]}`} options={['Not done', 'Done']} />}
         </div>
-
         <SubSectionTitle label="Lasting Power of Attorney (LPA)" color="var(--ink3)" />
         <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
           <SelectInput section="estate" field="lpaClient" label={`LPA — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done', 'In progress']} />
@@ -928,7 +1028,6 @@ export default function ObjectivesPage() {
           <TextInput section="estate" field="doneeClient" label={`Donee (LPA) — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} placeholder="Name of donee" />
           {planningMode === 'couple' && <TextInput section="estate" field="doneeSpouse" label={`Donee (LPA) — ${spouseName.split(' ')[0]}`} placeholder="Name of donee" />}
         </div>
-
         <div style={{ marginTop: '32px' }}>
           <NotesTextarea section="estate" placeholder="Family dynamics, beneficiary preferences, business succession needs, special considerations…" />
         </div>
@@ -945,7 +1044,7 @@ export default function ObjectivesPage() {
 
       {/* Toast */}
       {toastMsg && (
-        <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999, background: 'var(--charcoal)', color: 'white', padding: '12px 20px', borderRadius: '8px', fontFamily: 'Inter, sans-serif', fontSize: '13px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxWidth: '360px' }}>
+        <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999, background: 'var(--charcoal)', color: 'white', padding: '12px 20px', borderRadius: '8px', fontFamily: 'Inter, sans-serif', fontSize: '13px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxWidth: '360px', lineHeight: 1.5 }}>
           {toastMsg}
         </div>
       )}
@@ -954,99 +1053,97 @@ export default function ObjectivesPage() {
       <div style={{ background: 'var(--charcoal)', padding: '28px 40px 0', color: 'white' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
           <div>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', fontWeight: 300, margin: '0 0 4px', letterSpacing: '0.01em' }}>Strategic Objectives</h1>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+            <div style={{ fontSize: '9px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', marginBottom: '6px' }}>Discovery · Fact Finding</div>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', fontWeight: 300, margin: '0 0 4px', letterSpacing: '0.01em' }}>Strategic Objectives</h1>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
               {client?.full_name} · {planningMode === 'couple' ? 'Joint Planning' : 'Individual Planning'}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            {/* Overall completion */}
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', color: 'var(--gold)', lineHeight: 1 }}>
                 {Math.round((completedCount / 5) * 100)}%
               </div>
-              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter, sans-serif', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Complete</div>
+              <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: '2px' }}>Complete</div>
             </div>
-            <button onClick={saveAll} style={{ padding: '10px 20px', background: 'transparent', border: '1.5px solid rgba(168,131,74,0.5)', color: 'var(--gold)', borderRadius: '6px', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.05em' }}>
+            <button onClick={saveAll} style={{ padding: '10px 20px', background: 'transparent', border: '1.5px solid rgba(168,131,74,0.5)', color: 'var(--gold)', borderRadius: '6px', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.05em', transition: 'border-color 0.15s' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(168,131,74,0.5)' }}>
               Save Draft
             </button>
           </div>
         </div>
 
-        {/* Hero stats */}
-        <div style={{ display: 'flex', gap: '24px', marginBottom: '20px' }}>
+        {/* Stats row */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
           {[
-            { label: 'Client', value: client?.full_name || '—' },
-            ...(planningMode === 'couple' ? [{ label: 'Spouse', value: spouseName }] : []),
+            { label: 'Client', value: client?.full_name?.split(' ')[0] || '—' },
+            ...(planningMode === 'couple' ? [{ label: 'Spouse', value: spouseName.split(' ')[0] }] : []),
+            { label: 'Goals', value: String(goals.length) },
             { label: 'Children', value: String(children.length) },
-            { label: 'Sections Complete', value: `${completedCount} / 5` },
-            { label: 'Last Saved', value: lastSaved ? lastSaved.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }) : '—' },
+            { label: 'Sections', value: `${completedCount} / 5` },
+            { label: 'Saved', value: lastSaved ? lastSaved.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }) : '—' },
           ].map((stat, i) => (
-            <div key={i} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', minWidth: '100px' }}>
-              <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', marginBottom: '4px' }}>{stat.label}</div>
+            <div key={i} style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.06)', borderRadius: '5px' }}>
+              <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', fontFamily: 'Inter, sans-serif', marginBottom: '3px' }}>{stat.label}</div>
               <div style={{ fontSize: '13px', fontWeight: 500, color: 'white', fontFamily: 'Inter, sans-serif' }}>{stat.value}</div>
             </div>
           ))}
+
+          {/* Save indicator */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px' }}>
+            <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : saveStatus === 'saved' ? 'var(--emerald)' : 'rgba(255,255,255,0.2)', transition: 'background 0.3s' }} />
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'Inter, sans-serif' }}>
+              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : 'Auto-save on'}
+            </span>
+          </div>
         </div>
 
-        {/* Planning mode toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '0', marginBottom: '0' }}>
-          <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter, sans-serif' }}>Planning for:</span>
-          {(['individual', 'couple'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => updatePlanningMode(mode)}
-              style={{
-                padding: '6px 16px',
-                borderRadius: '4px 4px 0 0',
-                border: 'none',
-                background: planningMode === mode ? 'rgba(168,131,74,0.15)' : 'transparent',
-                color: planningMode === mode ? 'var(--gold)' : 'rgba(255,255,255,0.4)',
-                fontSize: '12px',
-                fontFamily: 'Inter, sans-serif',
+        {/* Planning mode + section nav combined */}
+        <div style={{ display: 'flex', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          {/* Planning mode */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0', borderRight: '1px solid rgba(255,255,255,0.08)', paddingRight: '0', marginRight: '0' }}>
+            {(['individual', 'couple'] as const).map(mode => (
+              <button key={mode} onClick={() => updatePlanningMode(mode)} style={{
+                padding: '14px 16px', borderRadius: '0', border: 'none',
+                background: planningMode === mode ? 'rgba(168,131,74,0.12)' : 'transparent',
+                color: planningMode === mode ? 'var(--gold)' : 'rgba(255,255,255,0.35)',
+                fontSize: '11px', fontFamily: 'Inter, sans-serif',
                 fontWeight: planningMode === mode ? 600 : 400,
                 cursor: 'pointer',
                 borderBottom: planningMode === mode ? '2px solid var(--gold)' : '2px solid transparent',
-                letterSpacing: '0.02em',
-              }}
-            >
-              {mode === 'individual' ? 'Individual' : 'Couple / Family'}
-            </button>
-          ))}
-        </div>
+                letterSpacing: '0.03em', whiteSpace: 'nowrap',
+              }}>
+                {mode === 'individual' ? 'Individual' : 'Couple'}
+              </button>
+            ))}
+            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
+          </div>
 
-        {/* Section nav */}
-        <div style={{ display: 'flex', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: '0', paddingTop: '0' }}>
+          {/* Section tabs */}
           {sectionLabels.map((label, i) => {
             const pct = getSectionPct(i)
             const isActive = activeSection === i
             const isDone = pct > 80
             const isStarted = pct > 0
             return (
-              <button
-                key={i}
-                onClick={() => setActiveSection(i)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '14px 20px',
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: isActive ? '2px solid white' : '2px solid transparent',
-                  color: isActive ? 'white' : 'rgba(255,255,255,0.45)',
-                  cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: '12px',
-                  fontWeight: isActive ? 500 : 400,
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.15s',
-                  marginBottom: '-1px',
-                }}
-              >
+              <button key={i} onClick={() => setActiveSection(i)} style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                padding: '14px 18px', background: 'transparent', border: 'none',
+                borderBottom: isActive ? '2px solid white' : '2px solid transparent',
+                color: isActive ? 'white' : 'rgba(255,255,255,0.4)',
+                cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: '12px',
+                fontWeight: isActive ? 500 : 400, whiteSpace: 'nowrap',
+                transition: 'color 0.15s', marginBottom: '-1px',
+              }}>
                 <div style={{
-                  width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 700, flexShrink: 0,
-                  background: isDone ? 'var(--emerald)' : isStarted ? 'var(--gold)' : 'rgba(255,255,255,0.12)',
-                  color: isDone || isStarted ? 'white' : 'rgba(255,255,255,0.4)',
+                  width: '17px', height: '17px', borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '9px', fontWeight: 700, flexShrink: 0,
+                  background: isDone ? 'var(--emerald)' : isStarted ? 'var(--gold)' : 'rgba(255,255,255,0.1)',
+                  color: isDone || isStarted ? 'white' : 'rgba(255,255,255,0.35)',
                 }}>
                   {isDone ? '✓' : i + 1}
                 </div>
@@ -1054,75 +1151,93 @@ export default function ObjectivesPage() {
               </button>
             )
           })}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 20px', color: 'rgba(255,255,255,0.35)', fontSize: '11px', fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap' }}>
-            <div style={{ width: '80px', height: '3px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${(completedCount / 5) * 100}%`, background: 'var(--gold)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+
+          {/* Progress bar */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 20px' }}>
+            <div style={{ width: '60px', height: '2px', background: 'rgba(255,255,255,0.1)', borderRadius: '1px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${(completedCount / 5) * 100}%`, background: 'var(--gold)', borderRadius: '1px', transition: 'width 0.4s ease' }} />
             </div>
-            {completedCount} of 5
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Inter, sans-serif' }}>{completedCount}/5</span>
           </div>
         </div>
       </div>
 
-      {/* Main body */}
-      <div style={{ flex: 1, display: 'flex', gap: '0', maxWidth: '100%' }}>
+      {/* Body */}
+      <div style={{ flex: 1, display: 'flex', maxWidth: '100%' }}>
 
-        {/* Left: form */}
+        {/* Main form */}
         <div style={{ flex: 1, padding: '40px', overflowY: 'auto', minWidth: 0 }}>
           {loading ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px' }}>
-              <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)' }}>Loading discovery data…</p>
+              <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', fontStyle: 'italic' }}>Loading discovery data…</p>
             </div>
           ) : sectionComponents[activeSection]}
         </div>
 
         {/* Right sidebar */}
-        <div style={{ width: '260px', flexShrink: 0, background: 'white', borderLeft: '1px solid var(--line)', padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div style={{ width: '256px', flexShrink: 0, background: 'white', borderLeft: '1px solid var(--line)', padding: '24px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-          {/* Save status */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : saveStatus === 'saved' ? 'var(--emerald)' : 'var(--line2)' }} />
-            <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>
-              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : lastSaved ? `Saved ${lastSaved.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })}` : 'Auto-saves on every change'}
-            </span>
-          </div>
-
-          {/* Progress */}
+          {/* Discovery progress */}
           <div>
-            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginBottom: '12px' }}>Discovery Progress</div>
+            <div style={styles.sidebarHeading}>Discovery Progress</div>
             {sectionLabels.map((label, i) => {
               const pct = getSectionPct(i)
-              const status = pct > 80 ? 'Complete' : pct > 0 ? 'In progress' : 'Not started'
+              const isDone = pct > 80
+              const isStarted = pct > 0
               return (
-                <div key={i} style={{ marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '11px', color: pct > 80 ? 'var(--emerald)' : pct > 0 ? 'var(--gold-tag)' : 'var(--ink3)', fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>{label}</span>
-                    <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>{pct}%</span>
+                <button key={i} onClick={() => setActiveSection(i)} style={{ width: '100%', background: activeSection === i ? 'var(--cream)' : 'transparent', border: 'none', borderRadius: '5px', padding: '8px 10px', cursor: 'pointer', textAlign: 'left', marginBottom: '2px', transition: 'background 0.15s' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                    <span style={{ fontSize: '11px', color: isDone ? 'var(--emerald)' : isStarted ? 'var(--gold-tag)' : 'var(--ink3)', fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>{label}</span>
+                    <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'DM Mono, monospace' }}>{pct}%</span>
                   </div>
-                  <div style={{ height: '3px', background: 'var(--cream2)', borderRadius: '2px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: pct > 80 ? 'var(--emerald)' : 'var(--gold)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                  <div style={{ height: '2px', background: 'var(--cream2)', borderRadius: '1px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: isDone ? 'var(--emerald)' : 'var(--gold)', borderRadius: '1px', transition: 'width 0.4s ease' }} />
                   </div>
-                  <div style={{ fontSize: '9px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginTop: '2px' }}>{status}</div>
-                </div>
+                </button>
               )
             })}
           </div>
 
+          {/* Goals summary */}
+          {goals.length > 0 && (
+            <div>
+              <div style={styles.sidebarHeading}>Goals Summary</div>
+              {Object.entries(GOAL_TYPE_META).map(([type, meta]) => {
+                const typeGoals = goals.filter(g => g.type === type)
+                if (typeGoals.length === 0) return null
+                const totalTarget = typeGoals.reduce((s, g) => s + (g.target_amount || 0), 0)
+                return (
+                  <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: '11px', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>{meta.label}</span>
+                      <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>×{typeGoals.length}</span>
+                    </div>
+                    <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: totalTarget > 0 ? 'var(--ink)' : 'var(--ink3)' }}>
+                      {totalTarget > 0 ? fmtCurrency(totalTarget) : '—'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           {/* Feeds into */}
           <div>
-            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginBottom: '10px' }}>Feeds Into</div>
-            <div style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '12px', marginBottom: '10px', paddingTop: '4px', paddingBottom: '4px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Risk Management Tab</div>
-              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>Protection needs, coverage gap, human life value</div>
+            <div style={styles.sidebarHeading}>Feeds Into</div>
+            <div style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '10px', marginBottom: '10px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Risk Management</div>
+              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>Protection needs, coverage gap, HLV</div>
             </div>
-            <div style={{ borderLeft: '3px solid #4A7FA5', paddingLeft: '12px', paddingTop: '4px', paddingBottom: '4px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Capital Mandate Tab</div>
+            <div style={{ borderLeft: '3px solid #4A7FA5', paddingLeft: '10px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Capital Mandate</div>
               <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>Retirement corpus, education targets, investment gap</div>
             </div>
           </div>
 
           {/* Live preview */}
           <div style={{ background: 'var(--charcoal)', borderRadius: '8px', padding: '16px' }}>
-            <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter, sans-serif', marginBottom: '12px' }}>Live Preview</div>
+            <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', marginBottom: '12px' }}>Live Preview</div>
             {[
               { label: 'Life Cover Needed', value: fmtCurrency(lifeCoverNeeded || undefined) },
               { label: 'CI Cover Needed', value: fmtCurrency(ciCoverNeeded || undefined) },
@@ -1130,8 +1245,8 @@ export default function ObjectivesPage() {
               { label: 'Education Fund', value: fmtCurrency(eduFundNeeded || undefined) },
             ].map(({ label, value }) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
-                <span style={{ fontSize: '13px', fontFamily: 'DM Mono, monospace', color: value === '—' ? 'rgba(255,255,255,0.2)' : 'var(--gold)', fontWeight: 500 }}>{value}</span>
+                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
+                <span style={{ fontSize: '12px', fontFamily: 'DM Mono, monospace', color: value === '—' ? 'rgba(255,255,255,0.15)' : 'var(--gold)', fontWeight: 500 }}>{value}</span>
               </div>
             ))}
           </div>
@@ -1139,39 +1254,30 @@ export default function ObjectivesPage() {
           {/* Estate flags */}
           {estateFlags.length > 0 && (
             <div>
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>Estate Flags</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ ...styles.sidebarHeading, color: 'var(--rouge)' }}>⚠ Estate Flags</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 {estateFlags.map(f => (
-                  <div key={f} style={{ background: 'var(--rouge-l)', padding: '6px 10px', borderRadius: '4px', fontSize: '10px', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', lineHeight: 1.3 }}>
-                    {f}
-                  </div>
+                  <div key={f} style={{ background: 'var(--rouge-l)', padding: '6px 10px', borderRadius: '4px', fontSize: '10px', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>{f}</div>
                 ))}
               </div>
             </div>
           )}
-
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{ background: 'white', borderTop: '1px solid var(--line)', padding: '16px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ background: 'white', borderTop: '1px solid var(--line)', padding: '14px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : 'var(--emerald)' }} />
+          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : 'var(--emerald)' }} />
           <span style={{ fontSize: '12px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>
-            {saveStatus === 'saving' ? 'Saving…' : `Auto-saved · ${completedCount} of 5 sections complete`}
+            {saveStatus === 'saving' ? 'Saving…' : `Auto-saved · ${completedCount} of 5 sections · ${goals.length} goal${goals.length !== 1 ? 's' : ''}`}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={() => showToast('Coming soon')}
-            style={{ padding: '10px 20px', background: 'transparent', border: '1.5px solid var(--line2)', borderRadius: '6px', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
-          >
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => showToast('Annual history coming soon')} style={{ padding: '9px 18px', background: 'transparent', border: '1.5px solid var(--line2)', borderRadius: '6px', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>
             Review Annual History
           </button>
-          <button
-            onClick={saveAll}
-            style={{ padding: '10px 24px', background: 'var(--charcoal)', border: 'none', borderRadius: '6px', color: 'white', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}
-          >
+          <button onClick={saveAll} style={{ padding: '9px 22px', background: 'var(--charcoal)', border: 'none', borderRadius: '6px', color: 'white', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}>
             Complete & Push to Plan →
           </button>
         </div>
@@ -1184,97 +1290,55 @@ export default function ObjectivesPage() {
 
 const styles = {
   label: {
-    fontSize: '8px',
-    letterSpacing: '0.12em',
-    textTransform: 'uppercase' as const,
-    color: 'var(--ink3)',
-    fontFamily: 'Inter, sans-serif',
-    fontWeight: 500,
+    fontSize: '8px', letterSpacing: '0.12em', textTransform: 'uppercase' as const,
+    color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', fontWeight: 500,
   },
   input: {
-    width: '100%',
-    border: 'none',
-    borderBottom: '1px solid var(--line2)',
-    background: 'transparent',
-    padding: '6px 0',
-    fontSize: '13px',
-    color: 'var(--ink)',
-    fontFamily: 'Inter, sans-serif',
-    outline: 'none',
-    transition: 'border-bottom-color 0.15s',
-    boxSizing: 'border-box' as const,
+    width: '100%', border: 'none', borderBottom: '1px solid var(--line2)',
+    background: 'transparent', padding: '6px 0', fontSize: '13px',
+    color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none',
+    transition: 'border-bottom-color 0.15s', boxSizing: 'border-box' as const,
   },
   select: {
-    width: '100%',
-    border: 'none',
-    borderBottom: '1px solid var(--line2)',
-    background: 'transparent',
-    padding: '6px 0',
-    fontSize: '13px',
-    color: 'var(--ink)',
-    fontFamily: 'Inter, sans-serif',
-    outline: 'none',
-    transition: 'border-bottom-color 0.15s',
-    cursor: 'pointer',
-    appearance: 'none' as const,
-    boxSizing: 'border-box' as const,
+    width: '100%', border: 'none', borderBottom: '1px solid var(--line2)',
+    background: 'transparent', padding: '6px 0', fontSize: '13px',
+    color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none',
+    transition: 'border-bottom-color 0.15s', cursor: 'pointer',
+    appearance: 'none' as const, boxSizing: 'border-box' as const,
   },
   currencyWrap: {
-    display: 'flex',
-    alignItems: 'baseline',
-    borderBottom: '1px solid var(--line2)',
-    transition: 'border-bottom-color 0.15s',
-    gap: '4px',
+    display: 'flex', alignItems: 'baseline',
+    borderBottom: '1px solid var(--line2)', transition: 'border-bottom-color 0.15s', gap: '4px',
   },
   currencyPrefix: {
-    fontSize: '11px',
-    color: 'var(--ink3)',
-    fontFamily: 'Inter, sans-serif',
-    flexShrink: 0,
-    paddingBottom: '6px',
+    fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif',
+    flexShrink: 0, paddingBottom: '6px',
   },
   currencyInput: {
-    flex: 1,
-    border: 'none',
-    background: 'transparent',
-    padding: '6px 0',
-    fontSize: '13px',
-    color: 'var(--ink)',
-    fontFamily: 'Inter, sans-serif',
-    outline: 'none',
-    width: '100%',
+    flex: 1, border: 'none', background: 'transparent', padding: '6px 0',
+    fontSize: '13px', color: 'var(--ink)', fontFamily: 'Inter, sans-serif',
+    outline: 'none', width: '100%',
   },
   notesBar: {
-    background: 'var(--charcoal)',
-    borderRadius: '6px',
-    padding: '16px 20px',
+    background: 'var(--charcoal)', borderRadius: '6px', padding: '16px 20px',
   },
   notesInput: {
-    width: '100%',
-    background: 'transparent',
-    border: 'none',
-    borderBottom: '1px solid rgba(255,255,255,0.15)',
-    color: 'white',
-    fontFamily: 'var(--font-serif)',
-    fontStyle: 'italic',
-    fontSize: '14px',
-    lineHeight: 1.6,
-    outline: 'none',
-    resize: 'none' as const,
-    padding: '4px 0',
-    boxSizing: 'border-box' as const,
+    width: '100%', background: 'transparent', border: 'none',
+    borderBottom: '1px solid rgba(255,255,255,0.15)', color: 'white',
+    fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '14px',
+    lineHeight: 1.6, outline: 'none', resize: 'none' as const,
+    padding: '4px 0', boxSizing: 'border-box' as const,
     transition: 'border-bottom-color 0.15s',
   },
   addChildBtn: {
-    background: 'transparent',
-    border: '1.5px dashed var(--line2)',
-    borderRadius: '6px',
-    padding: '10px 20px',
-    color: 'var(--ink3)',
-    fontFamily: 'Inter, sans-serif',
-    fontSize: '12px',
-    cursor: 'pointer',
-    width: '100%',
-    textAlign: 'center' as const,
+    background: 'transparent', border: '1.5px dashed var(--line2)',
+    borderRadius: '6px', padding: '10px 20px', color: 'var(--ink3)',
+    fontFamily: 'Inter, sans-serif', fontSize: '12px', cursor: 'pointer',
+    width: '100%', textAlign: 'center' as const,
+  },
+  sidebarHeading: {
+    fontSize: '9px', fontWeight: 700, letterSpacing: '0.12em',
+    textTransform: 'uppercase' as const, color: 'var(--ink3)',
+    fontFamily: 'Inter, sans-serif', marginBottom: '10px',
   },
 }
