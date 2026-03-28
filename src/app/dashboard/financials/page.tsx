@@ -703,19 +703,21 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
       customKey: 'd_custom_lifestyle' as keyof FactFinding },
   ]
 
-  const cashCustom = (ff.a_cash_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const cashTotal = (ff.a_savings || 0) + (ff.a_fixed_deposit || 0) + cashCustom
+  const cashCustom = (ff.a_cash_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
+  const cashTotal = (ff.a_savings||0)+(ff.a_fixed_deposit||0)+cashCustom+(isCouple?((ff.a2_savings||0)+(ff.a2_fixed_deposit||0)):0)
   const cpfItems = [ff.a_cpf_oa||0,ff.a_cpf_sa||0,ff.a_cpf_ma||0,ff.a_cpf_ra||0]
+  const cpfItems2 = isCouple ? [ff.a2_cpf_oa||0,ff.a2_cpf_sa||0,ff.a2_cpf_ma||0,ff.a2_cpf_ra||0] : []
   const investedStd = [ff.a_srs||0,ff.a_shares||0,ff.a_etf||0,ff.a_unit_trust||0,ff.a_bonds||0,ff.a_alternatives||0,ff.a_inv_property_res||0,ff.a_inv_property_com||0,ff.a_business||0]
-  const investedCustom = (ff.a_invested_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const investedTotal = [...cpfItems,...investedStd].reduce((s,v)=>s+v,0)+investedCustom
-  const personalCustom = (ff.a_personal_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const personalTotal = (ff.a_residential||0)+(ff.a_vehicles||0)+(ff.a_club||0)+personalCustom
+  const investedStd2 = isCouple ? [ff.a2_srs||0,ff.a2_shares||0,ff.a2_etf||0,ff.a2_unit_trust||0,ff.a2_bonds||0,ff.a2_alternatives||0,ff.a2_inv_property_res||0,ff.a2_inv_property_com||0,ff.a2_business||0] : []
+  const investedCustom = (ff.a_invested_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
+  const investedTotal = [...cpfItems,...cpfItems2,...investedStd,...investedStd2].reduce((s,v)=>s+v,0)+investedCustom
+  const personalCustom = (ff.a_personal_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
+  const personalTotal = (ff.a_residential||0)+(ff.a_vehicles||0)+(ff.a_club||0)+personalCustom+(isCouple?((ff.a2_residential||0)+(ff.a2_vehicles||0)+(ff.a2_club||0)):0)
   const totalAssets = cashTotal + investedTotal + personalTotal
-  const stCustom = (ff.l_st_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const stTotal = (ff.l_credit_card||0)+(ff.l_business_loan||0)+(ff.l_renovation_st||0)+stCustom
-  const ltCustom = (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
-  const ltTotal = (ff.l_mortgage_residing||0)+(ff.l_mortgage_investment||0)+(ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom
+  const stCustom = (ff.l_st_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
+  const stTotal = (ff.l_credit_card||0)+(ff.l_business_loan||0)+(ff.l_renovation_st||0)+stCustom+(isCouple?((ff.l2_credit_card||0)+(ff.l2_business_loan||0)+(ff.l2_renovation_st||0)):0)
+  const ltCustom = (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
+  const ltTotal = (ff.l_mortgage_residing||0)+(ff.l_mortgage_investment||0)+(ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom+(isCouple?((ff.l2_mortgage_residing||0)+(ff.l2_mortgage_investment||0)+(ff.l2_car_loan||0)+(ff.l2_study_loan||0)+(ff.l2_personal_loan||0)+(ff.l2_renovation_lt||0)):0)
   const totalLiab = stTotal + ltTotal; const netWorth = totalAssets - totalLiab
   const RISK_COLORS: Record<string, string> = { Conservative: 'var(--emerald)', Moderate: '#C4A464', Balanced: '#4A7C9E', Growth: '#7A6AAA', Aggressive: 'var(--rouge)' }
   const assetRow = (label: string, key: keyof FactFinding, key2?: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} value2={key2 ? ff[key2] as number : undefined} onChange2={key2 ? v => upd(key2, n(v)) : undefined} isCouple={isCouple} />
