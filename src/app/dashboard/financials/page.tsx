@@ -327,7 +327,7 @@ function SumRow({ label, mo, an, highlight, neg, dim }: { label: string; mo: num
   )
 }
 
-function CustomRows({ items, onChange, placeholder }: { items: CustomAssetItem[]; onChange: (items: CustomAssetItem[]) => void; placeholder?: string }) {
+function CustomRows({ items, onChange, placeholder, isCouple }: { items: CustomAssetItem[]; onChange: (items: CustomAssetItem[]) => void; placeholder?: string; isCouple?: boolean }) {
   const n = (v: string) => v === '' ? 0 : parseFloat(v) || 0
   return (
     <div>
@@ -1069,7 +1069,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal}>
                 {assetRow('Savings / Current Account(s)', 'a_savings')}
                 {assetRow('Fixed Deposit(s)', 'a_fixed_deposit')}
-                <CustomRows items={ff.a_cash_custom || []} onChange={v => upd('a_cash_custom', v)} placeholder="e.g. Singapore Savings Bonds" />
+                <CustomRows items={ff.a_cash_custom || []} onChange={v => upd('a_cash_custom', v)} placeholder="e.g. Singapore Savings Bonds" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="INVESTED ASSET(S)" color="#4A7C9E" total={investedTotal}>
                 {assetRow('CPF Ordinary Account (OA)', 'a_cpf_oa')}
@@ -1085,13 +1085,13 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 {assetRow('Investment Property (Residential)', 'a_inv_property_res')}
                 {assetRow('Investment Property (Commercial)', 'a_inv_property_com')}
                 {assetRow('Business Venture(s)', 'a_business')}
-                <CustomRows items={ff.a_invested_custom || []} onChange={v => upd('a_invested_custom', v)} placeholder="e.g. Crypto, Wine Collection" />
+                <CustomRows items={ff.a_invested_custom || []} onChange={v => upd('a_invested_custom', v)} placeholder="e.g. Crypto, Wine Collection" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal}>
                 {assetRow('Residential Property', 'a_residential')}
                 {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles')}
                 {assetRow('Club Membership', 'a_club')}
-                <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" />
+                <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" isCouple={isCouple} />
               </AssetBlock>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
@@ -1125,7 +1125,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 {assetRow('Credit Card / Credit Line', 'l_credit_card')}
                 {assetRow('Business Loan', 'l_business_loan')}
                 {assetRow('Renovation Loan', 'l_renovation_st')}
-                <CustomRows items={ff.l_st_custom || []} onChange={v => upd('l_st_custom', v)} placeholder="e.g. Personal Line of Credit" />
+                <CustomRows items={ff.l_st_custom || []} onChange={v => upd('l_st_custom', v)} placeholder="e.g. Personal Line of Credit" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal}>
                 {assetRow('Mortgage Loan – Residing', 'l_mortgage_residing')}
@@ -1134,7 +1134,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 {assetRow('Study Loan', 'l_study_loan')}
                 {assetRow('Personal Loan', 'l_personal_loan')}
                 {assetRow('Renovation Loan', 'l_renovation_lt')}
-                <CustomRows items={ff.l_lt_custom || []} onChange={v => upd('l_lt_custom', v)} placeholder="e.g. BNPL, Other Loan" />
+                <CustomRows items={ff.l_lt_custom || []} onChange={v => upd('l_lt_custom', v)} placeholder="e.g. BNPL, Other Loan" isCouple={isCouple} />
               </AssetBlock>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
