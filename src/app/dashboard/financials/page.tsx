@@ -360,11 +360,16 @@ function CustomRows({ items, onChange, placeholder, isCouple }: { items: CustomA
   )
 }
 
-function AssetRow({ label, value, onChange }: { label: string; value: number | undefined; onChange: (v: string) => void }) {
+function AssetRow({ label, value, value2, onChange, onChange2, isCouple }: {
+  label: string; value: number | undefined; value2?: number | undefined
+  onChange: (v: string) => void; onChange2?: (v: string) => void
+  isCouple?: boolean
+}) {
+  const combined = (value || 0) + (value2 || 0)
   return (
-    <div className="flex items-center py-2 text-xs gap-3" style={{ borderBottom: '1px solid var(--line)' }}>
+    <div className="flex items-center py-2 text-xs gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
       <div className="flex-1" style={{ color: 'var(--ink2)' }}>{label}</div>
-      <div className="relative" style={{ width: 140 }}>
+      <div className="relative" style={{ width: 118 }}>
         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
         <input type="number" value={value || ''} onChange={e => onChange(e.target.value)} placeholder="0"
           className="w-full text-xs outline-none py-1.5 text-right pr-2"
@@ -372,18 +377,46 @@ function AssetRow({ label, value, onChange }: { label: string; value: number | u
           onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
           onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
       </div>
+      {isCouple && (
+        <div className="relative" style={{ width: 118 }}>
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
+          <input type="number" value={value2 || ''} onChange={e => onChange2?.(e.target.value)} placeholder="0"
+            className="w-full text-xs outline-none py-1.5 text-right pr-2"
+            style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: '#4A7C9E' }}
+            onFocus={e => (e.currentTarget.style.borderColor = '#4A7C9E')}
+            onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+        </div>
+      )}
+      {isCouple && (
+        <div className="text-xs text-right font-medium" style={{ width: 90, color: combined > 0 ? 'var(--ink)' : 'var(--ink3)' }}>
+          {combined > 0 ? fmt(combined) : '—'}
+        </div>
+      )}
     </div>
   )
 }
 
-function AssetBlock({ title, color, total, children }: { title: string; color: string; total: number; children: React.ReactNode }) {
+function AssetBlock({ title, color, total, children, isCouple, clientName, spouseName }: {
+  title: string; color: string; total: number; children: React.ReactNode
+  isCouple?: boolean; clientName?: string; spouseName?: string
+}) {
   return (
     <div style={{ background: 'white', border: '1px solid var(--line)' }}>
       <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--line)', borderLeft: `3px solid ${color}` }}>
         <span className="text-sm font-medium" style={{ color }}>{title}</span>
         <span className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color, fontWeight: 600 }}>{fmt(total)}</span></span>
       </div>
-      <div className="px-5 py-3">{children}</div>
+      <div className="px-5 py-2">
+        {isCouple && (
+          <div className="flex items-center gap-2 py-2 mb-1" style={{ borderBottom: '2px solid var(--line2)' }}>
+            <div className="flex-1 text-xs" style={{ color: 'var(--ink3)' }}></div>
+            <div className="text-xs font-medium text-center" style={{ width: 118, color: 'var(--gold-tag)' }}>{clientName}</div>
+            <div className="text-xs font-medium text-center" style={{ width: 118, color: '#4A7C9E' }}>{spouseName}</div>
+            <div className="text-xs font-medium text-center" style={{ width: 90, color: 'var(--ink2)' }}>Combined</div>
+          </div>
+        )}
+        {children}
+      </div>
     </div>
   )
 }
@@ -676,7 +709,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
   const ltTotal = (ff.l_mortgage_residing||0)+(ff.l_mortgage_investment||0)+(ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom
   const totalLiab = stTotal + ltTotal; const netWorth = totalAssets - totalLiab
   const RISK_COLORS: Record<string, string> = { Conservative: 'var(--emerald)', Moderate: '#C4A464', Balanced: '#4A7C9E', Growth: '#7A6AAA', Aggressive: 'var(--rouge)' }
-  const assetRow = (label: string, key: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} />
+  const assetRow = (label: string, key: keyof FactFinding, key2?: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} value2={key2 ? ff[key2] as number : undefined} onChange2={key2 ? v => upd(key2, n(v)) : undefined} isCouple={isCouple} />
   const clientName = client.name; const spouseName = spouse?.name || 'Spouse'
 
   return (
@@ -1066,31 +1099,31 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         {activeSection === 'assets' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
-              <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal}>
-                {assetRow('Savings / Current Account(s)', 'a_savings')}
-                {assetRow('Fixed Deposit(s)', 'a_fixed_deposit')}
+              <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+                {assetRow('Savings / Current Account(s)', 'a_savings', 'a2_savings')}
+                {assetRow('Fixed Deposit(s)', 'a_fixed_deposit', 'a2_fixed_deposit')}
                 <CustomRows items={ff.a_cash_custom || []} onChange={v => upd('a_cash_custom', v)} placeholder="e.g. Singapore Savings Bonds" isCouple={isCouple} />
               </AssetBlock>
-              <AssetBlock title="INVESTED ASSET(S)" color="#4A7C9E" total={investedTotal}>
-                {assetRow('CPF Ordinary Account (OA)', 'a_cpf_oa')}
-                {assetRow('CPF Special Account (SA)', 'a_cpf_sa')}
-                {assetRow('CPF Medisave Account (MA)', 'a_cpf_ma')}
-                {assetRow('CPF Retirement Account (RA)', 'a_cpf_ra')}
-                {assetRow('SRS', 'a_srs')}
-                {assetRow('Shares', 'a_shares')}
-                {assetRow('ETF(s)', 'a_etf')}
-                {assetRow('Unit Trust(s)', 'a_unit_trust')}
-                {assetRow('Bonds / Treasury Bills', 'a_bonds')}
-                {assetRow('Alternative Investments (Hedge Funds, Gold, etc.)', 'a_alternatives')}
-                {assetRow('Investment Property (Residential)', 'a_inv_property_res')}
-                {assetRow('Investment Property (Commercial)', 'a_inv_property_com')}
-                {assetRow('Business Venture(s)', 'a_business')}
+              <AssetBlock title="INVESTED ASSET(S)" color="#4A7C9E" total={investedTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+                {assetRow('CPF Ordinary Account (OA)', 'a_cpf_oa', 'a2_cpf_oa')}
+                {assetRow('CPF Special Account (SA)', 'a_cpf_sa', 'a2_cpf_sa')}
+                {assetRow('CPF Medisave Account (MA)', 'a_cpf_ma', 'a2_cpf_ma')}
+                {assetRow('CPF Retirement Account (RA)', 'a_cpf_ra', 'a2_cpf_ra')}
+                {assetRow('SRS', 'a_srs', 'a2_srs')}
+                {assetRow('Shares', 'a_shares', 'a2_shares')}
+                {assetRow('ETF(s)', 'a_etf', 'a2_etf')}
+                {assetRow('Unit Trust(s)', 'a_unit_trust', 'a2_unit_trust')}
+                {assetRow('Bonds / Treasury Bills', 'a_bonds', 'a2_bonds')}
+                {assetRow('Alternative Investments (Hedge Funds, Gold, etc.)', 'a_alternatives', 'a2_alternatives')}
+                {assetRow('Investment Property (Residential)', 'a_inv_property_res', 'a2_inv_property_res')}
+                {assetRow('Investment Property (Commercial)', 'a_inv_property_com', 'a2_inv_property_com')}
+                {assetRow('Business Venture(s)', 'a_business', 'a2_business')}
                 <CustomRows items={ff.a_invested_custom || []} onChange={v => upd('a_invested_custom', v)} placeholder="e.g. Crypto, Wine Collection" isCouple={isCouple} />
               </AssetBlock>
-              <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal}>
-                {assetRow('Residential Property', 'a_residential')}
-                {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles')}
-                {assetRow('Club Membership', 'a_club')}
+              <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+                {assetRow('Residential Property', 'a_residential', 'a2_residential')}
+                {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles', 'a2_vehicles')}
+                {assetRow('Club Membership', 'a_club', 'a2_club')}
                 <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" isCouple={isCouple} />
               </AssetBlock>
             </div>
@@ -1121,19 +1154,19 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         {activeSection === 'liabilities' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
-              <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal}>
-                {assetRow('Credit Card / Credit Line', 'l_credit_card')}
-                {assetRow('Business Loan', 'l_business_loan')}
-                {assetRow('Renovation Loan', 'l_renovation_st')}
+              <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+                {assetRow('Credit Card / Credit Line', 'l_credit_card', 'l2_credit_card')}
+                {assetRow('Business Loan', 'l_business_loan', 'l2_business_loan')}
+                {assetRow('Renovation Loan', 'l_renovation_st', 'l2_renovation_st')}
                 <CustomRows items={ff.l_st_custom || []} onChange={v => upd('l_st_custom', v)} placeholder="e.g. Personal Line of Credit" isCouple={isCouple} />
               </AssetBlock>
-              <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal}>
-                {assetRow('Mortgage Loan – Residing', 'l_mortgage_residing')}
-                {assetRow('Mortgage Loan – Investment', 'l_mortgage_investment')}
-                {assetRow('Car / Motor Vehicle Loan', 'l_car_loan')}
-                {assetRow('Study Loan', 'l_study_loan')}
-                {assetRow('Personal Loan', 'l_personal_loan')}
-                {assetRow('Renovation Loan', 'l_renovation_lt')}
+              <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+                {assetRow('Mortgage Loan – Residing', 'l_mortgage_residing', 'l2_mortgage_residing')}
+                {assetRow('Mortgage Loan – Investment', 'l_mortgage_investment', 'l2_mortgage_investment')}
+                {assetRow('Car / Motor Vehicle Loan', 'l_car_loan', 'l2_car_loan')}
+                {assetRow('Study Loan', 'l_study_loan', 'l2_study_loan')}
+                {assetRow('Personal Loan', 'l_personal_loan', 'l2_personal_loan')}
+                {assetRow('Renovation Loan', 'l_renovation_lt', 'l2_renovation_lt')}
                 <CustomRows items={ff.l_lt_custom || []} onChange={v => upd('l_lt_custom', v)} placeholder="e.g. BNPL, Other Loan" isCouple={isCouple} />
               </AssetBlock>
             </div>
