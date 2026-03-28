@@ -611,14 +611,14 @@ const DETAILED_KEYS_BY_CAT: Record<string, { keys: string[], keys2: string[], cu
 
 const getAnn1 = (cat: typeof EXP_CATEGORIES[0]) => {
   if (expMode === 'detailed' && DETAILED_KEYS_BY_CAT[cat.id]?.keys.length > 0) {
-    return detailedSum(DETAILED_KEYS_BY_CAT[cat.id].keys, DETAILED_KEYS_BY_CAT[cat.id].customKey) * 12
+    return detailedSum(DETAILED_KEYS_BY_CAT[cat.id].keys, DETAILED_KEYS_BY_CAT[cat.id].customKey)
   }
   return (ff[cat.key] as number) || 0
 }
 const getAnn2 = (cat: typeof EXP_CATEGORIES[0]) => {
   if (!isCouple) return 0
   if (expMode === 'detailed' && DETAILED_KEYS_BY_CAT[cat.id]?.keys2.length > 0) {
-    return detailedSum2(DETAILED_KEYS_BY_CAT[cat.id].keys2, DETAILED_KEYS_BY_CAT[cat.id].customKey) * 12
+    return detailedSum2(DETAILED_KEYS_BY_CAT[cat.id].keys2, DETAILED_KEYS_BY_CAT[cat.id].customKey)
   }
   return (ff[cat.key2] as number) || 0
 }
@@ -799,7 +799,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                           <div />
                           <div className="text-xs font-medium text-center py-1.5" style={{ background: 'rgba(168,131,74,0.08)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{clientName}</div>
                           <div className="text-xs font-medium text-center py-1.5" style={{ background: 'rgba(74,124,158,0.08)', color: '#4A7C9E', border: '1px solid rgba(74,124,158,0.2)' }}>{spouseName}</div>
-                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'var(--cream2)', color: 'var(--ink2)', border: '1px solid var(--line2)' }}>Combined</div>
+                          <div className="text-xs font-medium text-center py-1.5" style={{ background: 'var(--cream2)', color: 'var(--ink2)', border: '1px solid var(--line2)' }}>Combined/yr</div>
                         </div>
                       </div>
                     )}
@@ -882,7 +882,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                               <div className="text-sm font-medium" style={{ color: group.color }}>{group.title}</div>
                               <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>{group.hint}</div>
                             </div>
-                            <div className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color: group.color, fontWeight: 600 }}>{fmt(gSum)}/mo</span></div>
+                            <div className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color: group.color, fontWeight: 600 }}>{fmt(gSum)}/yr</span></div>
                           </div>
                           <div className="px-5 py-2">
                             {isCouple && (
@@ -890,7 +890,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                                 <div className="flex-1 text-xs" style={{ color: 'var(--ink3)' }}>Item</div>
                                 <div className="text-xs font-medium text-center" style={{ width: 118, color: 'var(--gold-tag)' }}>{clientName}</div>
                                 <div className="text-xs font-medium text-center" style={{ width: 118, color: '#4A7C9E' }}>{spouseName}</div>
-                                <div className="text-xs font-medium text-center" style={{ width: 90, color: 'var(--ink2)' }}>Combined</div>
+                                <div className="text-xs font-medium text-center" style={{ width: 90, color: 'var(--ink2)' }}>Combined/yr</div>
                                 <div style={{ width: 28 }}></div>
                               </div>
                             )}
@@ -906,7 +906,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                                   {isCouple && <DetInput value={v2||undefined} onChange={v=>upd(k2 as keyof FactFinding,n(v))} accentColor="#4A7C9E" />}
                                   {isCouple
                                     ? <div className="text-xs text-right font-medium" style={{ width: 90, color: vSum>0?'var(--ink)':'var(--ink3)' }}>{vSum>0?fmt(vSum):'—'}</div>
-                                    : <div className="text-xs text-right" style={{ width: 80, color: 'var(--ink3)' }}>{v1>0?fmt(v1*12)+'/yr':'—'}</div>}
+                                    : <div className="text-xs text-right" style={{ width: 80, color: 'var(--ink3)' }}>{v1>0?fmt(v1)+'/yr':'—'}</div>}
                                   {isCouple && <div style={{ width: 28 }}></div>}
                                 </div>
                               )
