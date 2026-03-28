@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 interface OtherIncomeItem { label: string; amount: number }
-interface CustomAssetItem { label: string; amount: number }
+interface CustomAssetItem { label: string; amount: number; amount2?: number }
 interface CustomExpenseItem { label: string; amount: number; amount2?: number }
 
 interface PersonData {
