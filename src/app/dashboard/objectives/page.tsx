@@ -843,7 +843,7 @@ export default function ObjectivesPage() {
                       <label style={styles.label}>{label}</label>
                       <div style={styles.currencyWrap}>
                         <span style={styles.currencyPrefix}>SGD $</span>
-                        <input type="number" value={(child as Record<string, unknown>)[field] as number || ''} onChange={e => updateChild(idx, field, e.target.value ? Number(e.target.value) : undefined)} style={styles.currencyInput} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
+                        <input type="number" value={(child as unknown as Record<string, unknown>)[field] as number || ''} onChange={e => updateChild(idx, field, e.target.value ? Number(e.target.value) : undefined)} style={styles.currencyInput} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
                       </div>
                     </div>
                   ))}
