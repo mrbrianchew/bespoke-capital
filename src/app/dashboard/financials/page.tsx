@@ -1267,7 +1267,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
 
   return (
     <div className="flex flex-col min-h-full">
-      <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
+      <div style={{ background: 'var(--charcoal)', padding: '0 48px', position: 'sticky', top: 0, zIndex: 40 }}>
         <div className="flex items-center gap-4 py-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div>
             <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'rgba(255,255,255,0.28)' }}>Fact Finding</div>
