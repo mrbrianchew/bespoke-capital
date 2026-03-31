@@ -521,7 +521,7 @@ function MortgageBlock({ mortgages, onChange, isCouple, clientName, spouseName }
 }
 
 function PropertyPortfolioBlock({
-  properties, onChange, isCouple, clientName, spouseName, clientAge
+  properties, onChange, isCouple, clientName, spouseName, clientAge, spouseAge
 }: {
   properties: PropertyItem[]
   onChange: (p: PropertyItem[]) => void
@@ -529,6 +529,7 @@ function PropertyPortfolioBlock({
   clientName?: string
   spouseName?: string
   clientAge?: number
+  spouseAge?: number
 }) {
   const today = new Date()
   const sixMonths = new Date(today); sixMonths.setMonth(sixMonths.getMonth() + 6)
@@ -580,6 +581,7 @@ function PropertyPortfolioBlock({
           ? parseInt(prop.loanStartDate.split('/')[1]) + prop.initialTenure
           : effectiveRemainingTenure ? new Date().getFullYear() + Math.ceil(effectiveRemainingTenure) : null
         const mortgageEndAge = clientAge && effectiveRemainingTenure ? Math.round(clientAge + effectiveRemainingTenure) : null
+        const mortgageEndAge2 = spouseAge && effectiveRemainingTenure ? Math.round(spouseAge + effectiveRemainingTenure) : null
         const origPmt = (prop.initialLoanAmount && prop.initialTenure && prop.interestRate)
           ? calcPMT(prop.initialLoanAmount, prop.interestRate, prop.initialTenure)
           : null
@@ -607,7 +609,7 @@ function PropertyPortfolioBlock({
                 <div className="flex gap-4 mt-0.5">
                   {effectivePropertyValue ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Value: {fmt(effectivePropertyValue)}</span> : null}
                   {effectiveOutstanding ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Loan: {fmt(effectiveOutstanding)}{amortizedBalance ? ' (est.)' : ''}{prop.interestRate ? ' · ' + prop.interestRate + '% ' + (prop.loanType || '') : ''}</span> : null}
-                  {loanEndYear ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Ends {loanEndYear}{mortgageEndAge ? ` · Age ${mortgageEndAge}` : ''}</span> : null}
+                  {loanEndYear ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Ends {loanEndYear}{mortgageEndAge ? ` · Age ${mortgageEndAge}${mortgageEndAge2 ? `/${mortgageEndAge2}` : ''}` : ''}</span> : null}
                   {prop.ownershipType && <span className="text-xs" style={{ color: 'var(--ink3)' }}>{prop.ownershipType}{prop.ownershipType === 'Tenancy-in-Common' && prop.ownershipSplit ? ' ' + prop.ownershipSplit : ''}</span>}
                 </div>
               </div>
@@ -1777,6 +1779,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                   clientName={clientName}
                   spouseName={spouseName}
                   clientAge={age1}
+                  spouseAge={isCouple ? age2 : undefined}
                 />
               </div>
               <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
