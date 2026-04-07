@@ -275,11 +275,35 @@ export default function ObjectivesPage() {
   // ─── LOAD DATA ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Try localStorage first, fall back to auth-based lookup
     const id = localStorage.getItem('selectedClientId')
-    setClientId(id)
-    if (id) loadData(id)
-    else setLoading(false)
+    if (id) {
+      setClientId(id)
+      loadData(id)
+    } else {
+      // Fall back: get most recent client for this advisor
+      loadDataFromAuth()
+    }
   }, [])
+
+  async function loadDataFromAuth() {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setLoading(false); return }
+    const { data: clients } = await supabase
+      .from('clients')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (clients && clients.length > 0) {
+      const id = clients[0].id
+      setClientId(id)
+      localStorage.setItem('selectedClientId', id)
+      loadData(id)
+    } else {
+      setLoading(false)
+    }
+  }
 
   async function loadData(id: string) {
     setLoading(true)
