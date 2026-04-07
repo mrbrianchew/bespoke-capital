@@ -31,7 +31,7 @@ export default function GoalsPage() {
     if (!user) { router.push('/auth'); return }
     const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(1)
     if (!clients?.length) { setLoading(false); return }
-    const c = clients[0]; setClient(c)
+    const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]; setClient(c)
     const [{ data: gls }, { data: inv }, { data: sett }] = await Promise.all([
       supabase.from('goals').select('*').eq('client_id', c.id).order('sort_order'),
       supabase.from('investments').select('*').eq('client_id', c.id),
