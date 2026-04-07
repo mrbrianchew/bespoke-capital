@@ -298,17 +298,14 @@ export default function ObjectivesPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
 
-    const selectedClientId = localStorage.getItem('selectedClientId')
-    if (!selectedClientId) { setLoading(false); return }
+   const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(1)
+    if (!clients || clients.length === 0) { setLoading(false); return }
+    const c = clients[0]
+    const dob = c.date_of_birth
+    const age = dob ? Math.floor((Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : undefined
+    setClient({ ...c, age })
 
-    const { data: clients } = await supabase.from('clients').select('*').eq('id', selectedClientId).maybeSingle()
-    if (clients) {
-      const dob = clients.date_of_birth
-      const age = dob ? Math.floor((Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : undefined
-      setClient({ ...clients, age })
-    }
-
-    const { data: rows } = await supabase.from('fact_finding').select('*').eq('client_id', selectedClientId)
+    const { data: rows } = await supabase.from('fact_finding').select('*').eq('client_id', c.id)
     if (rows && rows.length > 0) {
       const merged: FactFinding = { client_id: selectedClientId }
       for (const row of rows) Object.assign(merged, row.data || {})
