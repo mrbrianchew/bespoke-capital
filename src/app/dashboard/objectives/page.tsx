@@ -9,7 +9,7 @@ interface ClientData {
   id: string
   full_name: string
   date_of_birth?: string
-  advisor_id: string
+  age?: number
 }
 
 interface FamilyMember {
@@ -21,1324 +21,840 @@ interface FamilyMember {
   age?: number
 }
 
-interface Goal {
+interface PersonData {
+  gross_monthly?: number
+  gross_bonus?: number
+  citizenship?: string
+  pr_year?: string
+}
+
+interface PropertyItem {
   id: string
-  client_id: string
-  type: string
-  name: string
-  target_amount?: number
-  target_age?: number
-  ret_age?: number
-  life_exp?: number
-  monthly_income?: number
-  inflation_rate?: number
-  rate_of_return?: number
-  legacy_on?: boolean
-  legacy_amt?: number
-  cont_inv?: boolean
-  post_rate?: number
-  ret_inc?: number
-  sort_order?: number
-  created_at?: string
+  label?: string
+  outstanding?: number
+  initialLoanAmount?: number
+  initialTenure?: number
+  loanStartDate?: string
+  interestRate?: number
 }
 
-interface ProtectionData {
-  monthlyIncomeClient?: number
-  monthlyIncomeSpouse?: number
-  monthlyHouseholdExpenses?: number
-  monthlyMortgageRent?: number
-  outstandingMortgage?: number
-  otherLoans?: number
-  yearsToClearMortgage?: number
-  incomeReplacementClient?: number
-  incomeReplacementSpouse?: number
-  yearsOfCoverage?: number
-  ciRecoveryPeriod?: string
-  lifeCoverClient?: number
-  lifeCoverSpouse?: number
-  ciCoverClient?: number
-  ciCoverSpouse?: number
-  disabilityIncomeClient?: number
-  disabilityIncomeSpouse?: number
-  advisorNotes?: string
-}
-
-interface AccumulationData {
-  monthlySurplus?: number
-  lumpSumAvailable?: number
-  currentInvestments?: number
-  riskAppetite?: string
-  investmentTimeHorizon?: string
-  expectedReturnRate?: number
-  advisorNotes?: string
-}
-
-interface RetirementData {
-  retirementAgeClient?: number
-  retirementAgeSpouse?: number
-  lifeExpectancyClient?: number
-  lifeExpectancySpouse?: number
-  monthlyRetirementIncomeClient?: number
-  monthlyRetirementIncomeSpouse?: number
-  inflationRate?: number
-  postRetirementReturn?: number
-  leaveALegacy?: string
-  legacyAmountTarget?: number
-  continueCpfInRetirement?: string
-  advisorNotes?: string
-}
-
-interface ChildEducation {
-  childId: string
-  name: string
-  currentAge: number
-  studyDestination?: string
-  courseDuration?: number
-  estimatedTotalCost?: number
-  currentSavings?: number
-  monthlySavings?: number
-  protectionOnFund?: string
-}
-
-interface EducationData {
-  children?: ChildEducation[]
-  advisorNotes?: string
-}
-
-interface EstateData {
-  willClient?: string
-  willSpouse?: string
-  willLastUpdatedClient?: string
-  willLastUpdatedSpouse?: string
-  preferredGuardian?: string
-  trustSetUp?: string
-  trustPurposeNotes?: string
-  policyNominationsClient?: string
-  policyNominationsSpouse?: string
-  cpfNominationClient?: string
-  cpfNominationSpouse?: string
-  lpaClient?: string
-  lpaSpouse?: string
-  doneeClient?: string
-  doneeSpouse?: string
-  advisorNotes?: string
-}
-
-interface AllSections {
-  protection: ProtectionData
-  accumulation: AccumulationData
-  retirement: RetirementData
-  education: EducationData
-  estate: EstateData
-  planningMode?: 'individual' | 'couple'
+interface FactFinding {
+  client_id?: string
+  mode?: string
+  person1?: PersonData
+  person2?: PersonData
+  s_mortgage?: number
+  s_children?: number
+  properties?: PropertyItem[]
   [key: string]: unknown
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function calcAge(dob?: string): number {
-  if (!dob) return 0
-  const birth = new Date(dob)
-  const now = new Date()
-  let age = now.getFullYear() - birth.getFullYear()
-  const m = now.getMonth() - birth.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--
-  return age
+interface ChildInfo {
+  name?: string
+  age?: number
+  targetUniversityAge?: number
+  educationCost?: number
 }
 
-function fmtCurrency(val?: number): string {
-  if (!val) return '—'
-  return `S$${val.toLocaleString('en-SG')}`
+interface ProtectionNeeds {
+  // Family Dependency
+  fd_monthly_expenses?: number
+  fd_years_coverage?: number
+  fd_inflation_rate?: number
+  fd_existing_life?: number
+  fd_existing_tpd?: number
+  fd_existing_ci?: number
+  fd_ci_window?: number
+  fd_notes?: string
+
+  // Mortgage & Debt
+  md_outstanding_mortgage?: number
+  md_other_loans?: number
+  md_existing_life_mortgage?: number
+  md_existing_tpd_mortgage?: number
+  md_notes?: string
+
+  // Children's Education
+  ed_children?: ChildInfo[]
+  ed_existing_savings?: number
+  ed_notes?: string
+
+  // Retirement
+  ret_target_age?: number
+  ret_monthly_income?: number
+  ret_life_expectancy?: number
+  ret_inflation?: number
+  ret_existing_cpf?: number
+  ret_existing_investments?: number
+  ret_notes?: string
+
+  // Estate Planning
+  ep_legacy_amount?: number
+  ep_liabilities_covered?: boolean
+  ep_will_done?: boolean
+  ep_notes?: string
+
+  // Advisor global notes
+  advisor_notes?: string
 }
 
-function sectionCompletion(section: string, data: AllSections): number {
-  const s = data[section] as Record<string, unknown> | undefined
-  if (!s || typeof s !== 'object') return 0
-  const vals = Object.values(s as Record<string, unknown>).filter(v => v !== undefined && v !== '' && v !== null)
-  const total = Object.keys(s as Record<string, unknown>).length || 1
-  return Math.round((vals.length / total) * 100)
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const TABS = [
+  { id: 'family', label: 'Family Dependency' },
+  { id: 'mortgage', label: 'Mortgage & Debt' },
+  { id: 'education', label: "Children's Education" },
+  { id: 'retirement', label: 'Retirement' },
+  { id: 'estate', label: 'Estate Planning' },
+]
+
+const DEFAULT_INFLATION = 3
+const DEFAULT_CI_WINDOW = 5
+const DEFAULT_LIFE_EXP = 85
+
+// ─── Calculation Helpers ─────────────────────────────────────────────────────
+
+// FV annuity-due: sum of inflation-adjusted annual expenses over N years
+// Base shifts forward each year (FV annuity-due formula)
+function calcFamilyDependencyNeed(
+  monthlyExpenses: number,
+  yearsOfCoverage: number,
+  inflationRate: number
+): number {
+  if (!monthlyExpenses || !yearsOfCoverage) return 0
+  const annualExp = monthlyExpenses * 12
+  const r = (inflationRate || DEFAULT_INFLATION) / 100
+  if (r === 0) return annualExp * yearsOfCoverage
+  // FV annuity-due: PV = annual * [(1 - (1+r)^-n) / r] * (1+r)
+  const pv = annualExp * ((1 - Math.pow(1 + r, -yearsOfCoverage)) / r) * (1 + r)
+  return Math.round(pv)
 }
 
-const GOAL_TYPE_META: Record<string, { label: string; color: string; accent: string; icon: string; description: string }> = {
-  retirement: { label: 'Retirement', color: 'var(--gold)', accent: 'var(--gold-l)', icon: '◎', description: 'Retirement income & corpus target' },
-  education: { label: 'Education', color: 'var(--emerald)', accent: 'var(--emerald-l)', icon: '◈', description: "Children's university fund" },
-  protection: { label: 'Protection', color: 'var(--rouge)', accent: 'var(--rouge-l)', icon: '◉', description: 'Income replacement & coverage needs' },
-  accumulation: { label: 'Wealth Accumulation', color: '#4A7FA5', accent: '#EBF2F8', icon: '◲', description: 'Savings targets & investment goals' },
-  estate: { label: 'Legacy & Estate', color: 'var(--ink2)', accent: 'var(--cream2)', icon: '◇', description: 'Wealth transfer & estate goals' },
+// CI Family Dependency: fixed-window FV anchored to today
+function calcCIFamilyNeed(
+  monthlyExpenses: number,
+  ciWindow: number,
+  inflationRate: number
+): number {
+  if (!monthlyExpenses || !ciWindow) return 0
+  const annualExp = monthlyExpenses * 12
+  const r = (inflationRate || DEFAULT_INFLATION) / 100
+  if (r === 0) return annualExp * ciWindow
+  const pv = annualExp * ((1 - Math.pow(1 + r, -ciWindow)) / r) * (1 + r)
+  return Math.round(pv)
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// Mortgage: outstanding balance is the need (already known)
+function calcMortgageNeed(outstanding: number, otherLoans: number): number {
+  return (outstanding || 0) + (otherLoans || 0)
+}
+
+// CI Mortgage: annual PMT × CI window years
+function calcCIMortgageNeed(monthlyMortgage: number, ciWindow: number): number {
+  return Math.round((monthlyMortgage || 0) * 12 * (ciWindow || DEFAULT_CI_WINDOW))
+}
+
+// Education: flat lump sum (no inflation adj per Brian's methodology)
+function calcEducationNeed(children: ChildInfo[]): number {
+  return (children || []).reduce((sum, c) => sum + (c.educationCost || 0), 0)
+}
+
+// Retirement: PV of inflation-adjusted income stream from retirement to life expectancy
+function calcRetirementNeed(
+  monthlyIncome: number,
+  retAge: number,
+  lifeExpectancy: number,
+  inflationRate: number,
+  currentAge: number
+): number {
+  if (!monthlyIncome || !retAge || !lifeExpectancy) return 0
+  const yearsInRetirement = Math.max(0, lifeExpectancy - retAge)
+  const annualIncome = monthlyIncome * 12
+  const r = (inflationRate || DEFAULT_INFLATION) / 100
+  if (r === 0) return annualIncome * yearsInRetirement
+  const pv = annualIncome * ((1 - Math.pow(1 + r, -yearsInRetirement)) / r) * (1 + r)
+  return Math.round(pv)
+}
+
+// ─── Formatters ──────────────────────────────────────────────────────────────
+
+const fmt = (n: number | undefined) =>
+  n ? '$' + Math.round(n).toLocaleString('en-SG') : '—'
+
+const fmtK = (n: number | undefined) => {
+  if (!n) return '—'
+  if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M'
+  if (n >= 1000) return '$' + Math.round(n / 1000) + 'K'
+  return '$' + Math.round(n)
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function PulledDataPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: '6px',
+      background: 'white', border: '1px solid var(--line)',
+      borderRadius: '4px', padding: '4px 10px',
+    }}>
+      <span style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
+      <span style={{ fontSize: '12px', color: 'var(--gold)', fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>{value}</span>
+    </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: '9px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginBottom: '6px' }}>
+      {children}
+    </div>
+  )
+}
+
+function InputRow({
+  label, value, onChange, prefix = '$', suffix, type = 'number', placeholder = '0', hint
+}: {
+  label: string
+  value?: number | string
+  onChange: (v: number | string) => void
+  prefix?: string
+  suffix?: string
+  type?: string
+  placeholder?: string
+  hint?: string
+}) {
+  return (
+    <div style={{ marginBottom: '14px' }}>
+      <SectionLabel>{label}</SectionLabel>
+      {hint && <div style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginBottom: '4px' }}>{hint}</div>}
+      <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--line)', borderRadius: '4px', background: 'white', overflow: 'hidden' }}>
+        {prefix && <span style={{ padding: '0 8px', fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', borderRight: '1px solid var(--line)', background: 'var(--cream)' }}>{prefix}</span>}
+        <input
+          type={type}
+          value={value ?? ''}
+          placeholder={placeholder}
+          onChange={e => onChange(type === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value)}
+          style={{ flex: 1, border: 'none', outline: 'none', padding: '7px 10px', fontSize: '13px', color: 'var(--ink)', fontFamily: 'Inter, sans-serif', background: 'transparent' }}
+        />
+        {suffix && <span style={{ padding: '0 8px', fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', borderLeft: '1px solid var(--line)', background: 'var(--cream)' }}>{suffix}</span>}
+      </div>
+    </div>
+  )
+}
+
+function GapRow({ label, need, existing, gap }: { label: string; need: number; existing: number; gap: number }) {
+  const isShortfall = gap > 0
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '6px' }}>
+      <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingTop: '3px' }}>{label}</div>
+      <div style={{ textAlign: 'right', fontSize: '12px', color: 'var(--ink)', fontFamily: 'DM Mono, monospace' }}>{fmtK(need)}</div>
+      <div style={{ textAlign: 'right', fontSize: '12px', fontFamily: 'DM Mono, monospace', fontWeight: 600, color: isShortfall ? '#C0392B' : '#27AE60' }}>
+        {gap === 0 ? '✓ Met' : isShortfall ? `–${fmtK(gap)}` : `+${fmtK(Math.abs(gap))}`}
+      </div>
+    </div>
+  )
+}
+
+function NotesBar({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ marginTop: '20px', background: 'var(--charcoal)', borderRadius: '6px', padding: '12px 16px' }}>
+      <SectionLabel><span style={{ color: 'rgba(255,255,255,0.5)' }}>Advisor Notes</span></SectionLabel>
+      <textarea
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Record client responses, concerns, or observations..."
+        rows={2}
+        style={{
+          width: '100%', background: 'transparent', border: 'none',
+          borderBottom: '1px solid rgba(255,255,255,0.15)', color: 'white',
+          fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '13px',
+          lineHeight: 1.6, outline: 'none', resize: 'none',
+          padding: '4px 0', boxSizing: 'border-box',
+        }}
+      />
+    </div>
+  )
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function ObjectivesPage() {
   const supabase = createClient()
-  const [userId, setUserId] = useState<string | null>(null)
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [client, setClient] = useState<ClientData | null>(null)
-  const [spouse, setSpouse] = useState<FamilyMember | null>(null)
-  const [children, setChildren] = useState<FamilyMember[]>([])
-  const [planningMode, setPlanningMode] = useState<'individual' | 'couple'>('individual')
-  const [activeSection, setActiveSection] = useState<number>(0)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)
-  const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const [ff, setFf] = useState<FactFinding | null>(null)
+  const [needs, setNeeds] = useState<ProtectionNeeds>({})
+  const [activeTab, setActiveTab] = useState('family')
   const [loading, setLoading] = useState(true)
-  const [goals, setGoals] = useState<Goal[]>([])
-  const [expandedGoal, setExpandedGoal] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const [data, setData] = useState<AllSections>({
-    protection: {},
-    accumulation: {},
-    retirement: {},
-    education: { children: [] },
-    estate: {},
-    planningMode: 'individual',
-  })
+  // ── Load ──────────────────────────────────────────────────────────────────
 
-  const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  useEffect(() => { loadData() }, [])
 
-  // ─── Auth & client ───────────────────────────────────────────────────────
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setUserId(user.id)
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!userId) return
-    supabase.from('clients').select('*').eq('advisor_id', userId).order('created_at', { ascending: false }).limit(1).then(({ data }) => {
-      if (data && data.length > 0) setSelectedClientId(data[0].id)
-    })
-  }, [userId])
-
-  useEffect(() => {
-    if (!selectedClientId || !userId) return
-    loadAll()
-  }, [selectedClientId, userId])
-
-  // ─── Load ────────────────────────────────────────────────────────────────
-
-  async function loadAll() {
-    if (!selectedClientId) return
+  async function loadData() {
     setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setLoading(false); return }
 
-    const [clientRes, familyRes, factRes, goalsRes] = await Promise.all([
-      supabase.from('clients').select('*').eq('id', selectedClientId).single(),
-      supabase.from('family_members').select('*').eq('client_id', selectedClientId),
-      supabase.from('fact_finding').select('*').eq('client_id', selectedClientId),
-      supabase.from('goals').select('*').eq('client_id', selectedClientId).order('sort_order', { ascending: true }),
-    ])
+    const selectedClientId = localStorage.getItem('selectedClientId')
+    if (!selectedClientId) { setLoading(false); return }
 
-    if (clientRes.data) setClient(clientRes.data)
-
-    if (familyRes.data) {
-      const spouseRec = familyRes.data.find(m => m.relationship === 'Spouse')
-      const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
-      setSpouse(spouseRec || null)
-      setChildren(childRecs)
-      if (spouseRec) setPlanningMode('couple')
+    const { data: clients } = await supabase.from('clients').select('*').eq('id', selectedClientId).maybeSingle()
+    if (clients) {
+      const dob = clients.date_of_birth
+      const age = dob ? Math.floor((Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : undefined
+      setClient({ ...clients, age })
     }
 
-    if (goalsRes.data) setGoals(goalsRes.data)
-
-    if (factRes.data && factRes.data.length > 0) {
-      const newData: AllSections = {
-        protection: {},
-        accumulation: {},
-        retirement: {},
-        education: { children: [] },
-        estate: {},
-      }
-      factRes.data.forEach(row => {
-        const section = row.section as keyof AllSections
-        if (section && row.data) {
-          (newData as Record<string, unknown>)[section] = row.data
-          if (row.data?.planningMode) setPlanningMode(row.data.planningMode)
-        }
-      })
-      if (!newData.education?.children?.length && familyRes.data) {
-        const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
-        newData.education.children = childRecs.map(c => ({
-          childId: c.id, name: c.name, currentAge: c.age ?? calcAge(c.date_of_birth),
-        }))
-      }
-      setData(newData)
-    } else {
-      if (familyRes.data) {
-        const childRecs = familyRes.data.filter(m => m.relationship === 'Daughter' || m.relationship === 'Son')
-        setData(prev => ({
-          ...prev,
-          education: {
-            children: childRecs.map(c => ({ childId: c.id, name: c.name, currentAge: c.age ?? calcAge(c.date_of_birth) }))
-          }
-        }))
+    const { data: rows } = await supabase.from('fact_finding').select('*').eq('client_id', selectedClientId)
+    if (rows && rows.length > 0) {
+      const merged: FactFinding = { client_id: selectedClientId }
+      for (const row of rows) Object.assign(merged, row.data || {})
+      setFf(merged)
+      if (merged.strategic_objectives) {
+        setNeeds(merged.strategic_objectives as ProtectionNeeds)
       }
     }
-
     setLoading(false)
   }
 
-  // ─── Fact-finding save ───────────────────────────────────────────────────
+  // ── Auto-save ─────────────────────────────────────────────────────────────
 
-  const saveSection = useCallback(async (
-    section: keyof AllSections,
-    sectionData: Record<string, unknown>,
-    mode?: 'individual' | 'couple'
-  ) => {
-    if (!selectedClientId) return
-    setSaveStatus('saving')
-    const payload = mode ? { ...sectionData, planningMode: mode } : sectionData
+  const upd = useCallback((patch: Partial<ProtectionNeeds>) => {
+    setNeeds(prev => {
+      const next = { ...prev, ...patch }
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => autoSave(next), 1000)
+      return next
+    })
+    setSaved(false)
+  }, [ff, client])
+
+  async function autoSave(data: ProtectionNeeds) {
+    if (!client) return
+    setSaving(true)
+    const { data: existing } = await supabase.from('fact_finding').select('data').eq('client_id', client.id).eq('section', 'all').maybeSingle()
+    const currentData = (existing?.data as Record<string, unknown>) || {}
     await supabase.from('fact_finding').upsert(
-      { client_id: selectedClientId, section, data: payload, updated_at: new Date().toISOString() },
+      { client_id: client.id, section: 'all', data: { ...currentData, strategic_objectives: data }, updated_at: new Date().toISOString() },
       { onConflict: 'client_id,section' }
     )
-    setSaveStatus('saved')
-    setLastSaved(new Date())
-    setTimeout(() => setSaveStatus('idle'), 2000)
-  }, [selectedClientId])
-
-  function updateSection<T extends keyof AllSections>(section: T, field: string, value: unknown) {
-    setData(prev => {
-      const updated = { ...prev[section] as Record<string, unknown>, [field]: value }
-      const updatedAll = { ...prev, [section]: updated }
-      const sectionKey = section as string
-      if (debounceRef.current[sectionKey]) clearTimeout(debounceRef.current[sectionKey])
-      debounceRef.current[sectionKey] = setTimeout(() => saveSection(section, updated), 800)
-      return updatedAll
-    })
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500)
   }
 
-  function updatePlanningMode(mode: 'individual' | 'couple') {
-    setPlanningMode(mode)
-    if (debounceRef.current['mode']) clearTimeout(debounceRef.current['mode'])
-    debounceRef.current['mode'] = setTimeout(() => {
-      saveSection('protection', { ...(data.protection as Record<string, unknown>), planningMode: mode })
-    }, 800)
-  }
+  // ── Derived values from financials ────────────────────────────────────────
 
-  async function saveAll() {
-    if (!selectedClientId) return
-    setSaveStatus('saving')
-    const sections: Array<keyof AllSections> = ['protection', 'accumulation', 'retirement', 'education', 'estate']
-    await Promise.all(sections.map(s =>
-      supabase.from('fact_finding').upsert(
-        { client_id: selectedClientId, section: s, data: { ...(data[s] as Record<string, unknown>), planningMode: s === 'protection' ? planningMode : undefined }, updated_at: new Date().toISOString() },
-        { onConflict: 'client_id,section' }
-      )
-    ))
-    setSaveStatus('saved')
-    setLastSaved(new Date())
-    showToast('Discovery saved — Risk Management and Capital Mandate tabs updated.')
-    setTimeout(() => setSaveStatus('idle'), 2000)
-  }
+  const grossMonthly = ff?.person1?.gross_monthly || 0
+  const sMortgage = ff?.s_mortgage || 0
+  const sChildren = ff?.s_children || 0
 
-  // ─── Goals CRUD ──────────────────────────────────────────────────────────
+  // Sum outstanding mortgage from properties
+  const totalOutstandingMortgage = (ff?.properties || []).reduce((sum: number, p: PropertyItem) => {
+    const amortized = (!p.outstanding && p.initialLoanAmount && p.initialTenure && p.loanStartDate)
+      ? (() => {
+          const months = (Date.now() - new Date(p.loanStartDate).getTime()) / (1000 * 60 * 60 * 24 * 30.44)
+          const r = (p.interestRate || 0) / 100 / 12
+          const n = (p.initialTenure || 0) * 12
+          const pmt = r > 0 ? p.initialLoanAmount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1) : p.initialLoanAmount / n
+          const elapsed = Math.min(Math.round(months), n)
+          if (r === 0) return p.initialLoanAmount - pmt * elapsed
+          return p.initialLoanAmount * Math.pow(1 + r, elapsed) - pmt * (Math.pow(1 + r, elapsed) - 1) / r
+        })()
+      : 0
+    return sum + (p.outstanding || amortized || 0)
+  }, 0)
 
-  async function addGoal(type: string) {
-    if (!selectedClientId) return
-    const defaultNames: Record<string, string> = {
-      retirement: 'Retirement Plan',
-      education: "Child's Education Fund",
-      protection: 'Income Protection',
-      accumulation: 'Wealth Accumulation',
-      estate: 'Legacy Goal',
-    }
-    const newGoal = {
-      client_id: selectedClientId,
-      type,
-      name: defaultNames[type] || 'New Goal',
-      sort_order: goals.filter(g => g.type === type).length,
-    }
-    const { data: inserted, error } = await supabase.from('goals').insert(newGoal).select().single()
-    if (!error && inserted) {
-      setGoals(prev => [...prev, inserted])
-      setExpandedGoal(inserted.id)
-    }
-  }
+  // ── Gap calculations ──────────────────────────────────────────────────────
 
-  async function updateGoal(id: string, field: string, value: unknown) {
-    setGoals(prev => prev.map(g => g.id === id ? { ...g, [field]: value } : g))
-    const key = `goal-${id}`
-    if (debounceRef.current[key]) clearTimeout(debounceRef.current[key])
-    debounceRef.current[key] = setTimeout(async () => {
-      await supabase.from('goals').update({ [field]: value }).eq('id', id)
-      setSaveStatus('saved')
-      setLastSaved(new Date())
-      setTimeout(() => setSaveStatus('idle'), 2000)
-    }, 600)
-  }
+  const fdNeed = calcFamilyDependencyNeed(
+    needs.fd_monthly_expenses || 0,
+    needs.fd_years_coverage || 0,
+    needs.fd_inflation_rate || DEFAULT_INFLATION
+  )
+  const ciNeed = calcCIFamilyNeed(
+    needs.fd_monthly_expenses || 0,
+    needs.fd_ci_window || DEFAULT_CI_WINDOW,
+    needs.fd_inflation_rate || DEFAULT_INFLATION
+  )
+  const lifeGap = Math.max(0, fdNeed - (needs.fd_existing_life || 0))
+  const tpdGap = Math.max(0, fdNeed - (needs.fd_existing_tpd || 0))
+  const ciFdGap = Math.max(0, ciNeed - (needs.fd_existing_ci || 0))
 
-  async function deleteGoal(id: string) {
-    await supabase.from('goals').delete().eq('id', id)
-    setGoals(prev => prev.filter(g => g.id !== id))
-    if (expandedGoal === id) setExpandedGoal(null)
-  }
+  const mdNeed = calcMortgageNeed(
+    needs.md_outstanding_mortgage !== undefined ? needs.md_outstanding_mortgage : totalOutstandingMortgage,
+    needs.md_other_loans || 0
+  )
+  const ciMdNeed = calcCIMortgageNeed(sMortgage, needs.fd_ci_window || DEFAULT_CI_WINDOW)
+  const mdLifeGap = Math.max(0, mdNeed - (needs.md_existing_life_mortgage || 0))
+  const mdTpdGap = Math.max(0, mdNeed - (needs.md_existing_tpd_mortgage || 0))
 
-  function showToast(msg: string) {
-    setToastMsg(msg)
-    setTimeout(() => setToastMsg(null), 4000)
-  }
+  const totalLifeNeed = fdNeed + mdNeed
+  const totalTpdNeed = fdNeed + mdNeed
+  const totalCiNeed = ciNeed + ciMdNeed
+  const totalLifeExisting = (needs.fd_existing_life || 0) + (needs.md_existing_life_mortgage || 0)
+  const totalTpdExisting = (needs.fd_existing_tpd || 0) + (needs.md_existing_tpd_mortgage || 0)
+  const totalCiExisting = needs.fd_existing_ci || 0
+  const totalLifeGap = Math.max(0, totalLifeNeed - totalLifeExisting)
+  const totalTpdGap = Math.max(0, totalTpdNeed - totalTpdExisting)
+  const totalCiGap = Math.max(0, totalCiNeed - totalCiExisting)
 
-  // ─── Derived ─────────────────────────────────────────────────────────────
+  const edNeed = calcEducationNeed(needs.ed_children || [])
+  const edGap = Math.max(0, edNeed - (needs.ed_existing_savings || 0))
 
-  const p = data.protection
-  const a = data.accumulation
-  const r = data.retirement
-  const edu = data.education
-  const clientAge = calcAge(client?.date_of_birth)
+  const retNeed = calcRetirementNeed(
+    needs.ret_monthly_income || 0,
+    needs.ret_target_age || 65,
+    needs.ret_life_expectancy || DEFAULT_LIFE_EXP,
+    needs.ret_inflation || DEFAULT_INFLATION,
+    client?.age || 40
+  )
+  const retExisting = (needs.ret_existing_cpf || 0) + (needs.ret_existing_investments || 0)
+  const retGap = Math.max(0, retNeed - retExisting)
 
-  const lifeCoverNeeded = ((p.monthlyIncomeClient || 0) * 12 * (p.yearsOfCoverage || 10))
-  const ciCoverNeeded = ((p.monthlyIncomeClient || 0) * 12 * 5)
-  const retirementYears = Math.max(0, (r.lifeExpectancyClient || 85) - (r.retirementAgeClient || 65))
-  const monthlyIncome = r.monthlyRetirementIncomeClient || 0
-  const postReturn = (r.postRetirementReturn || 4) / 100
-  const inflation = (r.inflationRate || 3) / 100
-  const realReturn = postReturn - inflation
-  const retirementCorpus = retirementYears > 0 && realReturn > 0
-    ? monthlyIncome * 12 * ((1 - Math.pow(1 + realReturn, -retirementYears)) / realReturn)
-    : monthlyIncome * 12 * retirementYears
-  const eduFundNeeded = edu.children?.reduce((sum, c) => sum + (c.estimatedTotalCost || 0), 0) || 0
+  // ── Render ────────────────────────────────────────────────────────────────
 
-  const sections = ['protection', 'accumulation', 'retirement', 'education', 'estate']
-  const sectionLabels = ['Wealth Protection', 'Wealth Accumulation', 'Retirement', 'Education', 'Estate Planning']
-
-  function getSectionPct(i: number): number {
-    return sectionCompletion(sections[i], data)
-  }
-  const completedCount = sections.filter((_, i) => getSectionPct(i) > 80).length
-
-  const estate = data.estate
-  const estateFlags: string[] = []
-  if (!estate.willClient || estate.willClient === 'No' || estate.willClient === 'Outdated')
-    estateFlags.push(`Will (Client)${estate.willClient === 'Outdated' ? ' — Outdated' : ' — Not done'}`)
-  if (planningMode === 'couple' && (!estate.willSpouse || estate.willSpouse === 'No' || estate.willSpouse === 'Outdated'))
-    estateFlags.push(`Will (Spouse)${estate.willSpouse === 'Outdated' ? ' — Outdated' : ' — Not done'}`)
-  if (estate.cpfNominationClient === 'Not done' || !estate.cpfNominationClient)
-    estateFlags.push('CPF Nomination (Client) — Not done')
-  if (planningMode === 'couple' && estate.cpfNominationSpouse === 'Not done')
-    estateFlags.push('CPF Nomination (Spouse) — Not done')
-  if (!estate.lpaClient || estate.lpaClient === 'Not done')
-    estateFlags.push('LPA (Client) — Not done')
-  if (planningMode === 'couple' && (!estate.lpaSpouse || estate.lpaSpouse === 'Not done'))
-    estateFlags.push('LPA (Spouse) — Not done')
-
-  // ─── Render guards ───────────────────────────────────────────────────────
-
-  if (!userId) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
-      <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', fontSize: '1.1rem' }}>Loading session…</p>
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', fontFamily: 'Inter, sans-serif', fontSize: '13px', color: 'var(--ink3)' }}>
+      Loading...
     </div>
   )
 
-  if (!selectedClientId || !client) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--cream)' }}>
-      <div style={{ textAlign: 'center' }}>
-        <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.4rem', color: 'var(--ink2)', marginBottom: '0.5rem' }}>No client selected</p>
-        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '0.85rem', color: 'var(--ink3)' }}>Select a client from the sidebar to begin discovery.</p>
-      </div>
+  if (!client) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', fontFamily: 'Inter, sans-serif', fontSize: '13px', color: 'var(--ink3)' }}>
+      No client selected. Please select a client from the dashboard.
     </div>
   )
-
-  const spouseName = spouse?.name || 'Spouse'
-
-  // ─── Input helpers ───────────────────────────────────────────────────────
-
-  function CurrencyInput({ section, field, label, placeholder = '0' }: { section: keyof AllSections, field: string, label: string, placeholder?: string }) {
-    const val = ((data[section] as Record<string, unknown>)?.[field] as number) || ''
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <label style={styles.label}>{label}</label>
-        <div style={styles.currencyWrap}>
-          <span style={styles.currencyPrefix}>SGD $</span>
-          <input type="number" placeholder={placeholder} value={val}
-            onChange={e => updateSection(section, field, e.target.value ? Number(e.target.value) : undefined)}
-            style={styles.currencyInput}
-            onFocus={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--gold)' }}
-            onBlur={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--line2)' }}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  function NumInput({ section, field, label, suffix = '', placeholder = '0' }: { section: keyof AllSections, field: string, label: string, suffix?: string, placeholder?: string }) {
-    const val = ((data[section] as Record<string, unknown>)?.[field] as number) || ''
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <label style={styles.label}>{label}</label>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-          <input type="number" placeholder={placeholder} value={val}
-            onChange={e => updateSection(section, field, e.target.value ? Number(e.target.value) : undefined)}
-            style={{ ...styles.input, width: suffix ? '70px' : '100%' }}
-            onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
-            onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
-          />
-          {suffix && <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>{suffix}</span>}
-        </div>
-      </div>
-    )
-  }
-
-  function SelectInput({ section, field, label, options }: { section: keyof AllSections, field: string, label: string, options: string[] }) {
-    const val = ((data[section] as Record<string, unknown>)?.[field] as string) || ''
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <label style={styles.label}>{label}</label>
-        <select value={val} onChange={e => updateSection(section, field, e.target.value)} style={styles.select}
-          onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
-          onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}>
-          <option value="">Select…</option>
-          {options.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-      </div>
-    )
-  }
-
-  function TextInput({ section, field, label, placeholder = '' }: { section: keyof AllSections, field: string, label: string, placeholder?: string }) {
-    const val = ((data[section] as Record<string, unknown>)?.[field] as string) || ''
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <label style={styles.label}>{label}</label>
-        <input type="text" placeholder={placeholder} value={val}
-          onChange={e => updateSection(section, field, e.target.value)}
-          style={styles.input}
-          onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }}
-          onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
-        />
-      </div>
-    )
-  }
-
-  function NotesTextarea({ section, placeholder }: { section: keyof AllSections, placeholder: string }) {
-    const val = ((data[section] as Record<string, unknown>)?.advisorNotes as string) || ''
-    return (
-      <div style={styles.notesBar}>
-        <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', fontFamily: 'Inter, sans-serif' }}>Advisor Notes</div>
-        <textarea placeholder={placeholder} value={val}
-          onChange={e => updateSection(section, 'advisorNotes', e.target.value)}
-          rows={3} style={styles.notesInput}
-          onFocus={e => { e.target.style.borderBottomColor = 'rgba(168,131,74,0.6)' }}
-          onBlur={e => { e.target.style.borderBottomColor = 'rgba(255,255,255,0.15)' }}
-        />
-      </div>
-    )
-  }
-
-  function SubSectionTitle({ label, color = 'var(--gold)' }: { label: string, color?: string }) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', marginTop: '28px' }}>
-        <div style={{ width: '3px', height: '14px', background: color, borderRadius: '2px' }} />
-        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
-      </div>
-    )
-  }
-
-  function PersonHeader() {
-    if (planningMode === 'individual') return null
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px' }}>
-        {[
-          { name: client?.full_name || 'Client', age: clientAge, label: 'Client', idx: 0 },
-          { name: spouseName, age: spouse ? calcAge(spouse.date_of_birth) : null, label: 'Spouse', idx: 1 },
-        ].map((p) => (
-          <div key={p.idx} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: p.idx === 0 ? 'var(--gold-l)' : 'var(--emerald-l)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: p.idx === 0 ? 'var(--gold-tag)' : 'var(--emerald)', fontFamily: 'Inter, sans-serif' }}>
-              {p.name.charAt(0)}
-            </div>
-            <div>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif' }}>{p.name}</div>
-              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>{p.label}{p.age ? ` · Age ${p.age}` : ''}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  function SectionIntro({ eyebrow, title, subtitle }: { eyebrow: string, title: string, subtitle: string }) {
-    return (
-      <div style={{ marginBottom: '28px' }}>
-        <div style={{ fontSize: '9px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>{eyebrow}</div>
-        <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.75rem', fontWeight: 300, color: 'var(--ink)', margin: '0 0 8px', letterSpacing: '0.01em' }}>{title}</h2>
-        <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '0.95rem', color: 'var(--ink3)', lineHeight: 1.6, margin: 0 }}>{subtitle}</p>
-      </div>
-    )
-  }
-
-  // ─── Goal Card ───────────────────────────────────────────────────────────
-
-  function GoalCard({ goal }: { goal: Goal }) {
-    const meta = GOAL_TYPE_META[goal.type] || GOAL_TYPE_META.accumulation
-    const isExpanded = expandedGoal === goal.id
-
-    function GField({ field, label, type = 'number', suffix = '', prefix = '', placeholder = '' }: {
-      field: keyof Goal, label: string, type?: string, suffix?: string, prefix?: string, placeholder?: string
-    }) {
-      const val = (goal[field] as string | number | boolean) ?? ''
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-          <label style={styles.label}>{label}</label>
-          {type === 'boolean' ? (
-            <select
-              value={val === true ? 'Yes' : val === false ? 'No' : ''}
-              onChange={e => updateGoal(goal.id, field, e.target.value === 'Yes')}
-              style={styles.select}
-              onFocus={e => { e.target.style.borderBottomColor = meta.color }}
-              onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}
-            >
-              <option value="">Select…</option>
-              <option value="Yes">Yes</option>
-              <option value="No">No</option>
-            </select>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', borderBottom: '1px solid var(--line2)', transition: 'border-bottom-color 0.15s' }}
-              onFocus={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = meta.color }}
-              onBlur={e => { (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--line2)' }}>
-              {prefix && <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '6px', flexShrink: 0 }}>{prefix}</span>}
-              <input
-                type={type}
-                placeholder={placeholder || '0'}
-                value={val as string | number}
-                onChange={e => updateGoal(goal.id, field, type === 'text' ? e.target.value : (e.target.value ? Number(e.target.value) : undefined))}
-                style={{ flex: 1, border: 'none', background: 'transparent', padding: '6px 0', fontSize: '13px', color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none', width: '100%' }}
-              />
-              {suffix && <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '6px', flexShrink: 0 }}>{suffix}</span>}
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    return (
-      <div style={{ border: `1px solid var(--line)`, borderRadius: '8px', overflow: 'hidden', marginBottom: '10px', background: 'white', transition: 'box-shadow 0.2s', boxShadow: isExpanded ? '0 4px 20px rgba(0,0,0,0.06)' : 'none' }}>
-        {/* Card header */}
-        <div
-          onClick={() => setExpandedGoal(isExpanded ? null : goal.id)}
-          style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', cursor: 'pointer', background: isExpanded ? meta.accent : 'white', transition: 'background 0.15s' }}
-        >
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <input
-              type="text"
-              value={goal.name}
-              onChange={e => { e.stopPropagation(); updateGoal(goal.id, 'name', e.target.value) }}
-              onClick={e => e.stopPropagation()}
-              style={{ border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none', width: '100%', padding: 0, cursor: 'text' }}
-              placeholder="Goal name…"
-            />
-            {goal.target_amount && (
-              <div style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', marginTop: '1px' }}>
-                Target: {fmtCurrency(goal.target_amount)}
-                {goal.target_age ? ` · by age ${goal.target_age}` : ''}
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={e => { e.stopPropagation(); deleteGoal(goal.id) }}
-              style={{ width: '24px', height: '24px', borderRadius: '4px', border: 'none', background: 'transparent', color: 'var(--ink3)', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-              title="Delete goal"
-            >×</button>
-            <div style={{ color: 'var(--ink3)', fontSize: '10px', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</div>
-          </div>
-        </div>
-
-        {/* Expanded fields */}
-        {isExpanded && (
-          <div style={{ padding: '20px 16px', borderTop: '1px solid var(--line)', background: 'white' }}>
-            {goal.type === 'retirement' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                <GField field="ret_age" label="Retirement Age" suffix="yrs" placeholder="65" />
-                <GField field="life_exp" label="Life Expectancy" suffix="yrs" placeholder="85" />
-                <GField field="monthly_income" label="Monthly Income Desired" prefix="SGD $" />
-                <GField field="inflation_rate" label="Inflation Rate" suffix="% p.a." placeholder="3" />
-                <GField field="post_rate" label="Post-Retirement Return" suffix="% p.a." placeholder="4" />
-                <GField field="ret_inc" label="Current Monthly Savings" prefix="SGD $" />
-                <GField field="legacy_on" label="Leave a Legacy?" type="boolean" />
-                {goal.legacy_on && <GField field="legacy_amt" label="Legacy Amount" prefix="SGD $" />}
-                <GField field="cont_inv" label="Continue CPF in Retirement?" type="boolean" />
-                <GField field="target_amount" label="Target Corpus" prefix="SGD $" />
-              </div>
-            )}
-            {goal.type === 'education' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                <GField field="target_age" label="Child's Current Age" suffix="yrs" />
-                <GField field="target_amount" label="Estimated Total Cost" prefix="SGD $" />
-                <GField field="rate_of_return" label="Expected Return" suffix="% p.a." placeholder="5" />
-                <GField field="inflation_rate" label="Education Inflation" suffix="% p.a." placeholder="4" />
-                <GField field="ret_inc" label="Monthly Savings Available" prefix="SGD $" />
-                <GField field="legacy_on" label="Protection on Fund?" type="boolean" />
-              </div>
-            )}
-            {goal.type === 'protection' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                <GField field="target_amount" label="Coverage Target" prefix="SGD $" />
-                <GField field="target_age" label="Coverage Until Age" suffix="yrs" />
-                <GField field="monthly_income" label="Monthly Income to Protect" prefix="SGD $" />
-                <GField field="rate_of_return" label="Income Replacement Years" suffix="yrs" />
-              </div>
-            )}
-            {(goal.type === 'accumulation' || goal.type === 'estate') && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                <GField field="target_amount" label="Target Amount" prefix="SGD $" />
-                <GField field="target_age" label="Target Age" suffix="yrs" />
-                <GField field="rate_of_return" label="Expected Return" suffix="% p.a." placeholder="6" />
-                <GField field="monthly_income" label="Monthly Contribution" prefix="SGD $" />
-                <GField field="inflation_rate" label="Inflation Assumption" suffix="% p.a." placeholder="3" />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ─── SECTIONS ────────────────────────────────────────────────────────────
-
-  function Section1() {
-    return (
-      <div>
-        <SectionIntro eyebrow="Section 1 · Wealth Protection" title="Protection Needs"
-          subtitle="Understanding what needs to be protected — income, debts, family obligations — if either of you were unable to work." />
-        <PersonHeader />
-        <SubSectionTitle label="Monthly Income & Expenses" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr' : '1fr 1fr', gap: '20px' }}>
-          <CurrencyInput section="protection" field="monthlyIncomeClient" label={planningMode === 'couple' ? `Monthly Income — ${client?.full_name?.split(' ')[0]}` : 'Monthly Income'} />
-          {planningMode === 'couple' && <CurrencyInput section="protection" field="monthlyIncomeSpouse" label={`Monthly Income — ${spouseName.split(' ')[0]}`} />}
-          <CurrencyInput section="protection" field="monthlyHouseholdExpenses" label="Monthly Household Expenses" />
-          <CurrencyInput section="protection" field="monthlyMortgageRent" label="Monthly Mortgage / Rent" />
-        </div>
-        <SubSectionTitle label="Liabilities & Debts" color="var(--ink3)" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
-          <CurrencyInput section="protection" field="outstandingMortgage" label="Outstanding Mortgage" />
-          <CurrencyInput section="protection" field="otherLoans" label="Other Loans / Debts" />
-          <NumInput section="protection" field="yearsToClearMortgage" label="Years to Clear Mortgage" suffix="yrs" />
-        </div>
-        <SubSectionTitle label="Income Replacement Needs" color="var(--emerald)" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
-          <CurrencyInput section="protection" field="incomeReplacementClient" label={planningMode === 'couple' ? `Replacement Needed — ${client?.full_name?.split(' ')[0]}` : 'Income Replacement Needed'} />
-          {planningMode === 'couple' && <CurrencyInput section="protection" field="incomeReplacementSpouse" label={`Replacement Needed — ${spouseName.split(' ')[0]}`} />}
-          <NumInput section="protection" field="yearsOfCoverage" label="Years of Coverage Needed" suffix="yrs" />
-          <SelectInput section="protection" field="ciRecoveryPeriod" label="CI Recovery Period" options={['3 years', '5 years', 'Until retirement']} />
-        </div>
-        <SubSectionTitle label="Existing Coverage" color="var(--gold-tag)" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
-          <CurrencyInput section="protection" field="lifeCoverClient" label={`Life Cover — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
-          {planningMode === 'couple' && <CurrencyInput section="protection" field="lifeCoverSpouse" label={`Life Cover — ${spouseName.split(' ')[0]}`} />}
-          <CurrencyInput section="protection" field="ciCoverClient" label={`CI Cover — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
-          {planningMode === 'couple' && <CurrencyInput section="protection" field="ciCoverSpouse" label={`CI Cover — ${spouseName.split(' ')[0]}`} />}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr' : '1fr 1fr', gap: '20px', marginTop: '20px' }}>
-          {(['Client', ...(planningMode === 'couple' ? ['Spouse'] : [])]).map((who, i) => {
-            const field = i === 0 ? 'disabilityIncomeClient' : 'disabilityIncomeSpouse'
-            const label = planningMode === 'couple' ? `Disability Income — ${i === 0 ? client?.full_name?.split(' ')[0] : spouseName.split(' ')[0]}` : 'Disability Income'
-            const val = (data.protection[field as keyof ProtectionData] as number) || ''
-            return (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={styles.label}>{label}</label>
-                <div style={styles.currencyWrap}>
-                  <span style={styles.currencyPrefix}>SGD $</span>
-                  <input type="number" placeholder="0" value={val}
-                    onChange={e => updateSection('protection', field, e.target.value ? Number(e.target.value) : undefined)}
-                    style={{ ...styles.currencyInput, flex: 1 }}
-                    onFocus={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--gold)' }}
-                    onBlur={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--line2)' }}
-                  />
-                  <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', paddingBottom: '2px' }}>/mo</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <div style={{ marginTop: '32px' }}>
-          <NotesTextarea section="protection" placeholder="Record any context, client concerns, or details discussed during this section…" />
-        </div>
-      </div>
-    )
-  }
-
-  function Section2() {
-    const goalTypes = ['retirement', 'education', 'protection', 'accumulation', 'estate']
-
-    return (
-      <div>
-        <SectionIntro eyebrow="Section 2 · Wealth Accumulation" title="Financial Goals"
-          subtitle="Define and prioritise each goal with specific targets — these feed directly into the Capital Mandate and Recommendations tabs." />
-
-        <SubSectionTitle label="Savings Capacity" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '8px' }}>
-          <CurrencyInput section="accumulation" field="monthlySurplus" label="Monthly Surplus Available" />
-          <CurrencyInput section="accumulation" field="lumpSumAvailable" label="Lump Sum Available Now" />
-          <CurrencyInput section="accumulation" field="currentInvestments" label="Current Total Investments" />
-        </div>
-
-        <SubSectionTitle label="Risk Profile" color="var(--emerald)" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '8px' }}>
-          <SelectInput section="accumulation" field="riskAppetite" label="Risk Appetite" options={['Very Conservative (1)', 'Conservative (2)', 'Balanced (3)', 'Growth (4)', 'Aggressive (5)']} />
-          <SelectInput section="accumulation" field="investmentTimeHorizon" label="Investment Time Horizon" options={['Under 5 years', '5–10 years', '10–20 years', '20+ years']} />
-          <NumInput section="accumulation" field="expectedReturnRate" label="Expected Return Rate" suffix="% p.a." placeholder="6" />
-        </div>
-
-        <SubSectionTitle label="Goal Planning" color="var(--ink3)" />
-
-        {/* Goal type tabs */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          {goalTypes.map(type => {
-            const meta = GOAL_TYPE_META[type]
-            const count = goals.filter(g => g.type === type).length
-            return (
-              <button
-                key={type}
-                onClick={() => addGoal(type)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  padding: '7px 14px', borderRadius: '6px',
-                  border: `1.5px solid ${count > 0 ? meta.color : 'var(--line2)'}`,
-                  background: count > 0 ? meta.accent : 'transparent',
-                  color: count > 0 ? meta.color : 'var(--ink3)',
-                  fontSize: '11px', fontFamily: 'Inter, sans-serif',
-                  fontWeight: count > 0 ? 600 : 400,
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
-                <span style={{ fontSize: '13px' }}>{meta.icon}</span>
-                {meta.label}
-                {count > 0 && (
-                  <span style={{ width: '16px', height: '16px', borderRadius: '50%', background: meta.color, color: 'white', fontSize: '9px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{count}</span>
-                )}
-                {count === 0 && <span style={{ fontSize: '11px', opacity: 0.5 }}>+</span>}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Goal cards grouped by type */}
-        {goals.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 24px', border: '1.5px dashed var(--line2)', borderRadius: '8px', background: 'white' }}>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.1rem', color: 'var(--ink3)', marginBottom: '8px' }}>No goals added yet</div>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: 'var(--ink3)' }}>Click any goal type above to add one</div>
-          </div>
-        ) : (
-          <div>
-            {goalTypes.map(type => {
-              const typeGoals = goals.filter(g => g.type === type)
-              if (typeGoals.length === 0) return null
-              const meta = GOAL_TYPE_META[type]
-              return (
-                <div key={type} style={{ marginBottom: '24px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                    <div style={{ width: '3px', height: '14px', background: meta.color, borderRadius: '2px' }} />
-                    <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>{meta.label}</span>
-                    <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>— {meta.description}</span>
-                  </div>
-                  {typeGoals.map(goal => <GoalCard key={goal.id} goal={goal} />)}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        <div style={{ marginTop: '24px' }}>
-          <NotesTextarea section="accumulation" placeholder="Investment preferences, constraints, prior experience, concerns discussed…" />
-        </div>
-      </div>
-    )
-  }
-
-  function Section3() {
-    const legacyVal = data.retirement.leaveALegacy || ''
-    return (
-      <div>
-        <SectionIntro eyebrow="Section 3 · Retirement Planning" title="Retirement Needs"
-          subtitle="Planning the income and capital required to sustain your desired lifestyle from retirement through to end of life." />
-        <PersonHeader />
-        <SubSectionTitle label="Retirement Parameters" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
-          <NumInput section="retirement" field="retirementAgeClient" label={`Retirement Age — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} suffix="yrs" placeholder="65" />
-          {planningMode === 'couple' && <NumInput section="retirement" field="retirementAgeSpouse" label={`Retirement Age — ${spouseName.split(' ')[0]}`} suffix="yrs" placeholder="65" />}
-          <NumInput section="retirement" field="lifeExpectancyClient" label={`Life Expectancy — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} suffix="yrs" placeholder="85" />
-          {planningMode === 'couple' && <NumInput section="retirement" field="lifeExpectancySpouse" label={`Life Expectancy — ${spouseName.split(' ')[0]}`} suffix="yrs" placeholder="85" />}
-        </div>
-        <SubSectionTitle label="Retirement Income Desired (Today's $)" color="var(--emerald)" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
-          <CurrencyInput section="retirement" field="monthlyRetirementIncomeClient" label={`Monthly Income — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} />
-          {planningMode === 'couple' && <CurrencyInput section="retirement" field="monthlyRetirementIncomeSpouse" label={`Monthly Income — ${spouseName.split(' ')[0]}`} />}
-          <NumInput section="retirement" field="inflationRate" label="Inflation Rate" suffix="%" placeholder="3" />
-          <NumInput section="retirement" field="postRetirementReturn" label="Post-Retirement Return Rate" suffix="%" placeholder="4" />
-        </div>
-        <SubSectionTitle label="Legacy" color="var(--gold-tag)" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
-          <SelectInput section="retirement" field="leaveALegacy" label="Leave a Legacy?" options={['No', 'Yes — specific amount', 'Nice to have']} />
-          {legacyVal === 'Yes — specific amount' && <CurrencyInput section="retirement" field="legacyAmountTarget" label="Legacy Amount Target" />}
-          <SelectInput section="retirement" field="continueCpfInRetirement" label="Continue Investing CPF in Retirement?" options={['Yes', 'No']} />
-        </div>
-        <div style={{ marginTop: '32px' }}>
-          <NotesTextarea section="retirement" placeholder="Retirement lifestyle aspirations, travel plans, healthcare concerns, family obligations…" />
-        </div>
-      </div>
-    )
-  }
-
-  function Section4() {
-    const eduChildren: ChildEducation[] = data.education.children || []
-
-    function updateChild(idx: number, field: string, value: unknown) {
-      const updated = [...eduChildren]
-      updated[idx] = { ...updated[idx], [field]: value }
-      setData(prev => {
-        const updatedData = { ...prev, education: { ...prev.education, children: updated } }
-        if (debounceRef.current['education']) clearTimeout(debounceRef.current['education'])
-        debounceRef.current['education'] = setTimeout(() => {
-          saveSection('education', { children: updated, advisorNotes: prev.education.advisorNotes })
-        }, 800)
-        return updatedData
-      })
-    }
-
-    function addChild() {
-      const newChild: ChildEducation = { childId: `new-${Date.now()}`, name: '', currentAge: 0 }
-      setData(prev => ({ ...prev, education: { ...prev.education, children: [...eduChildren, newChild] } }))
-    }
-
-    const studyOptions = ['Singapore — Local', 'Singapore — Private', 'Australia', 'UK', 'US', 'Other']
-
-    return (
-      <div>
-        <SectionIntro eyebrow="Section 4 · Education Planning" title="University Education Fund"
-          subtitle="Planning the savings required to fund each child's tertiary education — both accumulation and protection." />
-        {eduChildren.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', border: '1.5px dashed var(--line2)', borderRadius: '8px', marginBottom: '24px' }}>
-            <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', marginBottom: '16px' }}>No children found in the client profile.</p>
-            <button onClick={addChild} style={styles.addChildBtn}>+ Add Child</button>
-          </div>
-        ) : (
-          <>
-            {eduChildren.map((child, idx) => (
-              <div key={child.childId} style={{ border: '1px solid var(--line)', borderRadius: '8px', padding: '20px 24px', marginBottom: '16px', background: 'white' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--emerald-l)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 600, color: 'var(--emerald)', fontFamily: 'Inter, sans-serif' }}>
-                    {(child.name || '?').charAt(0)}
-                  </div>
-                  <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>
-                    Child {idx + 1}{child.name ? ` — ${child.name}` : ''}
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={styles.label}>Child's Name</label>
-                    <input type="text" value={child.name} onChange={e => updateChild(idx, 'name', e.target.value)} style={styles.input} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={styles.label}>Current Age</label>
-                    <input type="number" value={child.currentAge || ''} onChange={e => updateChild(idx, 'currentAge', Number(e.target.value))} style={{ ...styles.input, width: '60px' }} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={styles.label}>Study Destination</label>
-                    <select value={child.studyDestination || ''} onChange={e => updateChild(idx, 'studyDestination', e.target.value)} style={styles.select} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}>
-                      <option value="">Select…</option>
-                      {studyOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={styles.label}>Course Duration</label>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                      <input type="number" value={child.courseDuration || ''} onChange={e => updateChild(idx, 'courseDuration', Number(e.target.value))} style={{ ...styles.input, width: '50px' }} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }} />
-                      <span style={{ fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>yrs</span>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
-                  {[
-                    { field: 'estimatedTotalCost', label: 'Estimated Total Cost' },
-                    { field: 'currentSavings', label: 'Current Savings for Child' },
-                    { field: 'monthlySavings', label: 'Monthly Savings Available' },
-                  ].map(({ field, label }) => (
-                    <div key={field} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <label style={styles.label}>{label}</label>
-                      <div style={styles.currencyWrap}>
-                        <span style={styles.currencyPrefix}>SGD $</span>
-                        <input type="number" value={(child as unknown as Record<string, unknown>)[field] as number || ''} onChange={e => updateChild(idx, field, e.target.value ? Number(e.target.value) : undefined)} style={styles.currencyInput}
-                          onFocus={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--gold)' }}
-                          onBlur={e => { (e.target.parentElement as HTMLElement).style.borderBottomColor = 'var(--line2)' }} />
-                      </div>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={styles.label}>Protection on Fund?</label>
-                    <select value={child.protectionOnFund || ''} onChange={e => updateChild(idx, 'protectionOnFund', e.target.value)} style={styles.select} onFocus={e => { e.target.style.borderBottomColor = 'var(--gold)' }} onBlur={e => { e.target.style.borderBottomColor = 'var(--line2)' }}>
-                      <option value="">Select…</option>
-                      <option>Yes — waiver of premium</option>
-                      <option>No</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            ))}
-            <button onClick={addChild} style={styles.addChildBtn}>+ Add another child</button>
-          </>
-        )}
-        <div style={{ marginTop: '24px' }}>
-          <NotesTextarea section="education" placeholder="Education preferences, overseas vs local, scholarship plans, existing savings vehicles…" />
-        </div>
-      </div>
-    )
-  }
-
-  function Section5() {
-    return (
-      <div>
-        <SectionIntro eyebrow="Section 5 · Estate Planning" title="Estate & Legacy"
-          subtitle="Ensuring assets are protected, distributed as intended, and the right people are empowered to act on your behalf." />
-        <PersonHeader />
-        {estateFlags.length > 0 && (
-          <div style={{ background: 'var(--rouge-l)', border: '1.5px solid var(--rouge)', borderRadius: '8px', padding: '16px 20px', marginBottom: '28px' }}>
-            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', marginBottom: '8px' }}>⚠ Urgent Estate Gaps</div>
-            {estateFlags.map(f => (
-              <div key={f} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--rouge)', flexShrink: 0 }} />
-                <span style={{ fontSize: '12px', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif' }}>{f}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <SubSectionTitle label="Will" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '20px' }}>
-          <SelectInput section="estate" field="willClient" label={`Will Written — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['No', 'Yes', 'Outdated']} />
-          {planningMode === 'couple' && <SelectInput section="estate" field="willSpouse" label={`Will Written — ${spouseName.split(' ')[0]}`} options={['No', 'Yes', 'Outdated']} />}
-          <TextInput section="estate" field="willLastUpdatedClient" label={`Last Updated — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} placeholder="e.g. Jan 2020" />
-          {planningMode === 'couple' && <TextInput section="estate" field="willLastUpdatedSpouse" label={`Last Updated — ${spouseName.split(' ')[0]}`} placeholder="e.g. Jan 2020" />}
-          <TextInput section="estate" field="preferredGuardian" label="Preferred Guardian for Children" placeholder="Full name" />
-        </div>
-        <SubSectionTitle label="Trust" color="var(--emerald)" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
-          <SelectInput section="estate" field="trustSetUp" label="Trust Set Up?" options={['No', 'Yes — testamentary', 'Yes — living trust', 'Interested to explore']} />
-          <TextInput section="estate" field="trustPurposeNotes" label="Trust Purpose / Notes" placeholder="Describe the trust purpose or intentions" />
-        </div>
-        <SubSectionTitle label="Insurance Nominations & CPF" color="var(--gold-tag)" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
-          <SelectInput section="estate" field="policyNominationsClient" label={`Policy Nominations — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done', 'Partially done']} />
-          {planningMode === 'couple' && <SelectInput section="estate" field="policyNominationsSpouse" label={`Policy Nominations — ${spouseName.split(' ')[0]}`} options={['Not done', 'Done', 'Partially done']} />}
-          <SelectInput section="estate" field="cpfNominationClient" label={`CPF Nomination — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done']} />
-          {planningMode === 'couple' && <SelectInput section="estate" field="cpfNominationSpouse" label={`CPF Nomination — ${spouseName.split(' ')[0]}`} options={['Not done', 'Done']} />}
-        </div>
-        <SubSectionTitle label="Lasting Power of Attorney (LPA)" color="var(--ink3)" />
-        <div style={{ display: 'grid', gridTemplateColumns: planningMode === 'couple' ? '1fr 1fr 1fr 1fr' : '1fr 1fr', gap: '20px' }}>
-          <SelectInput section="estate" field="lpaClient" label={`LPA — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} options={['Not done', 'Done', 'In progress']} />
-          {planningMode === 'couple' && <SelectInput section="estate" field="lpaSpouse" label={`LPA — ${spouseName.split(' ')[0]}`} options={['Not done', 'Done', 'In progress']} />}
-          <TextInput section="estate" field="doneeClient" label={`Donee (LPA) — ${planningMode === 'couple' ? client?.full_name?.split(' ')[0] : 'Client'}`} placeholder="Name of donee" />
-          {planningMode === 'couple' && <TextInput section="estate" field="doneeSpouse" label={`Donee (LPA) — ${spouseName.split(' ')[0]}`} placeholder="Name of donee" />}
-        </div>
-        <div style={{ marginTop: '32px' }}>
-          <NotesTextarea section="estate" placeholder="Family dynamics, beneficiary preferences, business succession needs, special considerations…" />
-        </div>
-      </div>
-    )
-  }
-
-  const sectionComponents = [<Section1 />, <Section2 />, <Section3 />, <Section4 />, <Section5 />]
-
-  // ─── Main render ─────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--cream)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--cream)', fontFamily: 'Inter, sans-serif' }}>
 
-      {/* Toast */}
-      {toastMsg && (
-        <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999, background: 'var(--charcoal)', color: 'white', padding: '12px 20px', borderRadius: '8px', fontFamily: 'Inter, sans-serif', fontSize: '13px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)', maxWidth: '360px', lineHeight: 1.5 }}>
-          {toastMsg}
-        </div>
-      )}
-
-      {/* Hero band */}
-      <div style={{ background: 'var(--charcoal)', padding: '28px 40px 0', color: 'white' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+      {/* ── Hero band ── */}
+      <div style={{ background: '#1C1A17', padding: '28px 32px 24px' }}>
+        <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: '6px' }}>Strategic Objectives</div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: '9px', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', marginBottom: '6px' }}>Discovery · Fact Finding</div>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '2rem', fontWeight: 300, margin: '0 0 4px', letterSpacing: '0.01em' }}>Strategic Objectives</h1>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
-              {client?.full_name} · {planningMode === 'couple' ? 'Joint Planning' : 'Individual Planning'}
-            </div>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '26px', color: 'white', fontWeight: 400, margin: 0, lineHeight: 1.2 }}>
+              Wealth Protection
+            </h1>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>{client.full_name}{client.age ? ` · Age ${client.age}` : ''}</div>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {saving && <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Saving…</span>}
+            {saved && !saving && <span style={{ fontSize: '11px', color: 'var(--gold)' }}>✓ Saved</span>}
+          </div>
+        </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            {/* Overall completion */}
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontFamily: 'var(--font-serif)', fontSize: '2.2rem', color: 'var(--gold)', lineHeight: 1 }}>
-                {Math.round((completedCount / 5) * 100)}%
+        {/* Pulled data pills */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '16px' }}>
+          <PulledDataPill label="Monthly Income" value={fmt(grossMonthly)} />
+          <PulledDataPill label="Mortgage Repayment" value={fmt(sMortgage) + '/mo'} />
+          <PulledDataPill label="Outstanding Mortgage" value={fmt(totalOutstandingMortgage)} />
+          <PulledDataPill label="Children" value={sChildren ? String(sChildren) : '0'} />
+        </div>
+      </div>
+
+      {/* ── Tab nav ── */}
+      <div style={{ background: 'white', borderBottom: '1px solid var(--line)', padding: '0 32px', display: 'flex', gap: '0' }}>
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            style={{
+              padding: '12px 16px', border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: '11px', fontFamily: 'Inter, sans-serif', letterSpacing: '0.05em',
+              color: activeTab === t.id ? 'var(--ink)' : 'var(--ink3)',
+              borderBottom: activeTab === t.id ? '2px solid var(--gold)' : '2px solid transparent',
+              fontWeight: activeTab === t.id ? 600 : 400,
+              transition: 'color 0.15s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Content + Sidebar ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '0', maxWidth: '100%' }}>
+
+        {/* ── Main panel ── */}
+        <div style={{ padding: '28px 32px', borderRight: '1px solid var(--line)' }}>
+
+          {/* ════ FAMILY DEPENDENCY ════ */}
+          {activeTab === 'family' && (
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 400, color: 'var(--ink)', marginBottom: '4px' }}>Family Dependency</h2>
+              <p style={{ fontSize: '12px', color: 'var(--ink3)', marginBottom: '24px', lineHeight: 1.5 }}>
+                If the client were to pass away or become totally disabled, how much would the family need to maintain their lifestyle?
+              </p>
+
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '16px' }}>Coverage Parameters</div>
+
+                <InputRow
+                  label="Monthly Household Expenses"
+                  hint="How much does the family spend monthly to maintain their current lifestyle?"
+                  value={needs.fd_monthly_expenses}
+                  onChange={v => upd({ fd_monthly_expenses: v as number })}
+                />
+                <InputRow
+                  label="Years of Coverage Needed"
+                  hint="Until the youngest child is financially independent, or spouse's working years"
+                  value={needs.fd_years_coverage}
+                  prefix="yrs"
+                  onChange={v => upd({ fd_years_coverage: v as number })}
+                />
+                <InputRow
+                  label="CI Recovery Window"
+                  hint="How many years of expenses to cover during critical illness recovery? (default: 5)"
+                  value={needs.fd_ci_window || DEFAULT_CI_WINDOW}
+                  prefix="yrs"
+                  onChange={v => upd({ fd_ci_window: v as number })}
+                />
+                <InputRow
+                  label="Inflation Assumption"
+                  hint="Annual inflation rate for expense growth (default: 3%)"
+                  value={needs.fd_inflation_rate || DEFAULT_INFLATION}
+                  prefix="%"
+                  onChange={v => upd({ fd_inflation_rate: v as number })}
+                />
               </div>
-              <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: '2px' }}>Complete</div>
-            </div>
-            <button onClick={saveAll} style={{ padding: '10px 20px', background: 'transparent', border: '1.5px solid rgba(168,131,74,0.5)', color: 'var(--gold)', borderRadius: '6px', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.05em', transition: 'border-color 0.15s' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--gold)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(168,131,74,0.5)' }}>
-              Save Draft
-            </button>
-          </div>
-        </div>
 
-        {/* Stats row */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-          {[
-            { label: 'Client', value: client?.full_name?.split(' ')[0] || '—' },
-            ...(planningMode === 'couple' ? [{ label: 'Spouse', value: spouseName.split(' ')[0] }] : []),
-            { label: 'Goals', value: String(goals.length) },
-            { label: 'Children', value: String(children.length) },
-            { label: 'Sections', value: `${completedCount} / 5` },
-            { label: 'Saved', value: lastSaved ? lastSaved.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }) : '—' },
-          ].map((stat, i) => (
-            <div key={i} style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.06)', borderRadius: '5px' }}>
-              <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', fontFamily: 'Inter, sans-serif', marginBottom: '3px' }}>{stat.label}</div>
-              <div style={{ fontSize: '13px', fontWeight: 500, color: 'white', fontFamily: 'Inter, sans-serif' }}>{stat.value}</div>
-            </div>
-          ))}
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '16px' }}>Existing Coverage</div>
 
-          {/* Save indicator */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px' }}>
-            <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : saveStatus === 'saved' ? 'var(--emerald)' : 'rgba(255,255,255,0.2)', transition: 'background 0.3s' }} />
-            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: 'Inter, sans-serif' }}>
-              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : 'Auto-save on'}
-            </span>
-          </div>
-        </div>
+                <InputRow label="Existing Life Cover" value={needs.fd_existing_life} onChange={v => upd({ fd_existing_life: v as number })} />
+                <InputRow label="Existing TPD Cover" value={needs.fd_existing_tpd} onChange={v => upd({ fd_existing_tpd: v as number })} />
+                <InputRow label="Existing CI Cover" value={needs.fd_existing_ci} onChange={v => upd({ fd_existing_ci: v as number })} />
+              </div>
 
-        {/* Planning mode + section nav combined */}
-        <div style={{ display: 'flex', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          {/* Planning mode */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0', borderRight: '1px solid rgba(255,255,255,0.08)', paddingRight: '0', marginRight: '0' }}>
-            {(['individual', 'couple'] as const).map(mode => (
-              <button key={mode} onClick={() => updatePlanningMode(mode)} style={{
-                padding: '14px 16px', borderRadius: '0', border: 'none',
-                background: planningMode === mode ? 'rgba(168,131,74,0.12)' : 'transparent',
-                color: planningMode === mode ? 'var(--gold)' : 'rgba(255,255,255,0.35)',
-                fontSize: '11px', fontFamily: 'Inter, sans-serif',
-                fontWeight: planningMode === mode ? 600 : 400,
-                cursor: 'pointer',
-                borderBottom: planningMode === mode ? '2px solid var(--gold)' : '2px solid transparent',
-                letterSpacing: '0.03em', whiteSpace: 'nowrap',
-              }}>
-                {mode === 'individual' ? 'Individual' : 'Couple'}
-              </button>
-            ))}
-            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
-          </div>
-
-          {/* Section tabs */}
-          {sectionLabels.map((label, i) => {
-            const pct = getSectionPct(i)
-            const isActive = activeSection === i
-            const isDone = pct > 80
-            const isStarted = pct > 0
-            return (
-              <button key={i} onClick={() => setActiveSection(i)} style={{
-                display: 'flex', alignItems: 'center', gap: '7px',
-                padding: '14px 18px', background: 'transparent', border: 'none',
-                borderBottom: isActive ? '2px solid white' : '2px solid transparent',
-                color: isActive ? 'white' : 'rgba(255,255,255,0.4)',
-                cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: '12px',
-                fontWeight: isActive ? 500 : 400, whiteSpace: 'nowrap',
-                transition: 'color 0.15s', marginBottom: '-1px',
-              }}>
-                <div style={{
-                  width: '17px', height: '17px', borderRadius: '50%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '9px', fontWeight: 700, flexShrink: 0,
-                  background: isDone ? 'var(--emerald)' : isStarted ? 'var(--gold)' : 'rgba(255,255,255,0.1)',
-                  color: isDone || isStarted ? 'white' : 'rgba(255,255,255,0.35)',
-                }}>
-                  {isDone ? '✓' : i + 1}
+              {/* Gap summary */}
+              {needs.fd_monthly_expenses ? (
+                <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px' }}>
+                  <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '12px' }}>Gap Analysis</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Cover Type</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Need</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Gap</div>
+                  </div>
+                  <GapRow label="Life (D)" need={fdNeed} existing={needs.fd_existing_life || 0} gap={lifeGap} />
+                  <GapRow label="TPD" need={fdNeed} existing={needs.fd_existing_tpd || 0} gap={tpdGap} />
+                  <GapRow label="CI (family)" need={ciNeed} existing={needs.fd_existing_ci || 0} gap={ciFdGap} />
                 </div>
-                {label}
-              </button>
-            )
-          })}
+              ) : null}
 
-          {/* Progress bar */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 20px' }}>
-            <div style={{ width: '60px', height: '2px', background: 'rgba(255,255,255,0.1)', borderRadius: '1px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${(completedCount / 5) * 100}%`, background: 'var(--gold)', borderRadius: '1px', transition: 'width 0.4s ease' }} />
-            </div>
-            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', fontFamily: 'Inter, sans-serif' }}>{completedCount}/5</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div style={{ flex: 1, display: 'flex', maxWidth: '100%' }}>
-
-        {/* Main form */}
-        <div style={{ flex: 1, padding: '40px', overflowY: 'auto', minWidth: 0 }}>
-          {loading ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px' }}>
-              <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink3)', fontStyle: 'italic' }}>Loading discovery data…</p>
-            </div>
-          ) : sectionComponents[activeSection]}
-        </div>
-
-        {/* Right sidebar */}
-        <div style={{ width: '256px', flexShrink: 0, background: 'white', borderLeft: '1px solid var(--line)', padding: '24px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-
-          {/* Discovery progress */}
-          <div>
-            <div style={styles.sidebarHeading}>Discovery Progress</div>
-            {sectionLabels.map((label, i) => {
-              const pct = getSectionPct(i)
-              const isDone = pct > 80
-              const isStarted = pct > 0
-              return (
-                <button key={i} onClick={() => setActiveSection(i)} style={{ width: '100%', background: activeSection === i ? 'var(--cream)' : 'transparent', border: 'none', borderRadius: '5px', padding: '8px 10px', cursor: 'pointer', textAlign: 'left', marginBottom: '2px', transition: 'background 0.15s' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                    <span style={{ fontSize: '11px', color: isDone ? 'var(--emerald)' : isStarted ? 'var(--gold-tag)' : 'var(--ink3)', fontFamily: 'Inter, sans-serif', fontWeight: 500 }}>{label}</span>
-                    <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'DM Mono, monospace' }}>{pct}%</span>
-                  </div>
-                  <div style={{ height: '2px', background: 'var(--cream2)', borderRadius: '1px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: isDone ? 'var(--emerald)' : 'var(--gold)', borderRadius: '1px', transition: 'width 0.4s ease' }} />
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Goals summary */}
-          {goals.length > 0 && (
-            <div>
-              <div style={styles.sidebarHeading}>Goals Summary</div>
-              {Object.entries(GOAL_TYPE_META).map(([type, meta]) => {
-                const typeGoals = goals.filter(g => g.type === type)
-                if (typeGoals.length === 0) return null
-                const totalTarget = typeGoals.reduce((s, g) => s + (g.target_amount || 0), 0)
-                return (
-                  <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: '11px', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif' }}>{meta.label}</span>
-                      <span style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>×{typeGoals.length}</span>
-                    </div>
-                    <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: totalTarget > 0 ? 'var(--ink)' : 'var(--ink3)' }}>
-                      {totalTarget > 0 ? fmtCurrency(totalTarget) : '—'}
-                    </span>
-                  </div>
-                )
-              })}
+              <NotesBar value={needs.fd_notes} onChange={v => upd({ fd_notes: v })} />
             </div>
           )}
 
-          {/* Feeds into */}
-          <div>
-            <div style={styles.sidebarHeading}>Feeds Into</div>
-            <div style={{ borderLeft: '3px solid var(--gold)', paddingLeft: '10px', marginBottom: '10px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Risk Management</div>
-              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>Protection needs, coverage gap, HLV</div>
-            </div>
-            <div style={{ borderLeft: '3px solid #4A7FA5', paddingLeft: '10px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)', fontFamily: 'Inter, sans-serif', marginBottom: '2px' }}>Capital Mandate</div>
-              <div style={{ fontSize: '10px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>Retirement corpus, education targets, investment gap</div>
-            </div>
-          </div>
+          {/* ════ MORTGAGE & DEBT ════ */}
+          {activeTab === 'mortgage' && (
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 400, color: 'var(--ink)', marginBottom: '4px' }}>Mortgage & Debt</h2>
+              <p style={{ fontSize: '12px', color: 'var(--ink3)', marginBottom: '24px', lineHeight: 1.5 }}>
+                Ensure all outstanding debts can be fully cleared in the event of death, TPD, or critical illness.
+              </p>
 
-          {/* Live preview */}
-          <div style={{ background: 'var(--charcoal)', borderRadius: '8px', padding: '16px' }}>
-            <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter, sans-serif', marginBottom: '12px' }}>Live Preview</div>
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '4px' }}>Outstanding Liabilities</div>
+                <div style={{ fontSize: '11px', color: 'var(--ink3)', marginBottom: '16px' }}>Pre-filled from Financials tab. Override if needed.</div>
+
+                <InputRow
+                  label="Outstanding Mortgage"
+                  hint="Total outstanding home loan balance"
+                  value={needs.md_outstanding_mortgage !== undefined ? needs.md_outstanding_mortgage : totalOutstandingMortgage}
+                  onChange={v => upd({ md_outstanding_mortgage: v as number })}
+                />
+                <InputRow
+                  label="Other Loans / Debts"
+                  hint="Personal loans, car loans, credit card balances"
+                  value={needs.md_other_loans}
+                  onChange={v => upd({ md_other_loans: v as number })}
+                />
+              </div>
+
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '16px' }}>Existing Coverage for Debt</div>
+                <InputRow label="Life Cover assigned to Mortgage" value={needs.md_existing_life_mortgage} onChange={v => upd({ md_existing_life_mortgage: v as number })} />
+                <InputRow label="TPD Cover assigned to Mortgage" value={needs.md_existing_tpd_mortgage} onChange={v => upd({ md_existing_tpd_mortgage: v as number })} />
+              </div>
+
+              {mdNeed > 0 && (
+                <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px' }}>
+                  <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '12px' }}>Gap Analysis</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Cover Type</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Need</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Gap</div>
+                  </div>
+                  <GapRow label="Life (D)" need={mdNeed} existing={needs.md_existing_life_mortgage || 0} gap={mdLifeGap} />
+                  <GapRow label="TPD" need={mdNeed} existing={needs.md_existing_tpd_mortgage || 0} gap={mdTpdGap} />
+                  <GapRow label="CI (mortgage)" need={ciMdNeed} existing={0} gap={ciMdNeed} />
+                </div>
+              )}
+
+              <NotesBar value={needs.md_notes} onChange={v => upd({ md_notes: v })} />
+            </div>
+          )}
+
+          {/* ════ CHILDREN'S EDUCATION ════ */}
+          {activeTab === 'education' && (
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 400, color: 'var(--ink)', marginBottom: '4px' }}>Children's Education</h2>
+              <p style={{ fontSize: '12px', color: 'var(--ink3)', marginBottom: '24px', lineHeight: 1.5 }}>
+                Lump sum needed for each child's university education. No inflation adjustment applied (per CFP methodology).
+              </p>
+
+              {/* Child cards */}
+              {(needs.ed_children || []).map((child, i) => (
+                <div key={i} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600 }}>Child {i + 1}</div>
+                    <button
+                      onClick={() => {
+                        const updated = [...(needs.ed_children || [])]
+                        updated.splice(i, 1)
+                        upd({ ed_children: updated })
+                      }}
+                      style={{ fontSize: '10px', color: 'var(--ink3)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <SectionLabel>Child's Name (optional)</SectionLabel>
+                      <input
+                        type="text"
+                        value={child.name || ''}
+                        placeholder="e.g. Emma"
+                        onChange={e => {
+                          const updated = [...(needs.ed_children || [])]
+                          updated[i] = { ...updated[i], name: e.target.value }
+                          upd({ ed_children: updated })
+                        }}
+                        style={{ width: '100%', border: '1px solid var(--line)', borderRadius: '4px', padding: '7px 10px', fontSize: '13px', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                      />
+                    </div>
+                    <div>
+                      <SectionLabel>Current Age</SectionLabel>
+                      <input
+                        type="number"
+                        value={child.age || ''}
+                        placeholder="0"
+                        onChange={e => {
+                          const updated = [...(needs.ed_children || [])]
+                          updated[i] = { ...updated[i], age: parseFloat(e.target.value) || 0 }
+                          upd({ ed_children: updated })
+                        }}
+                        style={{ width: '100%', border: '1px solid var(--line)', borderRadius: '4px', padding: '7px 10px', fontSize: '13px', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                      />
+                    </div>
+                    <div>
+                      <SectionLabel>Estimated Education Cost ($)</SectionLabel>
+                      <input
+                        type="number"
+                        value={child.educationCost || ''}
+                        placeholder="e.g. 150000"
+                        onChange={e => {
+                          const updated = [...(needs.ed_children || [])]
+                          updated[i] = { ...updated[i], educationCost: parseFloat(e.target.value) || 0 }
+                          upd({ ed_children: updated })
+                        }}
+                        style={{ width: '100%', border: '1px solid var(--line)', borderRadius: '4px', padding: '7px 10px', fontSize: '13px', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <button
+                onClick={() => upd({ ed_children: [...(needs.ed_children || []), {}] })}
+                style={{
+                  background: 'transparent', border: '1.5px dashed var(--line)',
+                  borderRadius: '6px', padding: '10px 20px', color: 'var(--ink3)',
+                  fontFamily: 'Inter, sans-serif', fontSize: '12px', cursor: 'pointer',
+                  width: '100%', textAlign: 'center', marginBottom: '20px',
+                }}
+              >
+                + Add Child
+              </button>
+
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '16px' }}>Existing Education Savings</div>
+                <InputRow label="Education Fund / Savings" value={needs.ed_existing_savings} onChange={v => upd({ ed_existing_savings: v as number })} />
+              </div>
+
+              {edNeed > 0 && (
+                <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px' }}>
+                  <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '12px' }}>Gap Analysis</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Cover Type</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Need</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Gap</div>
+                  </div>
+                  <GapRow label="Education Fund" need={edNeed} existing={needs.ed_existing_savings || 0} gap={edGap} />
+                </div>
+              )}
+
+              <NotesBar value={needs.ed_notes} onChange={v => upd({ ed_notes: v })} />
+            </div>
+          )}
+
+          {/* ════ RETIREMENT ════ */}
+          {activeTab === 'retirement' && (
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 400, color: 'var(--ink)', marginBottom: '4px' }}>Retirement Planning</h2>
+              <p style={{ fontSize: '12px', color: 'var(--ink3)', marginBottom: '24px', lineHeight: 1.5 }}>
+                Estimate the lump sum needed at retirement to sustain the client's desired lifestyle.
+              </p>
+
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '16px' }}>Retirement Parameters</div>
+
+                <InputRow label="Target Retirement Age" prefix="age" value={needs.ret_target_age || 65} onChange={v => upd({ ret_target_age: v as number })} />
+                <InputRow label="Life Expectancy" prefix="age" value={needs.ret_life_expectancy || DEFAULT_LIFE_EXP} onChange={v => upd({ ret_life_expectancy: v as number })} />
+                <InputRow label="Monthly Income in Retirement" hint="In today's dollars" value={needs.ret_monthly_income} onChange={v => upd({ ret_monthly_income: v as number })} />
+                <InputRow label="Inflation Rate" prefix="%" value={needs.ret_inflation || DEFAULT_INFLATION} onChange={v => upd({ ret_inflation: v as number })} />
+              </div>
+
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '16px' }}>Existing Retirement Assets</div>
+                <InputRow label="Projected CPF at Retirement" value={needs.ret_existing_cpf} onChange={v => upd({ ret_existing_cpf: v as number })} />
+                <InputRow label="Investments / Savings" value={needs.ret_existing_investments} onChange={v => upd({ ret_existing_investments: v as number })} />
+              </div>
+
+              {retNeed > 0 && (
+                <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px' }}>
+                  <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '12px' }}>Gap Analysis</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Cover Type</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Need</div>
+                    <div style={{ fontSize: '9px', color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Gap</div>
+                  </div>
+                  <GapRow label="Retirement Fund" need={retNeed} existing={retExisting} gap={retGap} />
+                </div>
+              )}
+
+              <NotesBar value={needs.ret_notes} onChange={v => upd({ ret_notes: v })} />
+            </div>
+          )}
+
+          {/* ════ ESTATE PLANNING ════ */}
+          {activeTab === 'estate' && (
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '20px', fontWeight: 400, color: 'var(--ink)', marginBottom: '4px' }}>Estate Planning</h2>
+              <p style={{ fontSize: '12px', color: 'var(--ink3)', marginBottom: '24px', lineHeight: 1.5 }}>
+                Capture the client's wishes for wealth distribution and legacy creation.
+              </p>
+
+              <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: '6px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', fontWeight: 600, marginBottom: '16px' }}>Legacy Objectives</div>
+
+                <InputRow
+                  label="Legacy / Estate Amount"
+                  hint="How much would the client like to leave behind?"
+                  value={needs.ep_legacy_amount}
+                  onChange={v => upd({ ep_legacy_amount: v as number })}
+                />
+
+                <div style={{ marginBottom: '14px' }}>
+                  <SectionLabel>Will in Place?</SectionLabel>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {['Yes', 'No', 'In Progress'].map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => upd({ ep_will_done: opt === 'Yes' })}
+                        style={{
+                          padding: '6px 14px', border: '1px solid var(--line)', borderRadius: '4px', cursor: 'pointer',
+                          fontSize: '11px', fontFamily: 'Inter, sans-serif',
+                          background: (opt === 'Yes' && needs.ep_will_done === true) || (opt === 'No' && needs.ep_will_done === false) ? 'var(--charcoal)' : 'white',
+                          color: (opt === 'Yes' && needs.ep_will_done === true) || (opt === 'No' && needs.ep_will_done === false) ? 'white' : 'var(--ink)',
+                        }}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <SectionLabel>Liabilities to be covered by estate?</SectionLabel>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {['Yes', 'No'].map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => upd({ ep_liabilities_covered: opt === 'Yes' })}
+                        style={{
+                          padding: '6px 14px', border: '1px solid var(--line)', borderRadius: '4px', cursor: 'pointer',
+                          fontSize: '11px', fontFamily: 'Inter, sans-serif',
+                          background: (opt === 'Yes' && needs.ep_liabilities_covered === true) || (opt === 'No' && needs.ep_liabilities_covered === false) ? 'var(--charcoal)' : 'white',
+                          color: (opt === 'Yes' && needs.ep_liabilities_covered === true) || (opt === 'No' && needs.ep_liabilities_covered === false) ? 'white' : 'var(--ink)',
+                        }}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <NotesBar value={needs.ep_notes} onChange={v => upd({ ep_notes: v })} />
+            </div>
+          )}
+
+        </div>
+
+        {/* ── Right sidebar ── */}
+        <div style={{ padding: '24px 20px', background: 'white' }}>
+          <div style={{ fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: '16px', fontWeight: 600 }}>Protection Summary</div>
+
+          {/* Total needs summary */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: '10px' }}>Total Need vs Gap</div>
+
             {[
-              { label: 'Life Cover Needed', value: fmtCurrency(lifeCoverNeeded || undefined) },
-              { label: 'CI Cover Needed', value: fmtCurrency(ciCoverNeeded || undefined) },
-              { label: 'Retirement Corpus', value: fmtCurrency(retirementCorpus || undefined) },
-              { label: 'Education Fund', value: fmtCurrency(eduFundNeeded || undefined) },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
-                <span style={{ fontSize: '12px', fontFamily: 'DM Mono, monospace', color: value === '—' ? 'rgba(255,255,255,0.15)' : 'var(--gold)', fontWeight: 500 }}>{value}</span>
+              { label: 'Life / D', need: totalLifeNeed, gap: totalLifeGap },
+              { label: 'TPD', need: totalTpdNeed, gap: totalTpdGap },
+              { label: 'Critical Illness', need: totalCiNeed, gap: totalCiGap },
+              { label: 'Education', need: edNeed, gap: edGap },
+              { label: 'Retirement', need: retNeed, gap: retGap },
+            ].map(item => (
+              <div key={item.label} style={{ borderBottom: '1px solid var(--line)', paddingBottom: '10px', marginBottom: '10px' }}>
+                <div style={{ fontSize: '10px', color: 'var(--ink3)', marginBottom: '4px' }}>{item.label}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--ink)', fontFamily: 'DM Mono, monospace' }}>{item.need ? fmtK(item.need) : '—'}</span>
+                  {item.need > 0 && (
+                    <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', fontWeight: 600, color: item.gap > 0 ? '#C0392B' : '#27AE60' }}>
+                      {item.gap > 0 ? `–${fmtK(item.gap)}` : '✓ Met'}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
 
-          {/* Estate flags */}
-          {estateFlags.length > 0 && (
-            <div>
-              <div style={{ ...styles.sidebarHeading, color: 'var(--rouge)' }}>⚠ Estate Flags</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                {estateFlags.map(f => (
-                  <div key={f} style={{ background: 'var(--rouge-l)', padding: '6px 10px', borderRadius: '4px', fontSize: '10px', color: 'var(--rouge)', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>{f}</div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Advisor global notes */}
+          <div>
+            <div style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: '8px' }}>Session Notes</div>
+            <textarea
+              value={needs.advisor_notes || ''}
+              onChange={e => upd({ advisor_notes: e.target.value })}
+              placeholder="Overall session observations..."
+              rows={4}
+              style={{
+                width: '100%', border: '1px solid var(--line)', borderRadius: '4px',
+                padding: '8px 10px', fontSize: '12px', color: 'var(--ink)',
+                fontFamily: 'Inter, sans-serif', outline: 'none', resize: 'vertical',
+                background: 'var(--cream)', boxSizing: 'border-box',
+              }}
+            />
+          </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div style={{ background: 'white', borderTop: '1px solid var(--line)', padding: '14px 40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: saveStatus === 'saving' ? 'var(--gold)' : 'var(--emerald)' }} />
-          <span style={{ fontSize: '12px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}>
-            {saveStatus === 'saving' ? 'Saving…' : `Auto-saved · ${completedCount} of 5 sections · ${goals.length} goal${goals.length !== 1 ? 's' : ''}`}
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => showToast('Annual history coming soon')} style={{ padding: '9px 18px', background: 'transparent', border: '1.5px solid var(--line2)', borderRadius: '6px', color: 'var(--ink2)', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>
-            Review Annual History
-          </button>
-          <button onClick={saveAll} style={{ padding: '9px 22px', background: 'var(--charcoal)', border: 'none', borderRadius: '6px', color: 'white', fontFamily: 'Inter, sans-serif', fontSize: '12px', fontWeight: 500, cursor: 'pointer', letterSpacing: '0.02em' }}>
-            Complete & Push to Plan →
-          </button>
-        </div>
       </div>
     </div>
   )
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = {
-  label: {
-    fontSize: '8px', letterSpacing: '0.12em', textTransform: 'uppercase' as const,
-    color: 'var(--ink3)', fontFamily: 'Inter, sans-serif', fontWeight: 500,
-  },
-  input: {
-    width: '100%', border: 'none', borderBottom: '1px solid var(--line2)',
-    background: 'transparent', padding: '6px 0', fontSize: '13px',
-    color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none',
-    transition: 'border-bottom-color 0.15s', boxSizing: 'border-box' as const,
-  },
-  select: {
-    width: '100%', border: 'none', borderBottom: '1px solid var(--line2)',
-    background: 'transparent', padding: '6px 0', fontSize: '13px',
-    color: 'var(--ink)', fontFamily: 'Inter, sans-serif', outline: 'none',
-    transition: 'border-bottom-color 0.15s', cursor: 'pointer',
-    appearance: 'none' as const, boxSizing: 'border-box' as const,
-  },
-  currencyWrap: {
-    display: 'flex', alignItems: 'baseline',
-    borderBottom: '1px solid var(--line2)', transition: 'border-bottom-color 0.15s', gap: '4px',
-  },
-  currencyPrefix: {
-    fontSize: '11px', color: 'var(--ink3)', fontFamily: 'Inter, sans-serif',
-    flexShrink: 0, paddingBottom: '6px',
-  },
-  currencyInput: {
-    flex: 1, border: 'none', background: 'transparent', padding: '6px 0',
-    fontSize: '13px', color: 'var(--ink)', fontFamily: 'Inter, sans-serif',
-    outline: 'none', width: '100%',
-  },
-  notesBar: {
-    background: 'var(--charcoal)', borderRadius: '6px', padding: '16px 20px',
-  },
-  notesInput: {
-    width: '100%', background: 'transparent', border: 'none',
-    borderBottom: '1px solid rgba(255,255,255,0.15)', color: 'white',
-    fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '14px',
-    lineHeight: 1.6, outline: 'none', resize: 'none' as const,
-    padding: '4px 0', boxSizing: 'border-box' as const,
-    transition: 'border-bottom-color 0.15s',
-  },
-  addChildBtn: {
-    background: 'transparent', border: '1.5px dashed var(--line2)',
-    borderRadius: '6px', padding: '10px 20px', color: 'var(--ink3)',
-    fontFamily: 'Inter, sans-serif', fontSize: '12px', cursor: 'pointer',
-    width: '100%', textAlign: 'center' as const,
-  },
-  sidebarHeading: {
-    fontSize: '9px', fontWeight: 700, letterSpacing: '0.12em',
-    textTransform: 'uppercase' as const, color: 'var(--ink3)',
-    fontFamily: 'Inter, sans-serif', marginBottom: '10px',
-  },
 }
