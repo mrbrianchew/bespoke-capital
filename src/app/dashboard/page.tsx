@@ -27,7 +27,7 @@ export default function OverviewPage() {
     if (adv) setAdvisor(adv)
     const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(1)
     if (!clients || clients.length === 0) { setLoading(false); return }
-    const c = clients[0]
+    const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]
     setClient(c)
     const [{ data: fam }, { data: gls }, { data: chk }, { data: inv }] = await Promise.all([
       supabase.from('family_members').select('*').eq('client_id', c.id),
