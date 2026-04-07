@@ -75,6 +75,7 @@ interface FactFinding {
 
 interface ProtectionData {
   planType?: 'individual' | 'couple'
+  expenseMode?: 'simple' | 'detailed'
   inflationRate?: number
   wpSubTab?: number
   expenseCategories?: { financial?: boolean; household?: boolean; personal?: boolean; children?: boolean; lifestyle?: boolean }
@@ -366,7 +367,7 @@ export default function ObjectivesPage() {
   const inflation = (p.inflationRate ?? 3) / 100
   const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
   const subItems = p.expenseSubItems ?? {}
-  const isDetailed = ff.expense_mode === 'detailed'
+  const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
 
   function getAnnualExpense(who: 'client' | 'spouse'): number {
     if (isDetailed) return getDetailedTotal(ff, cats, subItems, who)
@@ -656,6 +657,7 @@ export default function ObjectivesPage() {
           category={editModal.category}
           ff={ff} p={p} updateP={updateP}
           onClose={() => setEditModal({ open: false, category: '' })}
+          isCouple={isCouple} clientName={clientName} spouseName={spouseName}
         />
       )}
     </div>
@@ -688,36 +690,63 @@ type CalcResult = { gross: number; assets: number; net: number; fd: number; mort
 function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct }: WPProps) {
   const wpTab = p.wpSubTab ?? 0
   const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
-  const isDetailed = ff.expense_mode === 'detailed'
+  const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
   const mortgages = ff.mortgages ?? []
 
   return (
     <div>
-      {/* Section header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-        <div style={{ width: 3, height: 24, background: '#A8834A', borderRadius: 2 }} />
-        <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
-          Wealth Protection
-        </h2>
-      </div>
-
-      {/* Global settings row */}
-      <div style={{ display: 'flex', gap: 24, marginBottom: 28, flexWrap: 'wrap' }}>
-        {/* Inflation slider */}
-        <div style={{ flex: '0 0 220px' }}>
-          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 8 }}>
-            Inflation Rate
-          </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <input
-              type="range" min={0} max={8} step={0.5}
-              value={p.inflationRate ?? 3}
-              onChange={e => updateP({ inflationRate: parseFloat(e.target.value) })}
-              style={{ flex: 1, accentColor: '#A8834A' }}
-            />
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#1C1A17', minWidth: 40, textAlign: 'right' }}>
-              {(p.inflationRate ?? 3).toFixed(1)}%
-            </span>
+      {/* Section header + global controls */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 3, height: 24, background: '#A8834A', borderRadius: 2 }} />
+          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
+            Wealth Protection
+          </h2>
+        </div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Individual / Couple toggle */}
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Planning For</div>
+            <div style={{ display: 'flex', background: '#F5F0E8', borderRadius: 5, padding: 2 }}>
+              {(['individual', 'couple'] as const).map(t => (
+                <button key={t} onClick={() => updateP({ planType: t })}
+                  style={{ padding: '5px 14px', fontSize: 11, fontFamily: 'Inter', fontWeight: 500,
+                    background: p.planType === t ? '#1C1A17' : 'transparent',
+                    color: p.planType === t ? '#fff' : '#888',
+                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s' }}>
+                  {t === 'individual' ? clientName : 'Couple'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Simple / Detailed toggle */}
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Expense Data</div>
+            <div style={{ display: 'flex', background: '#F5F0E8', borderRadius: 5, padding: 2 }}>
+              {(['simple', 'detailed'] as const).map(t => (
+                <button key={t} onClick={() => updateP({ expenseMode: t })}
+                  style={{ padding: '5px 14px', fontSize: 11, fontFamily: 'Inter', fontWeight: 500,
+                    background: (p.expenseMode ?? ff.expense_mode ?? 'simple') === t ? '#1C1A17' : 'transparent',
+                    color: (p.expenseMode ?? ff.expense_mode ?? 'simple') === t ? '#fff' : '#888',
+                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s',
+                    textTransform: 'capitalize' }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Inflation */}
+          <div style={{ minWidth: 180 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Inflation Rate</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="range" min={0} max={8} step={0.5}
+                value={p.inflationRate ?? 3}
+                onChange={e => updateP({ inflationRate: parseFloat(e.target.value) })}
+                style={{ flex: 1, accentColor: '#A8834A' }} />
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17', minWidth: 36 }}>
+                {(p.inflationRate ?? 3).toFixed(1)}%
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -817,57 +846,78 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
         <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
           Select which expense categories to include in the family dependency calculation.
         </p>
+        {/* Column headers for couple mode */}
+        {isCouple && (
+          <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 110px 110px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
+            <div />
+            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
+            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
+            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>
+            <div />
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {Object.entries(EXPENSE_CATEGORY_LABELS).map(([key, label]) => {
-            let catTotal = 0
-            if (isDetailed) {
-              catTotal = getDetailedCategoryTotal(ff, key, 'client') + getDetailedCategoryTotal(ff, key, 'spouse')
-              catTotal *= 12
-            } else {
-              // simplified
-              const simpleMap: Record<string, string[]> = {
-                financial: ['s_income_tax','s_insurance','s_regular_savings'],
-                household: ['s_housing','s_utilities','s_family_food'],
-                personal:  ['s_transport'],
-                children:  ['s_children'],
-                lifestyle: ['s_lifestyle','s_others'],
-              }
-              const s1 = (simpleMap[key] ?? []).reduce((s, k) => s + (ff[k] as number || 0), 0)
-              const s2Keys = (simpleMap[key] ?? []).map(k => k.replace('s_','s2_'))
-              const s2 = s2Keys.reduce((s, k) => s + (ff[k] as number || 0), 0)
-              catTotal = (s1 + s2) * 12
+            const simpleMap: Record<string, string[]> = {
+              financial: ['s_income_tax','s_insurance','s_regular_savings'],
+              household: ['s_housing','s_utilities','s_family_food'],
+              personal:  ['s_transport'],
+              children:  ['s_children'],
+              lifestyle: ['s_lifestyle','s_others'],
             }
+            let clientAmt = 0, spouseAmt = 0
+            if (isDetailed) {
+              clientAmt = getDetailedCategoryTotal(ff, key, 'client') * 12
+              spouseAmt = getDetailedCategoryTotal(ff, key, 'spouse') * 12
+            } else {
+              clientAmt = (simpleMap[key] ?? []).reduce((s, k) => s + (ff[k] as number || 0), 0) * 12
+              spouseAmt = (simpleMap[key] ?? []).map(k => k.replace('s_','s2_')).reduce((s, k) => s + (ff[k] as number || 0), 0) * 12
+            }
+            const catTotal = clientAmt + spouseAmt
+            const clientPct = catTotal > 0 ? Math.round(clientAmt / catTotal * 100) : 0
+            const spousePct = catTotal > 0 ? Math.round(spouseAmt / catTotal * 100) : 0
 
             return (
-              <div
-                key={key}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+              <div key={key}
+                style={{ display: 'grid',
+                  gridTemplateColumns: isCouple ? '24px 1fr 110px 110px 80px' : '24px 1fr 100px 80px',
+                  gap: 8, padding: '9px 12px', alignItems: 'center',
                   background: cats[key] ? '#F5F0E8' : 'transparent',
                   borderRadius: 4, cursor: 'pointer', transition: 'background 0.12s',
                 }}
                 onClick={() => toggleCat(key)}
               >
-                <div style={{
-                  width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                {/* Checkbox */}
+                <div style={{ width: 16, height: 16, borderRadius: 3, flexShrink: 0,
                   background: cats[key] ? '#A8834A' : 'transparent',
                   border: `1.5px solid ${cats[key] ? '#A8834A' : '#ccc'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
+                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {cats[key] && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
                 </div>
-                <span style={{ flex: 1, fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{label}</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#888' }}>
-                  {fmt(catTotal)}/yr
-                </span>
-                {isDetailed && cats[key] && (
-                  <button
-                    onClick={e => { e.stopPropagation(); setEditModal({ open: true, category: key }) }}
-                    style={{ fontSize: 11, color: '#A8834A', background: 'none', border: '1px solid #A8834A', borderRadius: 3, padding: '2px 8px', cursor: 'pointer', fontFamily: 'Inter' }}
-                  >
-                    Edit
-                  </button>
+                {/* Label */}
+                <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{label}</span>
+                {/* Client amount + % */}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(clientAmt)}</div>
+                  {isCouple && catTotal > 0 && <div style={{ fontSize: 10, color: '#A8834A', fontFamily: 'Inter' }}>{clientPct}%</div>}
+                </div>
+                {/* Spouse amount + % (couple only) */}
+                {isCouple && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(spouseAmt)}</div>
+                    {catTotal > 0 && <div style={{ fontSize: 10, color: '#2D5A4E', fontFamily: 'Inter' }}>{spousePct}%</div>}
+                  </div>
                 )}
+                {/* Edit button (detailed only) */}
+                <div style={{ textAlign: 'right' }}>
+                  {isDetailed && cats[key] && (
+                    <button onClick={e => { e.stopPropagation(); setEditModal({ open: true, category: key }) }}
+                      style={{ fontSize: 10, color: '#A8834A', background: 'none', border: '1px solid #A8834A',
+                        borderRadius: 3, padding: '2px 8px', cursor: 'pointer', fontFamily: 'Inter' }}>
+                      Edit
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -1494,8 +1544,9 @@ function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
 
 // ─── EDIT SUB-ITEMS MODAL ────────────────────────────────────────────────────
 
-function EditSubItemsModal({ category, ff, p, updateP, onClose }: {
+function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, clientName, spouseName }: {
   category: string; ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void; onClose: () => void
+  isCouple: boolean; clientName: string; spouseName: string
 }) {
   const subItems = p.expenseSubItems ?? {}
   const keys = DETAILED_EXPENSE_MAP[category] ?? []
@@ -1504,39 +1555,76 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose }: {
     updateP({ expenseSubItems: { ...subItems, [key]: !(subItems[key] !== false) } })
   }
 
+  // Category totals for summary
+  const selectedTotal = keys.filter(k => subItems[k] !== false).reduce((s, k) => {
+    const clientVal = (ff[k] as number || 0)
+    const spouseVal = (ff[k.replace('d_','d2_')] as number || 0)
+    return s + (clientVal + spouseVal) * 12
+  }, 0)
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 380, maxWidth: 460, boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 420, maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '80vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
             {EXPENSE_CATEGORY_LABELS[category]}
           </h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}>×</button>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+          Select which line items to include in the protection calculation.
+        </p>
+        {/* Column headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '24px 1fr 90px 90px' : '24px 1fr 100px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
+          <div />
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
+          {isCouple && <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {keys.map(key => {
-            const val = ff[key] as number || 0
+            const clientVal = (ff[key] as number || 0) * 12
+            const spouseKey = key.replace('d_', 'd2_')
+            const spouseVal = (ff[spouseKey] as number || 0) * 12
             const included = subItems[key] !== false
             return (
-              <div
-                key={key}
-                onClick={() => toggleItem(key)}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 4, cursor: 'pointer', background: included ? '#F5F0E8' : 'transparent' }}
+              <div key={key} onClick={() => toggleItem(key)}
+                style={{ display: 'grid', gridTemplateColumns: isCouple ? '24px 1fr 90px 90px' : '24px 1fr 100px',
+                  gap: 8, padding: '8px 10px', borderRadius: 4, cursor: 'pointer',
+                  background: included ? '#F5F0E8' : 'transparent', alignItems: 'center' }}
               >
-                <div style={{ width: 16, height: 16, borderRadius: 3, background: included ? '#A8834A' : 'transparent', border: `1.5px solid ${included ? '#A8834A' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 16, height: 16, borderRadius: 3, background: included ? '#A8834A' : 'transparent',
+                  border: `1.5px solid ${included ? '#A8834A' : '#ccc'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {included && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
                 </div>
-                <span style={{ flex: 1, fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{DETAILED_EXPENSE_LABELS[key]}</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#888' }}>{fmt(val * 12)}/yr</span>
+                <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{DETAILED_EXPENSE_LABELS[key]}</span>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: clientVal > 0 ? '#1C1A17' : '#ccc' }}>
+                    {clientVal > 0 ? fmt(clientVal) : '—'}
+                  </div>
+                  <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter' }}>/yr</div>
+                </div>
+                {isCouple && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: spouseVal > 0 ? '#1C1A17' : '#ccc' }}>
+                      {spouseVal > 0 ? fmt(spouseVal) : '—'}
+                    </div>
+                    <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter' }}>/yr</div>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
-        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            onClick={onClose}
-            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.06em' }}
-          >
+        {/* Selected total */}
+        <div style={{ marginTop: 16, padding: '10px 14px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(selectedTotal)}/yr</span>
+        </div>
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose}
+            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.06em' }}>
             Done
           </button>
         </div>
