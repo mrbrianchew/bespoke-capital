@@ -36,7 +36,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).single()
     if (adv) setAdvisor(adv)
     const { data: cls } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
-    if (cls) { setClients(cls); if (cls.length > 0) setActiveClient(cls[0]) }
+    if (cls) { setClients(cls); if (cls.length > 0) { setActiveClient(cls[0]); localStorage.setItem('selectedClientId', cls[0].id) } }
+  }
+
+  async function deleteClient(clientId: string) {
+    if (!confirm('Delete this client? This cannot be undone.')) return
+    await supabase.from('fact_finding').delete().eq('client_id', clientId)
+    await supabase.from('family_members').delete().eq('client_id', clientId)
+    await supabase.from('clients').delete().eq('id', clientId)
+    const remaining = clients.filter(c => c.id !== clientId)
+    setClients(remaining)
+    if (activeClient?.id === clientId) {
+      if (remaining.length > 0) {
+        setActiveClient(remaining[0])
+        localStorage.setItem('selectedClientId', remaining[0].id)
+        window.location.reload()
+      } else {
+        localStorage.removeItem('selectedClientId')
+        setActiveClient(null)
+      }
+    }
   }
 
   async function signOut() {
@@ -74,14 +93,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {showClientDrop && (
             <div className="absolute left-3 right-3 top-full mt-1 z-50 overflow-hidden shadow-lg" style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 6 }}>
               {clients.map(c => (
-                <button key={c.id} onClick={() => { setActiveClient(c); setShowClientDrop(false) }}
+                <button key={c.id} onClick={() => { setActiveClient(c); localStorage.setItem('selectedClientId', c.id); window.location.reload(); setShowClientDrop(false) }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors"
                   style={{ background: activeClient?.id === c.id ? 'var(--gold-l)' : 'transparent', borderLeft: activeClient?.id === c.id ? '2px solid var(--gold)' : '2px solid transparent' }}
                   onMouseEnter={e => { if (activeClient?.id !== c.id) (e.currentTarget as HTMLElement).style.background = 'var(--cream)' }}
                   onMouseLeave={e => { if (activeClient?.id !== c.id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
                   <div className="w-7 h-7 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: activeClient?.id === c.id ? 'var(--gold)' : 'var(--ink2)' }}>{initials(c.name)}</div>
                   <div>
-                    <div className="text-sm font-medium" style={{ color: activeClient?.id === c.id ? 'var(--gold-tag)' : 'var(--ink)' }}>{c.name}</div>
+                    <div className="text-sm font-medium" style={{ color: activeClient?.id === c.id ? 'var(--gold-tag)' : 'var(--ink)' }}>{c.name}</div><button onClick={e => { e.stopPropagation(); deleteClient(c.id) }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#C0392B', cursor: 'pointer', fontSize: 13, padding: '0 6px' }}>✕</button>
                     <div className="text-xs" style={{ color: 'var(--ink3)' }}>Age {c.age || '?'}</div>
                   </div>
                   {activeClient?.id === c.id && <span className="ml-auto text-xs" style={{ color: 'var(--gold)' }}>✓</span>}
