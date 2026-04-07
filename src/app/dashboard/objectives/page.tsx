@@ -307,7 +307,7 @@ export default function ObjectivesPage() {
 
     const { data: rows } = await supabase.from('fact_finding').select('*').eq('client_id', c.id)
     if (rows && rows.length > 0) {
-      const merged: FactFinding = { client_id: selectedClientId }
+      const merged: FactFinding = { client_id: c.id }
       for (const row of rows) Object.assign(merged, row.data || {})
       setFf(merged)
       if (merged.strategic_objectives) {
