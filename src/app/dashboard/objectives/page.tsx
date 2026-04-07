@@ -278,6 +278,7 @@ export default function ObjectivesPage() {
     const id = localStorage.getItem('selectedClientId')
     setClientId(id)
     if (id) loadData(id)
+    else setLoading(false)
   }, [])
 
   async function loadData(id: string) {
@@ -495,6 +496,17 @@ export default function ObjectivesPage() {
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-3" style={{ borderColor: '#A8834A', borderTopColor: 'transparent' }} />
           <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter, sans-serif' }}>Loading</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!clientId) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ background: '#EEEADE' }}>
+        <div className="text-center">
+          <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: '#1C1A17', marginBottom: 8 }}>No Client Selected</p>
+          <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter, sans-serif' }}>Please select a client from the dashboard</p>
         </div>
       </div>
     )
