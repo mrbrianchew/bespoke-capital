@@ -1,38 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-
-// TODO: Uncomment these two imports when moving code back to your Next.js project
-// import { createClient } from '@/lib/supabase'
-// import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
-
-// --- TEMPORARY CANVAS MOCKS (DELETE WHEN COPYING TO YOUR PROJECT) ---
-// These mocks are only here so the isolated preview environment can compile the code without crashing due to missing local files.
-const createClient = () => ({
-  auth: { getUser: async () => ({ data: { user: { id: 'canvas-mock-user' } } }) },
-  from: (table: string) => ({
-    select: (cols?: string) => ({
-      order: (col: string, opts: any) => ({
-        limit: async (n: number) => ({ data: [{ id: 'mock-client-1' }] })
-      }),
-      eq: (col: string, val: string) => {
-        const promise = Promise.resolve({ data: [] }) as any;
-        promise.single = async () => ({ data: null });
-        return promise;
-      }
-    }),
-    upsert: async (data: any, options?: any) => ({ error: null })
-  })
-});
-const UNI_COST_FALLBACK: Record<string, any> = {
-  sg_local: { label: 'SG Local (NUS / NTU / SMU)', annual_tuition: 10000, annual_living: 6000, default_duration: 4, annual_fees_living: 16000 },
-  sg_private: { label: 'SG Private University', annual_tuition: 15000, annual_living: 6000, default_duration: 3, annual_fees_living: 21000 },
-  overseas_uk: { label: 'Overseas (UK)', annual_tuition: 35000, annual_living: 15000, default_duration: 3, annual_fees_living: 50000 },
-  overseas_us: { label: 'Overseas (US)', annual_tuition: 45000, annual_living: 20000, default_duration: 4, annual_fees_living: 65000 },
-  overseas_au: { label: 'Overseas (Australia)', annual_tuition: 30000, annual_living: 18000, default_duration: 3, annual_fees_living: 48000 },
-};
-const useUniCosts = () => ({ uniCosts: UNI_COST_FALLBACK });
-// --------------------------------------------------------------------
+import { createClient } from '@/lib/supabase'
+import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 
 // Module-level fallback so sub-components can access defaults before hook loads
 let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
@@ -576,7 +546,7 @@ export default function ObjectivesPage() {
     }
   }, [ff.mortgages])
 
-  const WP_TABS = ['FAMILY DEPENDENCY', 'MORTGAGE & DEBT', 'EDUCATION FUND', 'CRITICAL ILLNESS', 'ASSET OFFSET']
+  const WP_TABS = ['WEALTH PROTECTION', 'MORTGAGE & DEBT', 'EDUCATION FUND', 'CRITICAL ILLNESS', 'ASSET OFFSET']
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
 
