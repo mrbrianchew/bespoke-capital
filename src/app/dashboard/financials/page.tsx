@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
@@ -1054,7 +1054,15 @@ function DetInput({ value, onChange, accentColor }: { value: number | undefined;
 }
 
 
-export default function FactFindingPage() {
+export default function FactFindingPageWrapper() {
+  return (
+    <Suspense>
+      <FactFindingPage />
+    </Suspense>
+  )
+}
+
+function FactFindingPage() {
   const [client, setClient] = useState<Client | null>(null)
   const [spouse, setSpouse] = useState<FamilyMember | null>(null)
   const [ff, setFf] = useState<FactFinding | null>(null)
