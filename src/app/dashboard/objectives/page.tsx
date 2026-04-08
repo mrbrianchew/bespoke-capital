@@ -831,7 +831,7 @@ export default function ObjectivesPage() {
       </div>
 
       {/* MAIN LAYOUT */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 0, minHeight: 'calc(100vh - 140px)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: sidebarOpen ? '1fr 260px' : '1fr', gap: 0, minHeight: 'calc(100vh - 140px)', transition: 'grid-template-columns 0.2s ease' }}>
 
         {/* LEFT: CONTENT */}
         <div style={{ padding: '32px 40px', borderRight: '1px solid #E8E4DC' }}>
@@ -2101,11 +2101,11 @@ function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpou
           <SidebarRow label="D/TPD Need" value={dtpd.net} />
           <SidebarRow label="CI Need" value={ci.net} />
           <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
-            <SidebarRow label="Existing Life" value={existLife} color="#2D5A4E" />
+            <SidebarRow label="Existing D/TPD" value={existLife} color="#2D5A4E" />
             <SidebarRow label="Existing CI" value={existCI} color="#2D5A4E" />
           </div>
           <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
-            <SidebarRow label="Life Gap" value={lifeGap} color={lifeGap > 0 ? '#C0392B' : '#2D5A4E'} />
+            <SidebarRow label="D/TPD Gap" value={lifeGap} color={lifeGap > 0 ? '#C0392B' : '#2D5A4E'} />
             <SidebarRow label="CI Gap" value={ciGap} color={ciGap > 0 ? '#C0392B' : '#2D5A4E'} />
           </div>
           <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 6, marginTop: 2, display: 'flex', gap: 8, justifyContent: 'space-between' }}>
@@ -2155,10 +2155,10 @@ function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
   isCouple: boolean; clientName: string; spouseName: string
 }) {
   const fields: { key: keyof ProtectionData; label: string; person: 'client' | 'spouse' }[] = [
-    { key: 'existingLifeCoverClient', label: `${clientName} — Life`, person: 'client' },
+    { key: 'existingLifeCoverClient', label: `${clientName} — D/TPD`, person: 'client' },
     { key: 'existingCICoverClient', label: `${clientName} — CI`, person: 'client' },
     ...(isCouple ? [
-      { key: 'existingLifeCoverSpouse' as keyof ProtectionData, label: `${spouseName} — Life`, person: 'spouse' as const },
+      { key: 'existingLifeCoverSpouse' as keyof ProtectionData, label: `${spouseName} — D/TPD`, person: 'spouse' as const },
       { key: 'existingCICoverSpouse' as keyof ProtectionData, label: `${spouseName} — CI`, person: 'spouse' as const },
     ] : []),
   ]
