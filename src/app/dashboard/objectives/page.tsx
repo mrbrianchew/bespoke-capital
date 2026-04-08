@@ -274,6 +274,7 @@ export default function ObjectivesPage() {
   const [ff, setFf] = useState<FactFinding>({})
   const [p, setP] = useState<ProtectionData>({
     planType: 'individual',
+    expenseMode: 'simple',
     inflationRate: 3,
     wpSubTab: 0,
     expenseCategories: { financial: true, household: true, personal: true, children: true, lifestyle: true },
@@ -308,13 +309,11 @@ export default function ObjectivesPage() {
   // ─── LOAD DATA ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    // Try localStorage first, fall back to auth-based lookup
     const id = localStorage.getItem('selectedClientId')
     if (id) {
       setClientId(id)
       loadData(id)
     } else {
-      // Fall back: get most recent client for this advisor
       loadDataFromAuth()
     }
   }, [])
@@ -340,7 +339,6 @@ export default function ObjectivesPage() {
 
   async function loadData(id: string) {
     setLoading(true)
-    // Load fact_finding - merge all rows (same as financials page)
     const { data: ffRows } = await supabase
       .from('fact_finding')
       .select('*')
@@ -348,7 +346,6 @@ export default function ObjectivesPage() {
     if (ffRows && ffRows.length > 0) {
       const merged: FactFinding = { client_id: id }
       for (const row of ffRows) Object.assign(merged, row.data || {})
-      // Load protection settings from the protection section row
       const protRow = ffRows.find((r: any) => r.section === 'protection' || r.data?.protection)
       const protData = protRow?.data?.protection
       if (protData) {
@@ -356,7 +353,6 @@ export default function ObjectivesPage() {
       }
       setFf(merged)
     }
-    // Load client name
     const { data: clientData } = await supabase
       .from('clients')
       .select('full_name')
@@ -365,7 +361,6 @@ export default function ObjectivesPage() {
     if (clientData) {
       setClientName(clientData.full_name || 'Client')
     }
-    // Load family members - spouse name + children
     const { data: familyData } = await supabase
       .from('family_members')
       .select('*')
@@ -423,26 +418,22 @@ export default function ObjectivesPage() {
   const annExpSpouse = getAnnualExpense('spouse')
   const annExpTotal = annExpClient + annExpSpouse
 
-  // Coverage term
   const childAges = children.map(c => c.age ?? getAge(c.date_of_birth))
   const youngestAge = childAges.length > 0 ? Math.min(...childAges) : null
   const coverageTerm = youngestAge !== null
     ? Math.max(0, (22 + 4) - youngestAge)
     : (p.coverageTermOverride ?? 20)
 
-  // Default cover pcts based on expense share
   const defaultClientPct = annExpTotal > 0 ? (annExpClient / annExpTotal * 100) : 100
   const defaultSpousePct = annExpTotal > 0 ? (annExpSpouse / annExpTotal * 100) : 100
 
   const clientCoverPct = (p.expenseCoverPctClient ?? defaultClientPct) / 100
   const spouseCoverPct = (p.expenseCoverPctSpouse ?? defaultSpousePct) / 100
 
-  // Family dependency
   function calcFamilyDep(annExp: number, coverPct: number, years: number): number {
     return fv(inflation, years, annExp * coverPct)
   }
 
-  // Mortgage coverage
   function calcMortgageForPerson(who: 'client' | 'spouse'): number {
     const mortgages = ff.mortgages ?? []
     return mortgages.reduce((sum, m, i) => {
@@ -452,17 +443,14 @@ export default function ObjectivesPage() {
     }, 0)
   }
 
-  // Education fund — FV-based calculation
-  // Tuition inflates at 5% p.a.; living costs inflate at the client's chosen inflation rate
   function calcEducationForPerson(who: 'client' | 'spouse'): number {
     if (!p.provideEducationFund) return 0
     const eduKids = p.educationChildren ?? []
-    const livingInflation = inflation // uses p.inflationRate / 100
+    const livingInflation = inflation
     return children.reduce((sum, child) => {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
       const childAge = child.age ?? getAge(child.date_of_birth)
-      // University entry age: female=18, male=20, unknown=18; can be overridden per child
       const defaultEntryAge = child.gender === 'Male' ? 20 : 18
       const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
       const yearsToUni = Math.max(0, uniEntryAge - childAge)
@@ -470,7 +458,6 @@ export default function ObjectivesPage() {
       const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
       const baseLiving = ec.annualLiving ?? uniInfo.annual_living
       const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
-      // FV of each cost component at start of university
       const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
       const fvLiving = baseLiving * Math.pow(1 + livingInflation, yearsToUni) * dur
       const defaultPct = isCouple ? 50 : 100
@@ -479,7 +466,6 @@ export default function ObjectivesPage() {
     }, 0)
   }
 
-  // CI calcs
   function calcCIFamilyDep(annExp: number, coverPct: number): number {
     return fv(inflation, p.ciYears ?? 5, annExp * coverPct)
   }
@@ -491,7 +477,6 @@ export default function ObjectivesPage() {
     return mortgages.reduce((sum, m) => sum + m.monthlyRepayment * 12 * ciYrs * pct, 0)
   }
 
-  // Full needs
   function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
     const annExp = who === 'client' ? annExpClient : annExpSpouse
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
@@ -519,7 +504,6 @@ export default function ObjectivesPage() {
   const ciClient = calcCINeed('client')
   const ciSpouse = calcCINeed('spouse')
 
-  // Gaps
   const existingLifeClient = p.existingLifeCoverClient ?? 0
   const existingLifeSpouse = p.existingLifeCoverSpouse ?? 0
   const existingCIClient = p.existingCICoverClient ?? 0
@@ -530,7 +514,7 @@ export default function ObjectivesPage() {
   const ciGapClient = Math.max(0, ciClient.net - existingCIClient)
   const ciGapSpouse = Math.max(0, ciSpouse.net - existingCISpouse)
 
-  // ─── EDUCATION CHILDREN INIT ───────────────────────────────────────────────
+  // ─── EFFECT INIT ───────────────────────────────────────────────
 
   useEffect(() => {
     if (children.length > 0 && (p.educationChildren?.length ?? 0) === 0) {
@@ -538,8 +522,7 @@ export default function ObjectivesPage() {
         childId: c.id,
         uniType: 'sg_local',
         courseDuration: 4,
-        annualTuition: UNI_COST_DEFAULTS.sg_local.annual_tuition,
-        annualLiving: UNI_COST_DEFAULTS.sg_local.annual_living,
+        annualCost: UNI_COST_DEFAULTS.sg_local.annual_fees_living,
         coverPctClient: isCouple ? 50 : 100,
         coverPctSpouse: 50,
       }))
@@ -547,18 +530,12 @@ export default function ObjectivesPage() {
     }
   }, [children])
 
-  // ─── MORTGAGE INIT ─────────────────────────────────────────────────────────
-
   useEffect(() => {
     const mortgages = ff.mortgages ?? []
     if (mortgages.length > 0) {
       const clientPcts = p.mortgageCoverPctsClient ?? []
       const spousePcts = p.mortgageCoverPctsSpouse ?? []
       if (clientPcts.length !== mortgages.length || spousePcts.length !== mortgages.length) {
-        const totalMortgageClient = mortgages.reduce((s, m) => {
-          const cpf = ff.d_mortgage_cpf ?? 0; const cash = ff.d_mortgage_cash ?? 0
-          return s + (cpf + cash)
-        }, 0)
         updateP({
           mortgageCoverPctsClient: mortgages.map(() => 50),
           mortgageCoverPctsSpouse: mortgages.map(() => 50),
@@ -568,15 +545,13 @@ export default function ObjectivesPage() {
     }
   }, [ff.mortgages])
 
-  // ─── SUB-COMPONENTS ────────────────────────────────────────────────────────
-
   const WP_TABS = ['Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset']
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen" style={{ background: '#EEEADE' }}>
+      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #F8F6F0 0%, #EAE5D9 100%)' }}>
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-3" style={{ borderColor: '#A8834A', borderTopColor: 'transparent' }} />
           <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter, sans-serif' }}>Loading</p>
@@ -587,7 +562,7 @@ export default function ObjectivesPage() {
 
   if (!clientId) {
     return (
-      <div className="flex items-center justify-center h-screen" style={{ background: '#EEEADE' }}>
+      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #F8F6F0 0%, #EAE5D9 100%)' }}>
         <div className="text-center">
           <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: '#1C1A17', marginBottom: 8 }}>No Client Selected</p>
           <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter, sans-serif' }}>Please select a client from the dashboard</p>
@@ -597,45 +572,38 @@ export default function ObjectivesPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: '#EEEADE', fontFamily: 'Inter, sans-serif' }}>
+    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #F8F6F0 0%, #EAE5D9 100%)', fontFamily: 'Inter, sans-serif' }}>
 
       {/* HERO BAND */}
-      <div style={{ background: '#1C1A17', padding: '28px 40px 24px' }}>
+      <div style={{ background: 'rgba(28, 26, 23, 0.85)', backdropFilter: 'blur(24px)', padding: '36px 48px 32px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#A8834A', fontFamily: 'Inter' }}>Strategic Objectives</p>
-            <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 300, color: '#F5F0E8', letterSpacing: 1 }}>
+            <p className="text-xs tracking-widest uppercase mb-2" style={{ color: '#c8a96e', fontFamily: 'Inter', fontWeight: 500 }}>Strategic Objectives</p>
+            <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 36, fontWeight: 300, color: '#F5F0E8', letterSpacing: '0.02em', margin: 0 }}>
               Needs Discovery
-              <span style={{ color: '#A8834A', marginLeft: 16 }}>—</span>
-              <span style={{ marginLeft: 16 }}>{isCouple ? `${clientName} & ${spouseName}` : clientName}</span>
+              <span style={{ color: '#A8834A', margin: '0 16px' }}>—</span>
+              <span>{isCouple ? `${clientName} & ${spouseName}` : clientName}</span>
             </h1>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8 }}>
-            {saving && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter' }}>Saving…</span>}
-            {saved && !saving && <span style={{ fontSize: 11, color: '#A8834A', fontFamily: 'Inter' }}>✓ Saved</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 12 }}>
+            {saving && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Inter' }}>Saving changes…</span>}
+            {saved && !saving && <span style={{ fontSize: 12, color: '#A8834A', fontFamily: 'Inter' }}>✓ All saved</span>}
           </div>
         </div>
       </div>
 
       {/* SECTION TABS */}
-      <div style={{ background: '#fff', borderBottom: '1px solid #E8E4DC', padding: '0 40px', display: 'flex', gap: 0 }}>
+      <div style={{ background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.8)', padding: '0 40px', display: 'flex', gap: 8, boxShadow: '0 4px 24px rgba(0,0,0,0.02)' }}>
         {['Wealth Protection', 'Wealth Accumulation', 'Retirement', 'Education Planning', 'Estate Planning'].map((s, i) => (
           <button
             key={s}
             onClick={() => setActiveSection(i)}
             style={{
-              padding: '14px 20px',
-              fontSize: 11,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              fontFamily: 'Inter',
-              fontWeight: 500,
-              color: activeSection === i ? '#1C1A17' : '#888',
-              background: 'none',
-              border: 'none',
+              padding: '16px 20px', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase',
+              fontFamily: 'Inter', fontWeight: 600,
+              color: activeSection === i ? '#1C1A17' : '#888', background: 'none', border: 'none',
               borderBottom: activeSection === i ? '2px solid #A8834A' : '2px solid transparent',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
+              cursor: 'pointer', transition: 'all 0.2s',
             } as React.CSSProperties}
           >
             {s}
@@ -644,58 +612,47 @@ export default function ObjectivesPage() {
       </div>
 
       {/* MAIN LAYOUT */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 0, minHeight: 'calc(100vh - 140px)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 0, minHeight: 'calc(100vh - 160px)' }}>
 
         {/* LEFT: CONTENT */}
-        <div style={{ padding: '32px 40px', borderRight: '1px solid #E8E4DC' }}>
+        <div style={{ padding: '40px 48px', borderRight: '1px solid rgba(255, 255, 255, 0.5)' }}>
           {activeSection === 0 && (
             <WealthProtectionSection
-              ff={ff} p={p} updateP={updateP}
-              children={children} isCouple={isCouple}
-              clientName={clientName} spouseName={spouseName}
-              annExpClient={annExpClient} annExpSpouse={annExpSpouse}
-              coverageTerm={coverageTerm} youngestAge={youngestAge}
-              dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
-              ciClient={ciClient} ciSpouse={ciSpouse}
-              editModal={editModal} setEditModal={setEditModal}
-              WP_TABS={WP_TABS} inflation={inflation}
-              defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
+              ff={ff} p={p} updateP={updateP} children={children} isCouple={isCouple}
+              clientName={clientName} spouseName={spouseName} annExpClient={annExpClient} annExpSpouse={annExpSpouse}
+              coverageTerm={coverageTerm} youngestAge={youngestAge} dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
+              ciClient={ciClient} ciSpouse={ciSpouse} editModal={editModal} setEditModal={setEditModal}
+              WP_TABS={WP_TABS} inflation={inflation} defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
             />
           )}
           {activeSection !== 0 && (
-            <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
-              <p style={{ color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
-                {['','Wealth Accumulation','Retirement','Education Planning','Estate Planning'][activeSection]} — coming soon
-              </p>
+            <div className="flex items-center justify-center" style={{ minHeight: 400 }}>
+              <div style={{ padding: '32px 48px', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(16px)', borderRadius: 24, border: '1px solid rgba(255,255,255,0.8)' }}>
+                <p style={{ color: '#888', fontSize: 14, fontFamily: 'Inter', margin: 0, letterSpacing: '0.05em' }}>
+                  {['','Wealth Accumulation','Retirement','Education Planning','Estate Planning'][activeSection]} module is currently in development.
+                </p>
+              </div>
             </div>
           )}
         </div>
 
         {/* RIGHT: SIDEBAR */}
-        <div style={{ padding: '32px 24px', background: '#fff' }}>
-          <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
+        <div style={{ padding: '40px 32px', background: 'rgba(255, 255, 255, 0.4)', backdropFilter: 'blur(32px)' }}>
+          <p className="text-xs tracking-widest uppercase mb-6" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.15em', fontWeight: 600 }}>
             Coverage Summary
           </p>
 
-          {/* Summary blocks */}
           <SidebarSummary
-            isCouple={isCouple}
-            clientName={clientName} spouseName={spouseName}
-            dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
-            ciClient={ciClient} ciSpouse={ciSpouse}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse} ciClient={ciClient} ciSpouse={ciSpouse}
             existingLifeClient={existingLifeClient} existingLifeSpouse={existingLifeSpouse}
             existingCIClient={existingCIClient} existingCISpouse={existingCISpouse}
-            lifeGapClient={lifeGapClient} lifeGapSpouse={lifeGapSpouse}
-            ciGapClient={ciGapClient} ciGapSpouse={ciGapSpouse}
+            lifeGapClient={lifeGapClient} lifeGapSpouse={lifeGapSpouse} ciGapClient={ciGapClient} ciGapSpouse={ciGapSpouse}
           />
 
-          {/* Existing cover inputs */}
-          <div style={{ marginTop: 24 }}>
-            <p className="text-xs tracking-widest uppercase mb-3" style={{ color: '#888', fontFamily: 'Inter', letterSpacing: '0.1em' }}>Existing Coverage</p>
-            <ExistingCoverInputs
-              p={p} updateP={updateP} isCouple={isCouple}
-              clientName={clientName} spouseName={spouseName}
-            />
+          <div style={{ marginTop: 32 }}>
+            <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#888', fontFamily: 'Inter', letterSpacing: '0.15em', fontWeight: 600 }}>Existing Coverage</p>
+            <ExistingCoverInputs p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
           </div>
         </div>
 
@@ -704,8 +661,7 @@ export default function ObjectivesPage() {
       {/* EDIT MODAL */}
       {editModal.open && (
         <EditSubItemsModal
-          category={editModal.category}
-          ff={ff} p={p} updateP={updateP}
+          category={editModal.category} ff={ff} p={p} updateP={updateP}
           onClose={() => setEditModal({ open: false, category: '' })}
           isCouple={isCouple} clientName={clientName} spouseName={spouseName}
         />
@@ -718,24 +674,14 @@ export default function ObjectivesPage() {
 
 interface WPProps {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
-  children: FamilyMember[]; isCouple: boolean
-  clientName: string; spouseName: string
-  annExpClient: number; annExpSpouse: number
-  coverageTerm: number; youngestAge: number | null
-  dtpdClient: CalcResult
-  dtpdSpouse: CalcResult
-  ciClient: CalcResult
-  ciSpouse: CalcResult
-  editModal: { open: boolean; category: string }
-  setEditModal: (v: { open: boolean; category: string }) => void
-  WP_TABS: string[]
-  inflation: number
-  defaultClientPct: number; defaultSpousePct: number
+  children: FamilyMember[]; isCouple: boolean; clientName: string; spouseName: string
+  annExpClient: number; annExpSpouse: number; coverageTerm: number; youngestAge: number | null
+  dtpdClient: CalcResult; dtpdSpouse: CalcResult; ciClient: CalcResult; ciSpouse: CalcResult
+  editModal: { open: boolean; category: string }; setEditModal: (v: { open: boolean; category: string }) => void
+  WP_TABS: string[]; inflation: number; defaultClientPct: number; defaultSpousePct: number
 }
 
-// Type helper for return shape
 type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number }
-
 
 function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct }: WPProps) {
   const wpTab = p.wpSubTab ?? 0
@@ -745,55 +691,74 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
 
   return (
     <div>
-      {/* Section header + global controls */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 3, height: 24, background: '#A8834A', borderRadius: 2 }} />
-          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
+      {/* Top Header & Toggles */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ width: 4, height: 28, background: '#A8834A', borderRadius: 4 }} />
+          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
             Wealth Protection
           </h2>
         </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Individual / Couple toggle */}
+        
+        <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          
+          {/* Individual / Couple toggle (Segmented Control) */}
           <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Planning For</div>
-            <div style={{ display: 'flex', background: '#F5F0E8', borderRadius: 5, padding: 2 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 8, fontWeight: 500 }}>Planning For</div>
+            <div style={{ position: 'relative', display: 'flex', width: 220, background: 'rgba(0, 0, 0, 0.04)', backdropFilter: 'blur(12px)', borderRadius: 20, padding: 4, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
+              {/* Sliding Pill */}
+              <div style={{
+                position: 'absolute', top: 4, bottom: 4, left: 4, width: 'calc(50% - 4px)',
+                transform: p.planType === 'couple' ? 'translateX(100%)' : 'translateX(0)',
+                background: '#1C1A17', borderRadius: 16,
+                transition: 'transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)', pointerEvents: 'none'
+              }} />
               {(['individual', 'couple'] as const).map(t => (
                 <button key={t} onClick={() => updateP({ planType: t })}
-                  style={{ padding: '5px 14px', fontSize: 11, fontFamily: 'Inter', fontWeight: 500,
-                    background: p.planType === t ? '#1C1A17' : 'transparent',
-                    color: p.planType === t ? '#fff' : '#888',
-                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s' }}>
+                  style={{ flex: 1, padding: '8px 12px', fontSize: 12, fontFamily: 'Inter', fontWeight: 500,
+                    background: 'transparent', color: p.planType === t ? '#fff' : '#666',
+                    position: 'relative', zIndex: 1, border: 'none', borderRadius: 16, cursor: 'pointer',
+                    transition: 'color 0.3s ease', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {t === 'individual' ? clientName : 'Couple'}
                 </button>
               ))}
             </div>
           </div>
-          {/* Simple / Detailed toggle */}
+
+          {/* Simple / Detailed toggle (Segmented Control) */}
           <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Expense Data</div>
-            <div style={{ display: 'flex', background: '#F5F0E8', borderRadius: 5, padding: 2 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 8, fontWeight: 500 }}>Expense Data</div>
+            <div style={{ position: 'relative', display: 'flex', width: 160, background: 'rgba(0, 0, 0, 0.04)', backdropFilter: 'blur(12px)', borderRadius: 20, padding: 4, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
+              {/* Sliding Pill */}
+              <div style={{
+                position: 'absolute', top: 4, bottom: 4, left: 4, width: 'calc(50% - 4px)',
+                transform: (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed' ? 'translateX(100%)' : 'translateX(0)',
+                background: '#1C1A17', borderRadius: 16,
+                transition: 'transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)', pointerEvents: 'none'
+              }} />
               {(['simple', 'detailed'] as const).map(t => (
                 <button key={t} onClick={() => updateP({ expenseMode: t })}
-                  style={{ padding: '5px 14px', fontSize: 11, fontFamily: 'Inter', fontWeight: 500,
-                    background: (p.expenseMode ?? ff.expense_mode ?? 'simple') === t ? '#1C1A17' : 'transparent',
-                    color: (p.expenseMode ?? ff.expense_mode ?? 'simple') === t ? '#fff' : '#888',
-                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s',
-                    textTransform: 'capitalize' }}>
+                  style={{ flex: 1, padding: '8px 0', fontSize: 12, fontFamily: 'Inter', fontWeight: 500,
+                    background: 'transparent', color: (p.expenseMode ?? ff.expense_mode ?? 'simple') === t ? '#fff' : '#666',
+                    position: 'relative', zIndex: 1, border: 'none', borderRadius: 16, cursor: 'pointer',
+                    transition: 'color 0.3s ease', textTransform: 'capitalize' }}>
                   {t}
                 </button>
               ))}
             </div>
           </div>
-          {/* Inflation */}
+
+          {/* Inflation Slider */}
           <div style={{ minWidth: 180 }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Inflation Rate</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 8, fontWeight: 500 }}>Inflation Rate</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <input type="range" min={0} max={8} step={0.5}
                 value={p.inflationRate ?? 3}
                 onChange={e => updateP({ inflationRate: parseFloat(e.target.value) })}
                 style={{ flex: 1, accentColor: '#A8834A' }} />
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17', minWidth: 36 }}>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#1C1A17', minWidth: 40, fontWeight: 500 }}>
                 {(p.inflationRate ?? 3).toFixed(1)}%
               </span>
             </div>
@@ -801,19 +766,19 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
         </div>
       </div>
 
-      {/* WP Sub-tabs */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 0, borderBottom: '1px solid #E8E4DC' }}>
+      {/* Sub-Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 32, borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         {WP_TABS.map((t, i) => (
           <button
             key={t}
             onClick={() => updateP({ wpSubTab: i })}
             style={{
-              padding: '10px 16px', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
-              fontFamily: 'Inter', fontWeight: 500,
-              color: wpTab === i ? '#2D5A4E' : '#999',
+              padding: '12px 20px', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase',
+              fontFamily: 'Inter', fontWeight: 600,
+              color: wpTab === i ? '#2D5A4E' : '#888',
               background: 'none', border: 'none',
-              borderBottom: wpTab === i ? '2px solid #2D5A4E' : '2px solid transparent',
-              cursor: 'pointer', transition: 'all 0.15s',
+              borderBottom: wpTab === i ? '3px solid #2D5A4E' : '3px solid transparent',
+              cursor: 'pointer', transition: 'all 0.2s ease',
               whiteSpace: 'nowrap',
             } as React.CSSProperties}
           >
@@ -822,49 +787,13 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
         ))}
       </div>
 
-      <div style={{ padding: '28px 0' }}>
-        {wpTab === 0 && (
-          <FamilyDependencyTab
-            ff={ff} p={p} updateP={updateP}
-            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            annExpClient={annExpClient} annExpSpouse={annExpSpouse}
-            coverageTerm={coverageTerm} youngestAge={youngestAge}
-            children={children} isDetailed={isDetailed}
-            cats={cats} editModal={editModal} setEditModal={setEditModal}
-            inflation={inflation} defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
-          />
-        )}
-        {wpTab === 1 && (
-          <MortgageDebtTab
-            ff={ff} p={p} updateP={updateP}
-            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            mortgages={mortgages}
-          />
-        )}
-        {wpTab === 2 && (
-          <EducationFundTab
-            p={p} updateP={updateP}
-            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            children={children} inflation={inflation}
-          />
-        )}
-        {wpTab === 3 && (
-          <CriticalIllnessTab
-            ff={ff} p={p} updateP={updateP}
-            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            mortgages={mortgages}
-            ciClient={ciClient} ciSpouse={ciSpouse}
-            children={children}
-          />
-        )}
-        {wpTab === 4 && (
-          <AssetOffsetTab
-            ff={ff} p={p}
-            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
-            ciClient={ciClient} ciSpouse={ciSpouse}
-          />
-        )}
+      {/* Tab Content */}
+      <div>
+        {wpTab === 0 && <FamilyDependencyTab ff={ff} p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} annExpClient={annExpClient} annExpSpouse={annExpSpouse} coverageTerm={coverageTerm} youngestAge={youngestAge} children={children} isDetailed={isDetailed} cats={cats} editModal={editModal} setEditModal={setEditModal} inflation={inflation} defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct} />}
+        {wpTab === 1 && <MortgageDebtTab ff={ff} p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} mortgages={mortgages} />}
+        {wpTab === 2 && <EducationFundTab p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} children={children} inflation={inflation} />}
+        {wpTab === 3 && <CriticalIllnessTab ff={ff} p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} mortgages={mortgages} ciClient={ciClient} ciSpouse={ciSpouse} children={children} />}
+        {wpTab === 4 && <AssetOffsetTab ff={ff} p={p} isCouple={isCouple} clientName={clientName} spouseName={spouseName} dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse} ciClient={ciClient} ciSpouse={ciSpouse} />}
       </div>
     </div>
   )
@@ -872,17 +801,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
 
 // ─── FAMILY DEPENDENCY TAB ───────────────────────────────────────────────────
 
-function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, children, isDetailed, cats, editModal, setEditModal, inflation, defaultClientPct, defaultSpousePct }: {
-  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
-  isCouple: boolean; clientName: string; spouseName: string
-  annExpClient: number; annExpSpouse: number
-  coverageTerm: number; youngestAge: number | null
-  children: FamilyMember[]; isDetailed: boolean
-  cats: Record<string, boolean>
-  editModal: { open: boolean; category: string }
-  setEditModal: (v: { open: boolean; category: string }) => void
-  inflation: number; defaultClientPct: number; defaultSpousePct: number
-}) {
+function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, children, isDetailed, cats, editModal, setEditModal, inflation, defaultClientPct, defaultSpousePct }: any) {
   const annExpTotal = annExpClient + annExpSpouse
 
   function toggleCat(cat: string) {
@@ -890,23 +809,21 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
   }
 
   return (
-    <div>
-      {/* Expense Categories */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
       <SectionBlock title="Expense Categories" color="#A8834A">
-        <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginBottom: 20 }}>
           Select which expense categories to include in the family dependency calculation.
         </p>
-        {/* Column headers for couple mode */}
         {isCouple && (
-          <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 110px 110px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr 120px 120px 80px', gap: 12, padding: '0 16px 8px', alignItems: 'center' }}>
             <div />
-            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
-            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
-            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>
+            <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>Category</div>
+            <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'right', fontWeight: 600 }}>{clientName}</div>
+            <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'right', fontWeight: 600 }}>{spouseName}</div>
             <div />
           </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {Object.entries(EXPENSE_CATEGORY_LABELS).map(([key, label]) => {
             const simpleMap: Record<string, string[]> = {
               financial: ['s_income_tax','s_insurance','s_regular_savings'],
@@ -930,40 +847,39 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
             return (
               <div key={key}
                 style={{ display: 'grid',
-                  gridTemplateColumns: isCouple ? '24px 1fr 110px 110px 80px' : '24px 1fr 100px 80px',
-                  gap: 8, padding: '9px 12px', alignItems: 'center',
-                  background: cats[key] ? '#F5F0E8' : 'transparent',
-                  borderRadius: 4, cursor: 'pointer', transition: 'background 0.12s',
+                  gridTemplateColumns: isCouple ? '28px 1fr 120px 120px 80px' : '28px 1fr 120px 80px',
+                  gap: 12, padding: '16px 20px', alignItems: 'center',
+                  background: cats[key] ? 'rgba(255, 255, 255, 0.7)' : 'rgba(255, 255, 255, 0.3)',
+                  backdropFilter: 'blur(20px)',
+                  border: cats[key] ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.4)',
+                  borderRadius: 20, cursor: 'pointer', transition: 'all 0.3s ease',
+                  boxShadow: cats[key] ? '0 8px 24px rgba(0,0,0,0.04)' : 'none',
                 }}
                 onClick={() => toggleCat(key)}
               >
-                {/* Checkbox */}
-                <div style={{ width: 16, height: 16, borderRadius: 3, flexShrink: 0,
-                  background: cats[key] ? '#A8834A' : 'transparent',
-                  border: `1.5px solid ${cats[key] ? '#A8834A' : '#ccc'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {cats[key] && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+                <div style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+                  background: cats[key] ? '#A8834A' : 'rgba(0,0,0,0.05)',
+                  border: `1px solid ${cats[key] ? '#A8834A' : 'rgba(0,0,0,0.1)'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: cats[key] ? '0 2px 6px rgba(168, 131, 74, 0.3)' : 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
+                  {cats[key] && <span style={{ color: '#fff', fontSize: 12, fontWeight: 800 }}>✓</span>}
                 </div>
-                {/* Label */}
-                <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{label}</span>
-                {/* Client amount + % */}
+                <span style={{ fontSize: 14, fontFamily: 'Inter', color: '#1C1A17', fontWeight: 500 }}>{label}</span>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(clientAmt)}</div>
-                  {isCouple && catTotal > 0 && <div style={{ fontSize: 10, color: '#A8834A', fontFamily: 'Inter' }}>{clientPct}%</div>}
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#1C1A17', fontWeight: 500 }}>{fmt(clientAmt)}</div>
+                  {isCouple && catTotal > 0 && <div style={{ fontSize: 11, color: '#A8834A', fontFamily: 'Inter', fontWeight: 500 }}>{clientPct}%</div>}
                 </div>
-                {/* Spouse amount + % (couple only) */}
                 {isCouple && (
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(spouseAmt)}</div>
-                    {catTotal > 0 && <div style={{ fontSize: 10, color: '#2D5A4E', fontFamily: 'Inter' }}>{spousePct}%</div>}
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#1C1A17', fontWeight: 500 }}>{fmt(spouseAmt)}</div>
+                    {catTotal > 0 && <div style={{ fontSize: 11, color: '#2D5A4E', fontFamily: 'Inter', fontWeight: 500 }}>{spousePct}%</div>}
                   </div>
                 )}
-                {/* Edit button (detailed only) */}
                 <div style={{ textAlign: 'right' }}>
                   {isDetailed && cats[key] && (
                     <button onClick={e => { e.stopPropagation(); setEditModal({ open: true, category: key }) }}
-                      style={{ fontSize: 10, color: '#A8834A', background: 'none', border: '1px solid #A8834A',
-                        borderRadius: 3, padding: '2px 8px', cursor: 'pointer', fontFamily: 'Inter' }}>
+                      style={{ fontSize: 11, color: '#1C1A17', background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(0,0,0,0.1)',
+                        borderRadius: 10, padding: '6px 14px', cursor: 'pointer', fontFamily: 'Inter', fontWeight: 500, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                       Edit
                     </button>
                   )}
@@ -973,52 +889,41 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
           })}
         </div>
 
-        {/* Totals row */}
-        <div style={{ marginTop: 16, padding: '12px 16px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Selected Annual Expenses</span>
+        <div style={{ marginTop: 24, padding: '24px 28px', background: 'rgba(28, 26, 23, 0.9)', backdropFilter: 'blur(24px)', borderRadius: 24, border: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 12px 32px rgba(0,0,0,0.1)' }}>
+          <span style={{ fontSize: 13, color: '#c8a96e', fontFamily: 'Inter', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600 }}>Selected Annual Expenses</span>
           {isCouple ? (
-            <div style={{ display: 'flex', gap: 24 }}>
+            <div style={{ display: 'flex', gap: 32 }}>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(annExpClient)}</div>
+                <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 4, letterSpacing: '0.05em' }}>{clientName}</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8', fontWeight: 500 }}>{fmt(annExpClient)}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(annExpSpouse)}</div>
+                <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 4, letterSpacing: '0.05em' }}>{spouseName}</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8', fontWeight: 500 }}>{fmt(annExpSpouse)}</div>
               </div>
             </div>
           ) : (
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(annExpClient)}</span>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 20, color: '#F5F0E8', fontWeight: 500 }}>{fmt(annExpClient)}</span>
           )}
         </div>
       </SectionBlock>
 
-      {/* Coverage Percentage */}
       {isCouple && (
         <SectionBlock title="Coverage Percentage" color="#A8834A">
-          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginBottom: 24 }}>
             What portion of combined expenses does each person need to cover if the other passes away?
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            <PersonSlider
-              label={clientName} value={p.expenseCoverPctClient ?? defaultClientPct}
-              onChange={v => updateP({ expenseCoverPctClient: v })}
-              color="#A8834A"
-            />
-            <PersonSlider
-              label={spouseName} value={p.expenseCoverPctSpouse ?? defaultSpousePct}
-              onChange={v => updateP({ expenseCoverPctSpouse: v })}
-              color="#A8834A"
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)', borderRadius: 24, padding: '24px 32px', border: '1px solid rgba(255,255,255,0.8)' }}>
+            <PersonSlider label={clientName} value={p.expenseCoverPctClient ?? defaultClientPct} onChange={v => updateP({ expenseCoverPctClient: v })} color="#A8834A" />
+            <PersonSlider label={spouseName} value={p.expenseCoverPctSpouse ?? defaultSpousePct} onChange={v => updateP({ expenseCoverPctSpouse: v })} color="#2D5A4E" />
           </div>
         </SectionBlock>
       )}
 
-      {/* Coverage Duration */}
       <SectionBlock title="Coverage Duration" color="#A8834A">
         {youngestAge !== null ? (
           <div>
-            <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginBottom: 20 }}>
               Coverage term auto-calculated based on youngest child reaching university graduation (age 26).
             </p>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -1026,52 +931,53 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
                 const age = c.age ?? getAge(c.date_of_birth)
                 const uniGrad = Math.max(0, 26 - age)
                 return (
-                  <div key={c.id} style={{ padding: '10px 16px', background: '#F5F0E8', borderRadius: 6, borderLeft: '3px solid #A8834A' }}>
-                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                  <div key={c.id} style={{ padding: '16px 20px', background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.9)', borderLeft: '4px solid #A8834A', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontWeight: 600 }}>
                       {c.name || c.relationship}
                     </div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>
-                      Age {age} · Grad in {uniGrad} yrs
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#1C1A17', fontWeight: 500 }}>
+                      Age {age} <span style={{ color: '#ccc', margin: '0 4px' }}>|</span> Grad in {uniGrad} yrs
                     </div>
                   </div>
                 )
               })}
             </div>
-            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage Term:</span>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#A8834A', fontWeight: 600 }}>{coverageTerm} years</span>
+            <div style={{ marginTop: 24, display: 'inline-flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.4)', padding: '12px 20px', borderRadius: 16, border: '1px solid rgba(255,255,255,0.6)' }}>
+              <span style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', fontWeight: 500 }}>Final Coverage Term:</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#A8834A', fontWeight: 600 }}>{coverageTerm} years</span>
             </div>
           </div>
         ) : (
           <div>
-            <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginBottom: 20 }}>
               Select coverage duration (no children detected).
             </p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {[5, 10, 15, 20, 25, 30].map(yr => (
                 <button
                   key={yr}
                   onClick={() => updateP({ coverageTermOverride: yr })}
                   style={{
-                    padding: '8px 16px', fontFamily: 'DM Mono, monospace', fontSize: 13,
-                    background: (p.coverageTermOverride ?? 20) === yr ? '#1C1A17' : '#F5F0E8',
+                    padding: '10px 20px', fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 500,
+                    background: (p.coverageTermOverride ?? 20) === yr ? 'rgba(28, 26, 23, 0.9)' : 'rgba(255, 255, 255, 0.6)',
+                    backdropFilter: 'blur(16px)',
                     color: (p.coverageTermOverride ?? 20) === yr ? '#F5F0E8' : '#1C1A17',
-                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.12s',
+                    border: (p.coverageTermOverride ?? 20) === yr ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(255,255,255,0.8)',
+                    borderRadius: 16, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
                   }}
                 >
-                  {yr}yr
+                  {yr} yr
                 </button>
               ))}
             </div>
-            <div style={{ marginTop: 12 }}>
-              <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage Term: </span>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#A8834A', fontWeight: 600 }}>{coverageTerm} years</span>
+            <div style={{ marginTop: 24, display: 'inline-flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.4)', padding: '12px 20px', borderRadius: 16, border: '1px solid rgba(255,255,255,0.6)' }}>
+              <span style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', fontWeight: 500 }}>Coverage Term: </span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#A8834A', fontWeight: 600 }}>{coverageTerm} years</span>
             </div>
           </div>
         )}
       </SectionBlock>
 
-      {/* Family Dependency Summary */}
       <SectionBlock title="Family Dependency Need" color="#2D5A4E">
         <NeedTable
           isCouple={isCouple} clientName={clientName} spouseName={spouseName}
@@ -1081,7 +987,6 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
         />
       </SectionBlock>
 
-      {/* Advisor Notes */}
       <SectionBlock title="Advisor Notes" color="#888">
         <textarea
           value={p.advisorNotes ?? ''}
@@ -1089,9 +994,10 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
           placeholder="Document observations, client preferences, or planning considerations..."
           rows={4}
           style={{
-            width: '100%', resize: 'vertical', fontFamily: 'Inter', fontSize: 13,
-            color: '#1C1A17', background: '#F5F0E8', border: '1px solid #E8E4DC',
-            borderRadius: 4, padding: '10px 12px', outline: 'none',
+            width: '100%', resize: 'vertical', fontFamily: 'Inter', fontSize: 14,
+            color: '#1C1A17', background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.9)',
+            borderRadius: 20, padding: '16px 20px', outline: 'none', transition: 'all 0.2s',
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
           }}
         />
       </SectionBlock>
@@ -1107,22 +1013,18 @@ function dtpdFDOnly(annExp: number, coverPctRaw: number, inflationRaw: number, t
 
 // ─── MORTGAGE & DEBT TAB ─────────────────────────────────────────────────────
 
-function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages }: {
-  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
-  isCouple: boolean; clientName: string; spouseName: string
-  mortgages: MortgageProperty[]
-}) {
+function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages }: any) {
   if (mortgages.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '40px 0', color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
-        No mortgages found. Add properties in the Financials tab.
+      <div style={{ textAlign: 'center', padding: '60px 0', background: 'rgba(255,255,255,0.4)', borderRadius: 24, border: '1px dashed rgba(0,0,0,0.1)' }}>
+        <p style={{ color: '#888', fontSize: 14, fontFamily: 'Inter' }}>No mortgages found. Add properties in the Financials tab.</p>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {mortgages.map((m, i) => {
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {mortgages.map((m: any, i: number) => {
         const clientPct = (p.mortgageCoverPctsClient ?? [])[i] ?? 50
         const spousePct = (p.mortgageCoverPctsSpouse ?? [])[i] ?? 50
 
@@ -1138,31 +1040,35 @@ function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mor
         }
 
         return (
-          <div key={m.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '20px 24px', borderLeft: '3px solid #A8834A' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div key={m.id} style={{ background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', borderRadius: 24, border: '1px solid rgba(255,255,255,0.9)', padding: '32px', borderLeft: '4px solid #A8834A', boxShadow: '0 8px 32px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
               <div>
-                <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 2 }}>{m.label}</div>
-                <div style={{ fontSize: 12, color: '#888', fontFamily: 'DM Mono, monospace' }}>
-                  Outstanding: {fmt(m.outstanding)} · {m.interestRate}% · {m.remainingTenure} yrs remaining
+                <div style={{ fontSize: 18, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 6 }}>{m.label}</div>
+                <div style={{ fontSize: 13, color: '#666', fontFamily: 'DM Mono, monospace' }}>
+                  Outstanding: {fmt(m.outstanding)} <span style={{ color: '#ccc', margin: '0 4px' }}>|</span> {m.interestRate}% <span style={{ color: '#ccc', margin: '0 4px' }}>|</span> {m.remainingTenure} yrs remaining
                 </div>
               </div>
             </div>
+            
             {isCouple ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, background: 'rgba(255,255,255,0.4)', borderRadius: 20, padding: '24px', border: '1px solid rgba(255,255,255,0.6)' }}>
                 <PersonSlider label={`${clientName} covers`} value={clientPct} onChange={updateClientPct} color="#A8834A" unit="%" />
-                <PersonSlider label={`${spouseName} covers`} value={spousePct} onChange={updateSpousePct} color="#A8834A" unit="%" />
+                <PersonSlider label={`${spouseName} covers`} value={spousePct} onChange={updateSpousePct} color="#2D5A4E" unit="%" />
               </div>
             ) : (
-              <PersonSlider label="Coverage %" value={clientPct} onChange={updateClientPct} color="#A8834A" unit="%" />
+              <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 20, padding: '24px', border: '1px solid rgba(255,255,255,0.6)' }}>
+                <PersonSlider label="Coverage %" value={clientPct} onChange={updateClientPct} color="#A8834A" unit="%" />
+              </div>
             )}
-            <div style={{ marginTop: 12, display: 'flex', gap: 16, justifyContent: 'flex-end' }}>
+            
+            <div style={{ marginTop: 24, display: 'flex', gap: 24, justifyContent: 'flex-end', padding: '16px 20px', background: 'rgba(0,0,0,0.02)', borderRadius: 16 }}>
               {isCouple ? (
                 <>
-                  <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>{clientName}: <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace' }}>{fmt(m.outstanding * clientPct / 100)}</strong></span>
-                  <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>{spouseName}: <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace' }}>{fmt(m.outstanding * spousePct / 100)}</strong></span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{clientName}:</span> <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace', fontSize: 16 }}>{fmt(m.outstanding * clientPct / 100)}</strong></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{spouseName}:</span> <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace', fontSize: 16 }}>{fmt(m.outstanding * spousePct / 100)}</strong></div>
                 </>
               ) : (
-                <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage: <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace' }}>{fmt(m.outstanding * clientPct / 100)}</strong></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Coverage:</span> <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace', fontSize: 16 }}>{fmt(m.outstanding * clientPct / 100)}</strong></div>
               )}
             </div>
           </div>
@@ -1174,20 +1080,10 @@ function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mor
 
 // ─── EDUCATION FUND TAB ───────────────────────────────────────────────────────
 
-function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, children, inflation }: {
-  p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
-  isCouple: boolean; clientName: string; spouseName: string
-  children: FamilyMember[]; inflation: number
-}) {
-  type EduChild = {
-    childId: string; uniType?: string; courseDuration?: number
-    annualTuition?: number; annualLiving?: number
-    uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number
-  }
-
-  function updateChild(childId: string, changes: Partial<EduChild>) {
-    const arr: EduChild[] = [...(p.educationChildren ?? [])]
-    const idx = arr.findIndex(e => e.childId === childId)
+function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, children, inflation }: any) {
+  function updateChild(childId: string, changes: any) {
+    const arr = [...(p.educationChildren ?? [])]
+    const idx = arr.findIndex((e: any) => e.childId === childId)
     if (idx >= 0) {
       arr[idx] = { ...arr[idx], ...changes }
     } else {
@@ -1196,44 +1092,25 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
     updateP({ educationChildren: arr })
   }
 
-  function calcChildFund(child: FamilyMember, ec: EduChild, who: 'client' | 'spouse' | 'total'): number {
-    const childAge = child.age ?? getAge(child.date_of_birth)
-    const defaultEntryAge = child.gender === 'Male' ? 20 : 18
-    const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
-    const yearsToUni = Math.max(0, uniEntryAge - childAge)
-    const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
-    const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
-    const baseLiving = ec.annualLiving ?? uniInfo.annual_living
-    const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
-    const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
-    const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
-    const total = fvTuition + fvLiving
-    if (who === 'total') return total
-    const defaultPct = isCouple ? 50 : 100
-    const pct = (who === 'client' ? (ec.coverPctClient ?? defaultPct) : (ec.coverPctSpouse ?? defaultPct)) / 100
-    return total * pct
-  }
-
   return (
-    <div>
-      {/* Toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '14px 16px', background: '#F5F0E8', borderRadius: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, padding: '20px 24px', background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.9)', borderRadius: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.02)' }}>
         <Toggle value={p.provideEducationFund ?? false} onChange={v => updateP({ provideEducationFund: v })} />
         <div>
-          <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 500, color: '#1C1A17' }}>Provide Education Fund</div>
-          <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Inflation-adjusted university cost projection per child</div>
+          <div style={{ fontSize: 15, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Provide Education Fund</div>
+          <div style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginTop: 4 }}>Calculate inflation-adjusted university cost projections per child</div>
         </div>
       </div>
 
       {p.provideEducationFund && (
         <>
           {children.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '32px 0', color: '#aaa', fontSize: 13 }}>
-              No children found. Add children in the Client Profile.
+            <div style={{ textAlign: 'center', padding: '60px 0', background: 'rgba(255,255,255,0.4)', borderRadius: 24, border: '1px dashed rgba(0,0,0,0.1)' }}>
+              <p style={{ color: '#888', fontSize: 14, fontFamily: 'Inter' }}>No children found. Add children in the Client Profile.</p>
             </div>
           )}
-          {children.map(child => {
-            const ec = (p.educationChildren ?? []).find(e => e.childId === child.id) ?? { childId: child.id }
+          {children.map((child: any) => {
+            const ec = (p.educationChildren ?? []).find((e: any) => e.childId === child.id) ?? { childId: child.id }
             const childAge = child.age ?? getAge(child.date_of_birth)
             const defaultEntryAge = child.gender === 'Male' ? 20 : 18
             const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
@@ -1247,53 +1124,45 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
             const totalFund = fvTuition + fvLiving
 
             return (
-              <div key={child.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '20px 24px', marginBottom: 16, borderLeft: '3px solid #2D5A4E' }}>
-                {/* Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+              <div key={child.id} style={{ background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(20px)', borderRadius: 24, border: '1px solid rgba(255,255,255,0.9)', padding: '32px', borderLeft: '4px solid #2D5A4E', boxShadow: '0 8px 32px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
                   <div>
-                    <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{child.name || child.relationship}</div>
-                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginTop: 2 }}>
-                      Age {childAge} · {child.gender || 'Gender not set'} · {yearsToUni > 0 ? `${yearsToUni} yrs to university` : 'University age'}
+                    <div style={{ fontSize: 18, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{child.name || child.relationship}</div>
+                    <div style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginTop: 6 }}>
+                      Age {childAge} <span style={{ color: '#ccc', margin: '0 4px' }}>|</span> {child.gender || 'Gender not set'} <span style={{ color: '#ccc', margin: '0 4px' }}>|</span> {yearsToUni > 0 ? `${yearsToUni} yrs to university` : 'University age'}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total Fund Needed</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 20, color: '#2D5A4E', fontWeight: 600 }}>{fmt(totalFund)}</div>
+                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4, fontWeight: 600 }}>Total Fund Needed</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 26, color: '#2D5A4E', fontWeight: 600 }}>{fmt(totalFund)}</div>
                   </div>
                 </div>
 
-                {/* FV Breakdown strip */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 24, padding: '16px', background: 'rgba(255,255,255,0.6)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.8)' }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>FV Tuition (5%)</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(fvTuition)}</div>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontWeight: 600 }}>FV Tuition (5%)</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#1C1A17', fontWeight: 500 }}>{fmt(fvTuition)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(0,0,0,0.06)', borderRight: '1px solid rgba(0,0,0,0.06)' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontWeight: 600 }}>FV Living ({(inflation * 100).toFixed(1)}%)</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#1C1A17', fontWeight: 500 }}>{fmt(fvLiving)}</div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>FV Living ({(inflation * 100).toFixed(1)}%)</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(fvLiving)}</div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Duration</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{dur} yrs</div>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontWeight: 600 }}>Duration</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#1C1A17', fontWeight: 500 }}>{dur} yrs</div>
                   </div>
                 </div>
 
-                {/* Uni type */}
-                <div style={{ marginBottom: 12 }}>
+                <div style={{ marginBottom: 20 }}>
                   <label style={labelStyle}>University Type</label>
                   <select
                     value={ec.uniType ?? 'sg_local'}
                     onChange={e => {
                       const uni = e.target.value
                       const info = UNI_COST_DEFAULTS[uni]
-                      updateChild(child.id, {
-                        uniType: uni,
-                        annualTuition: info.annual_tuition,
-                        annualLiving: info.annual_living,
-                        courseDuration: info.default_duration,
-                      })
+                      updateChild(child.id, { uniType: uni, annualTuition: info.annual_tuition, annualLiving: info.annual_living, courseDuration: info.default_duration })
                     }}
-                    style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
+                    style={{ width: '100%', padding: '14px 16px', fontFamily: 'Inter', fontSize: 14, background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.9)', borderRadius: 16, color: '#1C1A17', outline: 'none', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)' }}
                   >
                     {Object.entries(UNI_COST_DEFAULTS).map(([k, v]) => (
                       <option key={k} value={k}>{v.label} — {fmt(v.annual_tuition + v.annual_living)}/yr</option>
@@ -1301,65 +1170,38 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                   </select>
                 </div>
 
-                {/* Row: Uni Entry Age + Duration */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 20 }}>
                   <div>
                     <label style={labelStyle}>University Entry Age</label>
-                    <input
-                      type="number" min={15} max={25} step={1}
-                      value={uniEntryAge}
-                      onChange={e => updateChild(child.id, { uniEntryAge: parseInt(e.target.value) })}
-                      style={inputStyle}
-                    />
-                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>
-                      Default: {defaultEntryAge} ({child.gender === 'Male' ? 'Male — NS offset' : 'Female'})
-                    </div>
+                    <input type="number" min={15} max={25} step={1} value={uniEntryAge} onChange={e => updateChild(child.id, { uniEntryAge: parseInt(e.target.value) })} style={inputStyle} />
+                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginTop: 6 }}>Default: {defaultEntryAge}</div>
                   </div>
                   <div>
                     <label style={labelStyle}>Course Duration (years)</label>
-                    <input
-                      type="number" min={1} max={6} step={1}
-                      value={dur}
-                      onChange={e => updateChild(child.id, { courseDuration: parseInt(e.target.value) })}
-                      style={inputStyle}
-                    />
+                    <input type="number" min={1} max={6} step={1} value={dur} onChange={e => updateChild(child.id, { courseDuration: parseInt(e.target.value) })} style={inputStyle} />
                   </div>
                 </div>
 
-                {/* Row: Annual Tuition + Annual Living */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: isCouple ? 16 : 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: isCouple ? 24 : 0 }}>
                   <div>
                     <label style={labelStyle}>Annual Tuition (Today's $)</label>
                     <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
-                      <input
-                        type="number" min={0} step={500}
-                        value={baseTuition}
-                        onChange={e => updateChild(child.id, { annualTuition: parseInt(e.target.value) })}
-                        style={{ ...inputStyle, paddingLeft: 24 }}
-                      />
+                      <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 14 }}>$</span>
+                      <input type="number" min={0} step={500} value={baseTuition} onChange={e => updateChild(child.id, { annualTuition: parseInt(e.target.value) })} style={{ ...inputStyle, paddingLeft: 32 }} />
                     </div>
-                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>Inflated at 5% p.a.</div>
                   </div>
                   <div>
                     <label style={labelStyle}>Annual Living (Today's $)</label>
                     <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
-                      <input
-                        type="number" min={0} step={500}
-                        value={baseLiving}
-                        onChange={e => updateChild(child.id, { annualLiving: parseInt(e.target.value) })}
-                        style={{ ...inputStyle, paddingLeft: 24 }}
-                      />
+                      <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 14 }}>$</span>
+                      <input type="number" min={0} step={500} value={baseLiving} onChange={e => updateChild(child.id, { annualLiving: parseInt(e.target.value) })} style={{ ...inputStyle, paddingLeft: 32 }} />
                     </div>
-                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>Inflated at {(inflation * 100).toFixed(1)}% p.a.</div>
                   </div>
                 </div>
 
-                {/* Coverage split */}
                 {isCouple && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <PersonSlider label={`${clientName} covers`} value={ec.coverPctClient ?? (isCouple ? 50 : 100)} onChange={v => updateChild(child.id, { coverPctClient: v })} color="#2D5A4E" unit="%" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, paddingTop: 24, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                    <PersonSlider label={`${clientName} covers`} value={ec.coverPctClient ?? 50} onChange={v => updateChild(child.id, { coverPctClient: v })} color="#2D5A4E" unit="%" />
                     <PersonSlider label={`${spouseName} covers`} value={ec.coverPctSpouse ?? 50} onChange={v => updateChild(child.id, { coverPctSpouse: v })} color="#2D5A4E" unit="%" />
                   </div>
                 )}
@@ -1374,18 +1216,20 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
 
 // ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
 
-function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children }: {
-  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
-  isCouple: boolean; clientName: string; spouseName: string
-  mortgages: MortgageProperty[]
-  ciClient: CalcResult; ciSpouse: CalcResult
-  children: FamilyMember[]
-}) {
+function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children }: any) {
   return (
-    <div>
-      {/* CI Stage */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
       <SectionBlock title="Critical Illness Stage" color="#A8834A">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        {/* Segmented Control for CI Stage */}
+        <div style={{ position: 'relative', display: 'flex', width: 320, background: 'rgba(0, 0, 0, 0.04)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.6)', borderRadius: 20, padding: 4, marginBottom: 16, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
+          {/* Sliding Pill */}
+          <div style={{
+            position: 'absolute', top: 4, bottom: 4, left: 4, width: 'calc(50% - 4px)',
+            transform: p.ciStage === 'late_only' ? 'translateX(100%)' : 'translateX(0)',
+            background: '#1C1A17', borderRadius: 16,
+            transition: 'transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)', pointerEvents: 'none'
+          }} />
           {([
             { key: 'early_late', label: 'Early & Late Stage' },
             { key: 'late_only', label: 'Late Stage Only' },
@@ -1394,67 +1238,61 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
               key={opt.key}
               onClick={() => updateP({ ciStage: opt.key })}
               style={{
-                padding: '8px 16px', fontFamily: 'Inter', fontSize: 12,
-                background: p.ciStage === opt.key ? '#1C1A17' : '#F5F0E8',
-                color: p.ciStage === opt.key ? '#fff' : '#1C1A17',
-                border: 'none', borderRadius: 4, cursor: 'pointer',
+                flex: 1, padding: '10px 0', fontFamily: 'Inter', fontSize: 12, fontWeight: 500,
+                background: 'transparent',
+                color: p.ciStage === opt.key ? '#fff' : '#666',
+                position: 'relative', zIndex: 1,
+                border: 'none', borderRadius: 16, cursor: 'pointer', transition: 'color 0.3s ease',
               }}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
-          {p.ciStage === 'early_late' ? 'Covers both early and late stage critical illnesses.' : 'Covers late stage critical illnesses only.'}
+        <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter' }}>
+          {p.ciStage === 'early_late' ? 'Calculates coverage need for both early and late stage critical illnesses.' : 'Calculates coverage need for late stage critical illnesses only.'}
         </p>
       </SectionBlock>
 
-      {/* CI Window */}
       <SectionBlock title="CI Coverage Window" color="#A8834A">
-        <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 12 }}>
-          How many years of expenses to cover during a critical illness event?
+        <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginBottom: 20 }}>
+          How many years of income replacement / expenses should be provided during a critical illness recovery event?
         </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <input
-            type="range" min={1} max={10} step={1}
-            value={p.ciYears ?? 5}
-            onChange={e => updateP({ ciYears: parseInt(e.target.value) })}
-            style={{ flex: 1, accentColor: '#A8834A' }}
-          />
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#A8834A', minWidth: 60 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24, background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', padding: '16px 24px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.8)' }}>
+          <input type="range" min={1} max={10} step={1} value={p.ciYears ?? 5} onChange={e => updateP({ ciYears: parseInt(e.target.value) })} style={{ flex: 1, accentColor: '#A8834A' }} />
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#A8834A', minWidth: 80, fontWeight: 600 }}>
             {p.ciYears ?? 5} years
           </span>
         </div>
       </SectionBlock>
 
-      {/* CI Mortgage */}
       {mortgages.length > 0 && (
         <SectionBlock title="Mortgage During CI" color="#A8834A">
-          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 12 }}>
-            What % of monthly mortgage repayments to cover during CI event?
+          <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginBottom: 20 }}>
+            What percentage of the monthly mortgage repayments should be covered during the CI recovery window?
           </p>
           {isCouple ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', padding: '24px 32px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.8)' }}>
               <PersonSlider label={clientName} value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
               <PersonSlider label={spouseName} value={p.ciMortgagePctSpouse ?? 100} onChange={v => updateP({ ciMortgagePctSpouse: v })} color="#A8834A" unit="%" />
             </div>
           ) : (
-            <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+            <div style={{ background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(12px)', padding: '24px 32px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.8)' }}>
+              <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+            </div>
           )}
         </SectionBlock>
       )}
 
-      {/* Include education */}
       {p.provideEducationFund && children.length > 0 && (
-        <SectionBlock title="Education Fund" color="#2D5A4E">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <SectionBlock title="Education Fund Protection" color="#2D5A4E">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(12px)', borderRadius: 20, border: '1px solid rgba(255,255,255,0.9)' }}>
             <Toggle value={p.includeEduInCI ?? false} onChange={v => updateP({ includeEduInCI: v })} />
-            <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>Include education fund in CI calculation</span>
+            <span style={{ fontSize: 14, fontFamily: 'Inter', color: '#1C1A17', fontWeight: 500 }}>Include education fund targets in CI gap calculation</span>
           </div>
         </SectionBlock>
       )}
 
-      {/* CI Need Summary */}
       <SectionBlock title="Critical Illness Need Summary" color="#2D5A4E">
         <NeedTable
           isCouple={isCouple} clientName={clientName} spouseName={spouseName}
@@ -1471,23 +1309,18 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
 
 // ─── ASSET OFFSET TAB ────────────────────────────────────────────────────────
 
-function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse }: {
-  ff: FactFinding; p: ProtectionData
-  isCouple: boolean; clientName: string; spouseName: string
-  dtpdClient: CalcResult; dtpdSpouse: CalcResult
-  ciClient: CalcResult; ciSpouse: CalcResult
-}) {
-  function AssetRow({ label, clientVal, spouseVal }: { label: string; clientVal: number; spouseVal: number }) {
+function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse }: any) {
+  function AssetRow({ label, clientVal, spouseVal }: any) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #E8E4DC' }}>
-        <span style={{ flex: 1, fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+        <span style={{ flex: 1, fontSize: 14, fontFamily: 'Inter', color: '#1C1A17', fontWeight: 500 }}>{label}</span>
         {isCouple ? (
           <>
-            <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(clientVal)}</span>
-            <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(spouseVal)}</span>
+            <span style={{ width: 140, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 500 }}>{fmt(clientVal)}</span>
+            <span style={{ width: 140, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 500 }}>{fmt(spouseVal)}</span>
           </>
         ) : (
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(clientVal)}</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 500 }}>{fmt(clientVal)}</span>
         )}
       </div>
     )
@@ -1501,70 +1334,72 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
   const spouseInvProp = (ff.a2_inv_property_res ?? 0) + (ff.a2_inv_property_com ?? 0)
 
   const colHeader = (name: string) => (
-    <span style={{ width: 120, textAlign: 'right', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter' }}>{name}</span>
+    <span style={{ width: 140, textAlign: 'right', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', fontWeight: 600 }}>{name}</span>
   )
 
   return (
-    <div>
-      <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>
-        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and investment property. CI offsets use liquid assets only.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+      <p style={{ fontSize: 14, color: '#666', fontFamily: 'Inter', lineHeight: 1.5 }}>
+        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and investment properties. CI offsets use only liquid assets.
       </p>
 
       <SectionBlock title="Asset Values" color="#2D5A4E">
         {isCouple && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 0, marginBottom: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 0, marginBottom: 12, padding: '0 20px' }}>
             {colHeader(clientName)}
             {colHeader(spouseName)}
           </div>
         )}
-        <AssetRow label="Cash & Liquid Investments" clientVal={clientLiquid} spouseVal={spouseLiquid} />
-        <AssetRow label="CPF (OA + SA + MA + RA)" clientVal={clientCPF} spouseVal={spouseCPF} />
-        <AssetRow label="Investment Properties" clientVal={clientInvProp} spouseVal={spouseInvProp} />
-        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#F5F0E8', borderRadius: '0 0 4px 4px' }}>
-          <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.06em' }}>D/TPD Offset (all assets)</span>
-          {isCouple ? (
-            <>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientInvProp)}</span>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid + spouseCPF + spouseInvProp)}</span>
-            </>
-          ) : (
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientInvProp)}</span>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#E8F0ED' }}>
-          <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#2D5A4E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>CI Offset (liquid only)</span>
-          {isCouple ? (
-            <>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid)}</span>
-            </>
-          ) : (
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
-          )}
+        <div style={{ background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(20px)', borderRadius: 24, border: '1px solid rgba(255,255,255,0.9)', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.03)' }}>
+          <AssetRow label="Cash & Liquid Investments" clientVal={clientLiquid} spouseVal={spouseLiquid} />
+          <AssetRow label="CPF (OA + SA + MA + RA)" clientVal={clientCPF} spouseVal={spouseCPF} />
+          <AssetRow label="Investment Properties" clientVal={clientInvProp} spouseVal={spouseInvProp} />
+          
+          <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', background: 'rgba(245, 240, 232, 0.8)', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+            <span style={{ flex: 1, fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.08em' }}>D/TPD Offset (all assets)</span>
+            {isCouple ? (
+              <>
+                <span style={{ width: 140, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientInvProp)}</span>
+                <span style={{ width: 140, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid + spouseCPF + spouseInvProp)}</span>
+              </>
+            ) : (
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientInvProp)}</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', background: 'rgba(226, 237, 232, 0.7)' }}>
+            <span style={{ flex: 1, fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#2D5A4E', textTransform: 'uppercase', letterSpacing: '0.08em' }}>CI Offset (liquid only)</span>
+            {isCouple ? (
+              <>
+                <span style={{ width: 140, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
+                <span style={{ width: 140, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid)}</span>
+              </>
+            ) : (
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
+            )}
+          </div>
         </div>
       </SectionBlock>
 
-      {/* Net Need Summary */}
       <SectionBlock title="Net Need After Offset" color="#1C1A17">
         {[
           { label: 'D/TPD Net Need', clientNet: dtpdClient.net, spouseNet: dtpdSpouse.net },
           { label: 'CI Net Need', clientNet: ciClient.net, spouseNet: ciSpouse.net },
-        ].map(row => (
-          <div key={row.label} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', marginBottom: 4, background: '#1C1A17', borderRadius: 6 }}>
-            <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{row.label}</span>
+        ].map((row, i) => (
+          <div key={row.label} style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', marginBottom: i === 0 ? 12 : 0, background: 'rgba(28, 26, 23, 0.9)', backdropFilter: 'blur(20px)', borderRadius: 20, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}>
+            <span style={{ flex: 1, fontSize: 13, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>{row.label}</span>
             {isCouple ? (
               <>
-                <div style={{ textAlign: 'right', minWidth: 130 }}>
-                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.clientNet)}</div>
+                <div style={{ textAlign: 'right', minWidth: 140 }}>
+                  <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter', marginBottom: 4, letterSpacing: '0.05em' }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8', fontWeight: 500 }}>{fmt(row.clientNet)}</div>
                 </div>
-                <div style={{ textAlign: 'right', minWidth: 130 }}>
-                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.spouseNet)}</div>
+                <div style={{ textAlign: 'right', minWidth: 140 }}>
+                  <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter', marginBottom: 4, letterSpacing: '0.05em' }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8', fontWeight: 500 }}>{fmt(row.spouseNet)}</div>
                 </div>
               </>
             ) : (
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(row.clientNet)}</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 22, color: '#F5F0E8', fontWeight: 500 }}>{fmt(row.clientNet)}</span>
             )}
           </div>
         ))}
@@ -1575,34 +1410,23 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
 
 // ─── SIDEBAR SUMMARY ─────────────────────────────────────────────────────────
 
-function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse, existingLifeClient, existingLifeSpouse, existingCIClient, existingCISpouse, lifeGapClient, lifeGapSpouse, ciGapClient, ciGapSpouse }: {
-  isCouple: boolean; clientName: string; spouseName: string
-  dtpdClient: CalcResult; dtpdSpouse: CalcResult
-  ciClient: CalcResult; ciSpouse: CalcResult
-  existingLifeClient: number; existingLifeSpouse: number
-  existingCIClient: number; existingCISpouse: number
-  lifeGapClient: number; lifeGapSpouse: number
-  ciGapClient: number; ciGapSpouse: number
-}) {
-  function PersonBlock({ name, dtpd, ci, existLife, existCI, lifeGap, ciGap }: {
-    name: string; dtpd: CalcResult; ci: CalcResult
-    existLife: number; existCI: number; lifeGap: number; ciGap: number
-  }) {
+function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse, existingLifeClient, existingLifeSpouse, existingCIClient, existingCISpouse, lifeGapClient, lifeGapSpouse, ciGapClient, ciGapSpouse }: any) {
+  function PersonBlock({ name, dtpd, ci, existLife, existCI, lifeGap, ciGap }: any) {
     return (
-      <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', fontFamily: 'Inter', marginBottom: 10 }}>{name}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ background: 'rgba(255, 255, 255, 0.7)', backdropFilter: 'blur(24px)', borderRadius: 24, border: '1px solid rgba(255,255,255,0.9)', padding: '24px', marginBottom: 20, boxShadow: '0 8px 32px rgba(0,0,0,0.04)' }}>
+        <div style={{ fontSize: 12, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#A8834A', fontFamily: 'Inter', marginBottom: 16, fontWeight: 600 }}>{name}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <SidebarRow label="D/TPD Need" value={dtpd.net} />
           <SidebarRow label="CI Need" value={ci.net} />
-          <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
+          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 12, marginTop: 4 }}>
             <SidebarRow label="Existing Life" value={existLife} color="#2D5A4E" />
             <SidebarRow label="Existing CI" value={existCI} color="#2D5A4E" />
           </div>
-          <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
+          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 12, marginTop: 4 }}>
             <SidebarRow label="Life Gap" value={lifeGap} color={lifeGap > 0 ? '#C0392B' : '#2D5A4E'} />
             <SidebarRow label="CI Gap" value={ciGap} color={ciGap > 0 ? '#C0392B' : '#2D5A4E'} />
           </div>
-          <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 6, marginTop: 2, display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 16, marginTop: 4, display: 'flex', gap: 8, justifyContent: 'space-between' }}>
             <MiniBreakdown label="FD" value={dtpd.fd} />
             <MiniBreakdown label="Mort" value={dtpd.mort} />
             <MiniBreakdown label="Edu" value={dtpd.edu} />
@@ -1627,8 +1451,8 @@ function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpou
 function SidebarRow({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>{label}</span>
-      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: color ?? '#1C1A17' }}>{fmt(value)}</span>
+      <span style={{ fontSize: 12, color: '#666', fontFamily: 'Inter', fontWeight: 500 }}>{label}</span>
+      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: color ?? '#1C1A17', fontWeight: 600 }}>{fmt(value)}</span>
     </div>
   )
 }
@@ -1636,39 +1460,36 @@ function SidebarRow({ label, value, color }: { label: string; value: number; col
 function MiniBreakdown({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#1C1A17' }}>{fmt(value)}</div>
+      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17', marginTop: 4, fontWeight: 500 }}>{fmt(value)}</div>
     </div>
   )
 }
 
 // ─── EXISTING COVER INPUTS ───────────────────────────────────────────────────
 
-function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
-  p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
-  isCouple: boolean; clientName: string; spouseName: string
-}) {
-  const fields: { key: keyof ProtectionData; label: string; person: 'client' | 'spouse' }[] = [
+function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: any) {
+  const fields = [
     { key: 'existingLifeCoverClient', label: `${clientName} — Life`, person: 'client' },
     { key: 'existingCICoverClient', label: `${clientName} — CI`, person: 'client' },
     ...(isCouple ? [
-      { key: 'existingLifeCoverSpouse' as keyof ProtectionData, label: `${spouseName} — Life`, person: 'spouse' as const },
-      { key: 'existingCICoverSpouse' as keyof ProtectionData, label: `${spouseName} — CI`, person: 'spouse' as const },
+      { key: 'existingLifeCoverSpouse', label: `${spouseName} — Life`, person: 'spouse' },
+      { key: 'existingCICoverSpouse', label: `${spouseName} — CI`, person: 'spouse' },
     ] : []),
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {fields.map(f => (
         <div key={f.key}>
-          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 4 }}>{f.label}</label>
+          <label style={{ display: 'block', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#666', fontFamily: 'Inter', marginBottom: 8, fontWeight: 600 }}>{f.label}</label>
           <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 12 }}>$</span>
+            <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 14 }}>$</span>
             <input
               type="number" min={0}
-              value={(p[f.key] as number) ?? 0}
+              value={(p[f.key as keyof ProtectionData] as number) ?? 0}
               onChange={e => updateP({ [f.key]: parseInt(e.target.value) || 0 })}
-              style={{ ...inputStyle, paddingLeft: 20, width: '100%', background: '#F5F0E8' }}
+              style={{ ...inputStyle, paddingLeft: 32, width: '100%', background: 'rgba(255,255,255,0.7)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)' }}
             />
           </div>
         </div>
@@ -1679,51 +1500,42 @@ function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
 
 // ─── EDIT SUB-ITEMS MODAL ────────────────────────────────────────────────────
 
-function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, clientName, spouseName }: {
-  category: string; ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void; onClose: () => void
-  isCouple: boolean; clientName: string; spouseName: string
-}) {
+function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, clientName, spouseName }: any) {
   const subItems = p.expenseSubItems ?? {}
   const keys = DETAILED_EXPENSE_MAP[category] ?? []
 
-  // Per-person toggles: subItems[key] = true/false (both), subItems[key+'_c'] = client only, subItems[key+'_s'] = spouse only
   function isClientIncluded(key: string) { return subItems[key+'_c'] !== false }
   function isSpouseIncluded(key: string) { return subItems[key+'_s'] !== false }
   function toggleClient(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_c']: !isClientIncluded(key) } }) }
   function toggleSpouse(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_s']: !isSpouseIncluded(key) } }) }
-  // Individual mode: single toggle
   function toggleItem(key: string) {
     const cur = subItems[key] !== false
     updateP({ expenseSubItems: { ...subItems, [key]: !cur } })
   }
 
-  // Selected totals
-  const selectedClientTotal = keys.filter(k => isCouple ? isClientIncluded(k) : subItems[k] !== false)
-    .reduce((s, k) => s + (ff[k] as number || 0), 0)
-  const selectedSpouseTotal = keys.filter(k => isSpouseIncluded(k))
-    .reduce((s, k) => s + (ff[k.replace('d_','d2_')] as number || 0), 0)
+  const selectedClientTotal = keys.filter(k => isCouple ? isClientIncluded(k) : subItems[k] !== false).reduce((s, k) => s + (ff[k] as number || 0), 0)
+  const selectedSpouseTotal = keys.filter(k => isSpouseIncluded(k)).reduce((s, k) => s + (ff[k.replace('d_','d2_')] as number || 0), 0)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 480, maxWidth: 580, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '82vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', backdropFilter: 'blur(12px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(32px)', borderRadius: 32, padding: '40px', minWidth: 520, maxWidth: 640, border: '1px solid rgba(255,255,255,1)', boxShadow: '0 24px 80px rgba(0,0,0,0.2)', maxHeight: '85vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
             {EXPENSE_CATEGORY_LABELS[category]}
           </h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 28, color: '#888', lineHeight: 1, padding: '0 8px' }}>×</button>
         </div>
-        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+        <p style={{ fontSize: 13, color: '#666', fontFamily: 'Inter', marginBottom: 28 }}>
           {isCouple ? 'Tick under each person to include that expense in their protection calculation.' : 'Select which line items to include in the protection calculation.'}
         </p>
 
-        {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
-          <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{clientName}</div>
-          {isCouple && <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{spouseName}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 120px 120px' : '1fr 32px 120px', gap: 12, padding: '0 16px 12px', borderBottom: '1px solid rgba(0,0,0,0.06)', marginBottom: 12 }}>
+          <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>Item</div>
+          <div style={{ fontSize: 10, color: '#A8834A', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center', fontWeight: 600 }}>{clientName}</div>
+          {isCouple && <div style={{ fontSize: 10, color: '#2D5A4E', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center', fontWeight: 600 }}>{spouseName}</div>}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {keys.map(key => {
             const clientVal = (ff[key] as number || 0)
             const spouseKey = key.replace('d_', 'd2_')
@@ -1737,16 +1549,16 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
 
             return (
               <div key={key}
-                style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px',
-                  gap: 8, padding: '10px 10px', borderRadius: 6,
-                  background: rowActive ? '#F5F0E8' : 'transparent', alignItems: 'center',
-                  borderBottom: '1px solid #F0EDE8' }}
+                style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 120px 120px' : '1fr 32px 120px',
+                  gap: 12, padding: '16px', borderRadius: 16,
+                  background: rowActive ? 'rgba(245, 240, 232, 0.8)' : 'transparent', alignItems: 'center',
+                  border: rowActive ? '1px solid rgba(255,255,255,0.8)' : '1px solid transparent', transition: 'all 0.2s',
+                  boxShadow: rowActive ? '0 4px 12px rgba(0,0,0,0.02)' : 'none' }}
               >
-                {/* Item name + amounts */}
                 <div>
-                  <div style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17', marginBottom: 2 }}>{DETAILED_EXPENSE_LABELS[key]}</div>
+                  <div style={{ fontSize: 14, fontFamily: 'Inter', color: '#1C1A17', marginBottom: 6, fontWeight: 500 }}>{DETAILED_EXPENSE_LABELS[key]}</div>
                   {total > 0 && (
-                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'DM Mono, monospace' }}>
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'DM Mono, monospace' }}>
                       {isCouple
                         ? `${fmt(clientVal)} (${clientPct}%) · ${fmt(spouseVal)} (${spousePct}%)`
                         : `${fmt(clientVal)}/yr`}
@@ -1754,39 +1566,38 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
                   )}
                 </div>
 
-                {/* Client checkbox */}
                 {isCouple ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
-                    onClick={() => toggleClient(key)}>
-                    <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
-                      background: clientOn ? '#A8834A' : 'transparent',
-                      border: `2px solid ${clientOn ? '#A8834A' : '#ccc'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }} onClick={() => toggleClient(key)}>
+                    <div style={{ width: 24, height: 24, borderRadius: 8, cursor: 'pointer',
+                      background: clientOn ? '#A8834A' : 'rgba(255,255,255,0.8)',
+                      border: `1px solid ${clientOn ? '#A8834A' : 'rgba(0,0,0,0.1)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+                      boxShadow: clientOn ? '0 2px 6px rgba(168, 131, 74, 0.3)' : 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
+                      {clientOn && <span style={{ color: '#fff', fontSize: 14, lineHeight: 1, fontWeight: 800 }}>✓</span>}
                     </div>
-                    {clientVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#A8834A' }}>{fmt(clientVal)}</div>}
+                    {clientVal > 0 && <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#A8834A', fontWeight: 500 }}>{fmt(clientVal)}</div>}
                   </div>
                 ) : (
-                  <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', margin: '0 auto',
-                    background: clientOn ? '#A8834A' : 'transparent',
-                    border: `2px solid ${clientOn ? '#A8834A' : '#ccc'}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  <div style={{ width: 24, height: 24, borderRadius: 8, cursor: 'pointer', margin: '0 auto',
+                    background: clientOn ? '#A8834A' : 'rgba(255,255,255,0.8)',
+                    border: `1px solid ${clientOn ? '#A8834A' : 'rgba(0,0,0,0.1)'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+                    boxShadow: clientOn ? '0 2px 6px rgba(168, 131, 74, 0.3)' : 'inset 0 1px 3px rgba(0,0,0,0.05)' }}
                     onClick={() => toggleItem(key)}>
-                    {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                    {clientOn && <span style={{ color: '#fff', fontSize: 14, lineHeight: 1, fontWeight: 800 }}>✓</span>}
                   </div>
                 )}
 
-                {/* Spouse checkbox (couple only) */}
                 {isCouple && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
-                    onClick={() => toggleSpouse(key)}>
-                    <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
-                      background: spouseOn ? '#2D5A4E' : 'transparent',
-                      border: `2px solid ${spouseOn ? '#2D5A4E' : '#ccc'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {spouseOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }} onClick={() => toggleSpouse(key)}>
+                    <div style={{ width: 24, height: 24, borderRadius: 8, cursor: 'pointer',
+                      background: spouseOn ? '#2D5A4E' : 'rgba(255,255,255,0.8)',
+                      border: `1px solid ${spouseOn ? '#2D5A4E' : 'rgba(0,0,0,0.1)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+                      boxShadow: spouseOn ? '0 2px 6px rgba(45, 90, 78, 0.3)' : 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
+                      {spouseOn && <span style={{ color: '#fff', fontSize: 14, lineHeight: 1, fontWeight: 800 }}>✓</span>}
                     </div>
-                    {spouseVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#2D5A4E' }}>{fmt(spouseVal)}</div>}
+                    {spouseVal > 0 && <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: '#2D5A4E', fontWeight: 500 }}>{fmt(spouseVal)}</div>}
                   </div>
                 )}
               </div>
@@ -1794,30 +1605,29 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
           })}
         </div>
 
-        {/* Selected totals */}
-        <div style={{ marginTop: 16, padding: '12px 14px', background: '#1C1A17', borderRadius: 6 }}>
+        <div style={{ marginTop: 32, padding: '20px 24px', background: 'rgba(28, 26, 23, 0.9)', backdropFilter: 'blur(20px)', borderRadius: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
+            <span style={{ fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>Selected Total</span>
             {isCouple ? (
-              <div style={{ display: 'flex', gap: 20 }}>
+              <div style={{ display: 'flex', gap: 32 }}>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</div>
+                  <div style={{ fontSize: 10, color: '#A8834A', fontFamily: 'Inter', marginBottom: 4, fontWeight: 600 }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8', fontWeight: 500 }}>{fmt(selectedClientTotal)}/yr</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedSpouseTotal)}/yr</div>
+                  <div style={{ fontSize: 10, color: '#2D5A4E', fontFamily: 'Inter', marginBottom: 4, fontWeight: 600 }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8', fontWeight: 500 }}>{fmt(selectedSpouseTotal)}/yr</div>
                 </div>
               </div>
             ) : (
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8', fontWeight: 500 }}>{fmt(selectedClientTotal)}/yr</span>
             )}
           </div>
         </div>
 
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={onClose}
-            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.06em' }}>
+            style={{ padding: '14px 32px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 16, cursor: 'pointer', fontFamily: 'Inter', fontSize: 14, letterSpacing: '0.05em', fontWeight: 500, transition: 'background 0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
             Done
           </button>
         </div>
@@ -1830,31 +1640,27 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
 
 function SectionBlock({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <div style={{ width: 3, height: 16, background: color, borderRadius: 2, flexShrink: 0 }} />
-        <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{title}</span>
+    <div style={{ marginBottom: 40 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <div style={{ width: 4, height: 18, background: color, borderRadius: 4, flexShrink: 0 }} />
+        <span style={{ fontSize: 12, letterSpacing: '0.15em', textTransform: 'uppercase', fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{title}</span>
       </div>
       {children}
     </div>
   )
 }
 
-function PersonSlider({ label, value, onChange, color, unit = '%' }: {
-  label: string; value: number; onChange: (v: number) => void; color: string; unit?: string
-}) {
+function PersonSlider({ label, value, onChange, color, unit = '%' }: { label: string; value: number; onChange: (v: number) => void; color: string; unit?: string }) {
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter' }}>{label}</span>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#666', fontFamily: 'Inter', fontWeight: 600 }}>{label}</span>
+        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color, fontWeight: 600 }}>
           {Math.round(value)}{unit}
         </span>
       </div>
       <input
-        type="range" min={0} max={100} step={5}
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value))}
+        type="range" min={0} max={100} step={5} value={value} onChange={e => onChange(parseFloat(e.target.value))}
         style={{ width: '100%', accentColor: color }}
       />
     </div>
@@ -1863,55 +1669,51 @@ function PersonSlider({ label, value, onChange, color, unit = '%' }: {
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div
-      onClick={() => onChange(!value)}
+    <div onClick={() => onChange(!value)}
       style={{
-        width: 40, height: 22, borderRadius: 11, cursor: 'pointer', transition: 'background 0.15s',
-        background: value ? '#A8834A' : '#ccc', position: 'relative', flexShrink: 0,
+        width: 48, height: 26, borderRadius: 24, cursor: 'pointer', transition: 'background 0.3s ease',
+        background: value ? '#A8834A' : 'rgba(0,0,0,0.1)', position: 'relative', flexShrink: 0,
+        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
       }}
     >
       <div style={{
-        position: 'absolute', top: 3, left: value ? 21 : 3, width: 16, height: 16,
-        borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        position: 'absolute', top: 3, left: value ? 25 : 3, width: 20, height: 20,
+        borderRadius: '50%', background: '#fff', transition: 'left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
       }} />
     </div>
   )
 }
 
-function NeedTable({ isCouple, clientName, spouseName, clientData, spouseData, label, breakdown }: {
-  isCouple: boolean; clientName: string; spouseName: string
-  clientData: number; spouseData: number; label: string
-  breakdown?: { client: { fd: number; mort: number; edu: number }; spouse: { fd: number; mort: number; edu: number } }
-}) {
+function NeedTable({ isCouple, clientName, spouseName, clientData, spouseData, label, breakdown }: any) {
   return (
     <div>
-      <div style={{ display: 'flex', padding: '12px 16px', background: '#1C1A17', borderRadius: 6, alignItems: 'center', marginBottom: breakdown ? 8 : 0 }}>
-        <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+      <div style={{ display: 'flex', padding: '20px 24px', background: 'rgba(28, 26, 23, 0.9)', backdropFilter: 'blur(20px)', borderRadius: breakdown ? '20px 20px 0 0' : 20, alignItems: 'center', border: '1px solid rgba(255,255,255,0.1)', boxShadow: breakdown ? 'none' : '0 8px 24px rgba(0,0,0,0.08)' }}>
+        <span style={{ flex: 1, fontSize: 13, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>{label}</span>
         {isCouple ? (
           <>
-            <div style={{ textAlign: 'right', minWidth: 120 }}>
-              <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(clientData)}</div>
+            <div style={{ textAlign: 'right', minWidth: 130 }}>
+              <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter', marginBottom: 4, letterSpacing: '0.05em' }}>{clientName}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8', fontWeight: 500 }}>{fmt(clientData)}</div>
             </div>
-            <div style={{ textAlign: 'right', minWidth: 120 }}>
-              <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(spouseData)}</div>
+            <div style={{ textAlign: 'right', minWidth: 130 }}>
+              <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter', marginBottom: 4, letterSpacing: '0.05em' }}>{spouseName}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8', fontWeight: 500 }}>{fmt(spouseData)}</div>
             </div>
           </>
         ) : (
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(clientData)}</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 20, color: '#F5F0E8', fontWeight: 500 }}>{fmt(clientData)}</span>
         )}
       </div>
       {breakdown && (
-        <div style={{ display: 'flex', gap: 0, background: '#F5F0E8', borderRadius: '0 0 6px 6px', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', gap: 0, background: 'rgba(245, 240, 232, 0.8)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.6)', borderTop: 'none', borderRadius: '0 0 20px 20px', overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.04)' }}>
           {(['fd', 'mort', 'edu'] as const).map(key => {
             const labels = { fd: 'Family Dep.', mort: 'Mortgage', edu: 'Education' }
             return (
-              <div key={key} style={{ flex: 1, padding: '8px 10px', borderRight: key !== 'edu' ? '1px solid #E8E4DC' : 'none' }}>
-                <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>{labels[key]}</div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(breakdown.client[key])}</div>
-                {isCouple && <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#888', marginTop: 2 }}>{fmt(breakdown.spouse[key])}</div>}
+              <div key={key} style={{ flex: 1, padding: '12px 16px', borderRight: key !== 'edu' ? '1px solid rgba(0,0,0,0.06)' : 'none' }}>
+                <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontWeight: 600 }}>{labels[key]}</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#1C1A17', fontWeight: 500 }}>{fmt(breakdown.client[key])}</div>
+                {isCouple && <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#666', marginTop: 4 }}>{fmt(breakdown.spouse[key])}</div>}
               </div>
             )
           })}
@@ -1924,12 +1726,12 @@ function NeedTable({ isCouple, clientName, spouseName, clientData, spouseData, l
 // ─── STYLE CONSTANTS ─────────────────────────────────────────────────────────
 
 const labelStyle: React.CSSProperties = {
-  display: 'block', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase',
-  color: '#888', fontFamily: 'Inter', marginBottom: 6,
+  display: 'block', fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase',
+  color: '#666', fontFamily: 'Inter', marginBottom: 10, fontWeight: 600
 }
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 10px', fontFamily: 'DM Mono, monospace', fontSize: 13,
-  color: '#1C1A17', background: '#fff', border: '1px solid #E8E4DC',
-  borderRadius: 4, outline: 'none',
+  width: '100%', padding: '14px 16px', fontFamily: 'DM Mono, monospace', fontSize: 14,
+  color: '#1C1A17', background: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.9)',
+  borderRadius: 16, outline: 'none', transition: 'all 0.2s', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)'
 }
