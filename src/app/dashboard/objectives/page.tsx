@@ -286,6 +286,8 @@ export default function ObjectivesPage() {
   const [activeSection, setActiveSection] = useState(0)
   const [loading, setLoading] = useState(true)
   const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ─── LOAD DATA ─────────────────────────────────────────────────────────────
@@ -323,17 +325,20 @@ export default function ObjectivesPage() {
 
   async function loadData(id: string) {
     setLoading(true)
-    // Load fact_finding
-    const { data: ffData } = await supabase
+    // Load fact_finding - merge all rows (same as financials page)
+    const { data: ffRows } = await supabase
       .from('fact_finding')
       .select('*')
       .eq('client_id', id)
-      .single()
-    if (ffData) {
-      setFf(ffData)
-      if (ffData.protection) {
-        setP(prev => ({ ...prev, ...ffData.protection }))
+    if (ffRows && ffRows.length > 0) {
+      const merged: FactFinding = { client_id: id }
+      for (const row of ffRows) Object.assign(merged, row.data || {})
+      // Also check for protection saved directly on a row
+      const protRow = ffRows.find((r: any) => r.protection)
+      if (protRow?.protection) {
+        setP(prev => ({ ...prev, ...protRow.protection }))
       }
+      setFf(merged)
     }
     // Load client name
     const { data: clientData } = await supabase
@@ -361,10 +366,16 @@ export default function ObjectivesPage() {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       if (!clientId) return
+      setSaving(true)
       await supabase
         .from('fact_finding')
-        .update({ protection: updated })
-        .eq('client_id', clientId)
+        .upsert(
+          { client_id: clientId, section: 'protection', data: {}, protection: updated, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+      setSaving(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
     }, 800)
   }, [clientId, supabase])
 
@@ -557,12 +568,20 @@ export default function ObjectivesPage() {
 
       {/* HERO BAND */}
       <div style={{ background: '#1C1A17', padding: '28px 40px 24px' }}>
-        <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#A8834A', fontFamily: 'Inter' }}>Strategic Objectives</p>
-        <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 300, color: '#F5F0E8', letterSpacing: 1 }}>
-          Needs Discovery
-          <span style={{ color: '#A8834A', marginLeft: 16 }}>—</span>
-          <span style={{ marginLeft: 16 }}>{isCouple ? `${clientName} & ${spouseName}` : clientName}</span>
-        </h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#A8834A', fontFamily: 'Inter' }}>Strategic Objectives</p>
+            <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 300, color: '#F5F0E8', letterSpacing: 1 }}>
+              Needs Discovery
+              <span style={{ color: '#A8834A', marginLeft: 16 }}>—</span>
+              <span style={{ marginLeft: 16 }}>{isCouple ? `${clientName} & ${spouseName}` : clientName}</span>
+            </h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8 }}>
+            {saving && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter' }}>Saving…</span>}
+            {saved && !saving && <span style={{ fontSize: 11, color: '#A8834A', fontFamily: 'Inter' }}>✓ Saved</span>}
+          </div>
+        </div>
       </div>
 
       {/* SECTION TABS */}
