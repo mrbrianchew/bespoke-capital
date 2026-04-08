@@ -1073,7 +1073,7 @@ export default function FactFindingPage() {
     if (!user) { router.push('/auth'); return }
     const { data: cfgRow } = await supabase.from('config').select('value').eq('key', 'cpf_rates').maybeSingle()
     if (cfgRow?.value) setCpfConfig(cfgRow.value as CpfConfig)
-    const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(1)
+    const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
     if (!clients || clients.length === 0) { setLoading(false); return }
     const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]; setClient(c)
     const { data: fam } = await supabase.from('family_members').select('*').eq('client_id', c.id)
