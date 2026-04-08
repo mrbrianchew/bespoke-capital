@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useUniCosts } from '@/hooks/useUniCosts'
 
 // ─── INTERFACES ──────────────────────────────────────────────────────────────
 
@@ -269,7 +270,8 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export default function ObjectivesPage() {
-  const supabase = createClient()
+const supabase = createClient()
+  const { uniCosts: UNI_COST_DEFAULTS } = useUniCosts()
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
   const [spouseName, setSpouseName] = useState('Spouse')
