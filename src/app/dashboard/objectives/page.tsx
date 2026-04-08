@@ -473,9 +473,6 @@ export default function ObjectivesPage() {
       const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
       // In CI mode: only include children who haven't reached university yet
       if (ciMode && childAge >= uniEntryAge) return sum
-      // University entry age: female=18, male=20, unknown=18; can be overridden per child
-      const defaultEntryAge = child.gender === 'Male' ? 20 : 18
-      const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
       const yearsToUni = Math.max(0, uniEntryAge - childAge)
       const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
       const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
