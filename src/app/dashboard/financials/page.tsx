@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 interface OtherIncomeItem { label: string; amount: number }
@@ -1064,7 +1064,13 @@ export default function FactFindingPage() {
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab) setActiveSection(tab)
+  }, [searchParams])
 
   useEffect(() => { load() }, [])
 
