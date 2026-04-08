@@ -258,16 +258,13 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
     (ff[`${ap}cpf_sa`] as number || 0) +
     (ff[`${ap}cpf_ma`] as number || 0) +
     (ff[`${ap}cpf_ra`] as number || 0)
-  // All properties: full property value × coverage pct for this person
+  // All properties: full property value × ownership % for this person
   // (mortgage is already included in needs calc, so no subtraction here)
   const properties = (ff.properties ?? []) as any[]
   const propertyValue = properties.reduce((sum: number, prop: any, i: number) => {
     const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    let pct = 1
-    if (p) {
-      const pcts = prefix === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
-      pct = (pcts[i] ?? 100) / 100
-    }
+    const pcts = prefix === 'client' ? (p?.mortgageCoverPctsClient ?? []) : (p?.mortgageCoverPctsSpouse ?? [])
+    const pct = (pcts[i] ?? 100) / 100
     return sum + val * pct
   }, 0)
   return liquid + cpf + propertyValue
@@ -1910,12 +1907,12 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
   const properties = (ff.properties ?? []) as any[]
   const clientPropEquity = properties.reduce((sum: number, prop: any, i: number) => {
     const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const pct = ((p.mortgageCoverPctsClient ?? [])[i] ?? 100) / 100
+    const pct = !isCouple ? 1 : ((p.mortgageCoverPctsClient ?? [])[i] ?? 100) / 100
     return sum + val * pct
   }, 0)
   const spousePropEquity = properties.reduce((sum: number, prop: any, i: number) => {
     const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const pct = ((p.mortgageCoverPctsSpouse ?? [])[i] ?? 100) / 100
+    const pct = isCouple ? ((p.mortgageCoverPctsSpouse ?? [])[i] ?? 100) / 100 : 0
     return sum + val * pct
   }, 0)
 
@@ -1926,7 +1923,7 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
   return (
     <div>
       <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>
-        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and full property value (weighted by coverage %). CI offsets use liquid assets only.
+        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and property values (by ownership). CI offsets use liquid assets only.
       </p>
 
       <SectionBlock title="Asset Values" color="#2D5A4E">
@@ -1938,7 +1935,7 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
         )}
         <AssetRow label="Cash & Liquid Investments" clientVal={clientLiquid} spouseVal={spouseLiquid} />
         <AssetRow label="CPF (OA + SA + MA + RA)" clientVal={clientCPF} spouseVal={spouseCPF} />
-        <AssetRow label="Property Value (by coverage %)" clientVal={clientPropEquity} spouseVal={spousePropEquity} />
+        <AssetRow label="Property Value (by ownership)" clientVal={clientPropEquity} spouseVal={spousePropEquity} />
         <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#F5F0E8', borderRadius: '0 0 4px 4px' }}>
           <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.06em' }}>D/TPD Offset (all assets)</span>
           {isCouple ? (
