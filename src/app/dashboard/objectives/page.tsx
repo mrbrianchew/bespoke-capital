@@ -333,10 +333,11 @@ export default function ObjectivesPage() {
     if (ffRows && ffRows.length > 0) {
       const merged: FactFinding = { client_id: id }
       for (const row of ffRows) Object.assign(merged, row.data || {})
-      // Also check for protection saved directly on a row
-      const protRow = ffRows.find((r: any) => r.protection)
-      if (protRow?.protection) {
-        setP(prev => ({ ...prev, ...protRow.protection }))
+      // Load protection settings from the protection section row
+      const protRow = ffRows.find((r: any) => r.section === 'protection' || r.data?.protection)
+      const protData = protRow?.data?.protection
+      if (protData) {
+        setP(prev => ({ ...prev, ...protData }))
       }
       setFf(merged)
     }
@@ -373,7 +374,7 @@ export default function ObjectivesPage() {
       await supabase
         .from('fact_finding')
         .upsert(
-          { client_id: clientId, section: 'protection', data: {}, protection: updated, updated_at: new Date().toISOString() },
+          { client_id: clientId, section: 'protection', data: { protection: updated }, updated_at: new Date().toISOString() },
           { onConflict: 'client_id,section' }
         )
       setSaving(false)
