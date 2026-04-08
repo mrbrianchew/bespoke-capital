@@ -1226,7 +1226,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                     style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
                   >
                     {Object.entries(UNI_COST_DEFAULTS).map(([k, v]) => (
-                      <option key={k} value={k}>{v.label} — {fmt(v.annual)}/yr</option>
+                      <option key={k} value={k}>{v.label} — {fmt(v.annual_fees_living)}/yr</option>
                     ))}
                   </select>
                 </div>
