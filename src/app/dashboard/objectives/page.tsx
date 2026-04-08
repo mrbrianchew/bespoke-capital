@@ -434,7 +434,7 @@ export default function ObjectivesPage() {
   const defaultClientPct = annExpTotal > 0 ? (annExpClient / annExpTotal * 100) : 100
   const defaultSpousePct = annExpTotal > 0 ? (annExpSpouse / annExpTotal * 100) : 100
 
-  const clientCoverPct = (p.expenseCoverPctClient ?? defaultClientPct) / 100
+  const clientCoverPct = !isCouple ? 1 : (p.expenseCoverPctClient ?? defaultClientPct) / 100
   const spouseCoverPct = (p.expenseCoverPctSpouse ?? defaultSpousePct) / 100
 
   // Family dependency
