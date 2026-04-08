@@ -88,6 +88,8 @@ interface ProtectionData {
   expenseSubItems?: Record<string, boolean>
   expenseCoverPctClient?: number
   expenseCoverPctSpouse?: number
+  fdModeClient?: 'own' | 'combined'
+  fdModeSpouse?: 'own' | 'combined'
   coverageTermOverride?: number
   mortgageCoverPcts?: number[]
   mortgageCoverPctsClient?: number[]
@@ -632,9 +634,13 @@ export default function ObjectivesPage() {
 
   // Full needs
   function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
-    const annExp = who === 'client' ? annExpClient : annExpSpouse
+    const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
-    const fd = calcFamilyDep(annExp, coverPct, coverageTerm)
+    // Own mode: cover only their own expenses; Combined mode: cover % of total household expenses
+    const fdBase = fdMode === 'own'
+      ? (who === 'client' ? annExpClient : annExpSpouse)
+      : annExpTotal * coverPct
+    const fd = fv(inflation, coverageTerm, fdBase)
     const mort = calcMortgageForPerson(who)
     const edu = calcEducationForPerson(who)
     const gross = fd + mort + edu
@@ -643,9 +649,12 @@ export default function ObjectivesPage() {
   }
 
   function calcCINeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
-    const annExp = who === 'client' ? annExpClient : annExpSpouse
+    const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
-    const fd = calcCIFamilyDep(annExp, coverPct)
+    const fdBase = fdMode === 'own'
+      ? (who === 'client' ? annExpClient : annExpSpouse)
+      : annExpTotal * coverPct
+    const fd = fv(inflation, p.ciYears ?? 5, fdBase)
     const mort = calcCIMortgage(who)
     const edu = p.provideEducationFund ? calcEducationForPerson(who, true) : 0
     const gross = fd + mort + edu
@@ -1213,21 +1222,56 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
 
       {/* Coverage Percentage */}
       {isCouple && (
-        <SectionBlock title="Coverage Percentage" color="#A8834A">
+        <SectionBlock title="Family Dependency Coverage" color="#A8834A">
           <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
-            What portion of combined expenses does each person need to cover if the other passes away?
+            If this person passes away, what expenses need to be covered for the surviving family?
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            <PersonSlider
-              label={clientName} value={p.expenseCoverPctClient ?? defaultClientPct}
-              onChange={v => updateP({ expenseCoverPctClient: v })}
-              color="#A8834A"
-            />
-            <PersonSlider
-              label={spouseName} value={p.expenseCoverPctSpouse ?? defaultSpousePct}
-              onChange={v => updateP({ expenseCoverPctSpouse: v })}
-              color="#A8834A"
-            />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {([
+              { who: 'client' as const, name: clientName, modeKey: 'fdModeClient' as const, pctKey: 'expenseCoverPctClient' as const, defaultPct: defaultClientPct },
+              { who: 'spouse' as const, name: spouseName, modeKey: 'fdModeSpouse' as const, pctKey: 'expenseCoverPctSpouse' as const, defaultPct: defaultSpousePct },
+            ]).map(({ who, name, modeKey, pctKey, defaultPct }) => {
+              const mode = p[modeKey] ?? 'combined'
+              const pctVal = p[pctKey] ?? defaultPct
+              return (
+                <div key={who} style={{ padding: '16px', background: '#F5F0E8', borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 12 }}>{name}</div>
+                  {/* Mode toggle */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    {([
+                      { key: 'own', label: 'Own Expenses Only' },
+                      { key: 'combined', label: 'Combined Expenses' },
+                    ] as const).map(opt => (
+                      <button key={opt.key} onClick={() => updateP({ [modeKey]: opt.key })}
+                        style={{ padding: '6px 14px', fontFamily: 'Inter', fontSize: 12,
+                          background: mode === opt.key ? '#1C1A17' : '#fff',
+                          color: mode === opt.key ? '#fff' : '#1C1A17',
+                          border: '1px solid #E8E4DC', borderRadius: 4, cursor: 'pointer' }}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Description + slider */}
+                  {mode === 'own' ? (
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>
+                      Covers <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(who === 'client' ? annExpClient : annExpSpouse)}/yr</span> — {name}'s own expenses only.
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 8 }}>
+                        % of combined household expenses (<span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(annExpClient + annExpSpouse)}/yr</span>) to cover:
+                      </div>
+                      <PersonSlider
+                        label={`${pctVal.toFixed(0)}% = ${fmt((annExpClient + annExpSpouse) * pctVal / 100)}/yr`}
+                        value={pctVal}
+                        onChange={v => updateP({ [pctKey]: v })}
+                        color="#A8834A"
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </SectionBlock>
       )}
