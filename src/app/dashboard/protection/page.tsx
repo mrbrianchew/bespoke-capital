@@ -17,6 +17,8 @@ interface Policy {
   deferredPeriod?: string
   riderIncluded?: boolean
   person: 'client' | 'spouse' | string  // string allows child IDs
+  policyholder: string   // name of who pays the premium
+  lifeAssured: string    // name of who is covered
   notes: string
 }
 
@@ -57,8 +59,8 @@ function gapStatus(need: number, have: number) {
   return              { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
 }
 
-function newPolicy(person: string): Policy {
-  return { id: crypto.randomUUID(), type: 'life', insurer: '', planName: '', sumAssured: 0, annualPremium: 0, person, notes: '' }
+function newPolicy(person: string, defaultName = ''): Policy {
+  return { id: crypto.randomUUID(), type: 'life', insurer: '', planName: '', sumAssured: 0, annualPremium: 0, person, policyholder: defaultName, lifeAssured: defaultName, notes: '' }
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -123,9 +125,13 @@ export default function ProtectionPage() {
         }
       } else if (merged.mode === 'couple') {
         setIsCouple(true)
+        // Try alternate keys for spouse name
+        const sName = merged.spouse_name || merged.spouseName || merged.d2_name || ''
+        if (sName) setSpouseName(sName)
       }
-      const kids = merged.children || []
-      setChildren(kids)
+      // Children can be stored at top level or under a key
+      const kids = merged.children || merged.family_members || []
+      setChildren(Array.isArray(kids) ? kids : [])
       const rm = merged.risk_management
       if (rm) setRmData({ ...EMPTY_DATA, ...rm })
     }
@@ -247,7 +253,12 @@ export default function ProtectionPage() {
   const chartData = buildChartData(activeAge, activeAnnExp, activeDTPD, activeDTPD, activeCI, activeLife, activeCIHave)
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
-  function openNew(person: string) { setEditingPolicy(newPolicy(person)); setModalPerson(person); setShowModal(true) }
+  function openNew(person: string) {
+    const personLabel = allPeople.find(p => p.key === person)?.label || person
+    setEditingPolicy(newPolicy(person, personLabel))
+    setModalPerson(person)
+    setShowModal(true)
+  }
   function openEdit(p: Policy) { setEditingPolicy({ ...p }); setModalPerson(p.person); setShowModal(true) }
   function savePolicy(p: Policy) {
     const exists = rmData.policies.find(x => x.id === p.id)
@@ -260,11 +271,23 @@ export default function ProtectionPage() {
   }
   function delPolicy(id: string) { updateRmData({ ...rmData, policies: rmData.policies.filter(p => p.id !== id) }) }
 
-  // Portfolio sections: client, spouse (if couple), each child
-  const portfolioSections: { key: string; label: string; isDependent?: boolean }[] = [
+  // Portfolio sections: client, spouse (if couple), one combined Dependents section
+  const portfolioSections: { key: string; label: string; isDependent?: boolean; childKeys?: string[] }[] = [
     { key: 'client', label: clientName },
     ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
-    ...children.map((c: any) => ({ key: `child_${c.name || c.id}`, label: c.name || 'Child', isDependent: true })),
+    ...(children.length > 0 ? [{
+      key: 'dependents',
+      label: 'Dependents',
+      isDependent: true,
+      childKeys: children.map((c: any) => `child_${c.name || c.id || c}`),
+    }] : []),
+  ]
+
+  // Full people list for policyholder / life assured dropdowns
+  const allPeople: { key: string; label: string }[] = [
+    { key: 'client', label: clientName },
+    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
+    ...children.map((c: any) => ({ key: `child_${c.name || c.id}`, label: c.name || 'Child' })),
   ]
 
   return (
@@ -392,9 +415,14 @@ export default function ProtectionPage() {
           </div>
 
           {/* Sections per person */}
-          {portfolioSections.map(({ key, label, isDependent }) => {
-            const policies = rmData.policies.filter(p => p.person === key)
+          {portfolioSections.map(({ key, label, isDependent, childKeys }) => {
+            // For Dependents section, gather policies across all child keys
+            const policies = isDependent && childKeys
+              ? rmData.policies.filter(p => childKeys.includes(p.person))
+              : rmData.policies.filter(p => p.person === key)
             const personPremium = policies.reduce((s, p) => s + (p.annualPremium || 0), 0)
+            // For Dependents, pick the first child key as the default when adding
+            const addKey = isDependent && childKeys ? (childKeys[0] || 'dependent') : key
             return (
               <div key={key} style={{ marginBottom: 32 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -405,7 +433,7 @@ export default function ProtectionPage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }} className="no-print">
                     {personPremium > 0 && <span style={{ fontSize: 12, color: 'var(--ink3)' }}>Premium: <strong style={{ color: 'var(--ink)', fontFamily: 'DM Mono, monospace' }}>{fmt(personPremium)}</strong></span>}
-                    <button onClick={() => openNew(key)}
+                    <button onClick={() => openNew(addKey)}
                       style={{ padding: '6px 14px', background: isDependent ? '#F5FAF6' : 'var(--ink)', color: isDependent ? '#2D6A4F' : 'white', border: isDependent ? '1px solid #7B9E87' : 'none', cursor: 'pointer', fontSize: 12 }}>
                       + Add Policy
                     </button>
@@ -449,7 +477,8 @@ export default function ProtectionPage() {
       {showModal && editingPolicy && (
         <PolicyModal
           policy={editingPolicy}
-          personName={portfolioSections.find(s => s.key === modalPerson)?.label || modalPerson}
+          personName={portfolioSections.find(s => s.key === modalPerson || s.childKeys?.includes(modalPerson))?.label || modalPerson}
+          allPeople={allPeople}
           onSave={savePolicy}
           onClose={() => { setShowModal(false); setEditingPolicy(null) }}
         />
@@ -631,8 +660,8 @@ function PolicyTable({ policies, onEdit, onDelete }: { policies: Policy[]; onEdi
   const subtotal = policies.reduce((s, p) => s + (p.annualPremium || 0), 0)
   return (
     <div style={{ background: 'white', border: '0.5px solid var(--line)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 1fr 130px 130px 70px', padding: '9px 20px', borderBottom: '1px solid var(--line)', background: '#FAFAF8' }}>
-        {['TYPE', 'INSURER / PLAN', 'NOTES', 'SUM ASSURED', 'ANN. PREMIUM', ''].map(h => (
+      <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 140px 120px 120px 60px', padding: '9px 20px', borderBottom: '1px solid var(--line)', background: '#FAFAF8' }}>
+        {['TYPE', 'INSURER / PLAN', 'POLICYHOLDER · LIFE ASSURED', 'SUM ASSURED', 'ANN. PREMIUM', ''].map(h => (
           <div key={h} style={{ fontSize: 10, letterSpacing: '0.11em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{h}</div>
         ))}
       </div>
@@ -640,17 +669,19 @@ function PolicyTable({ policies, onEdit, onDelete }: { policies: Policy[]; onEdi
         const ti = POLICY_TYPES.find(t => t.value === p.type)
         const col = TYPE_COLORS[p.type] || '#999'
         return (
-          <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 1fr 130px 130px 70px', padding: '13px 20px', alignItems: 'center', borderBottom: i < policies.length - 1 ? '0.5px solid var(--line)' : 'none', background: i % 2 === 0 ? 'white' : '#FAFAF8' }}>
+          <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 140px 120px 120px 60px', padding: '13px 20px', alignItems: 'center', borderBottom: i < policies.length - 1 ? '0.5px solid var(--line)' : 'none', background: i % 2 === 0 ? 'white' : '#FAFAF8' }}>
             <div>
               <span style={{ fontSize: 11, fontWeight: 600, color: col, padding: '2px 7px', background: col + '18', borderRadius: 3 }}>{ti?.short}</span>
               {p.coverageType && <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 3 }}>{p.coverageType === 'term' ? `Term ${p.termYears ? p.termYears + 'yr' : ''}` : p.coverageType === 'whole_life' ? 'Whole Life' : 'ILP'}</div>}
             </div>
             <div>
               <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{p.insurer || <span style={{ color: 'var(--ink3)' }}>—</span>}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 1 }}>{p.planName}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 1 }}>{p.planName || (p.notes && p.type !== 'di' ? p.notes : '')}</div>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--ink3)', paddingRight: 8 }}>
-              {p.type === 'di' && p.monthlyBenefit ? `$${p.monthlyBenefit.toLocaleString()}/mo · ${p.deferredPeriod || ''}` : (p.notes || '—')}
+            <div style={{ fontSize: 11, color: 'var(--ink3)', lineHeight: 1.5 }}>
+              {p.policyholder && <div><span style={{ color: 'var(--ink3)' }}>PH</span> {p.policyholder}</div>}
+              {p.lifeAssured && p.lifeAssured !== p.policyholder && <div><span style={{ color: 'var(--ink3)' }}>LA</span> {p.lifeAssured}</div>}
+              {p.type === 'di' && p.monthlyBenefit ? <div style={{ color: 'var(--ink3)' }}>${p.monthlyBenefit.toLocaleString()}/mo</div> : null}
             </div>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>
               {p.type === 'di' ? '—' : fmt(p.sumAssured)}
@@ -663,7 +694,7 @@ function PolicyTable({ policies, onEdit, onDelete }: { policies: Policy[]; onEdi
           </div>
         )
       })}
-      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 1fr 130px 130px 70px', padding: '11px 20px', borderTop: '1px solid var(--line)', background: '#F8F7F4' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 140px 120px 120px 60px', padding: '11px 20px', borderTop: '1px solid var(--line)', background: '#F8F7F4' }}>
         <div style={{ gridColumn: '1 / 5', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Subtotal</div>
         <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{fmt(subtotal)}</div>
         <div />
@@ -674,10 +705,18 @@ function PolicyTable({ policies, onEdit, onDelete }: { policies: Policy[]; onEdi
 
 // ─── Policy Modal ─────────────────────────────────────────────────────────────
 
-function PolicyModal({ policy, personName, onSave, onClose }: { policy: Policy; personName: string; onSave: (p: Policy) => void; onClose: () => void }) {
+function PolicyModal({ policy, personName, allPeople, onSave, onClose }: {
+  policy: Policy
+  personName: string
+  allPeople: { key: string; label: string }[]
+  onSave: (p: Policy) => void
+  onClose: () => void
+}) {
   const [form, setForm] = useState<Policy>({ ...policy })
   const f = (k: keyof Policy, v: any) => setForm(prev => ({ ...prev, [k]: v }))
   const isNew = !policy.insurer && !policy.planName
+
+  const selectStyle = { width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none' }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.65)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -691,6 +730,24 @@ function PolicyModal({ policy, personName, onSave, onClose }: { policy: Policy; 
         </div>
 
         <div style={{ padding: '22px 28px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          {/* Policyholder + Life Assured */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Policyholder</label>
+              <select value={form.policyholder || ''} onChange={e => f('policyholder', e.target.value)} style={selectStyle}>
+                <option value="">Select…</option>
+                {allPeople.map(p => <option key={p.key} value={p.label}>{p.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Life Assured</label>
+              <select value={form.lifeAssured || ''} onChange={e => f('lifeAssured', e.target.value)} style={selectStyle}>
+                <option value="">Select…</option>
+                {allPeople.map(p => <option key={p.key} value={p.label}>{p.label}</option>)}
+              </select>
+            </div>
+          </div>
           {/* Type */}
           <div>
             <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Policy Type</label>
