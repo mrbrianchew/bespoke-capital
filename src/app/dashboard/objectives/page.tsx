@@ -463,7 +463,7 @@ export default function ObjectivesPage() {
     return children.reduce((sum, child) => {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
-      const annual = ec.annualCost ?? UNI_COST_DEFAULTS.sg_local.annual
+      const annual = ec.annual_fees_livingCost ?? UNI_COST_DEFAULTS.sg_local.annual_fees_living
       const dur = ec.courseDuration ?? 4
       const pct = (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
       return sum + annual * dur * pct
@@ -529,7 +529,7 @@ export default function ObjectivesPage() {
         childId: c.id,
         uniType: 'sg_local',
         courseDuration: 4,
-        annualCost: UNI_COST_DEFAULTS.sg_local.annual,
+        annualCost: UNI_COST_DEFAULTS.sg_local.annual_fees_living,
         coverPctClient: 50,
         coverPctSpouse: 50,
       }))
@@ -1204,7 +1204,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
             const ec = (p.educationChildren ?? []).find(e => e.childId === child.id) ?? { childId: child.id, uniType: 'sg_local', courseDuration: 4, annualCost: 34000, coverPctClient: 50, coverPctSpouse: 50 }
             const age = child.age ?? getAge(child.date_of_birth)
             const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
-            const total = (ec.annualCost ?? uniInfo.annual) * (ec.courseDuration ?? 4)
+            const total = (ec.annual_fees_livingCost ?? uniInfo.annual_fees_living) * (ec.courseDuration ?? 4)
 
             return (
               <div key={child.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '20px 24px', marginBottom: 16, borderLeft: '3px solid #2D5A4E' }}>
@@ -1226,12 +1226,12 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                     value={ec.uniType ?? 'sg_local'}
                     onChange={e => {
                       const uni = e.target.value
-                      updateChild(child.id, { uniType: uni, annualCost: UNI_COST_DEFAULTS[uni].annual })
+                      updateChild(child.id, { uniType: uni, annualCost: UNI_COST_DEFAULTS[uni].annual_fees_living })
                     }}
                     style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
                   >
                     {Object.entries(UNI_COST_DEFAULTS).map(([k, v]) => (
-                      <option key={k} value={k}>{v.label} — {fmt(v.annual)}/yr</option>
+                      <option key={k} value={k}>{v.label} — {fmt(v.annual_fees_living)}/yr</option>
                     ))}
                   </select>
                 </div>
@@ -1253,7 +1253,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                       <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
                       <input
                         type="number" min={0}
-                        value={ec.annualCost ?? uniInfo.annual}
+                        value={ec.annual_fees_livingCost ?? uniInfo.annual_fees_living}
                         onChange={e => updateChild(child.id, { annualCost: parseInt(e.target.value) })}
                         style={{ ...inputStyle, paddingLeft: 24 }}
                       />
