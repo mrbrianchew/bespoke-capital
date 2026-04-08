@@ -25,7 +25,7 @@ export default function OverviewPage() {
     if (!user) { router.push('/auth'); return }
     const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).single()
     if (adv) setAdvisor(adv)
-    const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(1)
+    const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
     if (!clients || clients.length === 0) { setLoading(false); return }
     const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]
     setClient(c)
