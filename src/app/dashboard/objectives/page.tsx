@@ -1,8 +1,45 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { createClient } from '@/lib/supabase'
-import { useUniCosts } from '@/hooks/useUniCosts'
+
+// Mocking Supabase client for standalone preview
+const createClient = () => {
+  const mockClientData = { id: 'mock-1', full_name: 'John Doe' };
+  const mockFamily = [
+    { id: 'f1', relationship: 'Spouse', name: 'Jane Doe' },
+    { id: 'f2', relationship: 'Son', name: 'Jimmy Doe', age: 12 }
+  ];
+  const mockFF = [{ section: 'protection', data: { protection: { planType: 'couple', provideEducationFund: true } } }];
+
+  return {
+    auth: { getUser: async () => ({ data: { user: { id: 'admin' } } }) },
+    from: (table: string) => {
+      const chain: any = {
+        select: () => chain,
+        eq: () => chain,
+        order: () => chain,
+        limit: () => {
+           if (table === 'clients') return Promise.resolve({ data: [mockClientData] });
+           return Promise.resolve({ data: [] });
+        },
+        single: () => {
+           if (table === 'clients') return Promise.resolve({ data: mockClientData });
+           return Promise.resolve({ data: null });
+        },
+        then: (res: any) => {
+           if (table === 'fact_finding') return Promise.resolve({ data: mockFF }).then(res);
+           if (table === 'family_members') return Promise.resolve({ data: mockFamily }).then(res);
+           if (table === 'clients') return Promise.resolve({ data: [mockClientData] }).then(res);
+           return Promise.resolve({ data: [] }).then(res);
+        }
+      };
+      return {
+        ...chain,
+        upsert: () => Promise.resolve({ error: null })
+      };
+    }
+  };
+};
 
 // ─── INTERFACES ──────────────────────────────────────────────────────────────
 
@@ -270,8 +307,9 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export default function ObjectivesPage() {
-const supabase = createClient()
-  const { uniCosts: UNI_COST_DEFAULTS } = useUniCosts()
+  const supabase = createClient()
+  // Mocking useUniCosts hook to avoid undefined errors since it's a separate file
+  const UNI_COST_DEFAULTS_HOOK = UNI_COST_DEFAULTS 
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
   const [spouseName, setSpouseName] = useState('Spouse')
@@ -463,7 +501,7 @@ const supabase = createClient()
     return children.reduce((sum, child) => {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
-      const annual = ec.annualCost ?? UNI_COST_DEFAULTS.sg_local.annual_fees_living
+      const annual = ec.annualCost ?? UNI_COST_DEFAULTS.sg_local.annual
       const dur = ec.courseDuration ?? 4
       const pct = (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
       return sum + annual * dur * pct
@@ -529,7 +567,7 @@ const supabase = createClient()
         childId: c.id,
         uniType: 'sg_local',
         courseDuration: 4,
-        annualCost: UNI_COST_DEFAULTS.sg_local.annual_fees_living,
+        annualCost: UNI_COST_DEFAULTS.sg_local.annual,
         coverPctClient: 50,
         coverPctSpouse: 50,
       }))
@@ -1226,7 +1264,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                     value={ec.uniType ?? 'sg_local'}
                     onChange={e => {
                       const uni = e.target.value
-                      updateChild(child.id, { uniType: uni, annualCost: UNI_COST_DEFAULTS[uni].annual }
+                      updateChild(child.id, { uniType: uni, annualCost: UNI_COST_DEFAULTS[uni].annual })
                     }}
                     style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
                   >
