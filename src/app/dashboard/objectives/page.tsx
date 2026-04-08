@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useUniCosts } from '@/hooks/useUniCosts'
+import { useUniCosts } from '@/hooks/useUniCosts'
 
 // ─── INTERFACES ──────────────────────────────────────────────────────────────
 
@@ -103,8 +104,7 @@ interface ProtectionData {
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-const UNI_COST_DEFAULTS: Record<string, { label: string; annual: number }> = {
-  sg_local:     { label: 'SG Local (NUS/NTU/SMU)', annual: 34000 },
+// UNI_COST_DEFAULTS loaded via useUniCosts hook,
   sg_private:   { label: 'SG Private University',  annual: 42000 },
   overseas_avg: { label: 'Overseas — Average',      annual: 55000 },
   overseas_uk:  { label: 'Overseas — UK',           annual: 72000 },
