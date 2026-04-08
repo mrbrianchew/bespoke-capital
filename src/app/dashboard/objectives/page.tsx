@@ -831,7 +831,7 @@ export default function ObjectivesPage() {
       </div>
 
       {/* MAIN LAYOUT */}
-      <div style={{ display: 'grid', gridTemplateColumns: sidebarOpen ? '1fr 260px' : '1fr', gap: 0, minHeight: 'calc(100vh - 140px)', transition: 'grid-template-columns 0.2s ease' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: sidebarOpen ? '1fr 260px' : '1fr 20px', gap: 0, minHeight: 'calc(100vh - 140px)', transition: 'grid-template-columns 0.25s ease' }}>
 
         {/* LEFT: CONTENT */}
         <div style={{ padding: '32px 40px', borderRight: '1px solid #E8E4DC' }}>
@@ -860,21 +860,22 @@ export default function ObjectivesPage() {
         </div>
 
         {/* RIGHT: SIDEBAR — collapsible */}
-        <div style={{ position: 'relative', background: '#fff' }}>
-          {/* Toggle button */}
+        <div style={{ position: 'relative', background: sidebarOpen ? '#fff' : 'transparent', borderLeft: sidebarOpen ? '1px solid #E8E4DC' : 'none' }}>
+          {/* Toggle button — always visible, fixed to left edge */}
           <button
             onClick={() => setSidebarOpen(v => !v)}
-            style={{ position: 'absolute', top: 32, left: -14, zIndex: 10,
+            style={{ position: 'absolute', top: 32, left: -14, zIndex: 20,
               width: 28, height: 28, borderRadius: '50%', background: '#fff', border: '1px solid #E8E4DC',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 14, color: '#A8834A', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}
+              fontSize: 14, color: '#A8834A', boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+              flexShrink: 0 }}
             title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
           >
             {sidebarOpen ? '›' : '‹'}
           </button>
 
           {sidebarOpen && (
-            <div style={{ padding: '32px 24px', width: 260 }}>
+            <div style={{ padding: '32px 24px', width: 260, overflowY: 'auto' }}>
               <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
                 Coverage Summary
               </p>
@@ -2154,31 +2155,55 @@ function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
   p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
 }) {
-  const fields: { key: keyof ProtectionData; label: string; person: 'client' | 'spouse' }[] = [
-    { key: 'existingLifeCoverClient', label: `${clientName} — D/TPD`, person: 'client' },
-    { key: 'existingCICoverClient', label: `${clientName} — CI`, person: 'client' },
-    ...(isCouple ? [
-      { key: 'existingLifeCoverSpouse' as keyof ProtectionData, label: `${spouseName} — D/TPD`, person: 'spouse' as const },
-      { key: 'existingCICoverSpouse' as keyof ProtectionData, label: `${spouseName} — CI`, person: 'spouse' as const },
-    ] : []),
-  ]
+  function PersonCard({ name, dtpdKey, ciKey }: { name: string; dtpdKey: keyof ProtectionData; ciKey: keyof ProtectionData }) {
+    return (
+      <div style={{ background: '#F5F0E8', borderRadius: 6, padding: '12px 14px', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 10, letterSpacing: '0.02em' }}>{name}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {[
+            { label: 'D/TPD', key: dtpdKey },
+            { label: 'CI', key: ciKey },
+          ].map(({ label, key }) => (
+            <div key={String(key)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{label}</span>
+              <div style={{ position: 'relative', flex: 1, maxWidth: 130 }}>
+                <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>$</span>
+                <input
+                  type="number" min={0}
+                  value={(p[key] as number) ?? 0}
+                  onChange={e => updateP({ [key]: parseInt(e.target.value) || 0 })}
+                  style={{ ...inputStyle, paddingLeft: 18, width: '100%', background: '#fff', fontSize: 12 }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {fields.map(f => (
-        <div key={f.key}>
-          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 4 }}>{f.label}</label>
-          <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 12 }}>$</span>
-            <input
-              type="number" min={0}
-              value={(p[f.key] as number) ?? 0}
-              onChange={e => updateP({ [f.key]: parseInt(e.target.value) || 0 })}
-              style={{ ...inputStyle, paddingLeft: 20, width: '100%', background: '#F5F0E8' }}
-            />
-          </div>
-        </div>
-      ))}
+    <div>
+      <a
+        href="/dashboard/protection"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 12px', marginBottom: 12,
+          background: 'transparent', border: '1px solid #A8834A', borderRadius: 4, color: '#A8834A',
+          fontSize: 11, fontFamily: 'Inter', textDecoration: 'none', letterSpacing: '0.05em' }}
+      >
+        → Wealth Protection Portfolio
+      </a>
+      <PersonCard
+        name={clientName}
+        dtpdKey="existingLifeCoverClient"
+        ciKey="existingCICoverClient"
+      />
+      {isCouple && (
+        <PersonCard
+          name={spouseName}
+          dtpdKey="existingLifeCoverSpouse"
+          ciKey="existingCICoverSpouse"
+        />
+      )}
     </div>
   )
 }
