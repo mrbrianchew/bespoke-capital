@@ -1342,7 +1342,7 @@ function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mor
   }
 
   const nonMortgageDebts = p.nonMortgageDebts ?? []
-  const financialsUrl = `/dashboard/financials?client=${clientId}&tab=properties`
+  const financialsUrl = `/dashboard/financials?tab=properties`
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
