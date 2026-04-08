@@ -473,7 +473,8 @@ export default function ObjectivesPage() {
       // FV of each cost component at start of university
       const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
       const fvLiving = baseLiving * Math.pow(1 + livingInflation, yearsToUni) * dur
-      const pct = (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
+      const defaultPct = isCouple ? 50 : 100
+      const pct = (who === 'client' ? (ec.coverPctClient ?? defaultPct) : (ec.coverPctSpouse ?? defaultPct)) / 100
       return sum + (fvTuition + fvLiving) * pct
     }, 0)
   }
@@ -537,9 +538,9 @@ export default function ObjectivesPage() {
         childId: c.id,
         uniType: 'sg_local',
         courseDuration: 4,
-       annualTuition: UNI_COST_DEFAULTS.sg_local.annual_tuition,
+        annualTuition: UNI_COST_DEFAULTS.sg_local.annual_tuition,
         annualLiving: UNI_COST_DEFAULTS.sg_local.annual_living,
-        coverPctClient: 50,
+        coverPctClient: isCouple ? 50 : 100,
         coverPctSpouse: 50,
       }))
       updateP({ educationChildren: eduKids })
@@ -1208,7 +1209,8 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
     const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
     const total = fvTuition + fvLiving
     if (who === 'total') return total
-    const pct = (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
+    const defaultPct = isCouple ? 50 : 100
+    const pct = (who === 'client' ? (ec.coverPctClient ?? defaultPct) : (ec.coverPctSpouse ?? defaultPct)) / 100
     return total * pct
   }
 
@@ -1357,7 +1359,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                 {/* Coverage split */}
                 {isCouple && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <PersonSlider label={`${clientName} covers`} value={ec.coverPctClient ?? 50} onChange={v => updateChild(child.id, { coverPctClient: v })} color="#2D5A4E" unit="%" />
+                    <PersonSlider label={`${clientName} covers`} value={ec.coverPctClient ?? (isCouple ? 50 : 100)} onChange={v => updateChild(child.id, { coverPctClient: v })} color="#2D5A4E" unit="%" />
                     <PersonSlider label={`${spouseName} covers`} value={ec.coverPctSpouse ?? 50} onChange={v => updateChild(child.id, { coverPctSpouse: v })} color="#2D5A4E" unit="%" />
                   </div>
                 )}
