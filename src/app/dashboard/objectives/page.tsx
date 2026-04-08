@@ -38,7 +38,7 @@ interface FactFinding {
   s2_housing?: number; s2_utilities?: number; s2_family_food?: number
   s2_transport?: number; s2_children?: number; s2_lifestyle?: number; s2_others?: number
   // Detailed expenses client
-  d_income_tax?: number; d_insurance?: number; d_regular_savings?: number
+  d_rental_expense?: number; d_income_tax?: number; d_insurance?: number; d_regular_savings?: number
   d_conservancy?: number; d_utilities?: number; d_family_food?: number
   d_maid?: number; d_other_household?: number; d_personal_food?: number
   d_transport?: number; d_car_petrol?: number; d_car_insurance?: number
@@ -47,7 +47,7 @@ interface FactFinding {
   d_holidays?: number; d_hobbies?: number; d_allowance_parents?: number
   d_others_lifestyle?: number; d_mortgage_cpf?: number; d_mortgage_cash?: number
   // Detailed expenses spouse
-  d2_income_tax?: number; d2_insurance?: number; d2_regular_savings?: number
+  d2_rental_expense?: number; d2_income_tax?: number; d2_insurance?: number; d2_regular_savings?: number
   d2_conservancy?: number; d2_utilities?: number; d2_family_food?: number
   d2_maid?: number; d2_other_household?: number; d2_personal_food?: number
   d2_transport?: number; d2_car_petrol?: number; d2_car_insurance?: number
@@ -120,7 +120,7 @@ const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
 }
 
 const DETAILED_EXPENSE_MAP: Record<string, string[]> = {
-  financial: ['d_income_tax','d_insurance','d_regular_savings'],
+  financial: ['d_rental_expense','d_income_tax','d_regular_savings','d_insurance'],
   household: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'],
   personal:  ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'],
   children:  ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'],
@@ -128,13 +128,28 @@ const DETAILED_EXPENSE_MAP: Record<string, string[]> = {
 }
 
 const DETAILED_EXPENSE_LABELS: Record<string, string> = {
-  d_income_tax: 'Income Tax', d_insurance: 'Insurance', d_regular_savings: 'Regular Savings',
-  d_conservancy: 'Conservancy', d_utilities: 'Utilities', d_family_food: 'Family Food',
-  d_maid: 'Maid', d_other_household: 'Other Household', d_personal_food: 'Personal Food',
-  d_transport: 'Transport', d_car_petrol: 'Car Petrol', d_car_insurance: 'Car Insurance',
-  d_childcare: 'Childcare', d_school_fees: 'School Fees', d_school_transport: 'School Transport',
-  d_allowance_children: 'Allowance (Children)', d_other_children: 'Other Children',
-  d_holidays: 'Holidays', d_hobbies: 'Hobbies', d_allowance_parents: 'Allowance (Parents)', d_others_lifestyle: 'Others',
+  d_rental_expense: 'Rental / Housing Expense',
+  d_income_tax: 'Income Tax',
+  d_regular_savings: 'Regular Savings / Investments',
+  d_insurance: 'Insurance Premium',
+  d_conservancy: 'Conservancy & S&CC Fees',
+  d_utilities: 'Utilities (Water, Gas, Electricity)',
+  d_family_food: 'Groceries & Family Food',
+  d_maid: 'Domestic Helper / Maid Levy',
+  d_other_household: 'Other Household Expenses',
+  d_personal_food: 'Personal Meals & Dining',
+  d_transport: 'Public Transport',
+  d_car_petrol: 'Car Petrol',
+  d_car_insurance: 'Car Insurance & Road Tax',
+  d_childcare: 'Childcare / Infant Care',
+  d_school_fees: 'School Fees & Tuition',
+  d_school_transport: 'School Transport',
+  d_allowance_children: 'Allowance for Children',
+  d_other_children: 'Other Children Expenses',
+  d_holidays: 'Holidays & Travel',
+  d_hobbies: 'Hobbies & Leisure',
+  d_allowance_parents: 'Allowance for Parents',
+  d_others_lifestyle: 'Other Lifestyle Expenses',
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -545,6 +560,8 @@ export default function ObjectivesPage() {
         <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#A8834A', fontFamily: 'Inter' }}>Strategic Objectives</p>
         <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 300, color: '#F5F0E8', letterSpacing: 1 }}>
           Needs Discovery
+          <span style={{ color: '#A8834A', marginLeft: 16 }}>—</span>
+          <span style={{ marginLeft: 16 }}>{isCouple ? `${clientName} & ${spouseName}` : clientName}</span>
         </h1>
       </div>
 
@@ -607,25 +624,6 @@ export default function ObjectivesPage() {
           <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
             Coverage Summary
           </p>
-
-          {/* Plan type toggle */}
-          <div style={{ display: 'flex', gap: 0, marginBottom: 24, background: '#F5F0E8', borderRadius: 6, padding: 3 }}>
-            {(['individual', 'couple'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => updateP({ planType: t })}
-                style={{
-                  flex: 1, padding: '7px 0', fontSize: 11, letterSpacing: '0.08em',
-                  textTransform: 'capitalize', fontFamily: 'Inter', fontWeight: 500,
-                  background: p.planType === t ? '#1C1A17' : 'transparent',
-                  color: p.planType === t ? '#fff' : '#888',
-                  border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
-          </div>
 
           {/* Summary blocks */}
           <SidebarSummary
@@ -1551,20 +1549,26 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
   const subItems = p.expenseSubItems ?? {}
   const keys = DETAILED_EXPENSE_MAP[category] ?? []
 
+  // Per-person toggles: subItems[key] = true/false (both), subItems[key+'_c'] = client only, subItems[key+'_s'] = spouse only
+  function isClientIncluded(key: string) { return subItems[key+'_c'] !== false }
+  function isSpouseIncluded(key: string) { return subItems[key+'_s'] !== false }
+  function toggleClient(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_c']: !isClientIncluded(key) } }) }
+  function toggleSpouse(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_s']: !isSpouseIncluded(key) } }) }
+  // Individual mode: single toggle
   function toggleItem(key: string) {
-    updateP({ expenseSubItems: { ...subItems, [key]: !(subItems[key] !== false) } })
+    const cur = subItems[key] !== false
+    updateP({ expenseSubItems: { ...subItems, [key]: !cur } })
   }
 
-  // Category totals for summary
-  const selectedTotal = keys.filter(k => subItems[k] !== false).reduce((s, k) => {
-    const clientVal = (ff[k] as number || 0)
-    const spouseVal = (ff[k.replace('d_','d2_')] as number || 0)
-    return s + (clientVal + spouseVal) * 12
-  }, 0)
+  // Selected totals
+  const selectedClientTotal = keys.filter(k => isCouple ? isClientIncluded(k) : subItems[k] !== false)
+    .reduce((s, k) => s + (ff[k] as number || 0) * 12, 0)
+  const selectedSpouseTotal = keys.filter(k => isSpouseIncluded(k))
+    .reduce((s, k) => s + (ff[k.replace('d_','d2_')] as number || 0) * 12, 0)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 420, maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '80vh', overflowY: 'auto' }}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 480, maxWidth: 580, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '82vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
             {EXPENSE_CATEGORY_LABELS[category]}
@@ -1572,56 +1576,108 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}>×</button>
         </div>
         <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
-          Select which line items to include in the protection calculation.
+          {isCouple ? 'Tick under each person to include that expense in their protection calculation.' : 'Select which line items to include in the protection calculation.'}
         </p>
+
         {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '24px 1fr 90px 90px' : '24px 1fr 100px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
-          <div />
+        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
           <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
-          {isCouple && <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>}
+          <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{clientName}</div>
+          {isCouple && <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{spouseName}</div>}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {keys.map(key => {
             const clientVal = (ff[key] as number || 0) * 12
             const spouseKey = key.replace('d_', 'd2_')
             const spouseVal = (ff[spouseKey] as number || 0) * 12
-            const included = subItems[key] !== false
+            const total = clientVal + spouseVal
+            const clientPct = total > 0 ? Math.round(clientVal / total * 100) : 0
+            const spousePct = total > 0 ? Math.round(spouseVal / total * 100) : 0
+            const clientOn = isCouple ? isClientIncluded(key) : subItems[key] !== false
+            const spouseOn = isSpouseIncluded(key)
+            const rowActive = isCouple ? (clientOn || spouseOn) : clientOn
+
             return (
-              <div key={key} onClick={() => toggleItem(key)}
-                style={{ display: 'grid', gridTemplateColumns: isCouple ? '24px 1fr 90px 90px' : '24px 1fr 100px',
-                  gap: 8, padding: '8px 10px', borderRadius: 4, cursor: 'pointer',
-                  background: included ? '#F5F0E8' : 'transparent', alignItems: 'center' }}
+              <div key={key}
+                style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px',
+                  gap: 8, padding: '10px 10px', borderRadius: 6,
+                  background: rowActive ? '#F5F0E8' : 'transparent', alignItems: 'center',
+                  borderBottom: '1px solid #F0EDE8' }}
               >
-                <div style={{ width: 16, height: 16, borderRadius: 3, background: included ? '#A8834A' : 'transparent',
-                  border: `1.5px solid ${included ? '#A8834A' : '#ccc'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {included && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
-                </div>
-                <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{DETAILED_EXPENSE_LABELS[key]}</span>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: clientVal > 0 ? '#1C1A17' : '#ccc' }}>
-                    {clientVal > 0 ? fmt(clientVal) : '—'}
-                  </div>
-                  <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter' }}>/yr</div>
-                </div>
-                {isCouple && (
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: spouseVal > 0 ? '#1C1A17' : '#ccc' }}>
-                      {spouseVal > 0 ? fmt(spouseVal) : '—'}
+                {/* Item name + amounts */}
+                <div>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17', marginBottom: 2 }}>{DETAILED_EXPENSE_LABELS[key]}</div>
+                  {total > 0 && (
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'DM Mono, monospace' }}>
+                      {isCouple
+                        ? `${fmt(clientVal)} (${clientPct}%) · ${fmt(spouseVal)} (${spousePct}%)`
+                        : `${fmt(clientVal)}/yr`}
                     </div>
-                    <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter' }}>/yr</div>
+                  )}
+                </div>
+
+                {/* Client checkbox */}
+                {isCouple ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                    onClick={() => toggleClient(key)}>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
+                      background: clientOn ? '#A8834A' : 'transparent',
+                      border: `2px solid ${clientOn ? '#A8834A' : '#ccc'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    {clientVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#A8834A' }}>{fmt(clientVal)}</div>}
+                  </div>
+                ) : (
+                  <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', margin: '0 auto',
+                    background: clientOn ? '#A8834A' : 'transparent',
+                    border: `2px solid ${clientOn ? '#A8834A' : '#ccc'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onClick={() => toggleItem(key)}>
+                    {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                  </div>
+                )}
+
+                {/* Spouse checkbox (couple only) */}
+                {isCouple && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                    onClick={() => toggleSpouse(key)}>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
+                      background: spouseOn ? '#2D5A4E' : 'transparent',
+                      border: `2px solid ${spouseOn ? '#2D5A4E' : '#ccc'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {spouseOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    {spouseVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#2D5A4E' }}>{fmt(spouseVal)}</div>}
                   </div>
                 )}
               </div>
             )
           })}
         </div>
-        {/* Selected total */}
-        <div style={{ marginTop: 16, padding: '10px 14px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(selectedTotal)}/yr</span>
+
+        {/* Selected totals */}
+        <div style={{ marginTop: 16, padding: '12px 14px', background: '#1C1A17', borderRadius: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
+            {isCouple ? (
+              <div style={{ display: 'flex', gap: 20 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedSpouseTotal)}/yr</div>
+                </div>
+              </div>
+            ) : (
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</span>
+            )}
+          </div>
         </div>
+
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={onClose}
             style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.06em' }}>
