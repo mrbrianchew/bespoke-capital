@@ -529,7 +529,7 @@ const supabase = createClient()
         childId: c.id,
         uniType: 'sg_local',
         courseDuration: 4,
-        annualCost: UNI_COST_DEFAULTS.sg_local.annual,
+        annualCost: UNI_COST_DEFAULTS.sg_local.annual_fees_living,
         coverPctClient: 50,
         coverPctSpouse: 50,
       }))
