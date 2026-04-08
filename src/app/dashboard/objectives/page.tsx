@@ -258,21 +258,19 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
     (ff[`${ap}cpf_sa`] as number || 0) +
     (ff[`${ap}cpf_ma`] as number || 0) +
     (ff[`${ap}cpf_ra`] as number || 0)
-  // All properties: equity = property value × coverage pct for this person
+  // All properties: full property value × coverage pct for this person
+  // (mortgage is already included in needs calc, so no subtraction here)
   const properties = (ff.properties ?? []) as any[]
-  const propertyEquity = properties.reduce((sum: number, prop: any, i: number) => {
-    const propValue = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const outstanding = prop.outstanding ?? 0
-    const equity = Math.max(0, propValue - outstanding)
-    // Use the same coverage pct as the mortgage coverage slider
+  const propertyValue = properties.reduce((sum: number, prop: any, i: number) => {
+    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
     let pct = 1
     if (p) {
       const pcts = prefix === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
       pct = (pcts[i] ?? 100) / 100
     }
-    return sum + equity * pct
+    return sum + val * pct
   }, 0)
-  return liquid + cpf + propertyEquity
+  return liquid + cpf + propertyValue
 }
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
@@ -1908,21 +1906,17 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
   const clientCPF = (ff.a_cpf_oa ?? 0) + (ff.a_cpf_sa ?? 0) + (ff.a_cpf_ma ?? 0) + (ff.a_cpf_ra ?? 0)
   const spouseCPF = (ff.a2_cpf_oa ?? 0) + (ff.a2_cpf_sa ?? 0) + (ff.a2_cpf_ma ?? 0) + (ff.a2_cpf_ra ?? 0)
 
-  // Property equity per person — value minus outstanding, weighted by mortgage coverage %
+  // Property value per person — full value × coverage %, no outstanding subtraction
   const properties = (ff.properties ?? []) as any[]
   const clientPropEquity = properties.reduce((sum: number, prop: any, i: number) => {
-    const propValue = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const outstanding = prop.outstanding ?? 0
-    const equity = Math.max(0, propValue - outstanding)
+    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
     const pct = ((p.mortgageCoverPctsClient ?? [])[i] ?? 100) / 100
-    return sum + equity * pct
+    return sum + val * pct
   }, 0)
   const spousePropEquity = properties.reduce((sum: number, prop: any, i: number) => {
-    const propValue = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const outstanding = prop.outstanding ?? 0
-    const equity = Math.max(0, propValue - outstanding)
+    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
     const pct = ((p.mortgageCoverPctsSpouse ?? [])[i] ?? 100) / 100
-    return sum + equity * pct
+    return sum + val * pct
   }, 0)
 
   const colHeader = (name: string) => (
@@ -1932,7 +1926,7 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
   return (
     <div>
       <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>
-        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and investment property. CI offsets use liquid assets only.
+        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and full property value (weighted by coverage %). CI offsets use liquid assets only.
       </p>
 
       <SectionBlock title="Asset Values" color="#2D5A4E">
@@ -1944,7 +1938,7 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
         )}
         <AssetRow label="Cash & Liquid Investments" clientVal={clientLiquid} spouseVal={spouseLiquid} />
         <AssetRow label="CPF (OA + SA + MA + RA)" clientVal={clientCPF} spouseVal={spouseCPF} />
-        <AssetRow label="Property Equity (by coverage %)" clientVal={clientPropEquity} spouseVal={spousePropEquity} />
+        <AssetRow label="Property Value (by coverage %)" clientVal={clientPropEquity} spouseVal={spousePropEquity} />
         <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#F5F0E8', borderRadius: '0 0 4px 4px' }}>
           <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.06em' }}>D/TPD Offset (all assets)</span>
           {isCouple ? (
