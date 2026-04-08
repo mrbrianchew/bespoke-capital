@@ -206,7 +206,7 @@ function getDetailedTotal(ff: FactFinding, categories: Record<string, boolean>, 
       total += (ff[key.replace('d_', sp)] as number || 0)
     })
   })
-  return total * 12
+  return total
 }
 
 function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
@@ -223,7 +223,7 @@ function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, bool
     if (!enabled) return
     catMap[cat]?.forEach(k => { total += (ff[k] as number || 0) })
   })
-  return total * 12
+  return total
 }
 
 function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtpd' | 'ci'): number {
@@ -343,20 +343,23 @@ export default function ObjectivesPage() {
     // Load client name
     const { data: clientData } = await supabase
       .from('clients')
-      .select('full_name, spouse_name')
+      .select('full_name')
       .eq('id', id)
       .single()
     if (clientData) {
       setClientName(clientData.full_name || 'Client')
-      setSpouseName(clientData.spouse_name || 'Spouse')
     }
-    // Load children
+    // Load family members - spouse name + children
     const { data: familyData } = await supabase
       .from('family_members')
       .select('*')
       .eq('client_id', id)
-      .in('relationship', ['Daughter', 'Son', 'Child'])
-    if (familyData) setChildren(familyData)
+    if (familyData) {
+      const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
+      if (spouse) setSpouseName(spouse.name || 'Spouse')
+      const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
+      setChildren(kids)
+    }
     setLoading(false)
   }
 
@@ -884,11 +887,11 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
             }
             let clientAmt = 0, spouseAmt = 0
             if (isDetailed) {
-              clientAmt = getDetailedCategoryTotal(ff, key, 'client') * 12
-              spouseAmt = getDetailedCategoryTotal(ff, key, 'spouse') * 12
+              clientAmt = getDetailedCategoryTotal(ff, key, 'client')
+              spouseAmt = getDetailedCategoryTotal(ff, key, 'spouse')
             } else {
-              clientAmt = (simpleMap[key] ?? []).reduce((s, k) => s + (ff[k] as number || 0), 0) * 12
-              spouseAmt = (simpleMap[key] ?? []).map(k => k.replace('s_','s2_')).reduce((s, k) => s + (ff[k] as number || 0), 0) * 12
+              clientAmt = (simpleMap[key] ?? []).reduce((s, k) => s + (ff[k] as number || 0), 0)
+              spouseAmt = (simpleMap[key] ?? []).map(k => k.replace('s_','s2_')).reduce((s, k) => s + (ff[k] as number || 0), 0)
             }
             const catTotal = clientAmt + spouseAmt
             const clientPct = catTotal > 0 ? Math.round(clientAmt / catTotal * 100) : 0
@@ -1581,9 +1584,9 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
 
   // Selected totals
   const selectedClientTotal = keys.filter(k => isCouple ? isClientIncluded(k) : subItems[k] !== false)
-    .reduce((s, k) => s + (ff[k] as number || 0) * 12, 0)
+    .reduce((s, k) => s + (ff[k] as number || 0), 0)
   const selectedSpouseTotal = keys.filter(k => isSpouseIncluded(k))
-    .reduce((s, k) => s + (ff[k.replace('d_','d2_')] as number || 0) * 12, 0)
+    .reduce((s, k) => s + (ff[k.replace('d_','d2_')] as number || 0), 0)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1607,9 +1610,9 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {keys.map(key => {
-            const clientVal = (ff[key] as number || 0) * 12
+            const clientVal = (ff[key] as number || 0)
             const spouseKey = key.replace('d_', 'd2_')
-            const spouseVal = (ff[spouseKey] as number || 0) * 12
+            const spouseVal = (ff[spouseKey] as number || 0)
             const total = clientVal + spouseVal
             const clientPct = total > 0 ? Math.round(clientVal / total * 100) : 0
             const spousePct = total > 0 ? Math.round(spouseVal / total * 100) : 0
