@@ -1226,7 +1226,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                     value={ec.uniType ?? 'sg_local'}
                     onChange={e => {
                       const uni = e.target.value
-                      updateChild(child.id, { uniType: uni, annualCost: UUNI_COST_DEFAULTS[uni].annual_fees_living })
+                      updateChild(child.id, { uniType: uni, annualCost: UNI_COST_DEFAULTS[uni].annual_fees_living })
                     }}
                     style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
                   >
