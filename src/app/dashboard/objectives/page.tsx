@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useUniCosts } from '@/hooks/useUniCosts'
+import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
+
+// Module-level fallback so sub-components can access defaults before hook loads
+let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
 
 // ─── INTERFACES ──────────────────────────────────────────────────────────────
 
@@ -103,7 +106,6 @@ interface ProtectionData {
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-// UNI_COST_DEFAULTS loaded via useUniCosts hook
 const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
   financial: 'Financial Commitments',
   household: 'Household Expenses',
@@ -263,7 +265,8 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
 
 export default function ObjectivesPage() {
   const supabase = createClient()
-  const { uniCosts: UNI_COST_DEFAULTS } = useUniCosts()
+  const { uniCosts: _uniCosts } = useUniCosts()
+  UNI_COST_DEFAULTS = _uniCosts
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
   const [spouseName, setSpouseName] = useState('Spouse')
@@ -1223,7 +1226,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
                     style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
                   >
                     {Object.entries(UNI_COST_DEFAULTS).map(([k, v]) => (
-                      <option key={k} value={k}>{v.label} — {fmt(v.annual_fees_living)}/yr</option>
+                      <option key={k} value={k}>{v.label} — {fmt(v.annual)}/yr</option>
                     ))}
                   </select>
                 </div>
