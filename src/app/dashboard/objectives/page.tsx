@@ -189,20 +189,37 @@ function getSimpleTotal(ff: FactFinding, prefix: 'client' | 'spouse'): number {
   )
 }
 
-function getDetailedCategoryTotal(ff: FactFinding, category: string, prefix: 'client' | 'spouse'): number {
+function getDetailedCategoryTotal(ff: FactFinding, category: string, prefix: 'client' | 'spouse', subItems?: Record<string, boolean>): number {
   const sp = prefix === 'spouse' ? 'd2_' : 'd_'
+  const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
   const keys = DETAILED_EXPENSE_MAP[category] || []
-  return keys.reduce((sum, k) => sum + (ff[k.replace('d_', sp)] as number || 0), 0)
+  return keys.reduce((sum, k) => {
+    if (subItems) {
+      const personKey = k + perPersonKey
+      if (personKey in subItems) {
+        if (subItems[personKey] === false) return sum
+      } else {
+        if (subItems[k] === false) return sum
+      }
+    }
+    return sum + (ff[k.replace('d_', sp)] as number || 0)
+  }, 0)
 }
 
 function getDetailedTotal(ff: FactFinding, categories: Record<string, boolean>, subItems: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
   const sp = prefix === 'spouse' ? 'd2_' : 'd_'
+  const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
   let total = 0
   Object.entries(categories).forEach(([cat, enabled]) => {
     if (!enabled) return
     DETAILED_EXPENSE_MAP[cat]?.forEach(key => {
-      const subKey = key
-      if (subItems[subKey] === false) return
+      // Check per-person toggle first (key_c or key_s), fall back to shared toggle (key)
+      const personKey = key + perPersonKey
+      if (personKey in subItems) {
+        if (subItems[personKey] === false) return
+      } else {
+        if (subItems[key] === false) return
+      }
       total += (ff[key.replace('d_', sp)] as number || 0)
     })
   })
@@ -888,8 +905,8 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
             }
             let clientAmt = 0, spouseAmt = 0
             if (isDetailed) {
-              clientAmt = getDetailedCategoryTotal(ff, key, 'client')
-              spouseAmt = getDetailedCategoryTotal(ff, key, 'spouse')
+              clientAmt = getDetailedCategoryTotal(ff, key, 'client', p.expenseSubItems ?? {})
+              spouseAmt = getDetailedCategoryTotal(ff, key, 'spouse', p.expenseSubItems ?? {})
             } else {
               clientAmt = (simpleMap[key] ?? []).reduce((s, k) => s + (ff[k] as number || 0), 0)
               spouseAmt = (simpleMap[key] ?? []).map(k => k.replace('s_','s2_')).reduce((s, k) => s + (ff[k] as number || 0), 0)
