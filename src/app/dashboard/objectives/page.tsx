@@ -26,6 +26,7 @@ interface FamilyMember {
   id: string
   name: string
   relationship: string
+  gender?: string
   date_of_birth?: string
   age?: number
 }
@@ -92,7 +93,7 @@ interface ProtectionData {
   mortgageCoverPctsSpouse?: number[]
   provideEducationFund?: boolean
   educationFundPct?: number
-  educationChildren?: { childId: string; uniType?: string; courseDuration?: number; annualCost?: number; coverPctClient?: number; coverPctSpouse?: number }[]
+  educationChildren?: { childId: string; uniType?: string; courseDuration?: number; annualTuition?: number; annualLiving?: number; uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number }[]
   ciStage?: 'early_late' | 'late_only'
   ciYears?: number
   ciMortgagePctClient?: number
@@ -451,17 +452,29 @@ export default function ObjectivesPage() {
     }, 0)
   }
 
-  // Education fund
+  // Education fund — FV-based calculation
+  // Tuition inflates at 5% p.a.; living costs inflate at the client's chosen inflation rate
   function calcEducationForPerson(who: 'client' | 'spouse'): number {
     if (!p.provideEducationFund) return 0
     const eduKids = p.educationChildren ?? []
+    const livingInflation = inflation // uses p.inflationRate / 100
     return children.reduce((sum, child) => {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
-      const annual = ec.annualCost ?? UNI_COST_DEFAULTS.sg_local.annual_fees_living
-      const dur = ec.courseDuration ?? 4
+      const childAge = child.age ?? getAge(child.date_of_birth)
+      // University entry age: female=18, male=20, unknown=18; can be overridden per child
+      const defaultEntryAge = child.gender === 'Male' ? 20 : 18
+      const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+      const yearsToUni = Math.max(0, uniEntryAge - childAge)
+      const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+      const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+      const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+      const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+      // FV of each cost component at start of university
+      const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+      const fvLiving = baseLiving * Math.pow(1 + livingInflation, yearsToUni) * dur
       const pct = (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
-      return sum + annual * dur * pct
+      return sum + (fvTuition + fvLiving) * pct
     }, 0)
   }
 
@@ -521,14 +534,14 @@ export default function ObjectivesPage() {
   useEffect(() => {
     if (children.length > 0 && (p.educationChildren?.length ?? 0) === 0) {
       const eduKids = children.map(c => ({
-  childId: c.id,
-  uniType: 'sg_local',
-  courseDuration: UNI_COST_DEFAULTS.sg_local.default_duration,
-  annualTuition: UNI_COST_DEFAULTS.sg_local.annual_tuition,
-  annualLiving: UNI_COST_DEFAULTS.sg_local.annual_living,
-  coverPctClient: 50,
-  coverPctSpouse: 50,
-}))
+        childId: c.id,
+        uniType: 'sg_local',
+        courseDuration: 4,
+       annualTuition: UNI_COST_DEFAULTS.sg_local.annual_tuition,
+        annualLiving: UNI_COST_DEFAULTS.sg_local.annual_living,
+        coverPctClient: 50,
+        coverPctSpouse: 50,
+      }))
       updateP({ educationChildren: eduKids })
     }
   }, [children])
@@ -831,7 +844,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
           <EducationFundTab
             p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            children={children}
+            children={children} inflation={inflation}
           />
         )}
         {wpTab === 3 && (
@@ -1160,12 +1173,16 @@ function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mor
 
 // ─── EDUCATION FUND TAB ───────────────────────────────────────────────────────
 
-function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, children }: {
+function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, children, inflation }: {
   p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
-  children: FamilyMember[]
+  children: FamilyMember[]; inflation: number
 }) {
-  type EduChild = { childId: string; uniType?: string; courseDuration?: number; annualCost?: number; coverPctClient?: number; coverPctSpouse?: number }
+  type EduChild = {
+    childId: string; uniType?: string; courseDuration?: number
+    annualTuition?: number; annualLiving?: number
+    uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number
+  }
 
   function updateChild(childId: string, changes: Partial<EduChild>) {
     const arr: EduChild[] = [...(p.educationChildren ?? [])]
@@ -1178,6 +1195,23 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
     updateP({ educationChildren: arr })
   }
 
+  function calcChildFund(child: FamilyMember, ec: EduChild, who: 'client' | 'spouse' | 'total'): number {
+    const childAge = child.age ?? getAge(child.date_of_birth)
+    const defaultEntryAge = child.gender === 'Male' ? 20 : 18
+    const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+    const yearsToUni = Math.max(0, uniEntryAge - childAge)
+    const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+    const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+    const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+    const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+    const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+    const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
+    const total = fvTuition + fvLiving
+    if (who === 'total') return total
+    const pct = (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
+    return total * pct
+  }
+
   return (
     <div>
       {/* Toggle */}
@@ -1185,7 +1219,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
         <Toggle value={p.provideEducationFund ?? false} onChange={v => updateP({ provideEducationFund: v })} />
         <div>
           <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 500, color: '#1C1A17' }}>Provide Education Fund</div>
-          <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Include children's university education in coverage needs</div>
+          <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Inflation-adjusted university cost projection per child</div>
         </div>
       </div>
 
@@ -1197,63 +1231,126 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
             </div>
           )}
           {children.map(child => {
-            const ec = (p.educationChildren ?? []).find(e => e.childId === child.id) ?? { childId: child.id, uniType: 'sg_local', courseDuration: 4, annualCost: 34000, coverPctClient: 50, coverPctSpouse: 50 }
-            const age = child.age ?? getAge(child.date_of_birth)
+            const ec = (p.educationChildren ?? []).find(e => e.childId === child.id) ?? { childId: child.id }
+            const childAge = child.age ?? getAge(child.date_of_birth)
+            const defaultEntryAge = child.gender === 'Male' ? 20 : 18
+            const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+            const yearsToUni = Math.max(0, uniEntryAge - childAge)
             const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
-            const total = (ec.annualCost ?? uniInfo.annual_fees_living) * (ec.courseDuration ?? 4)
+            const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+            const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+            const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+            const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+            const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
+            const totalFund = fvTuition + fvLiving
 
             return (
               <div key={child.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '20px 24px', marginBottom: 16, borderLeft: '3px solid #2D5A4E' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
                   <div>
-                    <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{child.name || `${child.relationship}`}</div>
-                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Age {age}</div>
+                    <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{child.name || child.relationship}</div>
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginTop: 2 }}>
+                      Age {childAge} · {child.gender || 'Gender not set'} · {yearsToUni > 0 ? `${yearsToUni} yrs to university` : 'University age'}
+                    </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total Fund</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#2D5A4E', fontWeight: 600 }}>{fmt(total)}</div>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total Fund Needed</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 20, color: '#2D5A4E', fontWeight: 600 }}>{fmt(totalFund)}</div>
+                  </div>
+                </div>
+
+                {/* FV Breakdown strip */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>FV Tuition (5%)</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(fvTuition)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>FV Living ({(inflation * 100).toFixed(1)}%)</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(fvLiving)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Duration</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{dur} yrs</div>
                   </div>
                 </div>
 
                 {/* Uni type */}
-                <div style={{ marginBottom: 14 }}>
+                <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>University Type</label>
                   <select
                     value={ec.uniType ?? 'sg_local'}
                     onChange={e => {
                       const uni = e.target.value
-                      updateChild(child.id, { uniType: uni, annualCost: UNI_COST_DEFAULTS[uni].annual_fees_living })
+                      const info = UNI_COST_DEFAULTS[uni]
+                      updateChild(child.id, {
+                        uniType: uni,
+                        annualTuition: info.annual_tuition,
+                        annualLiving: info.annual_living,
+                        courseDuration: info.default_duration,
+                      })
                     }}
                     style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
                   >
                     {Object.entries(UNI_COST_DEFAULTS).map(([k, v]) => (
-                      <option key={k} value={k}>{v.label} — {fmt(v.annual_fees_living)}/yr</option>
+                      <option key={k} value={k}>{v.label} — {fmt(v.annual_tuition + v.annual_living)}/yr</option>
                     ))}
                   </select>
                 </div>
 
-                {/* Course duration + annual cost */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                {/* Row: Uni Entry Age + Duration */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={labelStyle}>University Entry Age</label>
+                    <input
+                      type="number" min={15} max={25} step={1}
+                      value={uniEntryAge}
+                      onChange={e => updateChild(child.id, { uniEntryAge: parseInt(e.target.value) })}
+                      style={inputStyle}
+                    />
+                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>
+                      Default: {defaultEntryAge} ({child.gender === 'Male' ? 'Male — NS offset' : 'Female'})
+                    </div>
+                  </div>
                   <div>
                     <label style={labelStyle}>Course Duration (years)</label>
                     <input
                       type="number" min={1} max={6} step={1}
-                      value={ec.courseDuration ?? 4}
+                      value={dur}
                       onChange={e => updateChild(child.id, { courseDuration: parseInt(e.target.value) })}
                       style={inputStyle}
                     />
                   </div>
+                </div>
+
+                {/* Row: Annual Tuition + Annual Living */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: isCouple ? 16 : 0 }}>
                   <div>
-                    <label style={labelStyle}>Annual Cost (SGD)</label>
+                    <label style={labelStyle}>Annual Tuition (Today's $)</label>
                     <div style={{ position: 'relative' }}>
                       <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
                       <input
-                        type="number" min={0}
-                        value={ec.annualCost ?? uniInfo.annual_fees_living}
-                        onChange={e => updateChild(child.id, { annualCost: parseInt(e.target.value) })}
+                        type="number" min={0} step={500}
+                        value={baseTuition}
+                        onChange={e => updateChild(child.id, { annualTuition: parseInt(e.target.value) })}
                         style={{ ...inputStyle, paddingLeft: 24 }}
                       />
                     </div>
+                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>Inflated at 5% p.a.</div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Annual Living (Today's $)</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
+                      <input
+                        type="number" min={0} step={500}
+                        value={baseLiving}
+                        onChange={e => updateChild(child.id, { annualLiving: parseInt(e.target.value) })}
+                        style={{ ...inputStyle, paddingLeft: 24 }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>Inflated at {(inflation * 100).toFixed(1)}% p.a.</div>
                   </div>
                 </div>
 
