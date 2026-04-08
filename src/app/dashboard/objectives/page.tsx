@@ -91,6 +91,7 @@ interface ProtectionData {
   mortgageCoverPcts?: number[]
   mortgageCoverPctsClient?: number[]
   mortgageCoverPctsSpouse?: number[]
+  nonMortgageDebts?: { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; coverPctClient?: number; coverPctSpouse?: number }[]
   provideEducationFund?: boolean
   educationFundPct?: number
   educationChildren?: { childId: string; uniType?: string; courseDuration?: number; annualTuition?: number; annualLiving?: number; uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number }[]
@@ -445,16 +446,22 @@ export default function ObjectivesPage() {
   // Mortgage coverage
   function calcMortgageForPerson(who: 'client' | 'spouse'): number {
     const mortgages = ff.mortgages ?? []
-    return mortgages.reduce((sum, m, i) => {
+    const mortgageTotal = mortgages.reduce((sum, m, i) => {
       const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
-      const pct = (pcts[i] ?? 100) / 100
+      const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
       return sum + m.outstanding * pct
     }, 0)
+    // Add non-mortgage debts
+    const debtTotal = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
+      const pct = !isCouple ? 1 : (who === 'client' ? (d.coverPctClient ?? 100) : (d.coverPctSpouse ?? 100)) / 100
+      return sum + d.amount * pct
+    }, 0)
+    return mortgageTotal + debtTotal
   }
 
   // Education fund — FV-based calculation
   // Tuition inflates at 5% p.a.; living costs inflate at the client's chosen inflation rate
-  function calcEducationForPerson(who: 'client' | 'spouse'): number {
+  function calcEducationForPerson(who: 'client' | 'spouse', ciMode = false): number {
     if (!p.provideEducationFund) return 0
     const eduKids = p.educationChildren ?? []
     const livingInflation = inflation // uses p.inflationRate / 100
@@ -462,6 +469,10 @@ export default function ObjectivesPage() {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
       const childAge = child.age ?? getAge(child.date_of_birth)
+      const defaultEntryAge = child.gender === 'Male' ? 20 : 18
+      const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+      // In CI mode: only include children who haven't reached university yet
+      if (ciMode && childAge >= uniEntryAge) return sum
       // University entry age: female=18, male=20, unknown=18; can be overridden per child
       const defaultEntryAge = child.gender === 'Male' ? 20 : 18
       const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
@@ -486,8 +497,27 @@ export default function ObjectivesPage() {
   function calcCIMortgage(who: 'client' | 'spouse'): number {
     const mortgages = ff.mortgages ?? []
     const ciYrs = p.ciYears ?? 5
-    const pct = (who === 'client' ? (p.ciMortgagePctClient ?? 100) : (p.ciMortgagePctSpouse ?? 100)) / 100
-    return mortgages.reduce((sum, m) => sum + m.monthlyRepayment * 12 * ciYrs * pct, 0)
+    // Mortgage monthly repayments × CI years
+    const mortgageCI = mortgages.reduce((sum, m, i) => {
+      const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
+      const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
+      return sum + m.monthlyRepayment * 12 * ciYrs * pct
+    }, 0)
+    // Non-mortgage debt monthly repayments × CI years (PMT calculated from debt fields)
+    const debtCI = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
+      const pct = !isCouple ? 1 : (who === 'client' ? (d.coverPctClient ?? 100) : (d.coverPctSpouse ?? 100)) / 100
+      const monthlyPmt = calcDebtPMT(d.amount, d.interestRate, d.tenureLeft)
+      return sum + monthlyPmt * 12 * ciYrs * pct
+    }, 0)
+    return mortgageCI + debtCI
+  }
+
+  function calcDebtPMT(amount: number, annualRate: number, years: number): number {
+    if (years <= 0 || amount <= 0) return 0
+    if (annualRate === 0) return amount / (years * 12)
+    const r = annualRate / 100 / 12
+    const n = years * 12
+    return amount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
   }
 
   // Full needs
@@ -507,7 +537,7 @@ export default function ObjectivesPage() {
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
     const fd = calcCIFamilyDep(annExp, coverPct)
     const mort = calcCIMortgage(who)
-    const edu = p.includeEduInCI ? calcEducationForPerson(who) : 0
+    const edu = p.provideEducationFund ? calcEducationForPerson(who, true) : 0
     const gross = fd + mort + edu
     const assets = getAssetOffset(ff, who, 'ci')
     return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
@@ -836,7 +866,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
           <MortgageDebtTab
             ff={ff} p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            mortgages={mortgages}
+            mortgages={mortgages} clientId={clientId ?? ''}
           />
         )}
         {wpTab === 2 && (
@@ -1105,67 +1135,260 @@ function dtpdFDOnly(annExp: number, coverPctRaw: number, inflationRaw: number, t
 
 // ─── MORTGAGE & DEBT TAB ─────────────────────────────────────────────────────
 
-function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages }: {
+function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, clientId }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
-  mortgages: MortgageProperty[]
+  mortgages: MortgageProperty[]; clientId: string
 }) {
-  if (mortgages.length === 0) {
-    return (
-      <div style={{ textAlign: 'center', padding: '40px 0', color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
-        No mortgages found. Add properties in the Financials tab.
-      </div>
-    )
+  type NonMortgageDebt = { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; coverPctClient?: number; coverPctSpouse?: number }
+
+  const DEBT_TYPES = ['Personal Loan', 'Car Loan', 'Business Loan', 'Credit Line', 'Student Loan', 'Other']
+
+  function addDebt() {
+    const newDebt: NonMortgageDebt = {
+      id: Date.now().toString(),
+      debtType: 'Personal Loan',
+      label: '',
+      amount: 0,
+      interestRate: 3,
+      tenureLeft: 5,
+      coverPctClient: 100,
+      coverPctSpouse: 50,
+    }
+    updateP({ nonMortgageDebts: [...(p.nonMortgageDebts ?? []), newDebt] })
   }
 
+  function updateDebt(id: string, changes: Partial<NonMortgageDebt>) {
+    const arr = (p.nonMortgageDebts ?? []).map(d => d.id === id ? { ...d, ...changes } : d)
+    updateP({ nonMortgageDebts: arr })
+  }
+
+  function removeDebt(id: string) {
+    updateP({ nonMortgageDebts: (p.nonMortgageDebts ?? []).filter(d => d.id !== id) })
+  }
+
+  function calcDebtPMT(amount: number, annualRate: number, years: number): number {
+    if (years <= 0 || amount <= 0) return 0
+    if (annualRate === 0) return amount / (years * 12)
+    const r = annualRate / 100 / 12
+    const n = years * 12
+    return amount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+  }
+
+  const nonMortgageDebts = p.nonMortgageDebts ?? []
+  const financialsUrl = `/dashboard/financials?client=${clientId}&tab=properties`
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {mortgages.map((m, i) => {
-        const clientPct = (p.mortgageCoverPctsClient ?? [])[i] ?? 50
-        const spousePct = (p.mortgageCoverPctsSpouse ?? [])[i] ?? 50
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-        function updateClientPct(val: number) {
-          const arr = [...(p.mortgageCoverPctsClient ?? mortgages.map(() => 50))]
-          arr[i] = val
-          updateP({ mortgageCoverPctsClient: arr })
-        }
-        function updateSpousePct(val: number) {
-          const arr = [...(p.mortgageCoverPctsSpouse ?? mortgages.map(() => 50))]
-          arr[i] = val
-          updateP({ mortgageCoverPctsSpouse: arr })
-        }
+      {/* ── MORTGAGE SECTION ── */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#A8834A' }}>Mortgage Loans</div>
+          <a
+            href={financialsUrl}
+            style={{ fontSize: 11, fontFamily: 'Inter', color: '#A8834A', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', border: '1px solid #A8834A', borderRadius: 4 }}
+          >
+            + Add in Financial Profile
+          </a>
+        </div>
 
-        return (
-          <div key={m.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '20px 24px', borderLeft: '3px solid #A8834A' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 2 }}>{m.label}</div>
-                <div style={{ fontSize: 12, color: '#888', fontFamily: 'DM Mono, monospace' }}>
-                  Outstanding: {fmt(m.outstanding)} · {m.interestRate}% · {m.remainingTenure} yrs remaining
-                </div>
-              </div>
-            </div>
-            {isCouple ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                <PersonSlider label={`${clientName} covers`} value={clientPct} onChange={updateClientPct} color="#A8834A" unit="%" />
-                <PersonSlider label={`${spouseName} covers`} value={spousePct} onChange={updateSpousePct} color="#A8834A" unit="%" />
-              </div>
-            ) : (
-              <PersonSlider label="Coverage %" value={clientPct} onChange={updateClientPct} color="#A8834A" unit="%" />
-            )}
-            <div style={{ marginTop: 12, display: 'flex', gap: 16, justifyContent: 'flex-end' }}>
-              {isCouple ? (
-                <>
-                  <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>{clientName}: <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace' }}>{fmt(m.outstanding * clientPct / 100)}</strong></span>
-                  <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>{spouseName}: <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace' }}>{fmt(m.outstanding * spousePct / 100)}</strong></span>
-                </>
-              ) : (
-                <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage: <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace' }}>{fmt(m.outstanding * clientPct / 100)}</strong></span>
-              )}
-            </div>
+        {mortgages.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px', background: '#F5F0E8', borderRadius: 8, color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
+            No mortgages found. Add properties in Financial Profile → Properties.
           </div>
-        )
-      })}
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {mortgages.map((m, i) => {
+              const clientPct = (p.mortgageCoverPctsClient ?? [])[i] ?? 100
+              const spousePct = (p.mortgageCoverPctsSpouse ?? [])[i] ?? 100
+
+              function updateClientPct(val: number) {
+                const arr = [...(p.mortgageCoverPctsClient ?? mortgages.map(() => 100))]
+                arr[i] = val
+                updateP({ mortgageCoverPctsClient: arr })
+              }
+              function updateSpousePct(val: number) {
+                const arr = [...(p.mortgageCoverPctsSpouse ?? mortgages.map(() => 100))]
+                arr[i] = val
+                updateP({ mortgageCoverPctsSpouse: arr })
+              }
+
+              return (
+                <div key={m.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '18px 20px', borderLeft: '3px solid #A8834A' }}>
+                  {/* Title + outstanding */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{m.label}</div>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginTop: 2 }}>Mortgage Loan</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Outstanding</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 17, color: '#A8834A', fontWeight: 600 }}>{fmt(m.outstanding)}</div>
+                    </div>
+                  </div>
+
+                  {/* Read-only details */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Loan Amount</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(m.initialLoanAmount)}</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Monthly Repayment</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(m.monthlyRepayment)}</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Remaining Tenure</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{m.remainingTenure} yrs @ {m.interestRate}%</div>
+                    </div>
+                  </div>
+
+                  {/* Coverage sliders */}
+                  {isCouple ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                      <PersonSlider label={`${clientName} covers`} value={clientPct} onChange={updateClientPct} color="#A8834A" unit="%" />
+                      <PersonSlider label={`${spouseName} covers`} value={spousePct} onChange={updateSpousePct} color="#A8834A" unit="%" />
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage: <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>100% — {fmt(m.outstanding)}</span></div>
+                  )}
+
+                  {/* D/TPD vs CI breakdown */}
+                  {isCouple && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+                        {clientName} D/TPD: <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(m.outstanding * clientPct / 100)}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+                        {spouseName} D/TPD: <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(m.outstanding * spousePct / 100)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── NON-MORTGAGE DEBTS SECTION ── */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#A8834A' }}>Non-Mortgage Debts</div>
+          <button
+            onClick={addDebt}
+            style={{ fontSize: 11, fontFamily: 'Inter', color: '#A8834A', background: 'transparent', border: '1px solid #A8834A', borderRadius: 4, padding: '5px 10px', cursor: 'pointer' }}
+          >
+            + Add Debt
+          </button>
+        </div>
+
+        {nonMortgageDebts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px', background: '#F5F0E8', borderRadius: 8, color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
+            No non-mortgage debts added.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {nonMortgageDebts.map(d => {
+              const monthlyPmt = calcDebtPMT(d.amount, d.interestRate, d.tenureLeft)
+              return (
+                <div key={d.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '18px 20px', borderLeft: '3px solid #6B7C93' }}>
+                  {/* Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, color: '#6B7C93', fontFamily: 'Inter', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{d.debtType || 'Debt'}</div>
+                    <button
+                      onClick={() => removeDebt(d.id)}
+                      style={{ fontSize: 11, color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  {/* Inputs row 1: Type + Label */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Type of Debt</label>
+                      <select
+                        value={d.debtType}
+                        onChange={e => updateDebt(d.id, { debtType: e.target.value })}
+                        style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
+                      >
+                        {DEBT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Description</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. DBS Personal Loan"
+                        value={d.label}
+                        onChange={e => updateDebt(d.id, { label: e.target.value })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Inputs row 2: Amount + Interest + Tenure */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={labelStyle}>Outstanding Amount</label>
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
+                        <input
+                          type="number" min={0} step={1000}
+                          value={d.amount || ''}
+                          onChange={e => updateDebt(d.id, { amount: parseInt(e.target.value) || 0 })}
+                          style={{ ...inputStyle, paddingLeft: 24 }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Interest Rate (%)</label>
+                      <input
+                        type="number" min={0} max={30} step={0.1}
+                        value={d.interestRate || ''}
+                        onChange={e => updateDebt(d.id, { interestRate: parseFloat(e.target.value) || 0 })}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Tenure Left (yrs)</label>
+                      <input
+                        type="number" min={1} max={30} step={1}
+                        value={d.tenureLeft || ''}
+                        onChange={e => updateDebt(d.id, { tenureLeft: parseInt(e.target.value) || 1 })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Calculated monthly PMT + CI preview */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC', marginBottom: isCouple ? 14 : 0 }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Est. Monthly Repayment</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(monthlyPmt)}/mo</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>D/TPD Coverage</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#6B7C93' }}>{fmt(d.amount)}</div>
+                    </div>
+                  </div>
+
+                  {/* Coverage sliders */}
+                  {isCouple && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                      <PersonSlider label={`${clientName} covers`} value={d.coverPctClient ?? 100} onChange={v => updateDebt(d.id, { coverPctClient: v })} color="#6B7C93" unit="%" />
+                      <PersonSlider label={`${spouseName} covers`} value={d.coverPctSpouse ?? 100} onChange={v => updateDebt(d.id, { coverPctSpouse: v })} color="#6B7C93" unit="%" />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
     </div>
   )
 }
@@ -1441,12 +1664,11 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
         </SectionBlock>
       )}
 
-      {/* Include education */}
+      {/* Education always included in CI */}
       {p.provideEducationFund && children.length > 0 && (
         <SectionBlock title="Education Fund" color="#2D5A4E">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Toggle value={p.includeEduInCI ?? false} onChange={v => updateP({ includeEduInCI: v })} />
-            <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>Include education fund in CI calculation</span>
+          <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', lineHeight: 1.6 }}>
+            Education fund is automatically included for children who have not yet reached university age. If the client or spouse suffers a critical illness, the CI payout covers the education fund so it can be set aside immediately.
           </div>
         </SectionBlock>
       )}
