@@ -521,13 +521,14 @@ export default function ObjectivesPage() {
   useEffect(() => {
     if (children.length > 0 && (p.educationChildren?.length ?? 0) === 0) {
       const eduKids = children.map(c => ({
-        childId: c.id,
-        uniType: 'sg_local',
-        courseDuration: 4,
-        annualCost: UNI_COST_DEFAULTS.sg_local.annual_fees_living,
-        coverPctClient: 50,
-        coverPctSpouse: 50,
-      }))
+  childId: c.id,
+  uniType: 'sg_local',
+  courseDuration: UNI_COST_DEFAULTS.sg_local.default_duration,
+  annualTuition: UNI_COST_DEFAULTS.sg_local.annual_tuition,
+  annualLiving: UNI_COST_DEFAULTS.sg_local.annual_living,
+  coverPctClient: 50,
+  coverPctSpouse: 50,
+}))
       updateP({ educationChildren: eduKids })
     }
   }, [children])
