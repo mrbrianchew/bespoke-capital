@@ -21,7 +21,7 @@ const createClient = () => ({
         return promise;
       }
     }),
-    upsert: async () => ({ error: null })
+    upsert: async (data: any, options?: any) => ({ error: null })
   })
 });
 const UNI_COST_FALLBACK: Record<string, any> = {
@@ -1640,7 +1640,7 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
               <div key={key}
                 style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 120px 120px' : '1fr 32px 120px',
                   gap: '12px', padding: '16px', borderRadius: '16px',
-                  background: rowActive ? 'rgba(255, 255, 255, 0.7)' : 'transparent', alignItems: 'center',
+                  background: rowActive ? 'rgba(245, 240, 232, 0.8)' : 'transparent', alignItems: 'center',
                   border: rowActive ? '1px solid rgba(255,255,255,0.9)' : '1px solid transparent', transition: 'all 0.2s',
                   boxShadow: rowActive ? '0 4px 16px rgba(0,0,0,0.03)' : 'none' }}
               >
