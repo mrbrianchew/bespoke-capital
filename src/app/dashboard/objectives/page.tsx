@@ -72,6 +72,7 @@ interface FactFinding {
   a2_cpf_ma?: number; a2_cpf_ra?: number; a2_inv_property_res?: number; a2_inv_property_com?: number
   // Mortgages
   mortgages?: MortgageProperty[]
+  properties?: any[]
   // Other
   strategic_objectives?: Record<string, unknown>
   protection?: ProtectionData
