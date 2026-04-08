@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useUniCosts } from '@/hooks/useUniCosts'
-import { useUniCosts } from '@/hooks/useUniCosts'
 
 // ─── INTERFACES ──────────────────────────────────────────────────────────────
 
