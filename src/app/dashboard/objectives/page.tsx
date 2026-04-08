@@ -328,6 +328,7 @@ export default function ObjectivesPage() {
   const [activeSection, setActiveSection] = useState(0)
   const [loading, setLoading] = useState(true)
   const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -858,32 +859,48 @@ export default function ObjectivesPage() {
           )}
         </div>
 
-        {/* RIGHT: SIDEBAR */}
-        <div style={{ padding: '32px 24px', background: '#fff' }}>
-          <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
-            Coverage Summary
-          </p>
+        {/* RIGHT: SIDEBAR — collapsible */}
+        <div style={{ position: 'relative', background: '#fff' }}>
+          {/* Toggle button */}
+          <button
+            onClick={() => setSidebarOpen(v => !v)}
+            style={{ position: 'absolute', top: 32, left: -14, zIndex: 10,
+              width: 28, height: 28, borderRadius: '50%', background: '#fff', border: '1px solid #E8E4DC',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, color: '#A8834A', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}
+            title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          >
+            {sidebarOpen ? '›' : '‹'}
+          </button>
 
-          {/* Summary blocks */}
-          <SidebarSummary
-            isCouple={isCouple}
-            clientName={clientName} spouseName={spouseName}
-            dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
-            ciClient={ciClient} ciSpouse={ciSpouse}
-            existingLifeClient={existingLifeClient} existingLifeSpouse={existingLifeSpouse}
-            existingCIClient={existingCIClient} existingCISpouse={existingCISpouse}
-            lifeGapClient={lifeGapClient} lifeGapSpouse={lifeGapSpouse}
-            ciGapClient={ciGapClient} ciGapSpouse={ciGapSpouse}
-          />
+          {sidebarOpen && (
+            <div style={{ padding: '32px 24px', width: 260 }}>
+              <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
+                Coverage Summary
+              </p>
 
-          {/* Existing cover inputs */}
-          <div style={{ marginTop: 24 }}>
-            <p className="text-xs tracking-widest uppercase mb-3" style={{ color: '#888', fontFamily: 'Inter', letterSpacing: '0.1em' }}>Existing Coverage</p>
-            <ExistingCoverInputs
-              p={p} updateP={updateP} isCouple={isCouple}
-              clientName={clientName} spouseName={spouseName}
-            />
-          </div>
+              {/* Summary blocks */}
+              <SidebarSummary
+                isCouple={isCouple}
+                clientName={clientName} spouseName={spouseName}
+                dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
+                ciClient={ciClient} ciSpouse={ciSpouse}
+                existingLifeClient={existingLifeClient} existingLifeSpouse={existingLifeSpouse}
+                existingCIClient={existingCIClient} existingCISpouse={existingCISpouse}
+                lifeGapClient={lifeGapClient} lifeGapSpouse={lifeGapSpouse}
+                ciGapClient={ciGapClient} ciGapSpouse={ciGapSpouse}
+              />
+
+              {/* Existing cover inputs */}
+              <div style={{ marginTop: 24 }}>
+                <p className="text-xs tracking-widest uppercase mb-3" style={{ color: '#888', fontFamily: 'Inter', letterSpacing: '0.1em' }}>Existing Coverage</p>
+                <ExistingCoverInputs
+                  p={p} updateP={updateP} isCouple={isCouple}
+                  clientName={clientName} spouseName={spouseName}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
