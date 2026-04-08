@@ -258,13 +258,30 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
     (ff[`${ap}cpf_sa`] as number || 0) +
     (ff[`${ap}cpf_ma`] as number || 0) +
     (ff[`${ap}cpf_ra`] as number || 0)
-  // All properties: full property value × ownership % for this person
-  // (mortgage is already included in needs calc, so no subtraction here)
+  // All properties: full property value × mortgage slider pct for this person
+  // Slider indices map to the filtered mortgage list, so match by property ID
   const properties = (ff.properties ?? []) as any[]
-  const propertyValue = properties.reduce((sum: number, prop: any, i: number) => {
+  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+  const propertyValue = properties.reduce((sum: number, prop: any) => {
     const val = prop.propertyValue ?? prop.purchasePrice ?? 0
+    // Find this property's index in the mortgage list (slider index)
+    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
+    if (mortgageIdx === -1) {
+      // No mortgage — property belongs to whoever is recorded as sole owner, or split if joint
+      // Default: include fully for client (or split 50/50 if no ownership info)
+      const ot = prop.ownershipType ?? ''
+      let pct = 1
+      if (ot === 'Spouse Only') pct = prefix === 'spouse' ? 1 : 0
+      else if (ot === 'Joint Tenancy') pct = 0.5
+      else if (ot === 'Tenancy-in-Common') {
+        const parts = (prop.ownershipSplit ?? '50/50').split('/')
+        pct = prefix === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
+      } else pct = prefix === 'client' ? 1 : 0
+      return sum + val * pct
+    }
+    // Has mortgage — use slider pct
     const pcts = prefix === 'client' ? (p?.mortgageCoverPctsClient ?? []) : (p?.mortgageCoverPctsSpouse ?? [])
-    const pct = (pcts[i] ?? 100) / 100
+    const pct = (pcts[mortgageIdx] ?? 100) / 100
     return sum + val * pct
   }, 0)
   return liquid + cpf + propertyValue
@@ -1905,15 +1922,27 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
 
   // Property value per person — full value × coverage %, no outstanding subtraction
   const properties = (ff.properties ?? []) as any[]
-  const clientPropEquity = properties.reduce((sum: number, prop: any, i: number) => {
-    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const pct = !isCouple ? 1 : ((p.mortgageCoverPctsClient ?? [])[i] ?? 100) / 100
-    return sum + val * pct
+  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+  function getPropPct(prop: any, who: 'client' | 'spouse'): number {
+    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
+    if (mortgageIdx === -1) {
+      const ot = prop.ownershipType ?? ''
+      if (ot === 'Spouse Only') return who === 'spouse' ? 1 : 0
+      if (ot === 'Joint Tenancy') return 0.5
+      if (ot === 'Tenancy-in-Common') {
+        const parts = (prop.ownershipSplit ?? '50/50').split('/')
+        return who === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
+      }
+      return who === 'client' ? 1 : 0
+    }
+    const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
+    return (pcts[mortgageIdx] ?? 100) / 100
+  }
+  const clientPropEquity = properties.reduce((sum: number, prop: any) => {
+    return sum + (prop.propertyValue ?? prop.purchasePrice ?? 0) * getPropPct(prop, 'client')
   }, 0)
-  const spousePropEquity = properties.reduce((sum: number, prop: any, i: number) => {
-    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const pct = isCouple ? ((p.mortgageCoverPctsSpouse ?? [])[i] ?? 100) / 100 : 0
-    return sum + val * pct
+  const spousePropEquity = properties.reduce((sum: number, prop: any) => {
+    return sum + (prop.propertyValue ?? prop.purchasePrice ?? 0) * getPropPct(prop, 'spouse')
   }, 0)
 
   const colHeader = (name: string) => (
