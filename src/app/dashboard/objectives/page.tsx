@@ -685,6 +685,7 @@ export default function ObjectivesPage() {
               editModal={editModal} setEditModal={setEditModal}
               WP_TABS={WP_TABS} inflation={inflation}
               defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
+              clientId={clientId ?? ''}
             />
           )}
           {activeSection !== 0 && (
@@ -756,13 +757,14 @@ interface WPProps {
   WP_TABS: string[]
   inflation: number
   defaultClientPct: number; defaultSpousePct: number
+  clientId: string
 }
 
 // Type helper for return shape
 type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number }
 
 
-function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct }: WPProps) {
+function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId }: WPProps) {
   const wpTab = p.wpSubTab ?? 0
   const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
   const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
