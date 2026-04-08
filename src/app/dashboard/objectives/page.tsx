@@ -104,14 +104,7 @@ interface ProtectionData {
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-// UNI_COST_DEFAULTS loaded via useUniCosts hook,
-  sg_private:   { label: 'SG Private University',  annual: 42000 },
-  overseas_avg: { label: 'Overseas — Average',      annual: 55000 },
-  overseas_uk:  { label: 'Overseas — UK',           annual: 72000 },
-  overseas_aus: { label: 'Overseas — Australia',    annual: 65000 },
-  overseas_us:  { label: 'Overseas — USA',          annual: 85000 },
-}
-
+// UNI_COST_DEFAULTS loaded via useUniCosts hook
 const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
   financial: 'Financial Commitments',
   household: 'Household Expenses',
