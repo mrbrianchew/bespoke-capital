@@ -2,44 +2,33 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-// Mocking Supabase client for standalone preview
-const createClient = () => {
-  const mockClientData = { id: 'mock-1', full_name: 'John Doe' };
-  const mockFamily = [
-    { id: 'f1', relationship: 'Spouse', name: 'Jane Doe' },
-    { id: 'f2', relationship: 'Son', name: 'Jimmy Doe', age: 12 }
-  ];
-  const mockFF = [{ section: 'protection', data: { protection: { planType: 'couple', provideEducationFund: true } } }];
+// ⚠️ IMPORTANT: Uncomment these two imports when pasting into your local project!
+// import { createClient } from '@/lib/supabase'
+// import { useUniCosts } from '@/hooks/useUniCosts'
 
-  return {
-    auth: { getUser: async () => ({ data: { user: { id: 'admin' } } }) },
-    from: (table: string) => {
-      const chain: any = {
-        select: () => chain,
-        eq: () => chain,
-        order: () => chain,
-        limit: () => {
-           if (table === 'clients') return Promise.resolve({ data: [mockClientData] });
-           return Promise.resolve({ data: [] });
-        },
-        single: () => {
-           if (table === 'clients') return Promise.resolve({ data: mockClientData });
-           return Promise.resolve({ data: null });
-        },
-        then: (res: any) => {
-           if (table === 'fact_finding') return Promise.resolve({ data: mockFF }).then(res);
-           if (table === 'family_members') return Promise.resolve({ data: mockFamily }).then(res);
-           if (table === 'clients') return Promise.resolve({ data: [mockClientData] }).then(res);
-           return Promise.resolve({ data: [] }).then(res);
-        }
-      };
-      return {
-        ...chain,
-        upsert: () => Promise.resolve({ error: null })
-      };
-    }
-  };
-};
+// Temporary fallback to prevent preview crash. Omit this when copying locally!
+const createClient = () => ({
+  auth: { getUser: async () => ({ data: { user: null } }) },
+  from: () => {
+    const chain: any = {
+      select: () => chain, eq: () => chain, order: () => chain,
+      limit: async () => ({ data: [] }), single: async () => ({ data: null }),
+      upsert: async () => ({ error: null })
+    };
+    return chain;
+  }
+});
+
+const useUniCosts = () => ({
+  uniCosts: {
+    sg_local: { label: 'SG Local (NUS/NTU/SMU)', annual: 34000 },
+    sg_private: { label: 'SG Private University', annual: 42000 },
+    overseas_avg: { label: 'Overseas — Average', annual: 55000 },
+    overseas_uk: { label: 'Overseas — UK', annual: 72000 },
+    overseas_aus: { label: 'Overseas — Australia', annual: 65000 },
+    overseas_us: { label: 'Overseas — USA', annual: 85000 },
+  }
+});
 
 // ─── INTERFACES ──────────────────────────────────────────────────────────────
 
@@ -308,8 +297,7 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
 
 export default function ObjectivesPage() {
   const supabase = createClient()
-  // Mocking useUniCosts hook to avoid undefined errors since it's a separate file
-  const UNI_COST_DEFAULTS_HOOK = UNI_COST_DEFAULTS 
+  const { uniCosts: UNI_COST_DEFAULTS } = useUniCosts()
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
   const [spouseName, setSpouseName] = useState('Spouse')
