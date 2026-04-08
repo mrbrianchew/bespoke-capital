@@ -241,27 +241,38 @@ function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, bool
   return total
 }
 
-function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtpd' | 'ci'): number {
-  const p = prefix === 'spouse' ? 'a2_' : 'a_'
+function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtpd' | 'ci', p?: ProtectionData): number {
+  const ap = prefix === 'spouse' ? 'a2_' : 'a_'
   const liquid =
-    (ff[`${p}savings`] as number || 0) +
-    (ff[`${p}fixed_deposit`] as number || 0) +
-    (ff[`${p}srs`] as number || 0) +
-    (ff[`${p}shares`] as number || 0) +
-    (ff[`${p}etf`] as number || 0) +
-    (ff[`${p}unit_trust`] as number || 0) +
-    (ff[`${p}bonds`] as number || 0) +
-    (ff[`${p}alternatives`] as number || 0)
+    (ff[`${ap}savings`] as number || 0) +
+    (ff[`${ap}fixed_deposit`] as number || 0) +
+    (ff[`${ap}srs`] as number || 0) +
+    (ff[`${ap}shares`] as number || 0) +
+    (ff[`${ap}etf`] as number || 0) +
+    (ff[`${ap}unit_trust`] as number || 0) +
+    (ff[`${ap}bonds`] as number || 0) +
+    (ff[`${ap}alternatives`] as number || 0)
   if (type === 'ci') return liquid
   const cpf =
-    (ff[`${p}cpf_oa`] as number || 0) +
-    (ff[`${p}cpf_sa`] as number || 0) +
-    (ff[`${p}cpf_ma`] as number || 0) +
-    (ff[`${p}cpf_ra`] as number || 0)
-  const invProp =
-    (ff[`${p}inv_property_res`] as number || 0) +
-    (ff[`${p}inv_property_com`] as number || 0)
-  return liquid + cpf + invProp
+    (ff[`${ap}cpf_oa`] as number || 0) +
+    (ff[`${ap}cpf_sa`] as number || 0) +
+    (ff[`${ap}cpf_ma`] as number || 0) +
+    (ff[`${ap}cpf_ra`] as number || 0)
+  // All properties: equity = property value × coverage pct for this person
+  const properties = (ff.properties ?? []) as any[]
+  const propertyEquity = properties.reduce((sum: number, prop: any, i: number) => {
+    const propValue = prop.propertyValue ?? prop.purchasePrice ?? 0
+    const outstanding = prop.outstanding ?? 0
+    const equity = Math.max(0, propValue - outstanding)
+    // Use the same coverage pct as the mortgage coverage slider
+    let pct = 1
+    if (p) {
+      const pcts = prefix === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
+      pct = (pcts[i] ?? 100) / 100
+    }
+    return sum + equity * pct
+  }, 0)
+  return liquid + cpf + propertyEquity
 }
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
@@ -615,7 +626,7 @@ export default function ObjectivesPage() {
     const mort = calcMortgageForPerson(who)
     const edu = calcEducationForPerson(who)
     const gross = fd + mort + edu
-    const assets = getAssetOffset(ff, who, 'dtpd')
+    const assets = getAssetOffset(ff, who, 'dtpd', p)
     return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
   }
 
@@ -1896,8 +1907,23 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
   const spouseLiquid = (ff.a2_savings ?? 0) + (ff.a2_fixed_deposit ?? 0) + (ff.a2_srs ?? 0) + (ff.a2_shares ?? 0) + (ff.a2_etf ?? 0) + (ff.a2_unit_trust ?? 0) + (ff.a2_bonds ?? 0) + (ff.a2_alternatives ?? 0)
   const clientCPF = (ff.a_cpf_oa ?? 0) + (ff.a_cpf_sa ?? 0) + (ff.a_cpf_ma ?? 0) + (ff.a_cpf_ra ?? 0)
   const spouseCPF = (ff.a2_cpf_oa ?? 0) + (ff.a2_cpf_sa ?? 0) + (ff.a2_cpf_ma ?? 0) + (ff.a2_cpf_ra ?? 0)
-  const clientInvProp = (ff.a_inv_property_res ?? 0) + (ff.a_inv_property_com ?? 0)
-  const spouseInvProp = (ff.a2_inv_property_res ?? 0) + (ff.a2_inv_property_com ?? 0)
+
+  // Property equity per person — value minus outstanding, weighted by mortgage coverage %
+  const properties = (ff.properties ?? []) as any[]
+  const clientPropEquity = properties.reduce((sum: number, prop: any, i: number) => {
+    const propValue = prop.propertyValue ?? prop.purchasePrice ?? 0
+    const outstanding = prop.outstanding ?? 0
+    const equity = Math.max(0, propValue - outstanding)
+    const pct = ((p.mortgageCoverPctsClient ?? [])[i] ?? 100) / 100
+    return sum + equity * pct
+  }, 0)
+  const spousePropEquity = properties.reduce((sum: number, prop: any, i: number) => {
+    const propValue = prop.propertyValue ?? prop.purchasePrice ?? 0
+    const outstanding = prop.outstanding ?? 0
+    const equity = Math.max(0, propValue - outstanding)
+    const pct = ((p.mortgageCoverPctsSpouse ?? [])[i] ?? 100) / 100
+    return sum + equity * pct
+  }, 0)
 
   const colHeader = (name: string) => (
     <span style={{ width: 120, textAlign: 'right', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter' }}>{name}</span>
@@ -1918,16 +1944,16 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
         )}
         <AssetRow label="Cash & Liquid Investments" clientVal={clientLiquid} spouseVal={spouseLiquid} />
         <AssetRow label="CPF (OA + SA + MA + RA)" clientVal={clientCPF} spouseVal={spouseCPF} />
-        <AssetRow label="Investment Properties" clientVal={clientInvProp} spouseVal={spouseInvProp} />
+        <AssetRow label="Property Equity (by coverage %)" clientVal={clientPropEquity} spouseVal={spousePropEquity} />
         <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#F5F0E8', borderRadius: '0 0 4px 4px' }}>
           <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.06em' }}>D/TPD Offset (all assets)</span>
           {isCouple ? (
             <>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientInvProp)}</span>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid + spouseCPF + spouseInvProp)}</span>
+              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientPropEquity)}</span>
+              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid + spouseCPF + spousePropEquity)}</span>
             </>
           ) : (
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientInvProp)}</span>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientPropEquity)}</span>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#E8F0ED' }}>
