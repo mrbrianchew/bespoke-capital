@@ -11,7 +11,7 @@ interface MortgageProperty {
   label: string
   outstanding: number
   interestRate: number
-  monthlyRepayment: numbe
+  monthlyRepayment: number
   tenure: number
   initialLoanAmount: number
   initialTenure: number
