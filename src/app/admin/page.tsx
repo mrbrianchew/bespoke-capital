@@ -15,6 +15,13 @@ const ADMIN_SECTIONS = [
     icon: "⚙",
     tag: "Annual update",
   },
+  {
+    title: "University Education Costs",
+    description: "Update annual tuition and living expense estimates by university type. Used in Education Fund calculations across Wealth Protection and Education Planning.",
+    href: "/dashboard/admin/uni-costs",
+    icon: "🎓",
+    tag: "As needed",
+  },
 ]
 
 export default function AdminPage() {
