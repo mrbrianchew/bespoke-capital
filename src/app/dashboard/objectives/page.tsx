@@ -91,7 +91,7 @@ interface ProtectionData {
   mortgageCoverPcts?: number[]
   mortgageCoverPctsClient?: number[]
   mortgageCoverPctsSpouse?: number[]
-  nonMortgageDebts?: { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; coverPctClient?: number; coverPctSpouse?: number }[]
+  nonMortgageDebts?: { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; owner: 'client' | 'spouse' | 'joint' }[]
   provideEducationFund?: boolean
   educationFundPct?: number
   educationChildren?: { childId: string; uniType?: string; courseDuration?: number; annualTuition?: number; annualLiving?: number; uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number }[]
@@ -360,11 +360,11 @@ export default function ObjectivesPage() {
     // Load client name
     const { data: clientData } = await supabase
       .from('clients')
-      .select('full_name')
+      .select('name')
       .eq('id', id)
       .single()
     if (clientData) {
-      setClientName(clientData.full_name || 'Client')
+      setClientName(clientData.name || 'Client')
     }
     // Load family members - spouse name + children
     const { data: familyData } = await supabase
@@ -445,16 +445,58 @@ export default function ObjectivesPage() {
 
   // Mortgage coverage
   function calcMortgageForPerson(who: 'client' | 'spouse'): number {
-    const mortgages = ff.mortgages ?? []
+    const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      }
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+        }
+      }
+      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
+      }
+    })
     const mortgageTotal = mortgages.reduce((sum, m, i) => {
       const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
       const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
       return sum + m.outstanding * pct
     }, 0)
-    // Add non-mortgage debts
+    // Add non-mortgage debts (outstanding balance for D/TPD)
     const debtTotal = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
-      const pct = !isCouple ? 1 : (who === 'client' ? (d.coverPctClient ?? 100) : (d.coverPctSpouse ?? 100)) / 100
-      return sum + d.amount * pct
+      const owner = (d as any).owner ?? 'client'
+      if (!isCouple) return sum + d.amount
+      if (owner === 'joint') return sum + d.amount * 0.5
+      if (owner === who) return sum + d.amount
+      return sum
     }, 0)
     return mortgageTotal + debtTotal
   }
@@ -492,7 +534,46 @@ export default function ObjectivesPage() {
   }
 
   function calcCIMortgage(who: 'client' | 'spouse'): number {
-    const mortgages = ff.mortgages ?? []
+    const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      }
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+        }
+      }
+      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
+      }
+    })
     const ciYrs = p.ciYears ?? 5
     // Mortgage monthly repayments × CI years
     const mortgageCI = mortgages.reduce((sum, m, i) => {
@@ -500,11 +581,19 @@ export default function ObjectivesPage() {
       const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
       return sum + m.monthlyRepayment * 12 * ciYrs * pct
     }, 0)
-    // Non-mortgage debt monthly repayments × CI years (PMT calculated from debt fields)
+    // Non-mortgage debt monthly repayments × remaining tenure (capped at CI years)
     const debtCI = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
-      const pct = !isCouple ? 1 : (who === 'client' ? (d.coverPctClient ?? 100) : (d.coverPctSpouse ?? 100)) / 100
+      const owner = (d as any).owner ?? 'client'
+      let applies = false
+      if (!isCouple) applies = true
+      else if (owner === 'joint') applies = true
+      else if (owner === who) applies = true
+      if (!applies) return sum
       const monthlyPmt = calcDebtPMT(d.amount, d.interestRate, d.tenureLeft)
-      return sum + monthlyPmt * 12 * ciYrs * pct
+      // CI covers repayments for min(tenureLeft, ciYears)
+      const coverYears = Math.min(d.tenureLeft, ciYrs)
+      const split = (!isCouple || owner !== 'joint') ? 1 : 0.5
+      return sum + monthlyPmt * 12 * coverYears * split
     }, 0)
     return mortgageCI + debtCI
   }
@@ -575,7 +664,46 @@ export default function ObjectivesPage() {
   // ─── MORTGAGE INIT ─────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const mortgages = ff.mortgages ?? []
+    const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      }
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+        }
+      }
+      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
+      }
+    })
     if (mortgages.length > 0) {
       const clientPcts = p.mortgageCoverPctsClient ?? []
       const spousePcts = p.mortgageCoverPctsSpouse ?? []
@@ -585,13 +713,13 @@ export default function ObjectivesPage() {
           return s + (cpf + cash)
         }, 0)
         updateP({
-          mortgageCoverPctsClient: mortgages.map(() => 50),
-          mortgageCoverPctsSpouse: mortgages.map(() => 50),
+          mortgageCoverPctsClient: mortgages.map(() => 100),
+          mortgageCoverPctsSpouse: mortgages.map(() => 100),
           mortgageCoverPcts: mortgages.map(() => 100),
         })
       }
     }
-  }, [ff.mortgages])
+  }, [ff.properties])
 
   // ─── SUB-COMPONENTS ────────────────────────────────────────────────────────
 
@@ -768,7 +896,46 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
   const wpTab = p.wpSubTab ?? 0
   const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
   const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
-  const mortgages = ff.mortgages ?? []
+  const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      }
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+        }
+      }
+      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
+      }
+    })
 
   return (
     <div>
@@ -1139,7 +1306,7 @@ function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mor
   isCouple: boolean; clientName: string; spouseName: string
   mortgages: MortgageProperty[]; clientId: string
 }) {
-  type NonMortgageDebt = { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; coverPctClient?: number; coverPctSpouse?: number }
+  type NonMortgageDebt = { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; owner: 'client' | 'spouse' | 'joint' }
 
   const DEBT_TYPES = ['Personal Loan', 'Car Loan', 'Business Loan', 'Credit Line', 'Student Loan', 'Other']
 
@@ -1151,8 +1318,7 @@ function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mor
       amount: 0,
       interestRate: 3,
       tenureLeft: 5,
-      coverPctClient: 100,
-      coverPctSpouse: 50,
+      owner: 'client',
     }
     updateP({ nonMortgageDebts: [...(p.nonMortgageDebts ?? []), newDebt] })
   }
@@ -1374,13 +1540,27 @@ function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mor
                     </div>
                   </div>
 
-                  {/* Coverage sliders */}
-                  {isCouple && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                      <PersonSlider label={`${clientName} covers`} value={d.coverPctClient ?? 100} onChange={v => updateDebt(d.id, { coverPctClient: v })} color="#6B7C93" unit="%" />
-                      <PersonSlider label={`${spouseName} covers`} value={d.coverPctSpouse ?? 100} onChange={v => updateDebt(d.id, { coverPctSpouse: v })} color="#6B7C93" unit="%" />
+                  {/* Owner selector */}
+                  <div style={{ marginTop: 12 }}>
+                    <label style={labelStyle}>Whose Debt</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {([
+                        { key: 'client', label: clientName },
+                        ...(isCouple ? [{ key: 'spouse', label: spouseName }, { key: 'joint', label: 'Joint' }] : []),
+                      ] as { key: 'client'|'spouse'|'joint'; label: string }[]).map(opt => (
+                        <button
+                          key={opt.key}
+                          onClick={() => updateDebt(d.id, { owner: opt.key })}
+                          style={{
+                            padding: '6px 14px', fontFamily: 'Inter', fontSize: 12,
+                            background: (d.owner ?? 'client') === opt.key ? '#1C1A17' : '#fff',
+                            color: (d.owner ?? 'client') === opt.key ? '#fff' : '#1C1A17',
+                            border: '1px solid #E8E4DC', borderRadius: 4, cursor: 'pointer',
+                          }}
+                        >{opt.label}</button>
+                      ))}
                     </div>
-                  )}
+                  </div>
                 </div>
               )
             })}
