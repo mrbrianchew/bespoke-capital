@@ -2156,25 +2156,21 @@ function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
   isCouple: boolean; clientName: string; spouseName: string
 }) {
   function PersonCard({ name, dtpdKey, ciKey }: { name: string; dtpdKey: keyof ProtectionData; ciKey: keyof ProtectionData }) {
+    const dtpdVal = (p[dtpdKey] as number) ?? 0
+    const ciVal = (p[ciKey] as number) ?? 0
     return (
       <div style={{ background: '#F5F0E8', borderRadius: 6, padding: '12px 14px', marginBottom: 10 }}>
-        <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 10, letterSpacing: '0.02em' }}>{name}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 10 }}>{name}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {[
-            { label: 'D/TPD', key: dtpdKey },
-            { label: 'CI', key: ciKey },
-          ].map(({ label, key }) => (
-            <div key={String(key)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>{label}</span>
-              <div style={{ position: 'relative', flex: 1, maxWidth: 130 }}>
-                <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>$</span>
-                <input
-                  type="number" min={0}
-                  value={(p[key] as number) ?? 0}
-                  onChange={e => updateP({ [key]: parseInt(e.target.value) || 0 })}
-                  style={{ ...inputStyle, paddingLeft: 18, width: '100%', background: '#fff', fontSize: 12 }}
-                />
-              </div>
+            { label: 'D/TPD', val: dtpdVal },
+            { label: 'CI', val: ciVal },
+          ].map(({ label, val }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: val > 0 ? '#2D5A4E' : '#bbb' }}>
+                {val > 0 ? fmt(val) : '—'}
+              </span>
             </div>
           ))}
         </div>
@@ -2192,17 +2188,12 @@ function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
       >
         → Wealth Protection Portfolio
       </a>
-      <PersonCard
-        name={clientName}
-        dtpdKey="existingLifeCoverClient"
-        ciKey="existingCICoverClient"
-      />
+      <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginBottom: 10, textAlign: 'center', fontStyle: 'italic' }}>
+        Values pulled from Wealth Protection Portfolio
+      </div>
+      <PersonCard name={clientName} dtpdKey="existingLifeCoverClient" ciKey="existingCICoverClient" />
       {isCouple && (
-        <PersonCard
-          name={spouseName}
-          dtpdKey="existingLifeCoverSpouse"
-          ciKey="existingCICoverSpouse"
-        />
+        <PersonCard name={spouseName} dtpdKey="existingLifeCoverSpouse" ciKey="existingCICoverSpouse" />
       )}
     </div>
   )
