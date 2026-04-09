@@ -856,7 +856,9 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 {FREQ.map(f=><option key={f}>{f}</option>)}
               </select>
             </div>
-            <div><label style={lbl}>Current Cash Value ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
+            {!isMedical && (
+              <div><label style={lbl}>Current Cash Value ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
+            )}
           </div>
 
           {/* ── Dates ── */}
