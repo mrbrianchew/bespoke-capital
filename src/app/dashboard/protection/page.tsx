@@ -908,7 +908,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           )}
 
           {/* ── LTC / DI ── */}
-          {isLTC && (
+          {isLTC && !['CareShield Life', 'ElderShield 300', 'ElderShield 400'].includes(form.productName || '') && (
             <div style={g3}>
               <div><label style={lbl}>Monthly Benefit ($)</label><input type="number" value={form.monthlyBenefit||''} onChange={e=>f('monthlyBenefit',+e.target.value)} style={inp}/></div>
               <div>
