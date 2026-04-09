@@ -698,6 +698,10 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const isGeneral  = form.categoryCode==='general'
   const isRider    = form.policyTypeCode?.toLowerCase() === 'rider'
 
+  // Safety logic to make standard LTC policy hiding fully robust (case-insensitive & space-trimming)
+  const ltcProductName = (form.productName || '').trim().toLowerCase();
+  const isStandardLTC = isLTC && ['careshield life', 'eldershield 300', 'eldershield 400'].includes(ltcProductName);
+
   const riderDescOptions = [
     "Coverage for Deductibles, subject to 5% Co-Insurance",
     "Coverage for Deductibles, subject to 10% Co-Insurance",
@@ -730,13 +734,13 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   useEffect(() => {
     if (form.categoryCode === 'ltc') {
       let expectedDesc = form.briefDescription || '';
-      const prodName = form.productName || '';
+      const prodName = (form.productName || '').trim().toLowerCase();
 
-      if (prodName === 'CareShield Life') {
+      if (prodName === 'careshield life') {
         expectedDesc = '$600+/mth Benefit for up to Lifetime for 3/6 ADLs';
-      } else if (prodName === 'ElderShield 300') {
+      } else if (prodName === 'eldershield 300') {
         expectedDesc = '$300/mth Benefit for up to 60 months for 3/6 ADLs';
-      } else if (prodName === 'ElderShield 400') {
+      } else if (prodName === 'eldershield 400') {
         expectedDesc = '$400/mth Benefit for up to 72 months for 3/6 ADLs';
       } else {
         const mb = form.monthlyBenefit ? form.monthlyBenefit.toLocaleString() : '0';
@@ -908,7 +912,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           )}
 
           {/* ── LTC / DI ── */}
-          {isLTC && !['CareShield Life', 'ElderShield 300', 'ElderShield 400'].includes(form.productName || '') && (
+          {isLTC && !isStandardLTC && (
             <div style={g3}>
               <div><label style={lbl}>Monthly Benefit ($)</label><input type="number" value={form.monthlyBenefit||''} onChange={e=>f('monthlyBenefit',+e.target.value)} style={inp}/></div>
               <div>
