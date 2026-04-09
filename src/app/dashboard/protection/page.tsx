@@ -106,6 +106,7 @@ export default function ProtectionPage() {
 
   // Client / family
   const [clientId,   setClientId]   = useState<string | null>(null)
+  const clientIdRef = useRef<string | null>(null)
   const [clientName, setClientName] = useState('Client')
   const [clientAge,  setClientAge]  = useState(40)
   const [spouseName, setSpouseName] = useState('Spouse')
@@ -123,6 +124,7 @@ export default function ProtectionPage() {
   // Portfolio data
   const [rmData,  setRmData]  = useState<RiskMgmtData>(EMPTY_RM)
   const [saving,  setSaving]  = useState(false)
+  const [saveError, setSaveError] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // UI state
@@ -135,7 +137,7 @@ export default function ProtectionPage() {
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
-    if (id) setClientId(id)
+    if (id) { setClientId(id); clientIdRef.current = id }
   }, [])
 
   useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
@@ -220,13 +222,14 @@ export default function ProtectionPage() {
   }
 
   async function saveData(data: RiskMgmtData) {
-    if (!clientId) return
+    const id = clientIdRef.current
+    if (!id) { console.warn('saveData: no clientId'); return }
     setSaving(true)
     try {
       const { data: rows, error: fetchError } = await supabase
         .from('fact_finding')
         .select('id, data')
-        .eq('client_id', clientId)
+        .eq('client_id', id)
 
       if (fetchError) throw fetchError
 
@@ -240,11 +243,13 @@ export default function ProtectionPage() {
       } else {
         const { error: insertError } = await supabase
           .from('fact_finding')
-          .insert({ client_id: clientId, data: { risk_management: data } })
+          .insert({ client_id: id, data: { risk_management: data } })
         if (insertError) throw insertError
       }
     } catch (error) {
-      console.error("Error saving risk management data:", error)
+      console.error('Risk management save error:', error)
+      setSaveError(true)
+      setTimeout(() => setSaveError(false), 4000)
     } finally {
       setSaving(false)
     }
@@ -409,7 +414,8 @@ export default function ProtectionPage() {
             <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:32,fontWeight:300,color:'#F0EDE8'}}>Wealth Protection — {clientName}</div>
           </div>
           <div style={{display:'flex',gap:16,alignItems:'center',paddingBottom:4}}>
-            {saving && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
+            {saveError && <span style={{fontSize:12,color:'#E53935',fontWeight:500}}>⚠ Save failed</span>}
+            {saving && !saveError && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
             <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3}}>
               {(['overview','portfolio'] as const).map(t=>(
                 <button key={t} onClick={()=>setActiveTab(t)}
