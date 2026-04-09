@@ -27,7 +27,6 @@ interface Policy {
   baseTPD:      number
   baseAdvCI:    number
   baseEarlyCI:  number
-  tiBenefit:    number
   sumAssured:   number
   monthlyBenefit: number
   deferredPeriod: string
@@ -41,7 +40,6 @@ interface Policy {
   // Endowment benefit input modes: '$' or '%'
   endowDeathMode?: '%' | '$'
   endowTPDMode?:   '%' | '$'
-  endowTIMode?:    '%' | '$'
   // Premiums
   premiumMedisave: number
   premiumCash:     number
@@ -65,9 +63,9 @@ function emptyPolicy(person: string, ph = '', la = ''): Policy {
   return {
     id: crypto.randomUUID(), categoryCode: 'life', policyTypeCode: '', companyName: '', productName: '',
     policyholder: ph, lifeAssured: la, policyNo: '', briefDescription: '',
-    baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, tiBenefit: 0, sumAssured: 0,
+    baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, sumAssured: 0,
     monthlyBenefit: 0, deferredPeriod: '', benefitTerm: '', payoutTerm: '', multiplier: 0, multiplierEnd: 0, coverStep: 0, stepDownPct: 0, currentCashValue: 0,
-    endowDeathMode: '$', endowTPDMode: '$', endowTIMode: '$',
+    endowDeathMode: '$', endowTPDMode: '$',
     premiumMedisave: 0, premiumCash: 0, premiumMode: '', frequency: 'Annual',
     inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
     status: 'In-Force', remarks: '', person,
@@ -998,9 +996,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               </div>
               {/* Death / TPD / TI with $/% toggle */}
               {([
-                { label:'Death Benefit', modeKey:'endowDeathMode' as const, valKey:'baseDeath'  as const },
-                { label:'TPD Benefit',   modeKey:'endowTPDMode'   as const, valKey:'baseTPD'    as const },
-                { label:'TI Benefit',    modeKey:'endowTIMode'    as const, valKey:'tiBenefit'  as const },
+                { label:'Death Benefit', modeKey:'endowDeathMode' as const, valKey:'baseDeath' as const },
+                { label:'TPD Benefit',   modeKey:'endowTPDMode'   as const, valKey:'baseTPD'   as const },
               ]).map(({ label, modeKey, valKey }) => {
                 const mode    = (form[modeKey] as '%'|'$') || '$'
                 const rawVal  = (form[valKey] as number) || 0
