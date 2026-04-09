@@ -33,7 +33,9 @@ interface Policy {
   benefitTerm?: string
   payoutTerm?:  string
   multiplier:   number
+  multiplierEnd?: number
   coverStep:    number
+  stepDownPct?: number
   currentCashValue: number
   // Premiums
   premiumMedisave: number
@@ -59,7 +61,7 @@ function emptyPolicy(person: string, ph = '', la = ''): Policy {
     id: crypto.randomUUID(), categoryCode: 'life', policyTypeCode: '', companyName: '', productName: '',
     policyholder: ph, lifeAssured: la, policyNo: '', briefDescription: '',
     baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, sumAssured: 0,
-    monthlyBenefit: 0, deferredPeriod: '', benefitTerm: '', payoutTerm: '', multiplier: 0, coverStep: 0, currentCashValue: 0,
+    monthlyBenefit: 0, deferredPeriod: '', benefitTerm: '', payoutTerm: '', multiplier: 0, multiplierEnd: 0, coverStep: 0, stepDownPct: 0, currentCashValue: 0,
     premiumMedisave: 0, premiumCash: 0, premiumMode: '', frequency: 'Annual',
     inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
     status: 'In-Force', remarks: '', person,
@@ -75,9 +77,9 @@ const CAT_SHORT: Record<string, string> = {
   medical: 'Medical', ltc: 'LTC/DI', general: 'General',
   life: 'Life', endowment: 'Endowment',
 }
-const FREQ = ['Annual','Semi-Annual','Quarterly','Monthly','Single','Giro']
+const FREQ = ['Annual','Semi-Annual','Quarterly','Monthly','Single']
 const STATUS_OPTS = ['In-Force','Lapsed','Surrendered','Matured','Pending']
-const PAY_MODES   = ['Cash','Giro','CPFIS','Medisave','SRS']
+const PAY_MODES   = ['Cash', 'Credit Card', 'Giro', 'Medisave', 'CPF OA', 'CPF SA', 'CPF SRS', 'MS + Cash', 'MS + Giro', 'MS + CC']
 
 function fmt(n: number | null | undefined) {
   if (!n || n === 0) return '—'
@@ -760,6 +762,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const lbl:React.CSSProperties={display:'block',fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:5}
   const g2:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}
   const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14}
+  const g4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14}
 
   const medPayModes = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
   const ltcPayModes = ['Cash', 'Medisave', 'MS + Cash', 'MS + CC'];
@@ -845,63 +848,67 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             )}
           </div>
 
-          {/* ── Brief description ── */}
-          <div>
-            <label style={lbl}>Brief Description</label>
-            {isMedical && form.policyTypeCode?.toLowerCase() === 'main' ? (
-              <select value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} style={s}>
-                <option value="">Select…</option>
-                <option value="As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)</option>
-                <option value="As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)</option>
-                <option value="As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)</option>
-                <option value="As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)</option>
-              </select>
-            ) : isMedical && isRider ? (
-              <>
-                <select 
-                  value={isOtherRiderDesc ? '__other' : form.briefDescription} 
-                  onChange={e => {
-                    if (e.target.value === '__other') {
-                      setIsOtherRiderDesc(true);
-                      f('briefDescription', '');
-                    } else {
-                      setIsOtherRiderDesc(false);
-                      f('briefDescription', e.target.value);
-                    }
-                  }} 
-                  style={s}
-                >
+          {/* ── Brief description (Hidden for Life Insurance) ── */}
+          {!isLife && (
+            <div>
+              <label style={lbl}>Brief Description</label>
+              {isMedical && form.policyTypeCode?.toLowerCase() === 'main' ? (
+                <select value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} style={s}>
                   <option value="">Select…</option>
-                  {riderDescOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                  <option value="__other">Others (Type Manually)</option>
+                  <option value="As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)</option>
+                  <option value="As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)</option>
+                  <option value="As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)</option>
+                  <option value="As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)</option>
                 </select>
-                {isOtherRiderDesc && (
-                  <input
-                    type="text"
-                    value={form.briefDescription}
-                    onChange={e=>f('briefDescription',e.target.value)}
-                    placeholder="Please type description manually..."
-                    style={{...inp, marginTop: 6}}
-                  />
-                )}
-              </>
-            ) : (
-              <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp} readOnly={isLTC} />
-            )}
-          </div>
+              ) : isMedical && isRider ? (
+                <>
+                  <select 
+                    value={isOtherRiderDesc ? '__other' : form.briefDescription} 
+                    onChange={e => {
+                      if (e.target.value === '__other') {
+                        setIsOtherRiderDesc(true);
+                        f('briefDescription', '');
+                      } else {
+                        setIsOtherRiderDesc(false);
+                        f('briefDescription', e.target.value);
+                      }
+                    }} 
+                    style={s}
+                  >
+                    <option value="">Select…</option>
+                    {riderDescOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    <option value="__other">Others (Type Manually)</option>
+                  </select>
+                  {isOtherRiderDesc && (
+                    <input
+                      type="text"
+                      value={form.briefDescription}
+                      onChange={e=>f('briefDescription',e.target.value)}
+                      placeholder="Please type description manually..."
+                      style={{...inp, marginTop: 6}}
+                    />
+                  )}
+                </>
+              ) : (
+                <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp} readOnly={isLTC} />
+              )}
+            </div>
+          )}
 
           {/* ── Life / WL benefit fields ── */}
           {(isLife||isEndow) && (
             <>
-              <div style={g3}>
+              <div style={g4}>
                 <div><label style={lbl}>Base Death ($)</label><input type="number" value={form.baseDeath||''} onChange={e=>f('baseDeath',+e.target.value)} style={inp}/></div>
                 <div><label style={lbl}>Base TPD ($)</label><input type="number" value={form.baseTPD||''} onChange={e=>f('baseTPD',+e.target.value)} style={inp}/></div>
                 <div><label style={lbl}>Base Adv CI ($)</label><input type="number" value={form.baseAdvCI||''} onChange={e=>f('baseAdvCI',+e.target.value)} style={inp}/></div>
-              </div>
-              <div style={g3}>
                 <div><label style={lbl}>Base Early CI ($)</label><input type="number" value={form.baseEarlyCI||''} onChange={e=>f('baseEarlyCI',+e.target.value)} style={inp}/></div>
+              </div>
+              <div style={g4}>
                 <div><label style={lbl}>Multiplier</label><input type="number" value={form.multiplier||''} onChange={e=>f('multiplier',+e.target.value)} style={inp}/></div>
-                <div><label style={lbl}>Cover Step (yrs)</label><input type="number" value={form.coverStep||''} onChange={e=>f('coverStep',+e.target.value)} style={inp}/></div>
+                <div><label style={lbl}>Multiplier End (Age)</label><input type="number" value={form.multiplierEnd||''} onChange={e=>f('multiplierEnd',+e.target.value)} style={inp}/></div>
+                <div><label style={lbl}>Cover Step down (yrs)</label><input type="number" value={form.coverStep||''} onChange={e=>f('coverStep',+e.target.value)} placeholder="Leave empty if none" style={inp}/></div>
+                <div><label style={lbl}>Step Down (%)</label><input type="number" value={form.stepDownPct||''} onChange={e=>f('stepDownPct',+e.target.value)} style={inp}/></div>
               </div>
             </>
           )}
