@@ -128,6 +128,7 @@ export default function ProtectionPage() {
   // UI state
   const [activeTab,       setActiveTab]       = useState<'overview'|'portfolio'>('overview')
   const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
+  const [portfolioPerson, setPortfolioPerson] = useState<string>('client')
   const [editingPolicy,   setEditingPolicy]   = useState<Policy | null>(null)
   const [showModal,       setShowModal]       = useState(false)
   const [modalPerson,     setModalPerson]     = useState('client')
@@ -479,7 +480,8 @@ export default function ProtectionPage() {
       {/* ── PORTFOLIO ── */}
       {activeTab==='portfolio' && (
         <div style={{padding:'36px 48px',flex:1}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:28}} className="no-print">
+          {/* Header row */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}} className="no-print">
             <div>
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
               <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{rmData.policies.length} {rmData.policies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
@@ -487,28 +489,58 @@ export default function ProtectionPage() {
             <button onClick={()=>window.print()} style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>Print / PDF</button>
           </div>
 
+          {/* Person tabs */}
+          <div style={{display:'flex',gap:0,marginBottom:28,borderBottom:'1px solid var(--line)'}} className="no-print">
+            {sections.map(({key,label,isDependent,childKeys})=>{
+              const tabPolicies = isDependent&&childKeys
+                ? rmData.policies.filter(p=>childKeys.includes(p.person))
+                : rmData.policies.filter(p=>p.person===key)
+              const tabPrem = tabPolicies.reduce((s,p)=>s+(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))+(p.premiumMedisave||0),0)
+              const isActive = portfolioPerson===key
+              return (
+                <button key={key} onClick={()=>setPortfolioPerson(key)}
+                  style={{padding:'10px 22px',border:'none',borderBottom:`2px solid ${isActive?'#c8a96e':'transparent'}`,background:'transparent',cursor:'pointer',fontSize:13,color:isActive?'#A8834A':'var(--ink3)',fontWeight:isActive?600:400,transition:'all 0.15s',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:2}}>
+                  <span>{label}</span>
+                  <span style={{fontSize:10,color:isActive?'#c8a96e':'var(--ink3)',fontFamily:'DM Mono,monospace',fontWeight:400}}>
+                    {tabPolicies.length} {tabPolicies.length===1?'policy':'policies'}{tabPrem>0?` · ${fmt(tabPrem)}`:''}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Active person's policies */}
           {sections.map(({key,label,isDependent,childKeys})=>{
-            const policies = isDependent&&childKeys ? rmData.policies.filter(p=>childKeys.includes(p.person)) : rmData.policies.filter(p=>p.person===key)
+            if (portfolioPerson!==key) return null
+            const policies = isDependent&&childKeys
+              ? rmData.policies.filter(p=>childKeys.includes(p.person))
+              : rmData.policies.filter(p=>p.person===key)
             const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
-            const secPrem = policies.reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
+            const secPrem = policies.reduce((s,p)=>s+(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))+(p.premiumMedisave||0),0)
             return (
-              <div key={key} style={{marginBottom:32}}>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <div key={key}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
-                    <div style={{width:3,height:18,background:isDependent?'#7B9E87':'#c8a96e'}} />
+                    <div style={{width:3,height:18,background:isDependent?'#7B9E87':'#c8a96e'}}/>
                     <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,color:'var(--ink)'}}>{label}</div>
                     {isDependent && <span style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',padding:'2px 7px',border:'1px solid var(--line)'}}>Dependent</span>}
+                    {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)',marginLeft:8}}>Annual premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(secPrem)}</strong></span>}
                   </div>
-                  <div style={{display:'flex',alignItems:'center',gap:16}} className="no-print">
-                    {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)'}}>Premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(secPrem)}</strong></span>}
-                    <button onClick={()=>openNew(addKey)}
-                      style={{padding:'6px 14px',background:isDependent?'#F5FAF6':'var(--ink)',color:isDependent?'#2D6A4F':'white',border:isDependent?'1px solid #7B9E87':'none',cursor:'pointer',fontSize:12}}>
-                      + Add Policy
-                    </button>
-                  </div>
+                  <button onClick={()=>openNew(addKey)} className="no-print"
+                    style={{padding:'7px 16px',background:isDependent?'#F5FAF6':'var(--ink)',color:isDependent?'#2D6A4F':'white',border:isDependent?'1px solid #7B9E87':'none',cursor:'pointer',fontSize:12}}>
+                    + Add Policy
+                  </button>
                 </div>
                 {policies.length===0 ? (
-                  <div style={{background:'white',border:'0.5px dashed var(--line)',padding:'24px',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>No policies recorded for {label}</div>
+                  <div style={{background:'white',border:'0.5px dashed var(--line)',padding:'32px',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
+                    No policies recorded for {label}
+                    <div style={{marginTop:12}}>
+                      <button onClick={()=>openNew(addKey)} className="no-print"
+                        style={{padding:'7px 18px',background:'var(--ink)',color:'white',border:'none',cursor:'pointer',fontSize:12}}>
+                        + Add First Policy
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <PolicyTable policies={policies} catShort={CAT_SHORT} catColors={CAT_COLORS} onEdit={openEdit} onDelete={delPolicy} />
                 )}
@@ -516,15 +548,16 @@ export default function ProtectionPage() {
             )
           })}
 
+          {/* Portfolio summary — always visible at bottom */}
           {rmData.policies.length>0 && (
-            <div style={{background:'#1C1A17',padding:'26px 32px',marginTop:8}}>
-              <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.7)',marginBottom:16}}>Portfolio Summary</div>
+            <div style={{background:'#1C1A17',padding:'26px 32px',marginTop:32}}>
+              <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.7)',marginBottom:16}}>Portfolio Summary — All Insured</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:24}}>
                 {[
-                  {label:'Total Policies',val:String(rmData.policies.length)},
+                  {label:'Total Policies',     val:String(rmData.policies.length)},
                   {label:'Total Annual Premium',val:fmt(totalPrem)},
-                  {label:`${clientName} — Life+TPD`,val:fmt(cLH)},
-                  {label:isCouple?`${spouseName} — Life+TPD`:'Client CI',val:isCouple?fmt(sLH):fmt(cCH)},
+                  {label:`${clientName} — Life+TPD`, val:fmt(cLH)},
+                  {label:isCouple?`${spouseName} — Life+TPD`:'Client CI', val:isCouple?fmt(sLH):fmt(cCH)},
                 ].map(item=>(
                   <div key={item.label}>
                     <div style={{fontSize:10,color:'rgba(255,255,255,0.4)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:6}}>{item.label}</div>
