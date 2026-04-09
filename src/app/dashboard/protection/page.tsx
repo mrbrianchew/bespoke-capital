@@ -686,8 +686,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     }));
     setIsOtherBenefitTerm(false);
     setIsOtherPayoutTerm(false);
-    setIsOtherPremiumMaturity(false);
-    setIsOtherCoverageMaturity(false);
+    setPremMatMode('preset');
+    setCovMatMode('preset');
   }
   const onCompChange=(name:string)=>{
     setForm(prev=>({...prev,companyName:name,productName:''}))
@@ -725,11 +725,20 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const [isOtherPayoutTerm, setIsOtherPayoutTerm] = useState(() => {
     return !!policy.payoutTerm && policy.payoutTerm !== 'Lifetime';
   });
-  const [isOtherPremiumMaturity, setIsOtherPremiumMaturity] = useState(() => {
-    return !!policy.premiumMaturity && !['Age 67', 'Lifetime'].includes(policy.premiumMaturity);
+
+  // Unified Maturity Toggle States
+  const [premMatMode, setPremMatMode] = useState<'preset'|'date'|'text'>(() => {
+    if (!policy.premiumMaturity) return 'preset';
+    if (['Lifetime', 'Renewable', 'Age 67'].includes(policy.premiumMaturity)) return 'preset';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(policy.premiumMaturity)) return 'date';
+    return 'text';
   });
-  const [isOtherCoverageMaturity, setIsOtherCoverageMaturity] = useState(() => {
-    return !!policy.coverageMaturity && policy.coverageMaturity !== 'Lifetime';
+
+  const [covMatMode, setCovMatMode] = useState<'preset'|'date'|'text'>(() => {
+    if (!policy.coverageMaturity) return 'preset';
+    if (['Lifetime', 'Renewable', 'Age 67'].includes(policy.coverageMaturity)) return 'preset';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(policy.coverageMaturity)) return 'date';
+    return 'text';
   });
 
   // Dynamic Brief Description for LTC
@@ -1040,49 +1049,50 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             <div><label style={lbl}>Inception Date</label><input type="date" value={form.inceptionDate} onChange={e=>f('inceptionDate',e.target.value)} style={inp}/></div>
             <div>
               <label style={lbl}>Premium Maturity</label>
-              {isLTC ? (
-                <>
-                  <select
-                    value={isOtherPremiumMaturity ? '__other' : (form.premiumMaturity || '')}
-                    onChange={e => {
-                      if (e.target.value === '__other') { setIsOtherPremiumMaturity(true); f('premiumMaturity', ''); }
-                      else { setIsOtherPremiumMaturity(false); f('premiumMaturity', e.target.value); }
-                    }} style={s}
-                  >
-                    <option value="">Select…</option>
-                    <option value="Age 67">Age 67</option>
-                    <option value="Lifetime">Lifetime</option>
-                    <option value="__other">Others (Type Manually)</option>
-                  </select>
-                  {isOtherPremiumMaturity && (
-                    <input type="text" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
-                  )}
-                </>
-              ) : (
-                <input type={isMedical || form.premiumMaturity === 'Renewable' ? 'text' : 'date'} value={form.premiumMaturity} onChange={e=>f('premiumMaturity',e.target.value)} style={inp}/>
+              <select
+                value={premMatMode === 'preset' ? (form.premiumMaturity || '') : (premMatMode === 'date' ? '__date' : '__other')}
+                onChange={e => {
+                  if (e.target.value === '__date') { setPremMatMode('date'); f('premiumMaturity', ''); }
+                  else if (e.target.value === '__other') { setPremMatMode('text'); f('premiumMaturity', ''); }
+                  else { setPremMatMode('preset'); f('premiumMaturity', e.target.value); }
+                }} style={s}
+              >
+                <option value="">Select…</option>
+                <option value="Lifetime">Lifetime</option>
+                {(isMedical || form.premiumMaturity === 'Renewable') && <option value="Renewable">Renewable</option>}
+                {(isLTC || form.premiumMaturity === 'Age 67') && <option value="Age 67">Age 67</option>}
+                <option value="__date">Input Date</option>
+                <option value="__other">Type Manually</option>
+              </select>
+              {premMatMode === 'date' && (
+                <input type="date" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} style={{...inp, marginTop: 6}}/>
+              )}
+              {premMatMode === 'text' && (
+                <input type="text" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
               )}
             </div>
             <div>
               <label style={lbl}>Coverage Maturity</label>
-              {isLTC ? (
-                <>
-                  <select
-                    value={isOtherCoverageMaturity ? '__other' : (form.coverageMaturity || '')}
-                    onChange={e => {
-                      if (e.target.value === '__other') { setIsOtherCoverageMaturity(true); f('coverageMaturity', ''); }
-                      else { setIsOtherCoverageMaturity(false); f('coverageMaturity', e.target.value); }
-                    }} style={s}
-                  >
-                    <option value="">Select…</option>
-                    <option value="Lifetime">Lifetime</option>
-                    <option value="__other">Others (Type Manually)</option>
-                  </select>
-                  {isOtherCoverageMaturity && (
-                    <input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
-                  )}
-                </>
-              ) : (
-                <input type={isMedical || form.coverageMaturity === 'Renewable' ? 'text' : 'date'} value={form.coverageMaturity} onChange={e=>f('coverageMaturity',e.target.value)} style={inp}/>
+              <select
+                value={covMatMode === 'preset' ? (form.coverageMaturity || '') : (covMatMode === 'date' ? '__date' : '__other')}
+                onChange={e => {
+                  if (e.target.value === '__date') { setCovMatMode('date'); f('coverageMaturity', ''); }
+                  else if (e.target.value === '__other') { setCovMatMode('text'); f('coverageMaturity', ''); }
+                  else { setCovMatMode('preset'); f('coverageMaturity', e.target.value); }
+                }} style={s}
+              >
+                <option value="">Select…</option>
+                <option value="Lifetime">Lifetime</option>
+                {(isMedical || form.coverageMaturity === 'Renewable') && <option value="Renewable">Renewable</option>}
+                {(isLTC || form.coverageMaturity === 'Age 67') && <option value="Age 67">Age 67</option>}
+                <option value="__date">Input Date</option>
+                <option value="__other">Type Manually</option>
+              </select>
+              {covMatMode === 'date' && (
+                <input type="date" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} style={{...inp, marginTop: 6}}/>
+              )}
+              {covMatMode === 'text' && (
+                <input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
               )}
             </div>
           </div>
