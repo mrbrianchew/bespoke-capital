@@ -117,7 +117,8 @@ export default function InsuranceAdminPage() {
                 if (item.id) {
                   await supabase.from('ins_policy_types').update({ name: item.name, code: item.code, sort_order: item.sort_order }).eq('id', item.id)
                 } else {
-                  await supabase.from('ins_policy_types').insert({ category_id: activeCat, name: item.name, code: item.code.toLowerCase().replace(/\s+/g,'_'), sort_order: item.sort_order || 99 })
+                  const code = (item.code || item.name || '').toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'')
+                  await supabase.from('ins_policy_types').insert({ category_id: activeCat, name: item.name, code, sort_order: item.sort_order || 99 })
                 }
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
