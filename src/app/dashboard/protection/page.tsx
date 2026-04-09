@@ -30,6 +30,8 @@ interface Policy {
   sumAssured:   number
   monthlyBenefit: number
   deferredPeriod: string
+  benefitTerm?: string
+  payoutTerm?:  string
   multiplier:   number
   coverStep:    number
   currentCashValue: number
@@ -57,7 +59,7 @@ function emptyPolicy(person: string, ph = '', la = ''): Policy {
     id: crypto.randomUUID(), categoryCode: 'life', policyTypeCode: '', companyName: '', productName: '',
     policyholder: ph, lifeAssured: la, policyNo: '', briefDescription: '',
     baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, sumAssured: 0,
-    monthlyBenefit: 0, deferredPeriod: '', multiplier: 0, coverStep: 0, currentCashValue: 0,
+    monthlyBenefit: 0, deferredPeriod: '', benefitTerm: '', payoutTerm: '', multiplier: 0, coverStep: 0, currentCashValue: 0,
     premiumMedisave: 0, premiumCash: 0, premiumMode: '', frequency: 'Annual',
     inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
     status: 'In-Force', remarks: '', person,
@@ -676,8 +678,14 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
       companyName:'',
       productName:'',
       premiumMaturity: code === 'medical' ? 'Renewable' : (prev.premiumMaturity === 'Renewable' ? '' : prev.premiumMaturity),
-      coverageMaturity: code === 'medical' ? 'Renewable' : (prev.coverageMaturity === 'Renewable' ? '' : prev.coverageMaturity)
-    }))
+      coverageMaturity: code === 'medical' ? 'Renewable' : (prev.coverageMaturity === 'Renewable' ? '' : prev.coverageMaturity),
+      benefitTerm: '',
+      payoutTerm: ''
+    }));
+    setIsOtherBenefitTerm(false);
+    setIsOtherPayoutTerm(false);
+    setIsOtherPremiumMaturity(false);
+    setIsOtherCoverageMaturity(false);
   }
   const onCompChange=(name:string)=>{
     setForm(prev=>({...prev,companyName:name,productName:''}))
@@ -704,6 +712,45 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     return false;
   });
 
+  // LTC Specific Toggle States
+  const [isOtherBenefitTerm, setIsOtherBenefitTerm] = useState(() => {
+    return !!policy.benefitTerm && !['2/6 ADLs', '3/6 ADLs'].includes(policy.benefitTerm);
+  });
+  const [isOtherPayoutTerm, setIsOtherPayoutTerm] = useState(() => {
+    return !!policy.payoutTerm && policy.payoutTerm !== 'Lifetime';
+  });
+  const [isOtherPremiumMaturity, setIsOtherPremiumMaturity] = useState(() => {
+    return !!policy.premiumMaturity && !['Age 67', 'Lifetime'].includes(policy.premiumMaturity);
+  });
+  const [isOtherCoverageMaturity, setIsOtherCoverageMaturity] = useState(() => {
+    return !!policy.coverageMaturity && policy.coverageMaturity !== 'Lifetime';
+  });
+
+  // Dynamic Brief Description for LTC
+  useEffect(() => {
+    if (form.categoryCode === 'ltc') {
+      let expectedDesc = form.briefDescription || '';
+      const prodName = form.productName || '';
+
+      if (prodName === 'CareShield Life') {
+        expectedDesc = '$600+/mth Benefit for up to Lifetime for 3/6 ADLs';
+      } else if (prodName === 'ElderShield 300') {
+        expectedDesc = '$300/mth Benefit for up to 60 months for 3/6 ADLs';
+      } else if (prodName === 'ElderShield 400') {
+        expectedDesc = '$400/mth Benefit for up to 72 months for 3/6 ADLs';
+      } else {
+        const mb = form.monthlyBenefit ? form.monthlyBenefit.toLocaleString() : '0';
+        const pt = form.payoutTerm || '[Payout Term]';
+        const bt = form.benefitTerm || '[Benefit Term]';
+        expectedDesc = `$${mb}/mth Benefit for up to ${pt}, in event of disability of at least ${bt}.`;
+      }
+
+      if (form.briefDescription !== expectedDesc) {
+        f('briefDescription', expectedDesc);
+      }
+    }
+  }, [form.categoryCode, form.productName, form.monthlyBenefit, form.benefitTerm, form.payoutTerm, form.briefDescription]);
+
   const s:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none'}
   const inp:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none',boxSizing:'border-box'}
   const lbl:React.CSSProperties={display:'block',fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:5}
@@ -711,7 +758,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14}
 
   const medPayModes = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
-  const currentPayModes = isMedical ? medPayModes : PAY_MODES;
+  const ltcPayModes = ['Cash', 'Medisave', 'MS + Cash', 'MS + CC'];
+  const currentPayModes = isMedical ? medPayModes : (isLTC ? ltcPayModes : PAY_MODES);
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.65)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
@@ -834,7 +882,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 )}
               </>
             ) : (
-              <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp}/>
+              <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp} readOnly={isLTC} />
             )}
           </div>
 
@@ -861,14 +909,42 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
 
           {/* ── LTC / DI ── */}
           {isLTC && (
-            <div style={g2}>
+            <div style={g3}>
               <div><label style={lbl}>Monthly Benefit ($)</label><input type="number" value={form.monthlyBenefit||''} onChange={e=>f('monthlyBenefit',+e.target.value)} style={inp}/></div>
               <div>
-                <label style={lbl}>Deferred Period / Benefit Term</label>
-                <select value={form.deferredPeriod} onChange={e=>f('deferredPeriod',e.target.value)} style={s}>
+                <label style={lbl}>Benefit Term</label>
+                <select
+                  value={isOtherBenefitTerm ? '__other' : (form.benefitTerm || '')}
+                  onChange={e => {
+                    if (e.target.value === '__other') { setIsOtherBenefitTerm(true); f('benefitTerm', ''); }
+                    else { setIsOtherBenefitTerm(false); f('benefitTerm', e.target.value); }
+                  }} style={s}
+                >
                   <option value="">Select…</option>
-                  {['3/6 ADLs','Lifetime','72 months','Up to age 67','Up to age 70','Other'].map(d=><option key={d}>{d}</option>)}
+                  <option value="2/6 ADLs">2/6 ADLs</option>
+                  <option value="3/6 ADLs">3/6 ADLs</option>
+                  <option value="__other">Others (Type Manually)</option>
                 </select>
+                {isOtherBenefitTerm && (
+                  <input type="text" value={form.benefitTerm||''} onChange={e=>f('benefitTerm',e.target.value)} placeholder="Type Benefit Term" style={{...inp, marginTop: 6}} />
+                )}
+              </div>
+              <div>
+                <label style={lbl}>Payout Term</label>
+                <select
+                  value={isOtherPayoutTerm ? '__other' : (form.payoutTerm || '')}
+                  onChange={e => {
+                    if (e.target.value === '__other') { setIsOtherPayoutTerm(true); f('payoutTerm', ''); }
+                    else { setIsOtherPayoutTerm(false); f('payoutTerm', e.target.value); }
+                  }} style={s}
+                >
+                  <option value="">Select…</option>
+                  <option value="Lifetime">Lifetime</option>
+                  <option value="__other">Others (Type Manually)</option>
+                </select>
+                {isOtherPayoutTerm && (
+                  <input type="text" value={form.payoutTerm||''} onChange={e=>f('payoutTerm',e.target.value)} placeholder="Type Payout Term" style={{...inp, marginTop: 6}} />
+                )}
               </div>
             </div>
           )}
@@ -900,7 +976,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 {FREQ.map(f=><option key={f}>{f}</option>)}
               </select>
             </div>
-            {!isMedical && (
+            {!isMedical && !isLTC && (
               <div><label style={lbl}>Current Cash Value ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
             )}
           </div>
@@ -908,8 +984,53 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           {/* ── Dates ── */}
           <div style={g3}>
             <div><label style={lbl}>Inception Date</label><input type="date" value={form.inceptionDate} onChange={e=>f('inceptionDate',e.target.value)} style={inp}/></div>
-            <div><label style={lbl}>Premium Maturity</label><input type={isMedical || form.premiumMaturity === 'Renewable' ? 'text' : 'date'} value={form.premiumMaturity} onChange={e=>f('premiumMaturity',e.target.value)} style={inp}/></div>
-            <div><label style={lbl}>Coverage Maturity</label><input type={isMedical || form.coverageMaturity === 'Renewable' ? 'text' : 'date'} value={form.coverageMaturity} onChange={e=>f('coverageMaturity',e.target.value)} style={inp}/></div>
+            <div>
+              <label style={lbl}>Premium Maturity</label>
+              {isLTC ? (
+                <>
+                  <select
+                    value={isOtherPremiumMaturity ? '__other' : (form.premiumMaturity || '')}
+                    onChange={e => {
+                      if (e.target.value === '__other') { setIsOtherPremiumMaturity(true); f('premiumMaturity', ''); }
+                      else { setIsOtherPremiumMaturity(false); f('premiumMaturity', e.target.value); }
+                    }} style={s}
+                  >
+                    <option value="">Select…</option>
+                    <option value="Age 67">Age 67</option>
+                    <option value="Lifetime">Lifetime</option>
+                    <option value="__other">Others (Type Manually)</option>
+                  </select>
+                  {isOtherPremiumMaturity && (
+                    <input type="text" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
+                  )}
+                </>
+              ) : (
+                <input type={isMedical || form.premiumMaturity === 'Renewable' ? 'text' : 'date'} value={form.premiumMaturity} onChange={e=>f('premiumMaturity',e.target.value)} style={inp}/>
+              )}
+            </div>
+            <div>
+              <label style={lbl}>Coverage Maturity</label>
+              {isLTC ? (
+                <>
+                  <select
+                    value={isOtherCoverageMaturity ? '__other' : (form.coverageMaturity || '')}
+                    onChange={e => {
+                      if (e.target.value === '__other') { setIsOtherCoverageMaturity(true); f('coverageMaturity', ''); }
+                      else { setIsOtherCoverageMaturity(false); f('coverageMaturity', e.target.value); }
+                    }} style={s}
+                  >
+                    <option value="">Select…</option>
+                    <option value="Lifetime">Lifetime</option>
+                    <option value="__other">Others (Type Manually)</option>
+                  </select>
+                  {isOtherCoverageMaturity && (
+                    <input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
+                  )}
+                </>
+              ) : (
+                <input type={isMedical || form.coverageMaturity === 'Renewable' ? 'text' : 'date'} value={form.coverageMaturity} onChange={e=>f('coverageMaturity',e.target.value)} style={inp}/>
+              )}
+            </div>
           </div>
 
           {/* ── Status + Remarks ── */}
