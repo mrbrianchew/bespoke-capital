@@ -1,5 +1,4 @@
 "use client"
-
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -22,6 +21,13 @@ const ADMIN_SECTIONS = [
     icon: "🎓",
     tag: "As needed",
   },
+  {
+    title: "Insurance Reference Data",
+    description: "Manage policy types, companies and products for the Wealth Protection Portfolio dropdowns. Add, edit or remove items per insurance category.",
+    href: "/admin/insurance",
+    icon: "🛡",
+    tag: "As needed",
+  },
 ]
 
 export default function AdminPage() {
@@ -42,13 +48,11 @@ export default function AdminPage() {
 
   return (
     <div style={{ maxWidth: 800, margin: "0 auto", padding: "2.5rem 2rem", fontFamily: "Inter, sans-serif" }}>
-
       <div style={{ marginBottom: 40 }}>
         <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "#9A9690", margin: "0 0 6px" }}>Creator</p>
         <h1 style={{ fontSize: 30, fontFamily: "Cormorant Garamond, serif", fontWeight: 600, color: "#1A1816", margin: "0 0 8px", lineHeight: 1.2 }}>Admin Hub</h1>
         <p style={{ fontSize: 14, color: "#4A4740", margin: 0 }}>Backend settings visible only to you. Changes apply instantly across all advisor accounts.</p>
       </div>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
         {ADMIN_SECTIONS.map(section => (
           <Link key={section.href} href={section.href} style={{ textDecoration: "none" }}>
@@ -70,12 +74,10 @@ export default function AdminPage() {
             </div>
           </Link>
         ))}
-
         <div style={{ background: "#F5F3EE", border: "0.5px dashed #D0CDC5", borderRadius: 12, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <p style={{ fontSize: 13, color: "#9A9690", margin: 0, textAlign: "center" as const }}>More settings will appear here as the app grows.</p>
         </div>
       </div>
-
     </div>
   )
 }
