@@ -126,7 +126,7 @@ export default function ProtectionPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // UI state
-  const [activeTab,       setActiveTab]       = useState<'overview'|'portfolio'>('overview')
+  const [activeTab,       setActiveTab]       = useState<'overview'|'portfolio'|'report'>('overview')
   const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
   const [portfolioPerson, setPortfolioPerson] = useState<string>('client')
   const [editingPolicy,   setEditingPolicy]   = useState<Policy | null>(null)
@@ -399,10 +399,10 @@ export default function ProtectionPage() {
           <div style={{display:'flex',gap:16,alignItems:'center',paddingBottom:4}}>
             {saving && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
             <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3}}>
-              {(['overview','portfolio'] as const).map(t=>(
+              {(['overview','portfolio','report'] as const).map(t=>(
                 <button key={t} onClick={()=>setActiveTab(t)}
                   style={{padding:'6px 18px',borderRadius:4,border:'none',cursor:'pointer',fontSize:12,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:500,background:activeTab===t?'rgba(200,169,110,0.2)':'transparent',color:activeTab===t?'#c8a96e':'rgba(255,255,255,0.45)'}}>
-                  {t==='overview'?'Overview':'Portfolio'}
+                  {t==='overview'?'Overview':t==='portfolio'?'Portfolio':'Report'}
                 </button>
               ))}
             </div>
@@ -486,7 +486,7 @@ export default function ProtectionPage() {
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
               <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{rmData.policies.length} {rmData.policies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
             </div>
-            <button onClick={()=>window.print()} style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>Print / PDF</button>
+            <button onClick={()=>setActiveTab('report')} style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>View Report / PDF</button>
           </div>
 
           {/* Person tabs */}
@@ -568,6 +568,17 @@ export default function ProtectionPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── REPORT ── */}
+      {activeTab==='report' && (
+        <PortfolioReport
+          clientName={clientName} clientAge={clientAge}
+          spouseName={spouseName} spouseAge={spouseAge}
+          isCouple={isCouple} children={children}
+          policies={rmData.policies}
+          ffData={ffData}
+        />
       )}
 
       {showModal && editingPolicy && (
@@ -1299,6 +1310,592 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Helper: compute effective SGD benefit for a policy ──────────────────────
+function effectiveSGD(val: number, p: Policy) {
+  return p.isUSD ? val * (p.fxRate || 1.35) : val
+}
+
+// ─── Helper: get annualised premium in SGD ───────────────────────────────────
+function annualPremSGD(p: Policy) {
+  const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+  const ms   = p.premiumMedisave || 0
+  const total = cash + ms
+  switch (p.frequency) {
+    case 'Semi-Annual': return total * 2
+    case 'Quarterly':   return total * 4
+    case 'Monthly':     return total * 12
+    case 'Single':      return total
+    default:            return total // Annual
+  }
+}
+
+// ─── Helper: monthly premium (for premium schedule chart) ────────────────────
+function monthlyPremSGD(p: Policy) {
+  const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+  const ms   = p.premiumMedisave || 0
+  const total = cash + ms
+  switch (p.frequency) {
+    case 'Annual':      return total / 12
+    case 'Semi-Annual': return total / 6
+    case 'Quarterly':   return total / 3
+    case 'Monthly':     return total
+    case 'Single':      return 0
+    default:            return total / 12
+  }
+}
+
+// ─── Helper: which months does a policy pay in? ──────────────────────────────
+function payMonths(p: Policy): number[] {
+  if (!p.inceptionDate) {
+    // No inception date — spread evenly
+    switch (p.frequency) {
+      case 'Monthly':     return [1,2,3,4,5,6,7,8,9,10,11,12]
+      case 'Quarterly':   return [1,4,7,10]
+      case 'Semi-Annual': return [1,7]
+      case 'Annual':      return [1]
+      default:            return []
+    }
+  }
+  const startMonth = new Date(p.inceptionDate).getMonth() + 1
+  switch (p.frequency) {
+    case 'Monthly':     return [1,2,3,4,5,6,7,8,9,10,11,12]
+    case 'Quarterly':   return [0,1,2,3].map(i=>((startMonth-1+i*3)%12)+1)
+    case 'Semi-Annual': return [0,1].map(i=>((startMonth-1+i*6)%12)+1)
+    case 'Annual':      return [startMonth]
+    case 'Single':      return []
+    default:            return [startMonth]
+  }
+}
+
+// ─── Helper: coverage at a given age for a life policy ───────────────────────
+function coverageAtAge(p: Policy, age: number, currentAge: number): { death: number; tpd: number; ci: number } {
+  const fx = p.fxRate || 1.35
+  const toSGD = (v: number) => p.isUSD ? v * fx : v
+
+  const mult = p.multiplier > 1 ? p.multiplier : 1
+  const multEnd = p.multiplierEnd || 999
+  const activeMult = age <= multEnd ? mult : 1
+
+  // Step-down after multiplier ends
+  let stepFactor = 1
+  if (p.coverStep && p.stepDownPct && age > multEnd) {
+    const yearsAfter = age - multEnd
+    const drops = Math.floor(yearsAfter / (p.coverStep || 1))
+    stepFactor = Math.max(0, 1 - drops * ((p.stepDownPct||0)/100))
+  }
+
+  const death   = toSGD((p.baseDeath  ||0) * activeMult * stepFactor)
+  const tpd     = toSGD((p.baseTPD    ||0) * activeMult * stepFactor)
+  const advCI   = toSGD((p.baseAdvCI  ||0) * activeMult * stepFactor)
+  const earlyCI = toSGD((p.baseEarlyCI||0) * activeMult * stepFactor)
+  const ci      = Math.max(advCI, earlyCI)
+
+  // Check coverage maturity
+  if (p.coverageMaturity && p.coverageMaturity !== 'Lifetime' && p.coverageMaturity !== 'Renewable') {
+    let matAge = 999
+    if (/^\d{4}-\d{2}-\d{2}$/.test(p.coverageMaturity)) {
+      const matYear = new Date(p.coverageMaturity).getFullYear()
+      const birthYear = new Date().getFullYear() - currentAge
+      matAge = matYear - birthYear
+    } else if (p.coverageMaturity.startsWith('Age ')) {
+      matAge = parseInt(p.coverageMaturity.replace('Age ', ''))
+    }
+    if (age > matAge) return { death: 0, tpd: 0, ci: 0 }
+  }
+
+  return { death, tpd, ci }
+}
+
+// ─── fmt helpers ─────────────────────────────────────────────────────────────
+function fmtR(n: number | null | undefined) {
+  if (!n || n === 0) return '$0'
+  return '$' + Math.round(n).toLocaleString()
+}
+function fmtDate(d: string) {
+  if (!d) return '—'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y,m,day] = d.split('-')
+    return `${day}/${m}/${y}`
+  }
+  return d
+}
+
+// ─── Person Report (one full printable page set per person) ──────────────────
+function PersonReport({ personKey, personName, personAge, policies, allPolicies, children }:{
+  personKey: string; personName: string; personAge: number
+  policies: Policy[]; allPolicies: Policy[]; children: any[]
+}) {
+  const medPolicies    = policies.filter(p=>p.categoryCode==='medical')
+  const ltcPolicies    = policies.filter(p=>p.categoryCode==='ltc')
+  const generalPolicies= policies.filter(p=>p.categoryCode==='general')
+  const lifePolicies   = policies.filter(p=>p.categoryCode==='life')
+  const endowPolicies  = policies.filter(p=>p.categoryCode==='endowment')
+
+  // ── Coverage timeline data ─────────────────────────────────────────────────
+  const maxAge = 100
+  const timelineData: {age:number;death:number;tpd:number;ci:number}[] = []
+  for (let age = personAge; age <= maxAge; age++) {
+    let death = 0, tpd = 0, ci = 0
+    for (const p of policies) {
+      const c = coverageAtAge(p, age, personAge)
+      death += c.death; tpd += c.tpd; ci += c.ci
+    }
+    timelineData.push({age, death, tpd, ci})
+  }
+
+  // ── Premium schedule — monthly breakdown ──────────────────────────────────
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const monthlyAmounts = Array(12).fill(0).map((_,mi) => {
+    let total = 0
+    for (const p of policies) {
+      const months = payMonths(p)
+      if (months.includes(mi+1)) {
+        const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+        total += cash + (p.premiumMedisave||0)
+      }
+    }
+    return total
+  })
+  const maxMonthly = Math.max(...monthlyAmounts, 1)
+
+  // ── Life totals ────────────────────────────────────────────────────────────
+  const totalDeath = lifePolicies.reduce((s,p)=>s+effectiveSGD(p.baseDeath||0,p)*(p.multiplier>1?p.multiplier:1),0)
+  const totalTPD   = lifePolicies.reduce((s,p)=>s+effectiveSGD(p.baseTPD||0,p)*(p.multiplier>1?p.multiplier:1),0)
+  const totalCI    = lifePolicies.reduce((s,p)=>s+effectiveSGD(Math.max(p.baseAdvCI||0,p.baseEarlyCI||0),p)*(p.multiplier>1?p.multiplier:1),0)
+  const totalPrem  = policies.reduce((s,p)=>s+annualPremSGD(p),0)
+
+  const thStyle: React.CSSProperties = {
+    fontSize: 8, fontWeight: 700, textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em', padding: '5px 6px', textAlign: 'center' as const,
+    border: '1px solid #ddd', lineHeight: 1.3
+  }
+  const tdStyle: React.CSSProperties = {
+    fontSize: 9, padding: '4px 6px', border: '1px solid #ddd',
+    textAlign: 'center' as const, lineHeight: 1.3
+  }
+  const tdL: React.CSSProperties = { ...tdStyle, textAlign: 'left' as const }
+
+  // ── Timeline chart dimensions ──────────────────────────────────────────────
+  const TW=900, TH=220, TPL=68, TPR=10, TPT=14, TPB=28
+  const TiW=TW-TPL-TPR, TiH=TH-TPT-TPB
+  const ages = timelineData.map(d=>d.age)
+  const minA = ages[0]||personAge, rangeA = (ages[ages.length-1]||maxAge)-minA||1
+  const maxVal = Math.max(...timelineData.map(d=>Math.max(d.death,d.tpd,d.ci)),1)
+  const xP=(a:number)=>((a-minA)/rangeA)*TiW
+  const yP=(v:number)=>TiH-Math.min(1,v/maxVal)*TiH
+  const barW = Math.max(1, TiW/timelineData.length - 0.8)
+  const fmtAx=(n:number)=>n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${n}`
+  const ticks=[0,0.25,0.5,0.75,1]
+
+  return (
+    <div className="report-person">
+      {/* ═══ PAGE 1: Summary + Charts ═══════════════════════════════════════ */}
+      <div className="report-page">
+        <div style={{borderBottom:'2px solid #333',paddingBottom:8,marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+          <div>
+            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:400,letterSpacing:'0.05em',textTransform:'uppercase'}}>Financial Portfolio Summary</div>
+            <div style={{fontSize:11,color:'#555',marginTop:3}}>Specially prepared for {personName}</div>
+          </div>
+          <div style={{textAlign:'right',fontSize:10,color:'#888'}}>
+            <div style={{fontWeight:600,color:'#333'}}>BESPOKE CAPITAL</div>
+            <div>Tailored Financial Advisory</div>
+          </div>
+        </div>
+
+        {/* Coverage Timeline */}
+        <div style={{border:'1px solid #ddd',padding:'14px 18px',marginBottom:16}}>
+          <div style={{textAlign:'center',fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:15,fontWeight:600,color:'#1565C0',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:8}}>Coverage Timeline</div>
+          <div style={{display:'flex',gap:18,justifyContent:'center',marginBottom:8}}>
+            {[{col:'#1565C0',lbl:'Death Benefit'},{col:'#E53935',lbl:'TPD Benefit'},{col:'#F9A825',lbl:'Adv. CI Benefit'}].map(l=>(
+              <div key={l.lbl} style={{display:'flex',alignItems:'center',gap:4}}>
+                <div style={{width:14,height:10,background:l.col}}/>
+                <span style={{fontSize:9}}>{l.lbl}</span>
+              </div>
+            ))}
+          </div>
+          <svg viewBox={`0 0 ${TW} ${TH}`} width="100%" style={{overflow:'visible'}}>
+            {ticks.map(f=>{
+              const y=TPT+TiH-f*TiH
+              return <g key={f}>
+                <line x1={TPL} y1={y} x2={TPL+TiW} y2={y} stroke="#E0E0E0" strokeWidth=".5"/>
+                <text x={TPL-4} y={y+3} fontSize="7.5" fill="#888" textAnchor="end">{fmtAx(maxVal*f)}</text>
+              </g>
+            })}
+            {timelineData.map((d,i)=>{
+              const x=TPL+xP(d.age)
+              const offsets=[
+                {v:d.death,col:'#1565C0'},
+                {v:d.tpd,  col:'#E53935'},
+                {v:d.ci,   col:'#F9A825'},
+              ]
+              return <g key={d.age}>
+                {offsets.map((o,oi)=>(
+                  <rect key={oi} x={x+(oi-1)*barW} y={TPT+yP(o.v)} width={barW}
+                    height={Math.max(0,TiH-yP(o.v))} fill={o.col} opacity=".85"/>
+                ))}
+              </g>
+            })}
+            <line x1={TPL} y1={TPT+TiH} x2={TPL+TiW} y2={TPT+TiH} stroke="#CCC" strokeWidth=".5"/>
+            {timelineData.filter((_,i)=>i%5===0).map(d=>(
+              <text key={d.age} x={TPL+xP(d.age)} y={TPT+TiH+10} fontSize="7" fill="#888" textAnchor="middle">{d.age}</text>
+            ))}
+            <text x={TPL+TiW/2} y={TPT+TiH+20} fontSize="7.5" fill="#888" textAnchor="middle">Age</text>
+          </svg>
+          <div style={{fontSize:7.5,color:'#888',marginTop:4}}>
+            Disclaimer: The graph illustrates Death, TPD, and Critical Illness coverage. Excludes Accidental Death/TPD benefits and Sum Assured from Endowment/Annuity/Investment plans (if applicable).
+          </div>
+        </div>
+
+        {/* Bottom row: Premium Schedule + Life Summary */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {/* Premium Schedule */}
+          <div style={{border:'1px solid #ddd',padding:'12px 14px'}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:10}}>Premium Schedule</div>
+            {monthlyAmounts.map((amt,mi)=>(
+              <div key={mi} style={{display:'grid',gridTemplateColumns:'28px 1fr 70px',alignItems:'center',gap:4,marginBottom:3}}>
+                <div style={{fontSize:8,color:'#555',textAlign:'right'}}>{MONTH_NAMES[mi]}</div>
+                <div style={{background:'#F5F5F5',borderRadius:2,height:14,position:'relative'}}>
+                  <div style={{position:'absolute',top:0,left:0,height:'100%',background:'#42A5F5',borderRadius:2,width:`${(amt/maxMonthly)*100}%`}}/>
+                </div>
+                <div style={{fontSize:8,fontFamily:'monospace',textAlign:'right',paddingLeft:4}}>
+                  {amt>0?`$${amt.toFixed(2)}`:'—'}
+                </div>
+              </div>
+            ))}
+            <div style={{fontSize:7.5,color:'#888',marginTop:8,borderTop:'1px solid #eee',paddingTop:6}}>
+              Disclaimer: Reflects all premiums payable including Medical, General, Core Protection and Wealth Accumulation policies.
+            </div>
+          </div>
+
+          {/* Life, Income & Family Protection summary */}
+          <div style={{border:'2px solid #333',padding:'18px 20px',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:17,fontWeight:600,letterSpacing:'0.06em',textTransform:'uppercase',textAlign:'right',borderBottom:'1px solid #333',paddingBottom:10,marginBottom:14}}>
+              Life, Income &amp; Family Protection
+            </div>
+            {[
+              {lbl:'Death Benefit',val:totalDeath},
+              {lbl:'Total & Permanent Disability Benefit',val:totalTPD},
+              {lbl:'Critical Illness Benefit',val:totalCI},
+            ].map(item=>(
+              <div key={item.lbl} style={{textAlign:'right',marginBottom:14}}>
+                <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:14,fontStyle:'italic',fontWeight:600}}>{item.lbl}</div>
+                <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,color:'#555',marginTop:2}}>{fmtR(item.val)}</div>
+              </div>
+            ))}
+            <div style={{borderTop:'1px solid #ccc',paddingTop:10,marginTop:4}}>
+              <div style={{fontSize:8,color:'#888',textAlign:'right',fontStyle:'italic'}}>
+                Disclaimer: This overview of your Wealth Protection Portfolio should be read with the following pages. For more details, please consult your Financial Advisor.
+              </div>
+              <div style={{fontSize:9,color:'#555',textAlign:'right',marginTop:8}}>Prepared by: Chew Zhiquan Brian</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ PAGE 2: Basic Essential Protection ═════════════════════════════ */}
+      <div className="report-page">
+        <div style={{borderBottom:'2px solid #333',paddingBottom:6,marginBottom:20,textAlign:'center'}}>
+          <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:400,letterSpacing:'0.08em',textTransform:'uppercase'}}>Basic Essential Protection</div>
+          <div style={{fontSize:10,color:'#555',marginTop:2}}>{personName}</div>
+        </div>
+
+        {/* Medical */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:4}}>Medical Insurance(s)</div>
+          <div style={{fontSize:8.5,color:'#444',marginBottom:8,fontStyle:'italic'}}>
+            Wealth Protection Plans to help you preserve your long-term financial security by covering major healthcare expenses. From hospitalisation and surgery to related outpatient treatments, these Medical plans reduce the burden of large medical bills, allowing you to focus on your health while your wealth remains safeguarded.
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:8.5}}>
+            <thead>
+              <tr style={{background:'#00897B',color:'white'}}>
+                {['Policy No.','Coverage Type','Company / Product Name','Brief Coverage Description','Inception Date','Premium Maturity','Coverage Maturity','Premium (Medisave)','Premium (Cash)','Premium Mode','Premium Frequency'].map(h=>(
+                  <th key={h} style={{...thStyle,background:'#00897B',color:'white',border:'1px solid #00695C'}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {medPolicies.length===0
+                ? <tr><td colSpan={11} style={{...tdL,color:'#aaa',fontStyle:'italic',padding:'10px'}}>No medical policies recorded</td></tr>
+                : medPolicies.map((p,i)=>(
+                  <tr key={p.id} style={{background:i%2===0?'white':'#F9FFFE'}}>
+                    <td style={tdL}>{p.policyNo||'—'}</td>
+                    <td style={tdStyle}>{p.policyTypeCode||'—'}</td>
+                    <td style={tdL}>{[p.companyName,p.productName].filter(Boolean).join(' ')}</td>
+                    <td style={tdL}>{p.briefDescription||'—'}</td>
+                    <td style={tdStyle}>{fmtDate(p.inceptionDate)}</td>
+                    <td style={tdStyle}>{p.premiumMaturity||'—'}</td>
+                    <td style={tdStyle}>{p.coverageMaturity||'—'}</td>
+                    <td style={tdStyle}>{p.premiumMedisave?fmtR(p.premiumMedisave):'$0.00'}</td>
+                    <td style={tdStyle}>{p.premiumCash?fmtR(p.premiumCash):'$0.00'}</td>
+                    <td style={tdStyle}>{p.premiumMode||'—'}</td>
+                    <td style={tdStyle}>{p.frequency||'—'}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+          <div style={{fontSize:8,color:'#555',marginTop:3}}>**MS - Medisave</div>
+        </div>
+
+        {/* LTC */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:4}}>Long Term Disability Care Insurance(s)</div>
+          <div style={{fontSize:8.5,color:'#444',marginBottom:8,fontStyle:'italic'}}>
+            Wealth Protection Plans to help you preserve your financial security in the event of a long-term disability. Long Term Disability Care Insurance provides regular payouts to support daily living expenses, medical care, and caregiving needs. This reduces the financial strain on you and your loved ones, ensuring that even if you are unable to work, your lifestyle and long-term plans remain safeguarded.
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:8.5}}>
+            <thead>
+              <tr style={{background:'#00897B',color:'white'}}>
+                {['Policy No.','Coverage Type','Company / Product Name','Brief Coverage Description','Inception Date','Premium Maturity','Coverage Maturity','Premium (Medisave)','Premium (Cash)','Premium Mode','Premium Frequency'].map(h=>(
+                  <th key={h} style={{...thStyle,background:'#00897B',color:'white',border:'1px solid #00695C'}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ltcPolicies.length===0
+                ? <tr><td colSpan={11} style={{...tdL,color:'#aaa',fontStyle:'italic',padding:'10px'}}>No LTC/DI policies recorded</td></tr>
+                : ltcPolicies.map((p,i)=>(
+                  <tr key={p.id} style={{background:i%2===0?'white':'#F9FFFE'}}>
+                    <td style={tdL}>{p.policyNo||'—'}</td>
+                    <td style={tdStyle}>{p.policyTypeCode||'—'}</td>
+                    <td style={tdL}>{[p.companyName,p.productName].filter(Boolean).join(' ')}</td>
+                    <td style={tdL}>{p.briefDescription||'—'}</td>
+                    <td style={tdStyle}>{fmtDate(p.inceptionDate)}</td>
+                    <td style={tdStyle}>{p.premiumMaturity||'—'}</td>
+                    <td style={tdStyle}>{p.coverageMaturity||'—'}</td>
+                    <td style={tdStyle}>{p.premiumMedisave?fmtR(p.premiumMedisave):'$0.00'}</td>
+                    <td style={tdStyle}>{p.premiumCash?fmtR(p.premiumCash):'$0.00'}</td>
+                    <td style={tdStyle}>{p.premiumMode||'—'}</td>
+                    <td style={tdStyle}>{p.frequency||'—'}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+          <div style={{fontSize:8,color:'#555',marginTop:3}}>**MS - Medisave</div>
+        </div>
+
+        {/* General */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>General Insurance(s) — Personal Accident / Travel / Maid</div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:8.5}}>
+            <thead>
+              <tr style={{background:'#E65100',color:'white'}}>
+                {['Policy No.','Coverage Type','Company / Product Name','Brief Coverage Description','Inception Date','Premium Maturity','Coverage Maturity','Premium','Payment Mode','Premium Frequency'].map(h=>(
+                  <th key={h} style={{...thStyle,background:'#E65100',color:'white',border:'1px solid #BF360C'}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {generalPolicies.length===0
+                ? <tr><td colSpan={10} style={{...tdL,color:'#aaa',fontStyle:'italic',padding:'10px'}}>No general insurance policies recorded</td></tr>
+                : generalPolicies.map((p,i)=>(
+                  <tr key={p.id} style={{background:i%2===0?'white':'#FFF8F5'}}>
+                    <td style={tdL}>{p.policyNo||'—'}</td>
+                    <td style={tdStyle}>{p.policyTypeCode||'—'}</td>
+                    <td style={tdL}>{[p.companyName,p.productName].filter(Boolean).join(' ')}</td>
+                    <td style={tdL}>{p.briefDescription||'—'}</td>
+                    <td style={tdStyle}>{fmtDate(p.inceptionDate)}</td>
+                    <td style={tdStyle}>{p.premiumMaturity||'—'}</td>
+                    <td style={tdStyle}>{p.coverageMaturity||'—'}</td>
+                    <td style={tdStyle}>{p.premiumCash?fmtR(p.premiumCash):'—'}</td>
+                    <td style={tdStyle}>{p.premiumMode||'—'}</td>
+                    <td style={tdStyle}>{p.frequency||'—'}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ═══ PAGE 3: Core Protection + Wealth Accumulation ══════════════════ */}
+      <div className="report-page">
+        <div style={{borderBottom:'2px solid #333',paddingBottom:6,marginBottom:20,textAlign:'center'}}>
+          <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:400,letterSpacing:'0.08em',textTransform:'uppercase'}}>Core Protection</div>
+          <div style={{fontSize:8.5,color:'#444',marginTop:6,fontStyle:'italic'}}>
+            Wealth Protection Plans are built to protect what matters most — your family's financial security. Covering Death, TPD, Critical Illness, and Early Critical Illness, these plans provide income replacement and long-term support, ensuring your loved ones remain financially protected no matter what life brings.
+          </div>
+        </div>
+
+        {/* Life / WL / Term */}
+        <div style={{marginBottom:6}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:'0.07em',textTransform:'uppercase',marginBottom:6}}>
+            Limited or Whole Life / Term Plan / ILP / UL / IUL / VUL
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7.5}}>
+            <thead>
+              <tr style={{background:'#1A237E',color:'white'}}>
+                {['Policy No.','Coverage Type','Company / Product Name','Death Benefit','TPD Benefit','Adv CI Benefit','Early CI Benefit','Premium Waiver','Multiplier','Multiplier Maturity','Inception Date','Premium Maturity','Coverage Maturity','Premium','Premium Mode','Frequency','Current Cash Value'].map(h=>(
+                  <th key={h} style={{...thStyle,background:'#1A237E',color:'white',border:'1px solid #0D1357',fontSize:7}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lifePolicies.length===0
+                ? <tr><td colSpan={17} style={{...tdL,color:'#aaa',fontStyle:'italic',padding:'10px'}}>No life / protection policies recorded</td></tr>
+                : lifePolicies.map((p,i)=>{
+                  const mult = p.multiplier>1?p.multiplier:1
+                  const death = effectiveSGD((p.baseDeath||0)*mult, p)
+                  const tpd   = effectiveSGD((p.baseTPD  ||0)*mult, p)
+                  const advCI = effectiveSGD((p.baseAdvCI ||0)*mult, p)
+                  const earCI = effectiveSGD((p.baseEarlyCI||0)*mult, p)
+                  const prem  = p.isUSD ? fmtR((p.premiumCash||0)*(p.fxRate||1.35)) + ' (USD '+Math.round(p.premiumCash||0).toLocaleString()+')' : fmtR(p.premiumCash)
+                  return (
+                    <tr key={p.id} style={{background:i%2===0?'white':'#F5F5FF'}}>
+                      <td style={tdL}>{p.policyNo||'—'}</td>
+                      <td style={tdStyle}>{p.policyTypeCode||'—'}</td>
+                      <td style={tdL}>{[p.companyName,p.productName].filter(Boolean).join(' ')}{p.isUSD&&<span style={{fontSize:7,color:'#c8a96e',marginLeft:3}}>[USD]</span>}</td>
+                      <td style={tdStyle}>{death?fmtR(death):'$0'}</td>
+                      <td style={tdStyle}>{tpd?fmtR(tpd):'$0'}</td>
+                      <td style={tdStyle}>{advCI?fmtR(advCI):'$0'}</td>
+                      <td style={tdStyle}>{earCI?fmtR(earCI):'$0'}</td>
+                      <td style={tdStyle}>{p.multiplier>1?'Yes':'Nil'}</td>
+                      <td style={tdStyle}>{p.multiplier>1?`${p.multiplier}X`:'N/A'}</td>
+                      <td style={tdStyle}>{p.multiplierEnd?`Age ${p.multiplierEnd}`:'N/A'}</td>
+                      <td style={tdStyle}>{fmtDate(p.inceptionDate)}</td>
+                      <td style={tdStyle}>{p.premiumMaturity||'—'}</td>
+                      <td style={tdStyle}>{p.coverageMaturity||'—'}</td>
+                      <td style={tdStyle}>{prem}</td>
+                      <td style={tdStyle}>{p.premiumMode||'—'}</td>
+                      <td style={tdStyle}>{p.frequency||'—'}</td>
+                      <td style={tdStyle}>{p.currentCashValue?fmtR(effectiveSGD(p.currentCashValue,p)):'—'}</td>
+                    </tr>
+                  )
+                })
+              }
+            </tbody>
+          </table>
+        </div>
+
+        {/* Remarks box */}
+        <div style={{border:'1px solid #ddd',padding:'6px 10px',marginBottom:24,minHeight:36}}>
+          <div style={{fontSize:8,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:4}}>Remarks</div>
+        </div>
+
+        {/* Wealth Accumulation */}
+        <div style={{marginBottom:6}}>
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',color:'#E65100',marginBottom:8}}>Wealth Accumulation Portfolio</div>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:'0.07em',textTransform:'uppercase',marginBottom:6}}>
+            Endowment / Annuity / Investments / 101 ILP
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:7.5}}>
+            <thead>
+              <tr style={{background:'#E65100',color:'white'}}>
+                {['Policy / Account No.','Policy Type','Company / Product Name','Brief Product Description','G.M.V','Non-G.M.V','Inception Date','Premium Maturity','Maturity Date','Premium','Premium Mode','Frequency','Current Valuation'].map(h=>(
+                  <th key={h} style={{...thStyle,background:'#E65100',color:'white',border:'1px solid #BF360C',fontSize:7}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {endowPolicies.length===0
+                ? <tr><td colSpan={13} style={{...tdL,color:'#aaa',fontStyle:'italic',padding:'10px'}}>No endowment / annuity / investment policies recorded</td></tr>
+                : endowPolicies.map((p,i)=>{
+                  const deathMode = p.endowDeathMode||'$'
+                  const cv = p.currentCashValue||0
+                  const gmv  = deathMode==='%' ? ((p.baseDeath||0)/100)*cv : (p.baseDeath||0)
+                  const nonGmv = deathMode==='%' ? ((p.baseTPD||0)/100)*cv : (p.baseTPD||0)
+                  return (
+                    <tr key={p.id} style={{background:i%2===0?'white':'#FFF8F5'}}>
+                      <td style={tdL}>{p.policyNo||'—'}</td>
+                      <td style={tdStyle}>{p.policyTypeCode||'—'}</td>
+                      <td style={tdL}>{[p.companyName,p.productName].filter(Boolean).join(' ')}</td>
+                      <td style={tdL}>{p.briefDescription||'—'}</td>
+                      <td style={tdStyle}>{gmv?fmtR(gmv):'NA'}</td>
+                      <td style={tdStyle}>{nonGmv?fmtR(nonGmv):'NA'}</td>
+                      <td style={tdStyle}>{fmtDate(p.inceptionDate)}</td>
+                      <td style={tdStyle}>{p.premiumMaturity||'—'}</td>
+                      <td style={tdStyle}>{p.coverageMaturity||'—'}</td>
+                      <td style={tdStyle}>{fmtR(p.premiumCash)}</td>
+                      <td style={tdStyle}>{p.premiumMode||'—'}</td>
+                      <td style={tdStyle}>{p.frequency||'—'}</td>
+                      <td style={tdStyle}>{cv?fmtR(cv):'—'}</td>
+                    </tr>
+                  )
+                })
+              }
+            </tbody>
+          </table>
+        </div>
+
+        {/* Remarks box */}
+        <div style={{border:'1px solid #ddd',padding:'6px 10px',minHeight:36}}>
+          <div style={{fontSize:8,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:4}}>Remarks</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Portfolio Report (wraps PersonReport for client + spouse) ───────────────
+function PortfolioReport({ clientName, clientAge, spouseName, spouseAge, isCouple, children, policies, ffData }: {
+  clientName: string; clientAge: number
+  spouseName: string; spouseAge: number
+  isCouple: boolean; children: any[]
+  policies: Policy[]; ffData: any
+}) {
+  const clientPolicies = policies.filter(p=>p.person==='client')
+  const spousePolicies = policies.filter(p=>p.person==='spouse')
+
+  return (
+    <div style={{background:'white',minHeight:'100vh'}}>
+      {/* Screen controls */}
+      <div className="no-print" style={{background:'#1C1A17',padding:'16px 48px',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:10}}>
+        <div style={{fontSize:13,color:'rgba(255,255,255,0.7)'}}>
+          Financial Portfolio Report — {clientName}{isCouple?` & ${spouseName}`:''}
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          <div style={{fontSize:11,color:'rgba(255,255,255,0.4)',alignSelf:'center'}}>
+            Tip: Use browser Print → Save as PDF for best results
+          </div>
+          <button onClick={()=>window.print()}
+            style={{padding:'8px 20px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12,fontWeight:600,letterSpacing:'0.05em'}}>
+            🖨 Print / Save PDF
+          </button>
+        </div>
+      </div>
+
+      {/* Report pages */}
+      <div style={{padding:'24px 0',background:'#E8E6E2'}} className="no-print"/>
+      <div id="report-root" style={{maxWidth:980,margin:'0 auto',padding:'0 20px 60px'}}>
+        <PersonReport
+          personKey="client" personName={clientName} personAge={clientAge}
+          policies={clientPolicies} allPolicies={policies} children={children}
+        />
+        {isCouple && (
+          <PersonReport
+            personKey="spouse" personName={spouseName} personAge={spouseAge}
+            policies={spousePolicies} allPolicies={policies} children={children}
+          />
+        )}
+      </div>
+
+      <style>{`
+        .report-page {
+          background: white;
+          padding: 36px 40px;
+          margin-bottom: 8px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          page-break-after: always;
+        }
+        .report-person { margin-bottom: 0; }
+        @media print {
+          .no-print { display: none !important; }
+          aside, nav { display: none !important; }
+          body { background: white !important; margin: 0 !important; }
+          #report-root { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+          .report-page {
+            box-shadow: none !important;
+            padding: 20px 24px !important;
+            margin: 0 !important;
+            page-break-after: always;
+          }
+        }
+      `}</style>
     </div>
   )
 }
