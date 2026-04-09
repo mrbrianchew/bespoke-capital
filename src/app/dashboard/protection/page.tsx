@@ -760,9 +760,9 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const s:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none'}
   const inp:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none',boxSizing:'border-box'}
   const lbl:React.CSSProperties={display:'block',fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:5}
-  const g2:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}
-  const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14}
-  const g4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14}
+  const g2:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,alignItems:'flex-end'}
+  const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14,alignItems:'flex-end'}
+  const g4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14,alignItems:'flex-end'}
 
   const medPayModes = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
   const ltcPayModes = ['Cash', 'Medisave', 'MS + Cash', 'MS + CC'];
@@ -910,6 +910,49 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 <div><label style={lbl}>Cover Step down (yrs)</label><input type="number" value={form.coverStep||''} onChange={e=>f('coverStep',+e.target.value)} placeholder="Leave empty if none" style={inp}/></div>
                 <div><label style={lbl}>Step Down (%)</label><input type="number" value={form.stepDownPct||''} onChange={e=>f('stepDownPct',+e.target.value)} style={inp}/></div>
               </div>
+
+              {/* Dynamic Multiplier Coverage Calculation */}
+              {(form.multiplier || 0) > 1 && (
+                <div style={{ padding: '16px', background: '#FAFAF8', border: '1px solid var(--line)', borderRadius: 4, marginTop: 4 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12, fontWeight: 600 }}>Coverage with Multiplier (x{form.multiplier})</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: form.multiplierEnd ? 16 : 0 }}>
+                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>DEATH</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseDeath || 0) * form.multiplier)}</div></div>
+                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>TPD</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseTPD || 0) * form.multiplier)}</div></div>
+                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>ADV CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseAdvCI || 0) * form.multiplier)}</div></div>
+                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>EARLY CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseEarlyCI || 0) * form.multiplier)}</div></div>
+                  </div>
+
+                  {form.multiplierEnd ? (
+                    <>
+                      <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12, paddingTop: 16, borderTop: '1px dashed var(--line)', fontWeight: 600 }}>
+                        Lifetime Coverage (After Age {form.multiplierEnd})
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+                        {(() => {
+                          const stepYrs = form.coverStep || 0;
+                          const stepPct = form.stepDownPct || 0;
+                          const getLifetime = (base: number) => {
+                            if (!base) return 0;
+                            if (stepYrs > 0 && stepPct > 0) {
+                              const dropDec = (stepYrs * stepPct) / 100;
+                              return Math.max(base, (base * form.multiplier) * (1 - dropDec));
+                            }
+                            return base;
+                          };
+                          return (
+                            <>
+                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>DEATH</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseDeath || 0))}</div></div>
+                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>TPD</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseTPD || 0))}</div></div>
+                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>ADV CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseAdvCI || 0))}</div></div>
+                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>EARLY CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseEarlyCI || 0))}</div></div>
+                            </>
+                          )
+                        })()}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
             </>
           )}
 
