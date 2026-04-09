@@ -54,6 +54,9 @@ interface Policy {
   remarks: string
   // Section
   person: string
+  // USD policy flag
+  isUSD?:  boolean
+  fxRate?: number   // USD/SGD rate stored at time of entry
 }
 
 interface RiskMgmtData { policies: Policy[]; advisorNotes: string }
@@ -69,6 +72,7 @@ function emptyPolicy(person: string, ph = '', la = ''): Policy {
     premiumMedisave: 0, premiumCash: 0, premiumMode: '', frequency: 'Annual',
     inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
     status: 'In-Force', remarks: '', person,
+    isUSD: false, fxRate: 1.35,
   }
 }
 
@@ -298,21 +302,24 @@ export default function ProtectionPage() {
   const spouseDTPD = isCouple ? Math.max(0, fvAnn(p2Exp,inflation,coverTerm)+mort-p2CPF-p2Prop) : 0
   const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
 
+  function toSGD(val: number, p: Policy) {
+    return p.isUSD ? val * (p.fxRate || 1.35) : val
+  }
   function lifeHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person&&['life'].includes(p.categoryCode))
-      .reduce((s,p)=>s+Math.max(p.baseDeath||0,p.sumAssured||0),0)
+    return rmData.policies.filter(p=>p.person===person&&p.categoryCode==='life')
+      .reduce((s,p)=>s+toSGD(Math.max(p.baseDeath||0,p.sumAssured||0),p),0)
   }
   function ciHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person&&['life'].includes(p.categoryCode))
-      .reduce((s,p)=>s+Math.max(p.baseAdvCI||0,p.baseEarlyCI||0),0)
+    return rmData.policies.filter(p=>p.person===person&&p.categoryCode==='life')
+      .reduce((s,p)=>s+toSGD(Math.max(p.baseAdvCI||0,p.baseEarlyCI||0),p),0)
   }
   function premHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
+    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+toSGD((p.premiumCash||0),p)+(p.premiumMedisave||0),0)
   }
 
   const cLH = lifeHave('client'), cCH = ciHave('client')
   const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
-  const totalPrem = rmData.policies.reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
+  const totalPrem = rmData.policies.reduce((s,p)=>s+(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))+(p.premiumMedisave||0),0)
 
   // Chart data
   function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
@@ -655,7 +662,10 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             <span style={{fontSize:10,fontWeight:600,color:col,padding:'2px 6px',background:col+'18',borderRadius:3}}>{catShort[p.categoryCode]||p.categoryCode}</span>
             <span style={{fontSize:11,color:'var(--ink3)'}}>{p.policyTypeCode||'—'}</span>
             <div>
-              <div style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
+                {p.isUSD && <span style={{fontSize:9,fontWeight:700,color:'#A8834A',background:'#FDF6EC',border:'1px solid #c8a96e',padding:'1px 5px',borderRadius:2,letterSpacing:'0.06em'}}>USD</span>}
+              </div>
               {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
                 {p.policyholder&&<span>PH: {p.policyholder}</span>}
                 {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
@@ -663,7 +673,15 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-              {['ltc'].includes(p.categoryCode)&&p.monthlyBenefit?`$${p.monthlyBenefit.toLocaleString()}/mo`:fmt(mainBen)}
+              {['ltc'].includes(p.categoryCode)&&p.monthlyBenefit
+                ? `$${p.monthlyBenefit.toLocaleString()}/mo`
+                : p.isUSD && mainBen
+                  ? <>
+                      <div>USD {Math.round(mainBen).toLocaleString()}</div>
+                      <div style={{fontSize:10,color:'var(--ink3)'}}>≈ {fmt(mainBen*(p.fxRate||1.35))}</div>
+                    </>
+                  : fmt(mainBen)
+              }
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
               {fmt(p.premiumCash)}
@@ -697,6 +715,34 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const [form, setForm] = useState<Policy>({...policy})
   const f=(k:keyof Policy,v:any)=>setForm(prev=>({...prev,[k]:v}))
   const isNew = !policy.companyName && !policy.productName
+
+  // USD / FX state
+  const [fxLoading, setFxLoading] = useState(false)
+  const [fxFetched, setFxFetched] = useState(false)
+
+  // Auto-fetch live USD/SGD rate when USD is toggled on for the first time
+  async function fetchFxRate() {
+    setFxLoading(true)
+    try {
+      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=SGD')
+      const data = await res.json()
+      const rate = data?.rates?.SGD
+      if (rate) { f('fxRate', Math.round(rate * 10000) / 10000); setFxFetched(true) }
+    } catch { /* silent — user can type manually */ }
+    finally { setFxLoading(false) }
+  }
+
+  function handleUSDToggle(val: boolean) {
+    f('isUSD', val)
+    if (val && !fxFetched && (!form.fxRate || form.fxRate === 1.35)) {
+      fetchFxRate()
+    }
+  }
+
+  // Derived: effective SGD values for USD policy preview
+  const fx = form.fxRate || 1.35
+  const fmtUSD = (n: number) => n ? 'USD ' + Math.round(n).toLocaleString() : '—'
+  const toSGDPreview = (n: number) => form.isUSD ? n * fx : n
 
   // Find selected category record
   const selCat    = categories.find(c=>c.code===form.categoryCode)
@@ -890,6 +936,47 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             )}
           </div>
 
+          {/* ── USD Policy Toggle (Life only) ── */}
+          {isLife && (
+            <div style={{background: form.isUSD ? '#FDF6EC' : '#FAFAF8', border: `1px solid ${form.isUSD ? '#c8a96e' : 'var(--line)'}`, borderRadius: 4, padding: '12px 16px'}}>
+              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                <div style={{display:'flex', alignItems:'center', gap:10}}>
+                  {/* Toggle switch */}
+                  <div onClick={()=>handleUSDToggle(!form.isUSD)}
+                    style={{width:36,height:20,borderRadius:10,background:form.isUSD?'#c8a96e':'#D1CEC9',cursor:'pointer',position:'relative',transition:'background 0.2s',flexShrink:0}}>
+                    <div style={{position:'absolute',top:2,left:form.isUSD?18:2,width:16,height:16,borderRadius:'50%',background:'white',boxShadow:'0 1px 3px rgba(0,0,0,0.2)',transition:'left 0.2s'}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600,color: form.isUSD ? '#A8834A' : 'var(--ink3)'}}>USD Policy</div>
+                    <div style={{fontSize:10,color:'var(--ink3)',marginTop:1}}>Values entered in USD — converted to SGD for gap analysis</div>
+                  </div>
+                </div>
+                {/* FX rate field — only shown when USD is on */}
+                {form.isUSD && (
+                  <div style={{display:'flex', alignItems:'center', gap:8}}>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:4}}>USD / SGD Rate</div>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={form.fxRate||''}
+                          onChange={e=>f('fxRate',+e.target.value)}
+                          style={{width:80,padding:'5px 8px',border:'1px solid var(--line)',background:'white',fontSize:13,fontFamily:'DM Mono,monospace',outline:'none',textAlign:'right'}}
+                        />
+                        <button type="button" onClick={fetchFxRate} disabled={fxLoading}
+                          style={{padding:'5px 10px',background:'#1C1A17',color:'white',border:'none',cursor:fxLoading?'wait':'pointer',fontSize:10,letterSpacing:'0.05em',opacity:fxLoading?0.6:1}}>
+                          {fxLoading ? '…' : '↻ Live'}
+                        </button>
+                      </div>
+                      {fxFetched && <div style={{fontSize:10,color:'#2D6A4F',marginTop:3}}>✓ Live rate fetched</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── Brief description (Hidden for Life Insurance) ── */}
           {!isLife && (
             <div>
@@ -934,11 +1021,27 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           {/* ── Life / WL benefit fields ── */}
           {isLife && (
             <>
+              {form.isUSD && (
+                <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',background:'#FDF6EC',border:'1px solid #c8a96e',borderRadius:3}}>
+                  <span style={{fontSize:10,color:'#A8834A',fontWeight:600,letterSpacing:'0.08em'}}>USD POLICY</span>
+                  <span style={{fontSize:10,color:'var(--ink3)'}}>Enter all benefit amounts in USD · SGD equivalents shown at {fx.toFixed(4)} rate</span>
+                </div>
+              )}
               <div style={g4}>
-                <div><label style={lbl}>Base Death ($)</label><input type="number" value={form.baseDeath||''} onChange={e=>f('baseDeath',+e.target.value)} style={inp}/></div>
-                <div><label style={lbl}>Base TPD ($)</label><input type="number" value={form.baseTPD||''} onChange={e=>f('baseTPD',+e.target.value)} style={inp}/></div>
-                <div><label style={lbl}>Base Adv CI ($)</label><input type="number" value={form.baseAdvCI||''} onChange={e=>f('baseAdvCI',+e.target.value)} style={inp}/></div>
-                <div><label style={lbl}>Base Early CI ($)</label><input type="number" value={form.baseEarlyCI||''} onChange={e=>f('baseEarlyCI',+e.target.value)} style={inp}/></div>
+                {([
+                  {fl:'Base Death',    key:'baseDeath'   as const},
+                  {fl:'Base TPD',      key:'baseTPD'     as const},
+                  {fl:'Base Adv CI',   key:'baseAdvCI'   as const},
+                  {fl:'Base Early CI', key:'baseEarlyCI' as const},
+                ]).map(({fl,key})=>(
+                  <div key={key}>
+                    <label style={lbl}>{fl} ({form.isUSD?'USD':'SGD'})</label>
+                    <input type="number" value={(form[key] as number)||''} onChange={e=>f(key,+e.target.value)} style={inp}/>
+                    {form.isUSD && (form[key] as number)>0 && (
+                      <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt(toSGDPreview(form[key] as number))} SGD</div>
+                    )}
+                  </div>
+                ))}
               </div>
               <div style={g4}>
                 <div><label style={lbl}>Multiplier</label><input type="number" value={form.multiplier||''} onChange={e=>f('multiplier',+e.target.value)} style={inp}/></div>
@@ -948,35 +1051,48 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               </div>
               {(form.multiplier || 0) > 1 && (
                 <div style={{padding:'16px',background:'#FAFAF8',border:'1px solid var(--line)',borderRadius:4,marginTop:4}}>
-                  <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,fontWeight:600}}>Coverage with Multiplier (x{form.multiplier})</div>
+                  <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,fontWeight:600}}>
+                    Coverage with Multiplier (x{form.multiplier}){form.isUSD?' — SGD Equivalent':''}
+                  </div>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14,marginBottom:form.multiplierEnd?16:0}}>
-                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>DEATH</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseDeath||0)*form.multiplier)}</div></div>
-                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>TPD</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseTPD||0)*form.multiplier)}</div></div>
-                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>ADV CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseAdvCI||0)*form.multiplier)}</div></div>
-                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>EARLY CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseEarlyCI||0)*form.multiplier)}</div></div>
+                    {([
+                      {dl:'DEATH',    base:form.baseDeath||0},
+                      {dl:'TPD',      base:form.baseTPD||0},
+                      {dl:'ADV CI',   base:form.baseAdvCI||0},
+                      {dl:'EARLY CI', base:form.baseEarlyCI||0},
+                    ]).map(({dl,base})=>(
+                      <div key={dl}>
+                        <div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>{dl}</div>
+                        <div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(toSGDPreview(base*form.multiplier))}</div>
+                        {form.isUSD && <div style={{fontSize:9,color:'var(--ink3)',marginTop:1}}>{fmtUSD(base*form.multiplier)}</div>}
+                      </div>
+                    ))}
                   </div>
                   {form.multiplierEnd ? (
                     <>
                       <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,paddingTop:16,borderTop:'1px dashed var(--line)',fontWeight:600}}>
-                        Lifetime Coverage (After Age {form.multiplierEnd})
+                        Lifetime Coverage (After Age {form.multiplierEnd}){form.isUSD?' — SGD Equivalent':''}
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14}}>
                         {(()=>{
-                          const stepYrs=form.coverStep||0
-                          const stepPct=form.stepDownPct||0
+                          const stepYrs=form.coverStep||0; const stepPct=form.stepDownPct||0
                           const getLifetime=(base:number)=>{
-                            if (!base) return 0
-                            if (stepYrs>0&&stepPct>0){const dropDec=(stepYrs*stepPct)/100;return Math.max(base,(base*form.multiplier)*(1-dropDec))}
+                            if(!base)return 0
+                            if(stepYrs>0&&stepPct>0){const d=(stepYrs*stepPct)/100;return Math.max(base,(base*form.multiplier)*(1-d))}
                             return base
                           }
-                          return (
-                            <>
-                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>DEATH</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseDeath||0))}</div></div>
-                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>TPD</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseTPD||0))}</div></div>
-                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>ADV CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseAdvCI||0))}</div></div>
-                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>EARLY CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseEarlyCI||0))}</div></div>
-                            </>
-                          )
+                          return ([
+                            {dl:'DEATH',    base:form.baseDeath||0},
+                            {dl:'TPD',      base:form.baseTPD||0},
+                            {dl:'ADV CI',   base:form.baseAdvCI||0},
+                            {dl:'EARLY CI', base:form.baseEarlyCI||0},
+                          ]).map(({dl,base})=>(
+                            <div key={dl}>
+                              <div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>{dl}</div>
+                              <div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(toSGDPreview(getLifetime(base)))}</div>
+                              {form.isUSD && <div style={{fontSize:9,color:'var(--ink3)',marginTop:1}}>{fmtUSD(getLifetime(base))}</div>}
+                            </div>
+                          ))
                         })()}
                       </div>
                     </>
@@ -1066,7 +1182,13 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
 
           {/* ── Premiums ── */}
           <div style={((isMedical && !isRider) || isLTC) ? g3 : g2}>
-            <div><label style={lbl}>Premium — Cash ($)</label><input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/></div>
+            <div>
+              <label style={lbl}>Premium — Cash ({form.isUSD && isLife ? 'USD' : 'SGD'})</label>
+              <input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/>
+              {form.isUSD && isLife && (form.premiumCash||0)>0 && (
+                <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt((form.premiumCash||0)*fx)} SGD</div>
+              )}
+            </div>
             {((isMedical && !isRider) || isLTC) && <div><label style={lbl}>Premium — Medisave ($)</label><input type="number" value={form.premiumMedisave||''} onChange={e=>f('premiumMedisave',+e.target.value)} style={inp}/></div>}
             <div>
               <label style={lbl}>Payment Mode</label>
@@ -1084,7 +1206,13 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               </select>
             </div>
             {!isMedical && !isLTC && !isEndow && (
-              <div><label style={lbl}>Current Cash Value ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
+              <div>
+                <label style={lbl}>Current Cash Value ({form.isUSD && isLife ? 'USD' : 'SGD'})</label>
+                <input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/>
+                {form.isUSD && isLife && (form.currentCashValue||0)>0 && (
+                  <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt((form.currentCashValue||0)*fx)} SGD</div>
+                )}
+              </div>
             )}
           </div>
 
