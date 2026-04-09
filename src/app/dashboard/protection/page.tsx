@@ -2,312 +2,310 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Reference types (loaded from DB) ────────────────────────────────────────
+interface InsCategory   { id: number; code: string; name: string; sort_order: number }
+interface InsPolicyType { id: number; category_id: number; code: string; name: string }
+interface InsCompany    { id: number; category_id: number; name: string }
+interface InsProduct    { id: number; category_id: number; company_id: number; name: string }
 
+// ─── Policy record ────────────────────────────────────────────────────────────
 interface Policy {
   id: string
-  type: 'life' | 'ci' | 'tpd' | 'early_ci' | 'di' | 'hospitalisation'
-  insurer: string
-  planName: string
-  sumAssured: number
-  annualPremium: number
-  coverageType?: 'term' | 'whole_life' | 'ilp'
-  termYears?: number
-  monthlyBenefit?: number
-  deferredPeriod?: string
-  riderIncluded?: boolean
-  person: 'client' | 'spouse' | string  // string allows child IDs
-  policyholder: string   // name of who pays the premium
-  lifeAssured: string    // name of who is covered
-  notes: string
+  // Classification
+  categoryCode:   string  // 'medical' | 'ltc' | 'general' | 'life' | 'endowment'
+  policyTypeCode: string
+  companyName:    string
+  productName:    string
+  // People
+  policyholder: string
+  lifeAssured:  string
+  // Policy details
+  policyNo:     string
+  briefDescription: string
+  // Sums
+  baseDeath:    number
+  baseTPD:      number
+  baseAdvCI:    number
+  baseEarlyCI:  number
+  sumAssured:   number
+  monthlyBenefit: number
+  deferredPeriod: string
+  multiplier:   number
+  coverStep:    number
+  currentCashValue: number
+  // Premiums
+  premiumMedisave: number
+  premiumCash:     number
+  premiumMode:     string
+  frequency:       string
+  // Dates
+  inceptionDate:    string
+  premiumMaturity:  string
+  coverageMaturity: string
+  // Status
+  status:  string
+  remarks: string
+  // Section
+  person: string
 }
 
-interface RiskMgmtData {
-  policies: Policy[]
-  advisorNotes: string
+interface RiskMgmtData { policies: Policy[]; advisorNotes: string }
+const EMPTY_RM: RiskMgmtData = { policies: [], advisorNotes: '' }
+
+function emptyPolicy(person: string, ph = '', la = ''): Policy {
+  return {
+    id: crypto.randomUUID(), categoryCode: 'life', policyTypeCode: '', companyName: '', productName: '',
+    policyholder: ph, lifeAssured: la, policyNo: '', briefDescription: '',
+    baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, sumAssured: 0,
+    monthlyBenefit: 0, deferredPeriod: '', multiplier: 0, coverStep: 0, currentCashValue: 0,
+    premiumMedisave: 0, premiumCash: 0, premiumMode: '', frequency: 'Annual',
+    inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
+    status: 'In-Force', remarks: '', person,
+  }
 }
 
-const EMPTY_DATA: RiskMgmtData = { policies: [], advisorNotes: '' }
-
-const POLICY_TYPES = [
-  { value: 'life',            label: 'Life / Term / Whole Life', short: 'Life' },
-  { value: 'ci',              label: 'Critical Illness (CI)',     short: 'CI' },
-  { value: 'tpd',             label: 'Total & Perm. Disability',  short: 'TPD' },
-  { value: 'early_ci',        label: 'Early / Multi-pay CI',      short: 'Early CI' },
-  { value: 'di',              label: 'Disability Income (DI)',     short: 'DI' },
-  { value: 'hospitalisation', label: 'Hospitalisation / Shield',  short: 'Hosp.' },
-]
-
-const TYPE_COLORS: Record<string, string> = {
-  life:            '#c8a96e',
-  ci:              '#7B9E87',
-  tpd:             '#8B7BA8',
-  early_ci:        '#C67B5C',
-  di:              '#5C8BC6',
-  hospitalisation: '#7A9CBF',
+// ─── Display helpers ──────────────────────────────────────────────────────────
+const CAT_COLORS: Record<string, string> = {
+  medical: '#7A9CBF', ltc: '#9B7BAA', general: '#8A9A7E',
+  life: '#c8a96e', endowment: '#B8956A',
 }
+const CAT_SHORT: Record<string, string> = {
+  medical: 'Medical', ltc: 'LTC/DI', general: 'General',
+  life: 'Life', endowment: 'Endowment',
+}
+const FREQ = ['Annual','Semi-Annual','Quarterly','Monthly','Single','Giro']
+const STATUS_OPTS = ['In-Force','Lapsed','Surrendered','Matured','Pending']
+const PAY_MODES   = ['Cash','Giro','CPFIS','Medisave','SRS']
 
 function fmt(n: number | null | undefined) {
   if (!n || n === 0) return '—'
   return '$' + Math.round(n).toLocaleString()
 }
-
-function gapStatus(need: number, have: number) {
+function gapSt(need: number, have: number) {
   if (need <= 0) return { label: 'N/A',     color: '#555',    bg: '#F0EEE9' }
   if (have >= need) return { label: 'Covered', color: '#2D6A4F', bg: '#E8F5E9' }
-  if (have > 0)  return { label: 'Partial',  color: '#854F0B', bg: '#FEF3C7' }
-  return              { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
+  if (have > 0)     return { label: 'Partial',  color: '#854F0B', bg: '#FEF3C7' }
+  return                   { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
 }
 
-function newPolicy(person: string, defaultName = ''): Policy {
-  return { id: crypto.randomUUID(), type: 'life', insurer: '', planName: '', sumAssured: 0, annualPremium: 0, person, policyholder: defaultName, lifeAssured: defaultName, notes: '' }
-}
-
-// ─── Main Component ──────────────────────────────────────────────────────────
-
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProtectionPage() {
   const supabase = createClient()
-  const [clientId, setClientId]   = useState<string | null>(null)
+
+  // Client / family
+  const [clientId,   setClientId]   = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
-  const [clientAge, setClientAge]   = useState(40)
+  const [clientAge,  setClientAge]  = useState(40)
   const [spouseName, setSpouseName] = useState('Spouse')
-  const [spouseAge, setSpouseAge]   = useState(38)
-  const [isCouple, setIsCouple]     = useState(false)
-  const [children, setChildren]     = useState<any[]>([])
-  const [ffData, setFfData]         = useState<any>(null)
-  const [rmData, setRmData]         = useState<RiskMgmtData>(EMPTY_DATA)
-  const [saving, setSaving]         = useState(false)
+  const [spouseAge,  setSpouseAge]  = useState(38)
+  const [isCouple,   setIsCouple]   = useState(false)
+  const [children,   setChildren]   = useState<any[]>([])
+  const [ffData,     setFfData]     = useState<any>(null)
+
+  // Reference data from DB
+  const [refCategories,  setRefCategories]  = useState<InsCategory[]>([])
+  const [refPolicyTypes, setRefPolicyTypes] = useState<InsPolicyType[]>([])
+  const [refCompanies,   setRefCompanies]   = useState<InsCompany[]>([])
+  const [refProducts,    setRefProducts]    = useState<InsProduct[]>([])
+
+  // Portfolio data
+  const [rmData,  setRmData]  = useState<RiskMgmtData>(EMPTY_RM)
+  const [saving,  setSaving]  = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const [activeTab, setActiveTab]         = useState<'overview' | 'portfolio'>('overview')
-  const [overviewPerson, setOverviewPerson] = useState<'client' | 'spouse'>('client')
-  const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null)
-  const [showModal, setShowModal]         = useState(false)
-  const [modalPerson, setModalPerson]     = useState<string>('client')
+  // UI state
+  const [activeTab,       setActiveTab]       = useState<'overview'|'portfolio'>('overview')
+  const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
+  const [editingPolicy,   setEditingPolicy]   = useState<Policy | null>(null)
+  const [showModal,       setShowModal]       = useState(false)
+  const [modalPerson,     setModalPerson]     = useState('client')
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
     if (id) setClientId(id)
   }, [])
 
-  useEffect(() => { if (clientId) loadData(clientId) }, [clientId])
+  useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
 
-  async function loadData(id: string) {
+  async function loadAll(id: string) {
+    // Reference tables
+    const [
+      { data: cats },
+      { data: ptypes },
+      { data: comps },
+      { data: prods },
+    ] = await Promise.all([
+      supabase.from('ins_categories').select('*').order('sort_order'),
+      supabase.from('ins_policy_types').select('*').order('sort_order'),
+      supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
+      supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
+    ])
+    if (cats)   setRefCategories(cats)
+    if (ptypes) setRefPolicyTypes(ptypes)
+    if (comps)  setRefCompanies(comps)
+    if (prods)  setRefProducts(prods)
+
+    // Client info
     const { data: client } = await supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle()
     if (client) {
       setClientName(client.name)
-      // Derive age from dob or use stored age
-      if (client.dob) {
-        const age = Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000))
-        setClientAge(age)
-      } else if (client.age) {
-        setClientAge(Number(client.age))
-      }
+      if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25*24*3600*1000)))
+      else if (client.age) setClientAge(Number(client.age))
     }
 
+    // Fact finding — merge all rows
     const { data: rows } = await supabase.from('fact_finding').select('data').eq('client_id', id)
-    // Merge all rows into one flat object (same pattern as other pages)
     const merged: any = {}
-    if (rows && rows.length > 0) {
-      rows.forEach((r: any) => { if (r.data) Object.assign(merged, r.data) })
-    }
-
+    if (rows?.length) rows.forEach((r: any) => { if (r.data) Object.assign(merged, r.data) })
     if (Object.keys(merged).length > 0) {
       setFfData(merged)
       const p2 = merged.person2
       if (p2?.name) {
-        setSpouseName(p2.name)
-        setIsCouple(true)
+        setSpouseName(p2.name); setIsCouple(true)
         if (p2.age) setSpouseAge(Number(p2.age))
-        else if (p2.dob) {
-          const age = Math.floor((Date.now() - new Date(p2.dob).getTime()) / (365.25 * 24 * 3600 * 1000))
-          setSpouseAge(age)
-        }
+        else if (p2.dob) setSpouseAge(Math.floor((Date.now() - new Date(p2.dob).getTime()) / (365.25*24*3600*1000)))
       } else if (merged.mode === 'couple') {
         setIsCouple(true)
-        // Try alternate keys for spouse name
-        const sName = merged.spouse_name || merged.spouseName || merged.d2_name || ''
-        if (sName) setSpouseName(sName)
+        const sn = merged.spouse_name || merged.spouseName || ''
+        if (sn) setSpouseName(sn)
       }
-      // Children can be stored at top level or under a key
       const kids = merged.children || merged.family_members || []
       setChildren(Array.isArray(kids) ? kids : [])
       const rm = merged.risk_management
-      if (rm) setRmData({ ...EMPTY_DATA, ...rm })
+      if (rm) setRmData({ ...EMPTY_RM, ...rm })
     }
   }
 
   async function saveData(data: RiskMgmtData) {
-    if (!clientId) return
-    setSaving(true)
-    // Read first row to merge cleanly
+    if (!clientId) return; setSaving(true)
     const { data: rows } = await supabase.from('fact_finding').select('data').eq('client_id', clientId)
-    const existing = (rows && rows.length > 0) ? (rows[0].data || {}) : {}
-    const merged = { ...existing, risk_management: data }
-    await supabase.from('fact_finding').upsert({ client_id: clientId, data: merged }, { onConflict: 'client_id' })
+    const existing = rows?.length ? (rows[0].data || {}) : {}
+    await supabase.from('fact_finding').upsert({ client_id: clientId, data: { ...existing, risk_management: data } }, { onConflict: 'client_id' })
     setSaving(false)
   }
 
-  function updateRmData(next: RiskMgmtData) {
+  function updateRm(next: RiskMgmtData) {
     setRmData(next)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => saveData(next), 1000)
   }
 
-  // ── Calculations ─────────────────────────────────────────────────────────
+  // ── Financial calculations ─────────────────────────────────────────────────
   const ff = ffData || {}
-  const inflationRate = (Number(ff.inflation_rate) || 3) / 100
-
-  const p1MonthlyIncome = Number(ff.monthly_income || ff.monthlyIncomeClient || 0)
-  const p2MonthlyIncome = Number(ff.person2?.monthly_income || 0)
-  const p1AnnualIncome  = p1MonthlyIncome * 12
-  const p2AnnualIncome  = p2MonthlyIncome * 12
-
-  // Annual expenses
+  const inflation = (Number(ff.inflation_rate) || 3) / 100
+  const p1Mo = Number(ff.monthly_income || ff.monthlyIncomeClient || 0)
+  const p2Mo = Number(ff.person2?.monthly_income || 0)
   const expCats = ['financial_commitments','household','personal','children','lifestyle']
-  const p1AnnualExp = expCats.reduce((s, c) => s + Number(ff[`d_${c}`] || 0), 0) ||
-    Number(ff.d_annual_expenses || 0) || (p1AnnualIncome * 0.7)
-  const p2AnnualExp = expCats.reduce((s, c) => s + Number(ff[`d2_${c}`] || 0), 0) ||
-    Number(ff.d2_annual_expenses || 0) || (p2AnnualIncome * 0.7)
-
-  // Coverage term — until youngest child is 26
-  let coverageTerm = 25
+  const p1Exp = expCats.reduce((s,c) => s + Number(ff[`d_${c}`]||0), 0) || (p1Mo*12*0.7)
+  const p2Exp = expCats.reduce((s,c) => s + Number(ff[`d2_${c}`]||0), 0) || (p2Mo*12*0.7)
+  let coverTerm = 25
   if (children.length > 0) {
-    const minAge = Math.min(...children.map((c: any) => Number(c.age || 0)))
-    coverageTerm = Math.max(5, 26 - minAge)
+    const minAge = Math.min(...children.map((c:any) => Number(c.age||0)))
+    coverTerm = Math.max(5, 26 - minAge)
+  }
+  function fvAnn(annual: number, r: number, y: number) {
+    if (y<=0) return 0; if (r===0) return annual*y
+    return annual*((Math.pow(1+r,y)-1)/r)
+  }
+  const mort = Number(ff.l_mortgage_residing||0) + Number(ff.l2_mortgage_residing||0) + Number(ff.d_mortgage_cpf||0)
+  const edu  = Number(ff.strategic_objectives?.ed_total||0)
+  const p1CPF  = Number(ff.a_cpf_oa||0)+Number(ff.a_cpf_sa||0)+Number(ff.a_cpf_ma||0)
+  const p2CPF  = Number(ff.a2_cpf_oa||0)+Number(ff.a2_cpf_sa||0)+Number(ff.a2_cpf_ma||0)
+  const props: any[] = ff.properties||[]
+  const p1Prop = props.filter((p:any)=>p.owner==='client'||p.owner==='joint').reduce((s:number,p:any)=>s+Number(p.current_value||0)*(p.owner==='joint'?0.5:1),0)
+  const p2Prop = props.filter((p:any)=>p.owner==='spouse'||p.owner==='joint').reduce((s:number,p:any)=>s+Number(p.current_value||0)*(p.owner==='joint'?0.5:1),0)
+  const p1Liq  = Number(ff.a_savings||0)+Number(ff.a_alternatives||0)
+  const p2Liq  = Number(ff.a2_savings||0)+Number(ff.a2_alternatives||0)
+
+  const clientDTPD = Math.max(0, fvAnn(p1Exp,inflation,coverTerm)+mort+edu-p1CPF-p1Prop)
+  const clientCI   = Math.max(0, p1Mo*24 - p1Liq)
+  const spouseDTPD = isCouple ? Math.max(0, fvAnn(p2Exp,inflation,coverTerm)+mort-p2CPF-p2Prop) : 0
+  const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
+
+  function lifeHave(person: string) {
+    return rmData.policies.filter(p=>p.person===person&&['life'].includes(p.categoryCode))
+      .reduce((s,p)=>s+Math.max(p.baseDeath||0,p.sumAssured||0),0)
+  }
+  function ciHave(person: string) {
+    return rmData.policies.filter(p=>p.person===person&&['life'].includes(p.categoryCode))
+      .reduce((s,p)=>s+Math.max(p.baseAdvCI||0,p.baseEarlyCI||0),0)
+  }
+  function premHave(person: string) {
+    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
   }
 
-  function fvAnnuity(annual: number, rate: number, years: number) {
-    if (rate === 0 || years <= 0) return annual * Math.max(0, years)
-    return annual * ((Math.pow(1 + rate, years) - 1) / rate)
+  const cLH = lifeHave('client'), cCH = ciHave('client')
+  const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
+  const totalPrem = rmData.policies.reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
+
+  // Chart data
+  function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
+    return Array.from({length:100-age}, (_,i) => {
+      const a = age+i
+      const yLeft = Math.max(0, (age+coverTerm)-a)
+      const dtpd = Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - (i===0?offset:0))
+      const ciFactor = a < age+coverTerm ? 1.0 : Math.max(0, 1-(a-(age+coverTerm))*0.04)
+      return { age: a, dtpd, ci: Math.max(0, ciNeed*ciFactor) }
+    })
   }
 
-  const p1FD = fvAnnuity(p1AnnualExp, inflationRate, coverageTerm)
-  const p2FD = fvAnnuity(p2AnnualExp, inflationRate, coverageTerm)
+  const aAge    = overviewPerson==='client' ? clientAge  : spouseAge
+  const aDTPD   = overviewPerson==='client' ? clientDTPD : spouseDTPD
+  const aCI     = overviewPerson==='client' ? clientCI   : spouseCI
+  const aLH     = overviewPerson==='client' ? cLH        : sLH
+  const aCH     = overviewPerson==='client' ? cCH        : sCH
+  const aExp    = overviewPerson==='client' ? p1Exp      : p2Exp
+  const aOffset = overviewPerson==='client' ? p1CPF+p1Prop : p2CPF+p2Prop
+  const aName   = overviewPerson==='client' ? clientName : spouseName
 
-  const mortgageNeed  = Number(ff.l_mortgage_residing || 0) + Number(ff.l2_mortgage_residing || 0) + Number(ff.d_mortgage_cpf || 0)
-  const educationNeed = Number(ff.strategic_objectives?.ed_total || 0)
+  const chartData = buildChart(aAge, aExp, aOffset, aCI)
 
-  // Assets
-  const p1CPF      = Number(ff.a_cpf_oa || 0) + Number(ff.a_cpf_sa || 0) + Number(ff.a_cpf_ma || 0)
-  const p2CPF      = Number(ff.a2_cpf_oa || 0) + Number(ff.a2_cpf_sa || 0) + Number(ff.a2_cpf_ma || 0)
-  const properties: any[] = ff.properties || []
-  const p1PropVal  = properties.filter((p: any) => p.owner === 'client' || p.owner === 'joint')
-    .reduce((s: number, p: any) => s + Number(p.current_value || 0) * (p.owner === 'joint' ? 0.5 : 1), 0)
-  const p2PropVal  = properties.filter((p: any) => p.owner === 'spouse' || p.owner === 'joint')
-    .reduce((s: number, p: any) => s + Number(p.current_value || 0) * (p.owner === 'joint' ? 0.5 : 1), 0)
-  const p1Liquid   = Number(ff.a_savings || 0) + Number(ff.a_alternatives || 0)
-  const p2Liquid   = Number(ff.a2_savings || 0) + Number(ff.a2_alternatives || 0)
+  // People list for dropdowns
+  const allPeople = [
+    { key: 'client', label: clientName },
+    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
+    ...children.map((c:any) => ({ key: `child_${c.name||c.id}`, label: c.name||'Child' })),
+  ]
 
-  const p1DTPDOffset = p1CPF + p1PropVal
-  const p2DTPDOffset = p2CPF + p2PropVal
+  // Portfolio sections
+  const sections = [
+    { key: 'client', label: clientName },
+    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
+    ...(children.length > 0 ? [{ key: 'dependents', label: 'Dependents', isDependent: true, childKeys: children.map((c:any)=>`child_${c.name||c.id||c}`) }] : []),
+  ]
 
-  const clientDTPDNeed = Math.max(0, p1FD + mortgageNeed + educationNeed - p1DTPDOffset)
-  const clientCINeed   = Math.max(0, p1AnnualIncome * 2 - p1Liquid)
-  const spouseDTPDNeed = isCouple ? Math.max(0, p2FD + mortgageNeed - p2DTPDOffset) : 0
-  const spouseCINeed   = isCouple ? Math.max(0, p2AnnualIncome * 2 - p2Liquid) : 0
-
-  // Policy totals from portfolio
-  function polTotal(person: string, ...types: string[]) {
-    return rmData.policies
-      .filter(p => p.person === person && types.includes(p.type))
-      .reduce((s, p) => s + (p.sumAssured || 0), 0)
-  }
-  function premTotal(person: string) {
-    return rmData.policies.filter(p => p.person === person).reduce((s, p) => s + (p.annualPremium || 0), 0)
-  }
-
-  const clientLifeHave  = polTotal('client', 'life', 'tpd')
-  const clientCIHave    = polTotal('client', 'ci', 'early_ci')
-  const spouseLifeHave  = polTotal('spouse', 'life', 'tpd')
-  const spouseCIHave    = polTotal('spouse', 'ci', 'early_ci')
-  const totalPremium    = rmData.policies.reduce((s, p) => s + (p.annualPremium || 0), 0)
-
-  // ── Chart data — need curve by age ────────────────────────────────────────
-  function buildChartData(
-    currentAge: number, annualExp: number, fd: number,
-    dtpdNeed: number, ciNeed: number,
-    lifeHave: number, ciHave: number
-  ) {
-    const maxAge = 99
-    const points: { age: number; dtpdNeed: number; ciNeed: number }[] = []
-    for (let age = currentAge; age <= maxAge; age++) {
-      const yearsLeft = Math.max(0, (currentAge + coverageTerm) - age)
-      const remainingDTPD = yearsLeft > 0 ? Math.max(0, fvAnnuity(annualExp, inflationRate, yearsLeft) + (age < currentAge + coverageTerm ? mortgageNeed * (yearsLeft / coverageTerm) : 0) - (age <= currentAge ? p1DTPDOffset : 0)) : (age < 65 ? 200000 : 100000)
-      // CI need — stays roughly constant then drops at 65 (kids grown, lower expenses)
-      const remainingCI = age < 65 ? ciNeed * (1 - (age - currentAge) * 0.008) : ciNeed * 0.6 * (1 - (age - 65) * 0.02)
-      points.push({ age, dtpdNeed: Math.max(0, remainingDTPD), ciNeed: Math.max(0, remainingCI) })
-    }
-    return points
-  }
-
-  const activePerson = overviewPerson === 'client' ? 'client' : 'spouse'
-  const activeAge    = overviewPerson === 'client' ? clientAge : spouseAge
-  const activeDTPD   = overviewPerson === 'client' ? clientDTPDNeed : spouseDTPDNeed
-  const activeCI     = overviewPerson === 'client' ? clientCINeed   : spouseCINeed
-  const activeLife   = overviewPerson === 'client' ? clientLifeHave : spouseLifeHave
-  const activeCIHave = overviewPerson === 'client' ? clientCIHave   : spouseCIHave
-  const activeAnnExp = overviewPerson === 'client' ? p1AnnualExp    : p2AnnualExp
-  const activeName   = overviewPerson === 'client' ? clientName     : spouseName
-
-  const chartData = buildChartData(activeAge, activeAnnExp, activeDTPD, activeDTPD, activeCI, activeLife, activeCIHave)
-
-  // ── Modal helpers ─────────────────────────────────────────────────────────
   function openNew(person: string) {
-    const personLabel = allPeople.find(p => p.key === person)?.label || person
-    setEditingPolicy(newPolicy(person, personLabel))
+    const label = allPeople.find(p=>p.key===person)?.label||person
+    setEditingPolicy(emptyPolicy(person, label, label))
     setModalPerson(person)
     setShowModal(true)
   }
-  function openEdit(p: Policy) { setEditingPolicy({ ...p }); setModalPerson(p.person); setShowModal(true) }
+  function openEdit(p: Policy) { setEditingPolicy({...p}); setModalPerson(p.person); setShowModal(true) }
   function savePolicy(p: Policy) {
-    const exists = rmData.policies.find(x => x.id === p.id)
+    const exists = rmData.policies.find(x=>x.id===p.id)
     const next = exists
-      ? { ...rmData, policies: rmData.policies.map(x => x.id === p.id ? p : x) }
-      : { ...rmData, policies: [...rmData.policies, p] }
-    updateRmData(next)
-    setShowModal(false)
-    setEditingPolicy(null)
+      ? {...rmData, policies: rmData.policies.map(x=>x.id===p.id?p:x)}
+      : {...rmData, policies: [...rmData.policies, p]}
+    updateRm(next); setShowModal(false); setEditingPolicy(null)
   }
-  function delPolicy(id: string) { updateRmData({ ...rmData, policies: rmData.policies.filter(p => p.id !== id) }) }
-
-  // Portfolio sections: client, spouse (if couple), one combined Dependents section
-  const portfolioSections: { key: string; label: string; isDependent?: boolean; childKeys?: string[] }[] = [
-    { key: 'client', label: clientName },
-    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
-    ...(children.length > 0 ? [{
-      key: 'dependents',
-      label: 'Dependents',
-      isDependent: true,
-      childKeys: children.map((c: any) => `child_${c.name || c.id || c}`),
-    }] : []),
-  ]
-
-  // Full people list for policyholder / life assured dropdowns
-  const allPeople: { key: string; label: string }[] = [
-    { key: 'client', label: clientName },
-    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
-    ...children.map((c: any) => ({ key: `child_${c.name || c.id}`, label: c.name || 'Child' })),
-  ]
+  function delPolicy(id: string) { updateRm({...rmData, policies: rmData.policies.filter(p=>p.id!==id)}) }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--cream)', display: 'flex', flexDirection: 'column' }}>
-      {/* ── Hero ── */}
-      <div style={{ background: '#1C1A17', padding: '0 48px' }}>
-        <div style={{ paddingTop: 32, paddingBottom: 28, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+    <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
+      {/* Hero */}
+      <div style={{background:'#1C1A17',padding:'0 48px'}}>
+        <div style={{paddingTop:32,paddingBottom:28,display:'flex',alignItems:'flex-end',justifyContent:'space-between'}}>
           <div>
-            <div style={{ fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(200,169,110,0.8)', marginBottom: 6 }}>Risk Management</div>
-            <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 32, fontWeight: 300, color: '#F0EDE8' }}>
-              Wealth Protection — {clientName}
-            </div>
+            <div style={{fontSize:11,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.8)',marginBottom:6}}>Risk Management</div>
+            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:32,fontWeight:300,color:'#F0EDE8'}}>Wealth Protection — {clientName}</div>
           </div>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center', paddingBottom: 4 }}>
-            {saving && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Saving…</span>}
-            <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: 3 }}>
-              {(['overview', 'portfolio'] as const).map(t => (
-                <button key={t} onClick={() => setActiveTab(t)}
-                  style={{ padding: '6px 18px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500, background: activeTab === t ? 'rgba(200,169,110,0.2)' : 'transparent', color: activeTab === t ? '#c8a96e' : 'rgba(255,255,255,0.45)', transition: 'all 0.15s' }}>
-                  {t === 'overview' ? 'Overview' : 'Portfolio'}
+          <div style={{display:'flex',gap:16,alignItems:'center',paddingBottom:4}}>
+            {saving && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
+            <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3}}>
+              {(['overview','portfolio'] as const).map(t=>(
+                <button key={t} onClick={()=>setActiveTab(t)}
+                  style={{padding:'6px 18px',borderRadius:4,border:'none',cursor:'pointer',fontSize:12,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:500,background:activeTab===t?'rgba(200,169,110,0.2)':'transparent',color:activeTab===t?'#c8a96e':'rgba(255,255,255,0.45)'}}>
+                  {t==='overview'?'Overview':'Portfolio'}
                 </button>
               ))}
             </div>
@@ -315,156 +313,112 @@ export default function ProtectionPage() {
         </div>
       </div>
 
-      {/* ── OVERVIEW TAB ── */}
-      {activeTab === 'overview' && (
-        <div style={{ padding: '36px 48px', flex: 1 }}>
-
-          {/* Summary cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 32 }}>
+      {/* ── OVERVIEW ── */}
+      {activeTab==='overview' && (
+        <div style={{padding:'36px 48px',flex:1}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:32}}>
             {[
-              { label: 'Total Policies', value: String(rmData.policies.length), sub: 'all insured persons' },
-              { label: 'Annual Premium', value: fmt(totalPremium), sub: 'combined portfolio' },
-              { label: `${clientName} — D/TPD Gap`, value: fmt(Math.max(0, clientDTPDNeed - clientLifeHave)), sub: clientDTPDNeed > 0 ? `Need ${fmt(clientDTPDNeed)}` : 'Complete profile first' },
-              { label: `${clientName} — CI Gap`, value: fmt(Math.max(0, clientCINeed - clientCIHave)), sub: clientCINeed > 0 ? `Need ${fmt(clientCINeed)}` : 'Complete profile first' },
-            ].map(c => (
-              <div key={c.label} style={{ background: 'white', border: '0.5px solid var(--line)', padding: '18px 22px' }}>
-                <div style={{ fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{c.label}</div>
-                <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 26, color: 'var(--ink)', fontWeight: 300 }}>{c.value}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>{c.sub}</div>
+              {label:'Total Policies',value:String(rmData.policies.length),sub:'all insured persons'},
+              {label:'Annual Premium',value:fmt(totalPrem),sub:'combined portfolio'},
+              {label:`${clientName} — D/TPD Gap`,value:fmt(Math.max(0,clientDTPD-cLH)),sub:clientDTPD>0?`Need ${fmt(clientDTPD)}`:'Complete profile first'},
+              {label:`${clientName} — CI Gap`,value:fmt(Math.max(0,clientCI-cCH)),sub:clientCI>0?`Need ${fmt(clientCI)}`:'Complete profile first'},
+            ].map(c=>(
+              <div key={c.label} style={{background:'white',border:'0.5px solid var(--line)',padding:'18px 22px'}}>
+                <div style={{fontSize:10,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>{c.label}</div>
+                <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,color:'var(--ink)',fontWeight:300}}>{c.value}</div>
+                <div style={{fontSize:11,color:'var(--ink3)',marginTop:2}}>{c.sub}</div>
               </div>
             ))}
           </div>
 
-          {/* Person toggle for gap analysis */}
           {isCouple && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-              {(['client', 'spouse'] as const).map(p => (
-                <button key={p} onClick={() => setOverviewPerson(p)}
-                  style={{ padding: '7px 20px', border: `1px solid ${overviewPerson === p ? '#c8a96e' : 'var(--line)'}`, background: overviewPerson === p ? '#FDF6EC' : 'white', color: overviewPerson === p ? '#A8834A' : 'var(--ink3)', cursor: 'pointer', fontSize: 12, fontWeight: overviewPerson === p ? 600 : 400, letterSpacing: '0.05em' }}>
-                  {p === 'client' ? clientName : spouseName}
+            <div style={{display:'flex',gap:6,marginBottom:20}}>
+              {(['client','spouse'] as const).map(p=>(
+                <button key={p} onClick={()=>setOverviewPerson(p)}
+                  style={{padding:'7px 20px',border:`1px solid ${overviewPerson===p?'#c8a96e':'var(--line)'}`,background:overviewPerson===p?'#FDF6EC':'white',color:overviewPerson===p?'#A8834A':'var(--ink3)',cursor:'pointer',fontSize:12,fontWeight:overviewPerson===p?600:400}}>
+                  {p==='client'?clientName:spouseName}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Gap table */}
-          <GapSection
-            title={`${activeName} — Coverage Gap Analysis`}
-            dtpdNeed={activeDTPD} ciNeed={activeCI}
-            lifeHave={activeLife} ciHave={activeCIHave}
-            mortgageNeed={mortgageNeed} educationNeed={educationNeed}
-            annualPremium={premTotal(activePerson)}
-          />
+          <GapSection title={`${aName} — Coverage Gap Analysis`}
+            dtpdNeed={aDTPD} ciNeed={aCI} lifeHave={aLH} ciHave={aCH}
+            mortgageNeed={mort} educationNeed={edu} annualPremium={premHave(overviewPerson)} />
 
-          {/* Charts */}
-          {activeDTPD > 0 && (
-            <div style={{ marginTop: 28, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-              <CoverageChart
-                title="Death / TPD Coverage Needs Analysis"
-                needLabel="Required Family Protection Capital"
-                haveLabel="Existing Family Protection"
-                data={chartData.map(d => ({ age: d.age, need: d.dtpdNeed, have: activeLife }))}
-                color="#00BCD4"
-              />
-              <CoverageChart
-                title="Critical Illness Coverage Needs Analysis"
-                needLabel="Required Critical Illness Protection"
-                haveLabel="Existing Critical Illness Protection"
-                data={chartData.map(d => ({ age: d.age, need: d.ciNeed, have: activeCIHave }))}
-                color="#00BCD4"
-              />
+          {aDTPD>0 ? (
+            <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+              <CoverageChart title="Death / TPD Coverage Needs Analysis" needLabel="Required Family Protection Capital" haveLabel="Existing Family Protection" data={chartData.map(d=>({age:d.age,need:d.dtpd,have:aLH}))} needColor="#00BCD4" />
+              <CoverageChart title="Critical Illness Coverage Needs Analysis" needLabel="Required Critical Illness Protection" haveLabel="Existing Critical Illness Protection" data={chartData.map(d=>({age:d.age,need:d.ci,have:aCH}))} needColor="#00BCD4" />
+            </div>
+          ) : (
+            <div style={{marginTop:20,padding:'24px',background:'white',border:'0.5px solid var(--line)',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
+              Complete the Financial Profile to generate coverage need charts.
             </div>
           )}
 
-          {activeDTPD === 0 && (
-            <div style={{ marginTop: 20, padding: '24px', background: 'white', border: '0.5px solid var(--line)', textAlign: 'center' }}>
-              <div style={{ fontSize: 13, color: 'var(--ink3)' }}>Complete the Financial Profile (income, expenses, assets) to generate coverage need charts.</div>
-            </div>
-          )}
-
-          {/* Advisor notes */}
-          <div style={{ marginTop: 28, background: 'white', border: '0.5px solid var(--line)', padding: 26 }}>
-            <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12 }}>Advisor Notes</div>
-            <textarea
-              value={rmData.advisorNotes}
-              onChange={e => updateRmData({ ...rmData, advisorNotes: e.target.value })}
-              placeholder="Record observations, client concerns, agreed priorities, follow-up actions…"
-              rows={4}
-              style={{ width: '100%', resize: 'vertical', border: 'none', outline: 'none', background: '#1C1A17', color: '#c8a96e', fontFamily: 'DM Mono, monospace', fontSize: 13, padding: '14px 16px', borderRadius: 4, boxSizing: 'border-box', lineHeight: 1.7 }}
-            />
+          <div style={{marginTop:28,background:'white',border:'0.5px solid var(--line)',padding:26}}>
+            <div style={{fontSize:10,letterSpacing:'0.14em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12}}>Advisor Notes</div>
+            <textarea value={rmData.advisorNotes} onChange={e=>updateRm({...rmData,advisorNotes:e.target.value})}
+              placeholder="Record observations, client concerns, agreed priorities, follow-up actions…" rows={4}
+              style={{width:'100%',resize:'vertical',border:'none',outline:'none',background:'#1C1A17',color:'#c8a96e',fontFamily:'DM Mono,monospace',fontSize:13,padding:'14px 16px',borderRadius:4,boxSizing:'border-box',lineHeight:1.7}} />
           </div>
         </div>
       )}
 
-      {/* ── PORTFOLIO TAB ── */}
-      {activeTab === 'portfolio' && (
-        <div style={{ padding: '36px 48px', flex: 1 }}>
-
-          {/* Header row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }} className="no-print">
+      {/* ── PORTFOLIO ── */}
+      {activeTab==='portfolio' && (
+        <div style={{padding:'36px 48px',flex:1}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:28}} className="no-print">
             <div>
-              <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 22, color: 'var(--ink)' }}>Wealth Protection Portfolio</div>
-              <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 2 }}>
-                {rmData.policies.length} {rmData.policies.length === 1 ? 'policy' : 'policies'} · Total annual premium {fmt(totalPremium)}
-              </div>
+              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
+              <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{rmData.policies.length} {rmData.policies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
             </div>
-            <button onClick={() => window.print()}
-              style={{ padding: '8px 18px', background: '#c8a96e', color: 'white', border: 'none', cursor: 'pointer', fontSize: 12, letterSpacing: '0.06em' }}>
-              Print / PDF
-            </button>
+            <button onClick={()=>window.print()} style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>Print / PDF</button>
           </div>
 
-          {/* Sections per person */}
-          {portfolioSections.map(({ key, label, isDependent, childKeys }) => {
-            // For Dependents section, gather policies across all child keys
-            const policies = isDependent && childKeys
-              ? rmData.policies.filter(p => childKeys.includes(p.person))
-              : rmData.policies.filter(p => p.person === key)
-            const personPremium = policies.reduce((s, p) => s + (p.annualPremium || 0), 0)
-            // For Dependents, pick the first child key as the default when adding
-            const addKey = isDependent && childKeys ? (childKeys[0] || 'dependent') : key
+          {sections.map(({key,label,isDependent,childKeys})=>{
+            const policies = isDependent&&childKeys ? rmData.policies.filter(p=>childKeys.includes(p.person)) : rmData.policies.filter(p=>p.person===key)
+            const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
+            const secPrem = policies.reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
             return (
-              <div key={key} style={{ marginBottom: 32 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 3, height: 18, background: isDependent ? '#7B9E87' : '#c8a96e' }} />
-                    <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 18, color: 'var(--ink)' }}>{label}</div>
-                    {isDependent && <span style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', padding: '2px 7px', border: '1px solid var(--line)', marginLeft: 4 }}>Dependent</span>}
+              <div key={key} style={{marginBottom:32}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:3,height:18,background:isDependent?'#7B9E87':'#c8a96e'}} />
+                    <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,color:'var(--ink)'}}>{label}</div>
+                    {isDependent && <span style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',padding:'2px 7px',border:'1px solid var(--line)'}}>Dependent</span>}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }} className="no-print">
-                    {personPremium > 0 && <span style={{ fontSize: 12, color: 'var(--ink3)' }}>Premium: <strong style={{ color: 'var(--ink)', fontFamily: 'DM Mono, monospace' }}>{fmt(personPremium)}</strong></span>}
-                    <button onClick={() => openNew(addKey)}
-                      style={{ padding: '6px 14px', background: isDependent ? '#F5FAF6' : 'var(--ink)', color: isDependent ? '#2D6A4F' : 'white', border: isDependent ? '1px solid #7B9E87' : 'none', cursor: 'pointer', fontSize: 12 }}>
+                  <div style={{display:'flex',alignItems:'center',gap:16}} className="no-print">
+                    {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)'}}>Premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(secPrem)}</strong></span>}
+                    <button onClick={()=>openNew(addKey)}
+                      style={{padding:'6px 14px',background:isDependent?'#F5FAF6':'var(--ink)',color:isDependent?'#2D6A4F':'white',border:isDependent?'1px solid #7B9E87':'none',cursor:'pointer',fontSize:12}}>
                       + Add Policy
                     </button>
                   </div>
                 </div>
-
-                {policies.length === 0 ? (
-                  <div style={{ background: 'white', border: '0.5px dashed var(--line)', padding: '28px 24px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 13, color: 'var(--ink3)' }}>No policies recorded for {label}</div>
-                  </div>
+                {policies.length===0 ? (
+                  <div style={{background:'white',border:'0.5px dashed var(--line)',padding:'24px',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>No policies recorded for {label}</div>
                 ) : (
-                  <PolicyTable policies={policies} onEdit={openEdit} onDelete={delPolicy} />
+                  <PolicyTable policies={policies} catShort={CAT_SHORT} catColors={CAT_COLORS} onEdit={openEdit} onDelete={delPolicy} />
                 )}
               </div>
             )
           })}
 
-          {/* Portfolio summary */}
-          {rmData.policies.length > 0 && (
-            <div style={{ background: '#1C1A17', padding: '26px 32px', marginTop: 8 }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(200,169,110,0.7)', marginBottom: 16 }}>Portfolio Summary</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24 }}>
+          {rmData.policies.length>0 && (
+            <div style={{background:'#1C1A17',padding:'26px 32px',marginTop:8}}>
+              <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.7)',marginBottom:16}}>Portfolio Summary</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:24}}>
                 {[
-                  { label: 'Total Policies', val: String(rmData.policies.length) },
-                  { label: 'Total Annual Premium', val: fmt(totalPremium) },
-                  { label: `${clientName} — Life+TPD`, val: fmt(clientLifeHave) },
-                  ...(isCouple ? [{ label: `${spouseName} — Life+TPD`, val: fmt(spouseLifeHave) }] : [{ label: 'CI Coverage', val: fmt(clientCIHave) }]),
-                ].map(item => (
+                  {label:'Total Policies',val:String(rmData.policies.length)},
+                  {label:'Total Annual Premium',val:fmt(totalPrem)},
+                  {label:`${clientName} — Life+TPD`,val:fmt(cLH)},
+                  {label:isCouple?`${spouseName} — Life+TPD`:'Client CI',val:isCouple?fmt(sLH):fmt(cCH)},
+                ].map(item=>(
                   <div key={item.label}>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div>
-                    <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 22, color: '#F0EDE8', fontWeight: 300 }}>{item.val}</div>
+                    <div style={{fontSize:10,color:'rgba(255,255,255,0.4)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:6}}>{item.label}</div>
+                    <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'#F0EDE8',fontWeight:300}}>{item.val}</div>
                   </div>
                 ))}
               </div>
@@ -473,179 +427,105 @@ export default function ProtectionPage() {
         </div>
       )}
 
-      {/* Modal */}
       {showModal && editingPolicy && (
         <PolicyModal
           policy={editingPolicy}
-          personName={portfolioSections.find(s => s.key === modalPerson || s.childKeys?.includes(modalPerson))?.label || modalPerson}
+          personLabel={sections.find(s=>s.key===modalPerson||s.childKeys?.includes(modalPerson))?.label||modalPerson}
           allPeople={allPeople}
+          categories={refCategories}
+          policyTypes={refPolicyTypes}
+          companies={refCompanies}
+          products={refProducts}
           onSave={savePolicy}
-          onClose={() => { setShowModal(false); setEditingPolicy(null) }}
+          onClose={()=>{ setShowModal(false); setEditingPolicy(null) }}
         />
       )}
 
-      <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          aside, nav { display: none !important; }
-          body { background: white !important; }
-        }
-      `}</style>
+      <style>{`@media print { .no-print{display:none!important} aside,nav{display:none!important} body{background:white!important} }`}</style>
     </div>
   )
 }
 
 // ─── Coverage Chart ───────────────────────────────────────────────────────────
-
-function CoverageChart({ title, needLabel, haveLabel, data, color }: {
-  title: string
-  needLabel: string
-  haveLabel: string
-  data: { age: number; need: number; have: number }[]
-  color: string
-}) {
-  const W = 520, H = 240, PAD = { top: 20, right: 16, bottom: 36, left: 72 }
-  const innerW = W - PAD.left - PAD.right
-  const innerH = H - PAD.top - PAD.bottom
-
+function CoverageChart({title,needLabel,haveLabel,data,needColor}:{title:string;needLabel:string;haveLabel:string;data:{age:number;need:number;have:number}[];needColor:string}) {
+  const W=520,H=240,PL=72,PR=12,PT=16,PB=32
+  const iW=W-PL-PR, iH=H-PT-PB
   if (!data.length) return null
-  const maxVal = Math.max(...data.map(d => d.need), ...data.map(d => d.have), 1)
-  const minAge = data[0].age
-  const maxAge = data[data.length - 1].age
-  const ageRange = maxAge - minAge || 1
-
-  function xPct(age: number) { return ((age - minAge) / ageRange) * innerW }
-  function yPct(val: number) { return innerH - (val / maxVal) * innerH }
-
-  // Need line path
-  const needPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${PAD.left + xPct(d.age).toFixed(1)},${PAD.top + yPct(d.need).toFixed(1)}`).join(' ')
-
-  // Y axis ticks
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ val: maxVal * f, y: PAD.top + innerH - f * innerH }))
-
-  // X axis — show every 4 ages
-  const xTicks = data.filter((d, i) => i % 4 === 0)
-
-  // Bar width
-  const barW = Math.max(2, innerW / data.length - 1)
-
-  function fmtAxis(n: number) {
-    if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`
-    if (n >= 1000) return `$${(n / 1000).toFixed(0)}K`
-    return `$${n.toFixed(0)}`
-  }
-
+  const maxV = Math.max(...data.map(d=>d.need),1)
+  const minA=data[0].age, aR=data[data.length-1].age-minA||1
+  const xP=(a:number)=>((a-minA)/aR)*iW
+  const yP=(v:number)=>iH-Math.min(1,v/maxV)*iH
+  const path=data.map((d,i)=>`${i===0?'M':'L'}${(PL+xP(d.age)).toFixed(1)},${(PT+yP(d.need)).toFixed(1)}`).join(' ')
+  const ticks=[0,.25,.5,.75,1]
+  const bW=Math.max(1.5,iW/data.length-0.5)
+  const fmtAx=(n:number)=>n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${n.toFixed(0)}`
   return (
-    <div style={{ background: 'white', border: '0.5px solid var(--line)', padding: '20px 24px' }}>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', marginBottom: 10 }}>{title}</div>
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 24, height: 10, background: '#4A90BF', opacity: 0.7 }} />
-          <span style={{ fontSize: 11, color: 'var(--ink3)' }}>{haveLabel}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg width="24" height="10"><path d={`M0,5 L24,5`} stroke={color} strokeWidth="2" fill="none" /></svg>
-          <span style={{ fontSize: 11, color: 'var(--ink3)' }}>{needLabel}</span>
-        </div>
+    <div style={{background:'white',border:'0.5px solid var(--line)',padding:'18px 22px'}}>
+      <div style={{fontSize:13,fontWeight:500,color:'var(--ink)',marginBottom:8}}>{title}</div>
+      <div style={{display:'flex',gap:14,marginBottom:10}}>
+        {[{col:'#4A90BF',lbl:haveLabel,bar:true},{col:needColor,lbl:needLabel,bar:false}].map(l=>(
+          <div key={l.lbl} style={{display:'flex',alignItems:'center',gap:5}}>
+            {l.bar?<div style={{width:18,height:10,background:l.col,opacity:.65}}/>:<svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke={l.col} strokeWidth="2"/></svg>}
+            <span style={{fontSize:10,color:'var(--ink3)'}}>{l.lbl}</span>
+          </div>
+        ))}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ overflow: 'visible' }}>
-        {/* Grid lines */}
-        {yTicks.map(t => (
-          <g key={t.val}>
-            <line x1={PAD.left} y1={t.y} x2={PAD.left + innerW} y2={t.y} stroke="#E5E3DF" strokeWidth="0.5" />
-            <text x={PAD.left - 6} y={t.y + 4} fontSize="9" fill="#999" textAnchor="end">{fmtAxis(t.val)}</text>
-          </g>
-        ))}
-
-        {/* Have bars */}
-        {data.map(d => (
-          <rect key={d.age}
-            x={PAD.left + xPct(d.age) - barW / 2}
-            y={PAD.top + yPct(d.have)}
-            width={barW}
-            height={Math.max(0, innerH - yPct(d.have))}
-            fill="#4A90BF" opacity={0.65}
-          />
-        ))}
-
-        {/* Need line */}
-        <path d={needPath} stroke={color} strokeWidth="2" fill="none" strokeLinejoin="round" />
-
-        {/* X axis */}
-        <line x1={PAD.left} y1={PAD.top + innerH} x2={PAD.left + innerW} y2={PAD.top + innerH} stroke="#CCC" strokeWidth="0.5" />
-        {xTicks.map(d => (
-          <text key={d.age} x={PAD.left + xPct(d.age)} y={PAD.top + innerH + 14} fontSize="9" fill="#999" textAnchor="middle">{d.age}</text>
-        ))}
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible'}}>
+        {ticks.map(f=>{const y=PT+iH-f*iH;return(<g key={f}><line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="#E8E6E2" strokeWidth=".5"/><text x={PL-5} y={y+3} fontSize="8" fill="#999" textAnchor="end">{fmtAx(maxV*f)}</text></g>)})}
+        {data.map(d=><rect key={d.age} x={PL+xP(d.age)-bW/2} y={PT+yP(d.have)} width={bW} height={Math.max(0,iH-yP(d.have))} fill="#4A90BF" opacity=".6"/>)}
+        <path d={path} stroke={needColor} strokeWidth="1.8" fill="none" strokeLinejoin="round"/>
+        <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="#CCC" strokeWidth=".5"/>
+        {data.filter((_,i)=>i%4===0).map(d=><text key={d.age} x={PL+xP(d.age)} y={PT+iH+12} fontSize="8" fill="#999" textAnchor="middle">{d.age}</text>)}
       </svg>
     </div>
   )
 }
 
 // ─── Gap Section ──────────────────────────────────────────────────────────────
-
-function GapSection({ title, dtpdNeed, ciNeed, lifeHave, ciHave, mortgageNeed, educationNeed, annualPremium }: {
-  title: string
-  dtpdNeed: number; ciNeed: number; lifeHave: number; ciHave: number
-  mortgageNeed: number; educationNeed: number; annualPremium: number
-}) {
-  const hasData = dtpdNeed > 0 || ciNeed > 0
-  const rows = [
-    { label: 'Life / Death & TPD', need: dtpdNeed, have: lifeHave },
-    { label: 'Critical Illness', need: ciNeed, have: ciHave },
-    ...(mortgageNeed > 0 ? [{ label: 'Mortgage Clearance', need: mortgageNeed, have: 0 }] : []),
-    ...(educationNeed > 0 ? [{ label: "Children's Education", need: educationNeed, have: 0 }] : []),
+function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,mortgageNeed,educationNeed,annualPremium}:{title:string;dtpdNeed:number;ciNeed:number;lifeHave:number;ciHave:number;mortgageNeed:number;educationNeed:number;annualPremium:number}) {
+  const rows=[
+    {label:'Life / Death & TPD',need:dtpdNeed,have:lifeHave},
+    {label:'Critical Illness',need:ciNeed,have:ciHave},
+    ...(mortgageNeed>0?[{label:'Mortgage Clearance',need:mortgageNeed,have:0}]:[]),
+    ...(educationNeed>0?[{label:"Children's Education",need:educationNeed,have:0}]:[]),
   ]
-
   return (
-    <div style={{ background: 'white', border: '0.5px solid var(--line)' }}>
-      <div style={{ padding: '16px 24px', borderBottom: '0.5px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 3, height: 16, background: '#c8a96e' }} />
-          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{title}</span>
+    <div style={{background:'white',border:'0.5px solid var(--line)'}}>
+      <div style={{padding:'14px 24px',borderBottom:'0.5px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:3,height:16,background:'#c8a96e'}}/>
+          <span style={{fontSize:13,fontWeight:500,color:'var(--ink)'}}>{title}</span>
         </div>
-        {annualPremium > 0 && <span style={{ fontSize: 12, color: 'var(--ink3)' }}>Portfolio premium: <strong style={{ color: 'var(--ink)', fontFamily: 'DM Mono, monospace' }}>{fmt(annualPremium)}/yr</strong></span>}
+        {annualPremium>0&&<span style={{fontSize:12,color:'var(--ink3)'}}>Portfolio premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(annualPremium)}/yr</strong></span>}
       </div>
-
-      {!hasData ? (
-        <div style={{ padding: '28px', textAlign: 'center', fontSize: 13, color: 'var(--ink3)' }}>
-          Complete the Financial Profile to see gap analysis.
-        </div>
-      ) : (
+      {dtpdNeed===0?(
+        <div style={{padding:'24px',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>Complete the Financial Profile to see gap analysis.</div>
+      ):(
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 140px 140px 100px', padding: '10px 24px', background: '#FAFAF8', borderBottom: '0.5px solid var(--line)' }}>
-            {['COVERAGE AREA', 'NEED', 'HAVE', 'GAP', 'STATUS'].map(h => (
-              <div key={h} style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{h}</div>
-            ))}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 130px 130px 130px 100px',padding:'9px 24px',background:'#FAFAF8',borderBottom:'0.5px solid var(--line)'}}>
+            {['COVERAGE AREA','NEED','HAVE','GAP','STATUS'].map(h=><div key={h} style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>)}
           </div>
-          {rows.map((row, i) => {
-            const gap = row.need - row.have
-            const st = gapStatus(row.need, row.have)
-            return (
-              <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 140px 140px 100px', padding: '13px 24px', alignItems: 'center', borderBottom: i < rows.length - 1 ? '0.5px solid var(--line)' : 'none', background: i % 2 === 0 ? 'white' : '#FAFAF8' }}>
-                <span style={{ fontSize: 13, color: 'var(--ink)' }}>{row.label}</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(row.need)}</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: row.have > 0 ? '#2D6A4F' : 'var(--ink3)' }}>{row.have > 0 ? fmt(row.have) : '—'}</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: gap > 0 ? '#9B1C1C' : '#2D6A4F', fontWeight: gap > 0 ? 600 : 400 }}>{gap > 0 ? fmt(gap) : '✓ Covered'}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 3, background: st.bg, color: st.color }}>{st.label}</span>
-              </div>
-            )
-          })}
-          {/* Coverage bars */}
-          <div style={{ padding: '16px 24px', borderTop: '0.5px solid var(--line)', background: '#FAFAF8', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            {[{ label: 'Life / D&TPD', need: dtpdNeed, have: lifeHave }, { label: 'Critical Illness', need: ciNeed, have: ciHave }].map(b => {
-              const pct = b.need > 0 ? Math.min(100, (b.have / b.need) * 100) : 0
-              return (
-                <div key={b.label}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <span style={{ fontSize: 11, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{b.label}</span>
-                    <span style={{ fontSize: 11, color: 'var(--ink3)' }}>{Math.round(pct)}% covered</span>
-                  </div>
-                  <div style={{ height: 5, background: '#E5E3DF', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: pct >= 100 ? '#2D6A4F' : pct > 50 ? '#c8a96e' : '#C0392B', transition: 'width 0.4s' }} />
-                  </div>
+          {rows.map((row,i)=>{const gap=row.need-row.have;const st=gapSt(row.need,row.have);return(
+            <div key={row.label} style={{display:'grid',gridTemplateColumns:'1fr 130px 130px 130px 100px',padding:'12px 24px',alignItems:'center',borderBottom:i<rows.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+              <span style={{fontSize:13,color:'var(--ink)'}}>{row.label}</span>
+              <span style={{fontFamily:'DM Mono,monospace',fontSize:13}}>{fmt(row.need)}</span>
+              <span style={{fontFamily:'DM Mono,monospace',fontSize:13,color:row.have>0?'#2D6A4F':'var(--ink3)'}}>{row.have>0?fmt(row.have):'—'}</span>
+              <span style={{fontFamily:'DM Mono,monospace',fontSize:13,color:gap>0?'#9B1C1C':'#2D6A4F',fontWeight:gap>0?600:400}}>{gap>0?fmt(gap):'✓ Covered'}</span>
+              <span style={{fontSize:11,fontWeight:600,padding:'2px 9px',borderRadius:3,background:st.bg,color:st.color}}>{st.label}</span>
+            </div>
+          )})}
+          <div style={{padding:'14px 24px',borderTop:'0.5px solid var(--line)',background:'#FAFAF8',display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+            {[{l:'Life / D&TPD',n:dtpdNeed,h:lifeHave},{l:'Critical Illness',n:ciNeed,h:ciHave}].map(b=>{
+              const pct=b.n>0?Math.min(100,(b.h/b.n)*100):0
+              return(<div key={b.l}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                  <span style={{fontSize:10,color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'0.07em'}}>{b.l}</span>
+                  <span style={{fontSize:10,color:'var(--ink3)'}}>{Math.round(pct)}% covered</span>
                 </div>
-              )
+                <div style={{height:4,background:'#E5E3DF',borderRadius:2}}>
+                  <div style={{height:'100%',borderRadius:2,width:`${pct}%`,background:pct>=100?'#2D6A4F':pct>50?'#c8a96e':'#C0392B'}}/>
+                </div>
+              </div>)
             })}
           </div>
         </>
@@ -655,189 +535,269 @@ function GapSection({ title, dtpdNeed, ciNeed, lifeHave, ciHave, mortgageNeed, e
 }
 
 // ─── Policy Table ─────────────────────────────────────────────────────────────
-
-function PolicyTable({ policies, onEdit, onDelete }: { policies: Policy[]; onEdit: (p: Policy) => void; onDelete: (id: string) => void }) {
-  const subtotal = policies.reduce((s, p) => s + (p.annualPremium || 0), 0)
+function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
+  const sub=policies.reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
   return (
-    <div style={{ background: 'white', border: '0.5px solid var(--line)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 140px 120px 120px 60px', padding: '9px 20px', borderBottom: '1px solid var(--line)', background: '#FAFAF8' }}>
-        {['TYPE', 'INSURER / PLAN', 'POLICYHOLDER · LIFE ASSURED', 'SUM ASSURED', 'ANN. PREMIUM', ''].map(h => (
-          <div key={h} style={{ fontSize: 10, letterSpacing: '0.11em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{h}</div>
+    <div style={{background:'white',border:'0.5px solid var(--line)'}}>
+      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
+        {['CAT','TYPE','INSURER · PLAN · PH / LA','BENEFIT','PREMIUM (CASH)','STATUS',''].map(h=>(
+          <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
         ))}
       </div>
-      {policies.map((p, i) => {
-        const ti = POLICY_TYPES.find(t => t.value === p.type)
-        const col = TYPE_COLORS[p.type] || '#999'
-        return (
-          <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 140px 120px 120px 60px', padding: '13px 20px', alignItems: 'center', borderBottom: i < policies.length - 1 ? '0.5px solid var(--line)' : 'none', background: i % 2 === 0 ? 'white' : '#FAFAF8' }}>
+      {policies.map((p,i)=>{
+        const col=catColors[p.categoryCode]||'#999'
+        const mainBen=p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
+        return(
+          <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+            <span style={{fontSize:10,fontWeight:600,color:col,padding:'2px 6px',background:col+'18',borderRadius:3}}>{catShort[p.categoryCode]||p.categoryCode}</span>
+            <span style={{fontSize:11,color:'var(--ink3)'}}>{p.policyTypeCode||'—'}</span>
             <div>
-              <span style={{ fontSize: 11, fontWeight: 600, color: col, padding: '2px 7px', background: col + '18', borderRadius: 3 }}>{ti?.short}</span>
-              {p.coverageType && <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 3 }}>{p.coverageType === 'term' ? `Term ${p.termYears ? p.termYears + 'yr' : ''}` : p.coverageType === 'whole_life' ? 'Whole Life' : 'ILP'}</div>}
+              <div style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</div>
+              {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
+                {p.policyholder&&<span>PH: {p.policyholder}</span>}
+                {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
+              </div>}
+              {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
             </div>
-            <div>
-              <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{p.insurer || <span style={{ color: 'var(--ink3)' }}>—</span>}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 1 }}>{p.planName || (p.notes && p.type !== 'di' ? p.notes : '')}</div>
+            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
+              {['ltc'].includes(p.categoryCode)&&p.monthlyBenefit?`$${p.monthlyBenefit.toLocaleString()}/mo`:fmt(mainBen)}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--ink3)', lineHeight: 1.5 }}>
-              {p.policyholder && <div><span style={{ color: 'var(--ink3)' }}>PH</span> {p.policyholder}</div>}
-              {p.lifeAssured && p.lifeAssured !== p.policyholder && <div><span style={{ color: 'var(--ink3)' }}>LA</span> {p.lifeAssured}</div>}
-              {p.type === 'di' && p.monthlyBenefit ? <div style={{ color: 'var(--ink3)' }}>${p.monthlyBenefit.toLocaleString()}/mo</div> : null}
+            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
+              {fmt(p.premiumCash)}
+              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} Medisave</div>}
             </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>
-              {p.type === 'di' ? '—' : fmt(p.sumAssured)}
-            </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(p.annualPremium)}</div>
-            <div style={{ display: 'flex', gap: 6 }} className="no-print">
-              <button onClick={() => onEdit(p)} style={{ fontSize: 11, color: 'var(--ink3)', background: 'none', border: 'none', cursor: 'pointer' }}>Edit</button>
-              <button onClick={() => onDelete(p.id)} style={{ fontSize: 11, color: '#C0392B', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+            <span style={{fontSize:10,padding:'2px 7px',borderRadius:3,background:p.status==='In-Force'?'#E8F5E9':'#FEE2E2',color:p.status==='In-Force'?'#2D6A4F':'#9B1C1C'}}>{p.status}</span>
+            <div style={{display:'flex',gap:5}} className="no-print">
+              <button onClick={()=>onEdit(p)} style={{fontSize:10,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer'}}>Edit</button>
+              <button onClick={()=>onDelete(p.id)} style={{fontSize:10,color:'#C0392B',background:'none',border:'none',cursor:'pointer'}}>✕</button>
             </div>
           </div>
         )
       })}
-      <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 140px 120px 120px 60px', padding: '11px 20px', borderTop: '1px solid var(--line)', background: '#F8F7F4' }}>
-        <div style={{ gridColumn: '1 / 5', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Subtotal</div>
-        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{fmt(subtotal)}</div>
-        <div />
+      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+        <div style={{gridColumn:'1/5',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+        <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
+        <div/><div/>
       </div>
     </div>
   )
 }
 
-// ─── Policy Modal ─────────────────────────────────────────────────────────────
-
-function PolicyModal({ policy, personName, allPeople, onSave, onClose }: {
-  policy: Policy
-  personName: string
-  allPeople: { key: string; label: string }[]
-  onSave: (p: Policy) => void
-  onClose: () => void
+// ─── Policy Modal (cascading dropdowns) ──────────────────────────────────────
+function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,companies,products,onSave,onClose}:{
+  policy:Policy; personLabel:string
+  allPeople:{key:string;label:string}[]
+  categories:InsCategory[]; policyTypes:InsPolicyType[]
+  companies:InsCompany[]; products:InsProduct[]
+  onSave:(p:Policy)=>void; onClose:()=>void
 }) {
-  const [form, setForm] = useState<Policy>({ ...policy })
-  const f = (k: keyof Policy, v: any) => setForm(prev => ({ ...prev, [k]: v }))
-  const isNew = !policy.insurer && !policy.planName
+  const [form, setForm] = useState<Policy>({...policy})
+  const f=(k:keyof Policy,v:any)=>setForm(prev=>({...prev,[k]:v}))
+  const isNew = !policy.companyName && !policy.productName
 
-  const selectStyle = { width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none' }
+  // Find selected category record
+  const selCat    = categories.find(c=>c.code===form.categoryCode)
+  const filtTypes = selCat ? policyTypes.filter(pt=>pt.category_id===selCat.id) : []
+  const filtComps = selCat ? companies.filter(co=>co.category_id===selCat.id) : []
+  const selComp   = filtComps.find(co=>co.name===form.companyName)
+  // Products only for medical and ltc — others are manual
+  const hasProducts = ['medical','ltc'].includes(form.categoryCode)
+  const filtProds = selComp && hasProducts ? products.filter(pr=>pr.company_id===selComp.id) : []
+
+  // When category changes, reset downstream
+  const onCatChange=(code:string)=>{
+    setForm(prev=>({...prev,categoryCode:code,policyTypeCode:'',companyName:'',productName:''}))
+  }
+  const onCompChange=(name:string)=>{
+    setForm(prev=>({...prev,companyName:name,productName:''}))
+  }
+
+  const isMedical  = form.categoryCode==='medical'
+  const isLTC      = form.categoryCode==='ltc'
+  const isLife     = form.categoryCode==='life'
+  const isEndow    = form.categoryCode==='endowment'
+  const isGeneral  = form.categoryCode==='general'
+
+  const s:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none'}
+  const inp:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none',boxSizing:'border-box'}
+  const lbl:React.CSSProperties={display:'block',fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:5}
+  const g2:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}
+  const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14}
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.65)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: 'white', width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.65)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{background:'white',width:'100%',maxWidth:620,maxHeight:'92vh',overflowY:'auto',boxShadow:'0 24px 64px rgba(0,0,0,0.3)'}}>
+        <div style={{padding:'18px 26px',borderBottom:'1px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
-            <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 20, color: 'var(--ink)' }}>{isNew ? 'Add Policy' : 'Edit Policy'}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 2 }}>{personName}</div>
+            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,color:'var(--ink)'}}>{isNew?'Add Policy':'Edit Policy'}</div>
+            <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{personLabel}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--ink3)' }}>✕</button>
+          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--ink3)'}}>✕</button>
         </div>
 
-        <div style={{ padding: '22px 28px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{padding:'20px 26px',display:'flex',flexDirection:'column',gap:16}}>
 
-          {/* Policyholder + Life Assured */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          {/* ── Row 1: Category + Policy Type (cascades from category) ── */}
+          <div style={g2}>
             <div>
-              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Policyholder</label>
-              <select value={form.policyholder || ''} onChange={e => f('policyholder', e.target.value)} style={selectStyle}>
-                <option value="">Select…</option>
-                {allPeople.map(p => <option key={p.key} value={p.label}>{p.label}</option>)}
+              <label style={lbl}>Category</label>
+              <select value={form.categoryCode} onChange={e=>onCatChange(e.target.value)} style={s}>
+                {categories.map(c=><option key={c.id} value={c.code}>{c.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Life Assured</label>
-              <select value={form.lifeAssured || ''} onChange={e => f('lifeAssured', e.target.value)} style={selectStyle}>
+              <label style={lbl}>Policy Type</label>
+              <select value={form.policyTypeCode} onChange={e=>f('policyTypeCode',e.target.value)} style={s}>
                 <option value="">Select…</option>
-                {allPeople.map(p => <option key={p.key} value={p.label}>{p.label}</option>)}
+                {filtTypes.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
               </select>
             </div>
           </div>
-          {/* Type */}
+
+          {/* ── Row 2: Policyholder + Life Assured ── */}
+          <div style={g2}>
+            <div>
+              <label style={lbl}>Policyholder</label>
+              <select value={form.policyholder} onChange={e=>f('policyholder',e.target.value)} style={s}>
+                <option value="">Select…</option>
+                {allPeople.map(p=><option key={p.key} value={p.label}>{p.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Life Assured</label>
+              <select value={form.lifeAssured} onChange={e=>f('lifeAssured',e.target.value)} style={s}>
+                <option value="">Select…</option>
+                {allPeople.map(p=><option key={p.key} value={p.label}>{p.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* ── Row 3: Company (cascades from category) + Policy No ── */}
+          <div style={g2}>
+            <div>
+              <label style={lbl}>Company</label>
+              <select value={form.companyName} onChange={e=>onCompChange(e.target.value)} style={s}>
+                <option value="">Select…</option>
+                {filtComps.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Policy No.</label>
+              <input type="text" value={form.policyNo} onChange={e=>f('policyNo',e.target.value)} placeholder="e.g. 26725497" style={inp}/>
+            </div>
+          </div>
+
+          {/* ── Row 4: Product (cascades from company, medical+ltc only) or manual ── */}
           <div>
-            <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Policy Type</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-              {POLICY_TYPES.map(t => (
-                <button key={t.value} onClick={() => f('type', t.value as Policy['type'])}
-                  style={{ padding: '8px', border: `1px solid ${form.type === t.value ? '#c8a96e' : 'var(--line)'}`, background: form.type === t.value ? '#FDF6EC' : 'white', color: form.type === t.value ? '#A8834A' : 'var(--ink3)', cursor: 'pointer', fontSize: 11, fontWeight: form.type === t.value ? 600 : 400 }}>
-                  {t.short}
-                </button>
-              ))}
-            </div>
+            <label style={lbl}>Product Name</label>
+            {hasProducts && filtProds.length > 0 ? (
+              <select value={form.productName} onChange={e=>f('productName',e.target.value)} style={s}>
+                <option value="">Select…</option>
+                {filtProds.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
+                <option value="__other">Other (type manually)</option>
+              </select>
+            ) : (
+              <input type="text" value={form.productName} onChange={e=>f('productName',e.target.value)} placeholder="e.g. MyWholeLife Plan" style={inp}/>
+            )}
+            {form.productName==='__other' && (
+              <input type="text" placeholder="Enter product name" onChange={e=>f('productName',e.target.value)} style={{...inp,marginTop:6}}/>
+            )}
           </div>
 
-          {/* Life sub-type */}
-          {form.type === 'life' && (
-            <div>
-              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Coverage Type</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {[['term','Term'],['whole_life','Whole Life'],['ilp','ILP']].map(([v,l]) => (
-                  <button key={v} onClick={() => f('coverageType', v)}
-                    style={{ padding: '7px 14px', border: `1px solid ${form.coverageType === v ? '#c8a96e' : 'var(--line)'}`, background: form.coverageType === v ? '#FDF6EC' : 'white', color: form.coverageType === v ? '#A8834A' : 'var(--ink3)', cursor: 'pointer', fontSize: 12 }}>
-                    {l}
-                  </button>
-                ))}
+          {/* ── Brief description ── */}
+          <div>
+            <label style={lbl}>Brief Description</label>
+            <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp}/>
+          </div>
+
+          {/* ── Life / WL benefit fields ── */}
+          {(isLife||isEndow) && (
+            <>
+              <div style={g3}>
+                <div><label style={lbl}>Base Death ($)</label><input type="number" value={form.baseDeath||''} onChange={e=>f('baseDeath',+e.target.value)} style={inp}/></div>
+                <div><label style={lbl}>Base TPD ($)</label><input type="number" value={form.baseTPD||''} onChange={e=>f('baseTPD',+e.target.value)} style={inp}/></div>
+                <div><label style={lbl}>Base Adv CI ($)</label><input type="number" value={form.baseAdvCI||''} onChange={e=>f('baseAdvCI',+e.target.value)} style={inp}/></div>
               </div>
-              {form.coverageType === 'term' && (
-                <div style={{ marginTop: 10 }}>
-                  <label style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Term (years)</label>
-                  <input type="number" value={form.termYears || ''} onChange={e => f('termYears', +e.target.value)} style={{ display: 'block', marginTop: 5, width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-              )}
-            </div>
+              <div style={g3}>
+                <div><label style={lbl}>Base Early CI ($)</label><input type="number" value={form.baseEarlyCI||''} onChange={e=>f('baseEarlyCI',+e.target.value)} style={inp}/></div>
+                <div><label style={lbl}>Multiplier</label><input type="number" value={form.multiplier||''} onChange={e=>f('multiplier',+e.target.value)} style={inp}/></div>
+                <div><label style={lbl}>Cover Step (yrs)</label><input type="number" value={form.coverStep||''} onChange={e=>f('coverStep',+e.target.value)} style={inp}/></div>
+              </div>
+            </>
           )}
 
-          {/* Insurer + Plan */}
-          {[{ key: 'insurer' as keyof Policy, label: 'Insurer', ph: 'e.g. Prudential, AIA, Great Eastern' }, { key: 'planName' as keyof Policy, label: 'Plan Name', ph: 'e.g. PRULife, AIA Pro Achiever' }].map(field => (
-            <div key={field.key as string}>
-              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>{field.label}</label>
-              <input type="text" value={(form[field.key] as string) || ''} onChange={e => f(field.key, e.target.value)} placeholder={field.ph}
-                style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-            </div>
-          ))}
+          {/* ── Medical / General sum assured ── */}
+          {(isMedical||isGeneral) && (
+            <div><label style={lbl}>Sum Assured / Coverage Limit ($)</label><input type="number" value={form.sumAssured||''} onChange={e=>f('sumAssured',+e.target.value)} style={inp}/></div>
+          )}
 
-          {/* DI or sum assured */}
-          {form.type === 'di' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          {/* ── LTC / DI ── */}
+          {isLTC && (
+            <div style={g2}>
+              <div><label style={lbl}>Monthly Benefit ($)</label><input type="number" value={form.monthlyBenefit||''} onChange={e=>f('monthlyBenefit',+e.target.value)} style={inp}/></div>
               <div>
-                <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Benefit ($)</label>
-                <input type="number" value={form.monthlyBenefit || ''} onChange={e => f('monthlyBenefit', +e.target.value)} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Deferred Period</label>
-                <select value={form.deferredPeriod || ''} onChange={e => f('deferredPeriod', e.target.value)} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none' }}>
+                <label style={lbl}>Deferred Period / Benefit Term</label>
+                <select value={form.deferredPeriod} onChange={e=>f('deferredPeriod',e.target.value)} style={s}>
                   <option value="">Select…</option>
-                  {['30 days','60 days','90 days','180 days','1 year','2 years'].map(d => <option key={d}>{d}</option>)}
+                  {['3/6 ADLs','Lifetime','72 months','Up to age 67','Up to age 70','Other'].map(d=><option key={d}>{d}</option>)}
                 </select>
               </div>
             </div>
-          ) : (
-            <div>
-              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Sum Assured ($)</label>
-              <input type="number" value={form.sumAssured || ''} onChange={e => f('sumAssured', +e.target.value)} placeholder="0" style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+          )}
+
+          {/* ── Endowment investment fields ── */}
+          {isEndow && (
+            <div style={g2}>
+              <div><label style={lbl}>Current Cash Value / GMV ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
+              <div><label style={lbl}>Non-GMV ($)</label><input type="number" value={form.sumAssured||''} onChange={e=>f('sumAssured',+e.target.value)} style={inp}/></div>
             </div>
           )}
 
-          {/* Annual premium */}
-          <div>
-            <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Annual Premium ($)</label>
-            <input type="number" value={form.annualPremium || ''} onChange={e => f('annualPremium', +e.target.value)} placeholder="0" style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+          {/* ── Premiums ── */}
+          <div style={isMedical ? g3 : g2}>
+            <div><label style={lbl}>Premium — Cash ($)</label><input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/></div>
+            {isMedical && <div><label style={lbl}>Premium — Medisave ($)</label><input type="number" value={form.premiumMedisave||''} onChange={e=>f('premiumMedisave',+e.target.value)} style={inp}/></div>}
+            <div>
+              <label style={lbl}>Payment Mode</label>
+              <select value={form.premiumMode} onChange={e=>f('premiumMode',e.target.value)} style={s}>
+                <option value="">Select…</option>
+                {PAY_MODES.map(m=><option key={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={g2}>
+            <div>
+              <label style={lbl}>Frequency</label>
+              <select value={form.frequency} onChange={e=>f('frequency',e.target.value)} style={s}>
+                {FREQ.map(f=><option key={f}>{f}</option>)}
+              </select>
+            </div>
+            <div><label style={lbl}>Current Cash Value ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
           </div>
 
-          {/* Hospitalisation rider */}
-          {form.type === 'hospitalisation' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input type="checkbox" id="rider" checked={form.riderIncluded || false} onChange={e => f('riderIncluded', e.target.checked)} style={{ width: 16, height: 16 }} />
-              <label htmlFor="rider" style={{ fontSize: 13, color: 'var(--ink)' }}>Rider / top-up plan included</label>
-            </div>
-          )}
+          {/* ── Dates ── */}
+          <div style={g3}>
+            <div><label style={lbl}>Inception Date</label><input type="date" value={form.inceptionDate} onChange={e=>f('inceptionDate',e.target.value)} style={inp}/></div>
+            <div><label style={lbl}>Premium Maturity</label><input type="date" value={form.premiumMaturity} onChange={e=>f('premiumMaturity',e.target.value)} style={inp}/></div>
+            <div><label style={lbl}>Coverage Maturity</label><input type="date" value={form.coverageMaturity} onChange={e=>f('coverageMaturity',e.target.value)} style={inp}/></div>
+          </div>
 
-          {/* Notes */}
-          <div>
-            <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Notes</label>
-            <input type="text" value={form.notes || ''} onChange={e => f('notes', e.target.value)} placeholder="Optional — policy number, expiry, remarks" style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+          {/* ── Status + Remarks ── */}
+          <div style={g2}>
+            <div>
+              <label style={lbl}>Status</label>
+              <select value={form.status} onChange={e=>f('status',e.target.value)} style={s}>
+                {STATUS_OPTS.map(st=><option key={st}>{st}</option>)}
+              </select>
+            </div>
+            <div><label style={lbl}>Remarks</label><input type="text" value={form.remarks} onChange={e=>f('remarks',e.target.value)} placeholder="e.g. In-Force, value as of 05/03/2026" style={inp}/></div>
           </div>
         </div>
 
-        <div style={{ padding: '14px 28px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', background: 'none', border: '1px solid var(--line)', color: 'var(--ink3)', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-          <button onClick={() => onSave(form)} style={{ padding: '9px 18px', background: '#1C1A17', color: 'white', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-            {isNew ? 'Add Policy' : 'Save Changes'}
+        <div style={{padding:'14px 26px',borderTop:'1px solid var(--line)',display:'flex',justifyContent:'flex-end',gap:10}}>
+          <button onClick={onClose} style={{padding:'9px 18px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:13}}>Cancel</button>
+          <button onClick={()=>onSave(form)} style={{padding:'9px 18px',background:'#1C1A17',color:'white',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
+            {isNew?'Add Policy':'Save Changes'}
           </button>
         </div>
       </div>
