@@ -958,9 +958,9 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           )}
 
           {/* ── Premiums ── */}
-          <div style={isMedical && !isRider ? g3 : g2}>
+          <div style={((isMedical && !isRider) || isLTC) ? g3 : g2}>
             <div><label style={lbl}>Premium — Cash ($)</label><input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/></div>
-            {isMedical && !isRider && <div><label style={lbl}>Premium — Medisave ($)</label><input type="number" value={form.premiumMedisave||''} onChange={e=>f('premiumMedisave',+e.target.value)} style={inp}/></div>}
+            {((isMedical && !isRider) || isLTC) && <div><label style={lbl}>Premium — Medisave ($)</label><input type="number" value={form.premiumMedisave||''} onChange={e=>f('premiumMedisave',+e.target.value)} style={inp}/></div>}
             <div>
               <label style={lbl}>Payment Mode</label>
               <select value={form.premiumMode} onChange={e=>f('premiumMode',e.target.value)} style={s}>
