@@ -201,7 +201,14 @@ function TypesPanel({ categoryId, items, onSave, onDelete, saving }: {
 }) {
   const [editing, setEditing] = useState<number | null>(null)
   const [editVal, setEditVal] = useState('')
-  const [newName, setNewName] = useState('')
+  const newRef = useRef<HTMLInputElement>(null)
+
+  function doAdd() {
+    const val = newRef.current?.value.trim()
+    if (!val) return
+    onSave({ category_id: categoryId, name: val, code: val.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''), sort_order: 99 })
+    if (newRef.current) newRef.current.value = ''
+  }
 
   return (
     <div style={S.card}>
@@ -229,13 +236,10 @@ function TypesPanel({ categoryId, items, onSave, onDelete, saving }: {
         </div>
       ))}
       <div style={S.addRow}>
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New policy type name…"
+        <input ref={newRef} placeholder="New policy type name…"
           style={{ ...S.inp, background: 'white' }}
-          onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) { onSave({ category_id: categoryId, name: newName.trim(), code: newName.trim().toLowerCase().replace(/\s+/g,'_'), sort_order: 99 }); setNewName('') } }} />
-        <button onClick={() => { if (newName.trim()) { onSave({ category_id: categoryId, name: newName.trim(), code: newName.trim().toLowerCase().replace(/\s+/g,'_'), sort_order: 99 }); setNewName('') } }}
-          style={{ ...S.btn, ...S.save }} disabled={saving || !newName.trim()}>
-          + Add
-        </button>
+          onKeyDown={e => { if (e.key === 'Enter') doAdd() }} />
+        <button onClick={doAdd} style={{ ...S.btn, ...S.save }} disabled={saving}>+ Add</button>
       </div>
     </div>
   )
@@ -251,7 +255,14 @@ function CompaniesPanel({ categoryId, items, onSave, onDelete, onToggle, saving 
 }) {
   const [editing, setEditing] = useState<number | null>(null)
   const [editVal, setEditVal] = useState('')
-  const [newName, setNewName] = useState('')
+  const newRef = useRef<HTMLInputElement>(null)
+
+  function doAdd() {
+    const val = newRef.current?.value.trim()
+    if (!val) return
+    onSave({ category_id: categoryId, name: val, sort_order: 99, active: true })
+    if (newRef.current) newRef.current.value = ''
+  }
 
   return (
     <div style={S.card}>
@@ -282,13 +293,10 @@ function CompaniesPanel({ categoryId, items, onSave, onDelete, onToggle, saving 
         </div>
       ))}
       <div style={S.addRow}>
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New company name…"
+        <input ref={newRef} placeholder="New company name…"
           style={{ ...S.inp, background: 'white' }}
-          onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) { onSave({ category_id: categoryId, name: newName.trim(), sort_order: 99, active: true }); setNewName('') } }} />
-        <button onClick={() => { if (newName.trim()) { onSave({ category_id: categoryId, name: newName.trim(), sort_order: 99, active: true }); setNewName('') } }}
-          style={{ ...S.btn, ...S.save }} disabled={saving || !newName.trim()}>
-          + Add
-        </button>
+          onKeyDown={e => { if (e.key === 'Enter') doAdd() }} />
+        <button onClick={doAdd} style={{ ...S.btn, ...S.save }} disabled={saving}>+ Add</button>
       </div>
     </div>
   )
@@ -305,9 +313,16 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
   const [editing,     setEditing]     = useState<number | null>(null)
   const [editVal,     setEditVal]     = useState('')
   const [editCompany, setEditCompany] = useState<number>(0)
-  const [newName,     setNewName]     = useState('')
-  const [newCompany,  setNewCompany]  = useState<number>(companies[0]?.id || 0)
   const [filterComp,  setFilterComp]  = useState<number | 'all'>('all')
+  const [selCompany,  setSelCompany]  = useState<number>(companies[0]?.id || 0)
+  const newRef = useRef<HTMLInputElement>(null)
+
+  function doAdd() {
+    const val = newRef.current?.value.trim()
+    if (!val || !selCompany) return
+    onSave({ category_id: categoryId, company_id: selCompany, name: val, sort_order: 99, active: true })
+    if (newRef.current) newRef.current.value = ''
+  }
 
   const visible = filterComp === 'all' ? items : items.filter(p => p.company_id === filterComp)
   const compName = (id: number) => companies.find(c => c.id === id)?.name || '—'
@@ -353,19 +368,15 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
         </div>
       ))}
       <div style={{ ...S.addRow, gap: 8 }}>
-        <select value={newCompany} onChange={e => setNewCompany(Number(e.target.value))}
+        <select value={selCompany} onChange={e => setSelCompany(Number(e.target.value))}
           style={{ ...S.inp, flex: '0 0 160px', background: 'white' }}>
           <option value={0}>Select company…</option>
           {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New product name…"
+        <input ref={newRef} placeholder="New product name…"
           style={{ ...S.inp, background: 'white' }}
-          onKeyDown={e => { if (e.key === 'Enter' && newName.trim() && newCompany) { onSave({ category_id: categoryId, company_id: newCompany, name: newName.trim(), sort_order: 99, active: true }); setNewName('') } }} />
-        <button
-          onClick={() => { if (newName.trim() && newCompany) { onSave({ category_id: categoryId, company_id: newCompany, name: newName.trim(), sort_order: 99, active: true }); setNewName('') } }}
-          style={{ ...S.btn, ...S.save }} disabled={saving || !newName.trim() || !newCompany}>
-          + Add
-        </button>
+          onKeyDown={e => { if (e.key === 'Enter') doAdd() }} />
+        <button onClick={doAdd} style={{ ...S.btn, ...S.save }} disabled={saving || !selCompany}>+ Add</button>
       </div>
     </div>
   )
