@@ -157,8 +157,15 @@ export default function ProtectionPage() {
     const { data: rows } = await supabase.from('fact_finding').select('data').eq('client_id', id)
     const merged: any = {}
     if (rows?.length) rows.forEach((r: any) => { if (r.data) Object.assign(merged, r.data) })
+
+    // Also load family members from dedicated table (spouse + children)
+    const { data: familyRows } = await supabase
+      .from('family_members').select('*').eq('client_id', id)
+
     if (Object.keys(merged).length > 0) {
       setFfData(merged)
+
+      // Spouse: try person2 first, then family_members table
       const p2 = merged.person2
       if (p2?.name) {
         setSpouseName(p2.name); setIsCouple(true)
@@ -169,8 +176,31 @@ export default function ProtectionPage() {
         const sn = merged.spouse_name || merged.spouseName || ''
         if (sn) setSpouseName(sn)
       }
-      const kids = merged.children || merged.family_members || []
-      setChildren(Array.isArray(kids) ? kids : [])
+
+      // Children: try family_members table first (most reliable), then merged JSON
+      if (familyRows && familyRows.length > 0) {
+        const spouse = familyRows.find((m: any) =>
+          m.relationship?.toLowerCase() === 'spouse'
+        )
+        if (spouse?.name && !merged.person2?.name) {
+          setSpouseName(spouse.name); setIsCouple(true)
+          if (spouse.age) setSpouseAge(Number(spouse.age))
+          else if (spouse.dob) setSpouseAge(Math.floor((Date.now() - new Date(spouse.dob).getTime()) / (365.25*24*3600*1000)))
+        }
+        const kids = familyRows.filter((m: any) =>
+          m.relationship?.toLowerCase() !== 'spouse'
+        )
+        if (kids.length > 0) {
+          setChildren(kids.map((k: any) => ({ name: k.name, age: k.age, id: k.id })))
+        } else {
+          const jsonKids = merged.children || []
+          setChildren(Array.isArray(jsonKids) ? jsonKids : [])
+        }
+      } else {
+        const jsonKids = merged.children || []
+        setChildren(Array.isArray(jsonKids) ? jsonKids : [])
+      }
+
       const rm = merged.risk_management
       if (rm) setRmData({ ...EMPTY_RM, ...rm })
     }
@@ -260,18 +290,26 @@ export default function ProtectionPage() {
 
   const chartData = buildChart(aAge, aExp, aOffset, aCI)
 
-  // People list for dropdowns
+  // People list for dropdowns — spouse by actual name, each child by actual name
   const allPeople = [
     { key: 'client', label: clientName },
     ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
-    ...children.map((c:any) => ({ key: `child_${c.name||c.id}`, label: c.name||'Child' })),
+    ...children.map((c: any) => ({
+      key: `child_${c.name || c.id}`,
+      label: c.name || 'Child',
+    })),
   ]
 
   // Portfolio sections
   const sections = [
     { key: 'client', label: clientName },
     ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
-    ...(children.length > 0 ? [{ key: 'dependents', label: 'Dependents', isDependent: true, childKeys: children.map((c:any)=>`child_${c.name||c.id||c}`) }] : []),
+    ...(children.length > 0 ? [{
+      key: 'dependents',
+      label: 'Dependents',
+      isDependent: true,
+      childKeys: children.map((c: any) => `child_${c.name || c.id || c}`),
+    }] : []),
   ]
 
   function openNew(person: string) {
