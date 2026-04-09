@@ -100,18 +100,6 @@ function gapSt(need: number, have: number) {
   return                   { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
 }
 
-function getAnnualPrem(p: Policy) {
-  const cash = p.isUSD ? (p.premiumCash || 0) * (p.fxRate || 1.35) : (p.premiumCash || 0)
-  const total = cash + (p.premiumMedisave || 0)
-  switch (p.frequency) {
-    case 'Semi-Annual': return total * 2
-    case 'Quarterly':   return total * 4
-    case 'Monthly':     return total * 12
-    case 'Single':      return total
-    default:            return total
-  }
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProtectionPage() {
   const supabase = createClient()
@@ -318,6 +306,18 @@ export default function ProtectionPage() {
   function toSGD(val: number, p: Policy) {
     return p.isUSD ? val * (p.fxRate || 1.35) : val
   }
+  // Annualise a policy's premium correctly by frequency
+  function annualPremSGD(p: Policy) {
+    const cash  = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+    const total = cash + (p.premiumMedisave||0)
+    switch (p.frequency) {
+      case 'Semi-Annual': return total * 2
+      case 'Quarterly':   return total * 4
+      case 'Monthly':     return total * 12
+      case 'Single':      return total
+      default:            return total // Annual
+    }
+  }
   function lifeHave(person: string) {
     return rmData.policies.filter(p=>p.person===person&&p.categoryCode==='life')
       .reduce((s,p)=>s+toSGD(Math.max(p.baseDeath||0,p.sumAssured||0),p),0)
@@ -327,12 +327,12 @@ export default function ProtectionPage() {
       .reduce((s,p)=>s+toSGD(Math.max(p.baseAdvCI||0,p.baseEarlyCI||0),p),0)
   }
   function premHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+getAnnualPrem(p),0)
+    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+annualPremSGD(p),0)
   }
 
   const cLH = lifeHave('client'), cCH = ciHave('client')
   const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
-  const totalPrem = rmData.policies.reduce((s,p)=>s+getAnnualPrem(p),0)
+  const totalPrem = rmData.policies.reduce((s,p)=>s+annualPremSGD(p),0)
 
   // Chart data
   function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
@@ -507,7 +507,7 @@ export default function ProtectionPage() {
               const tabPolicies = isDependent&&childKeys
                 ? rmData.policies.filter(p=>childKeys.includes(p.person))
                 : rmData.policies.filter(p=>p.person===key)
-              const tabPrem = tabPolicies.reduce((s,p)=>s+getAnnualPrem(p),0)
+              const tabPrem = tabPolicies.reduce((s,p)=>s+annualPremSGD(p),0)
               const isActive = portfolioPerson===key
               return (
                 <button key={key} onClick={()=>setPortfolioPerson(key)}
@@ -528,7 +528,7 @@ export default function ProtectionPage() {
               ? rmData.policies.filter(p=>childKeys.includes(p.person))
               : rmData.policies.filter(p=>p.person===key)
             const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
-            const secPrem = policies.reduce((s,p)=>s+getAnnualPrem(p),0)
+            const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p),0)
             const personAge = key==='client' ? clientAge : spouseAge
 
             // Category buckets
@@ -582,7 +582,7 @@ export default function ProtectionPage() {
                     {catBuckets.map(cat=>{
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
-                      const catPrem = catPols.reduce((s,p)=>s+getAnnualPrem(p),0)
+                      const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
                       return (
                         <div key={cat.code} style={{marginBottom:28}}>
                           {/* Category header */}
@@ -748,7 +748,18 @@ function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,mortgageNeed,educatio
 
 // ─── Policy Table ─────────────────────────────────────────────────────────────
 function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
-  const sub=policies.reduce((s,p)=>s+getAnnualPrem(p),0)
+  function _sub(p: Policy) {
+    const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+    const total = cash + (p.premiumMedisave||0)
+    switch (p.frequency) {
+      case 'Semi-Annual': return total*2
+      case 'Quarterly':   return total*4
+      case 'Monthly':     return total*12
+      case 'Single':      return total
+      default:            return total
+    }
+  }
+  const sub=policies.reduce((s,p)=>s+_sub(p),0)
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
       <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
@@ -758,11 +769,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       </div>
       {policies.map((p,i)=>{
         const col=catColors[p.categoryCode]||'#999'
-        let mainBen = p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
-        if (p.categoryCode === 'endowment') {
-          if (p.endowDeathMode === '%' && p.baseDeath) mainBen = (p.baseDeath / 100) * (p.currentCashValue || 0)
-          else if (p.endowTPDMode === '%' && p.baseTPD) mainBen = (p.baseTPD / 100) * (p.currentCashValue || 0)
-        }
+        const mainBen=p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
         return(
           <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             <span style={{fontSize:10,fontWeight:600,color:col,padding:'2px 6px',background:col+'18',borderRadius:3}}>{catShort[p.categoryCode]||p.categoryCode}</span>
@@ -1184,7 +1191,10 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                           const stepYrs=form.coverStep||0; const stepPct=form.stepDownPct||0
                           const getLifetime=(base:number)=>{
                             if(!base)return 0
-                            if(stepYrs>0&&stepPct>0){const d=(stepYrs*stepPct)/100;return Math.max(base,(base*form.multiplier)*(1-d))}
+                            if(stepYrs>0&&stepPct>0){
+                              const finalFactor=Math.max(0,1-stepYrs*(stepPct/100))
+                              return Math.max(base,(base*form.multiplier)*finalFactor)
+                            }
                             return base
                           }
                           return ([
@@ -1216,15 +1226,17 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 <label style={lbl}>Current Cash Value ($)</label>
                 <input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/>
               </div>
-              {/* Death / TPD / TI with $/% toggle */}
+              {/* Death / TPD with $/% toggle — % mode stores computed $ amount */}
               {([
                 { label:'Death Benefit', modeKey:'endowDeathMode' as const, valKey:'baseDeath' as const },
                 { label:'TPD Benefit',   modeKey:'endowTPDMode'   as const, valKey:'baseTPD'   as const },
               ]).map(({ label, modeKey, valKey }) => {
                 const mode    = (form[modeKey] as '%'|'$') || '$'
-                const rawVal  = (form[valKey] as number) || 0
                 const cashVal = form.currentCashValue || 0
-                const computed = mode==='%' ? (rawVal/100)*cashVal : rawVal
+                // In $ mode: valKey holds the dollar amount directly
+                // In % mode: valKey holds the computed dollar amount; we back-calculate % for display
+                const storedDollar = (form[valKey] as number) || 0
+                const displayPct   = mode==='%' && cashVal>0 ? Math.round((storedDollar/cashVal)*10000)/100 : 0
                 return (
                   <div key={valKey}>
                     <label style={lbl}>{label}</label>
@@ -1237,13 +1249,25 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                           </button>
                         ))}
                       </div>
-                      <input type="number" value={rawVal||''} onChange={e=>f(valKey,+e.target.value)}
-                        placeholder={mode==='%'?'e.g. 105':'e.g. 500000'}
-                        style={{...inp,borderRadius:'0 3px 3px 0',flex:1}}/>
+                      {mode==='$' ? (
+                        <input type="number" value={storedDollar||''}
+                          onChange={e=>f(valKey,+e.target.value)}
+                          placeholder="e.g. 500000"
+                          style={{...inp,borderRadius:'0 3px 3px 0',flex:1}}/>
+                      ) : (
+                        <input type="number"
+                          value={displayPct||''}
+                          onChange={e=>{
+                            const pct = +e.target.value
+                            f(valKey, cashVal>0 ? Math.round((pct/100)*cashVal) : 0)
+                          }}
+                          placeholder="e.g. 105"
+                          style={{...inp,borderRadius:'0 3px 3px 0',flex:1}}/>
+                      )}
                     </div>
-                    {mode==='%' && cashVal>0 && rawVal>0 && (
+                    {mode==='%' && cashVal>0 && storedDollar>0 && (
                       <div style={{fontSize:11,color:'var(--ink3)',marginTop:4,fontFamily:'DM Mono,monospace'}}>
-                        = {fmt(computed)} <span style={{fontFamily:'Inter,sans-serif',fontSize:10}}>({rawVal}% of {fmt(cashVal)})</span>
+                        = {fmt(storedDollar)} <span style={{fontFamily:'Inter,sans-serif',fontSize:10}}>({displayPct}% of {fmt(cashVal)})</span>
                       </div>
                     )}
                     {mode==='%' && cashVal===0 && (
@@ -1376,11 +1400,22 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   )
 }
 
+
 // ─── Helpers (used by PersonPortfolioCharts) ─────────────────────────────────
 function _toSGD(val: number, p: Policy) {
   return p.isUSD ? val * (p.fxRate || 1.35) : val
 }
-
+function _annualPrem(p: Policy) {
+  const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+  const total = cash + (p.premiumMedisave||0)
+  switch (p.frequency) {
+    case 'Semi-Annual': return total*2
+    case 'Quarterly':   return total*4
+    case 'Monthly':     return total*12
+    case 'Single':      return total
+    default:            return total
+  }
+}
 function _payMonths(p: Policy): number[] {
   const sm = p.inceptionDate ? new Date(p.inceptionDate).getMonth()+1 : 1
   switch (p.frequency) {
@@ -1392,18 +1427,16 @@ function _payMonths(p: Policy): number[] {
     default:            return [sm]
   }
 }
-
 function _coverAtAge(p: Policy, age: number, curAge: number) {
   const mult     = p.multiplier > 1 ? p.multiplier : 1
   const multEnd  = p.multiplierEnd || 999
   const actMult  = age <= multEnd ? mult : 1
   let stepFactor = 1
-
   if (p.coverStep && p.stepDownPct && age > multEnd) {
-    const drops = Math.min(age - multEnd, p.coverStep)
-    stepFactor  = Math.max(0, 1 - drops*((p.stepDownPct||0)/100))
+    // Each year after multiplier ends, reduce by stepDownPct% — but only for coverStep years
+    const yearsIntoStep = Math.min(age - multEnd, p.coverStep)
+    stepFactor = Math.max(0, 1 - yearsIntoStep * ((p.stepDownPct||0) / 100))
   }
-
   // Check maturity
   if (p.coverageMaturity && !['Lifetime','Renewable'].includes(p.coverageMaturity)) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(p.coverageMaturity)) {
@@ -1419,7 +1452,6 @@ function _coverAtAge(p: Policy, age: number, curAge: number) {
   const ci = _toSGD(Math.max((p.baseAdvCI||0),(p.baseEarlyCI||0))*actMult*stepFactor, p)
   return {d, t, ci}
 }
-
 function _fmtK(n: number) {
   if (n===0) return '$0'
   if (n>=1e6) return `$${(n/1e6).toFixed(2)}M`
@@ -1463,7 +1495,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totAdvCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseAdvCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totEarCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseEarlyCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totCI    = totAdvCI + totEarCI
-  const totPrem  = policies.reduce((s,p)=>s+getAnnualPrem(p),0)
+  const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
   const W=560, H=180, PL=60, PR=8, PT=12, PB=24
