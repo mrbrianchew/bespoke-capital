@@ -27,6 +27,7 @@ interface Policy {
   baseTPD:      number
   baseAdvCI:    number
   baseEarlyCI:  number
+  tiBenefit:    number
   sumAssured:   number
   monthlyBenefit: number
   deferredPeriod: string
@@ -37,6 +38,10 @@ interface Policy {
   coverStep:    number
   stepDownPct?: number
   currentCashValue: number
+  // Endowment benefit input modes: '$' or '%'
+  endowDeathMode?: '%' | '$'
+  endowTPDMode?:   '%' | '$'
+  endowTIMode?:    '%' | '$'
   // Premiums
   premiumMedisave: number
   premiumCash:     number
@@ -60,8 +65,9 @@ function emptyPolicy(person: string, ph = '', la = ''): Policy {
   return {
     id: crypto.randomUUID(), categoryCode: 'life', policyTypeCode: '', companyName: '', productName: '',
     policyholder: ph, lifeAssured: la, policyNo: '', briefDescription: '',
-    baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, sumAssured: 0,
+    baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, tiBenefit: 0, sumAssured: 0,
     monthlyBenefit: 0, deferredPeriod: '', benefitTerm: '', payoutTerm: '', multiplier: 0, multiplierEnd: 0, coverStep: 0, stepDownPct: 0, currentCashValue: 0,
+    endowDeathMode: '$', endowTPDMode: '$', endowTIMode: '$',
     premiumMedisave: 0, premiumCash: 0, premiumMode: '', frequency: 'Annual',
     inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
     status: 'In-Force', remarks: '', person,
@@ -801,9 +807,10 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14,alignItems:'flex-end'}
   const g4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14,alignItems:'flex-end'}
 
-  const medPayModes = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
-  const ltcPayModes = ['Cash', 'Medisave', 'MS + Cash', 'MS + CC'];
-  const currentPayModes = isMedical ? medPayModes : (isLTC ? ltcPayModes : PAY_MODES);
+  const medPayModes   = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
+  const ltcPayModes   = ['Cash', 'Medisave', 'MS + Cash', 'MS + CC'];
+  const endowPayModes = ['Cash', 'Giro', 'Credit Card', 'CPF OA', 'CPF SA', 'CPF SRS'];
+  const currentPayModes = isMedical ? medPayModes : (isLTC ? ltcPayModes : (isEndow ? endowPayModes : PAY_MODES));
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.65)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
@@ -927,7 +934,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           )}
 
           {/* ── Life / WL benefit fields ── */}
-          {(isLife||isEndow) && (
+          {isLife && (
             <>
               <div style={g4}>
                 <div><label style={lbl}>Base Death ($)</label><input type="number" value={form.baseDeath||''} onChange={e=>f('baseDeath',+e.target.value)} style={inp}/></div>
@@ -941,7 +948,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 <div><label style={lbl}>Cover Step down (yrs)</label><input type="number" value={form.coverStep||''} onChange={e=>f('coverStep',+e.target.value)} placeholder="Leave empty if none" style={inp}/></div>
                 <div><label style={lbl}>Step Down (%)</label><input type="number" value={form.stepDownPct||''} onChange={e=>f('stepDownPct',+e.target.value)} style={inp}/></div>
               </div>
-
               {(form.multiplier || 0) > 1 && (
                 <div style={{padding:'16px',background:'#FAFAF8',border:'1px solid var(--line)',borderRadius:4,marginTop:4}}>
                   <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,fontWeight:600}}>Coverage with Multiplier (x{form.multiplier})</div>
@@ -962,10 +968,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                           const stepPct=form.stepDownPct||0
                           const getLifetime=(base:number)=>{
                             if (!base) return 0
-                            if (stepYrs>0&&stepPct>0) {
-                              const dropDec=(stepYrs*stepPct)/100
-                              return Math.max(base,(base*form.multiplier)*(1-dropDec))
-                            }
+                            if (stepYrs>0&&stepPct>0){const dropDec=(stepYrs*stepPct)/100;return Math.max(base,(base*form.multiplier)*(1-dropDec))}
                             return base
                           }
                           return (
@@ -982,6 +985,54 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                   ) : null}
                 </div>
               )}
+            </>
+          )}
+
+          {/* ── Endowment / Annuity / Investment benefit fields ── */}
+          {isEndow && (
+            <>
+              {/* Current Cash Value first — needed to compute % benefits below */}
+              <div>
+                <label style={lbl}>Current Cash Value ($)</label>
+                <input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/>
+              </div>
+              {/* Death / TPD / TI with $/% toggle */}
+              {([
+                { label:'Death Benefit', modeKey:'endowDeathMode' as const, valKey:'baseDeath'  as const },
+                { label:'TPD Benefit',   modeKey:'endowTPDMode'   as const, valKey:'baseTPD'    as const },
+                { label:'TI Benefit',    modeKey:'endowTIMode'    as const, valKey:'tiBenefit'  as const },
+              ]).map(({ label, modeKey, valKey }) => {
+                const mode    = (form[modeKey] as '%'|'$') || '$'
+                const rawVal  = (form[valKey] as number) || 0
+                const cashVal = form.currentCashValue || 0
+                const computed = mode==='%' ? (rawVal/100)*cashVal : rawVal
+                return (
+                  <div key={valKey}>
+                    <label style={lbl}>{label}</label>
+                    <div style={{display:'flex',gap:0}}>
+                      <div style={{display:'flex',border:'1px solid var(--line)',borderRight:'none',borderRadius:'3px 0 0 3px',overflow:'hidden',flexShrink:0}}>
+                        {(['$','%'] as const).map(m=>(
+                          <button key={m} type="button" onClick={()=>f(modeKey,m)}
+                            style={{padding:'8px 12px',border:'none',cursor:'pointer',fontSize:13,fontWeight:mode===m?600:400,background:mode===m?'#1C1A17':'var(--cream)',color:mode===m?'white':'var(--ink3)',transition:'all 0.1s'}}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                      <input type="number" value={rawVal||''} onChange={e=>f(valKey,+e.target.value)}
+                        placeholder={mode==='%'?'e.g. 105':'e.g. 500000'}
+                        style={{...inp,borderRadius:'0 3px 3px 0',flex:1}}/>
+                    </div>
+                    {mode==='%' && cashVal>0 && rawVal>0 && (
+                      <div style={{fontSize:11,color:'var(--ink3)',marginTop:4,fontFamily:'DM Mono,monospace'}}>
+                        = {fmt(computed)} <span style={{fontFamily:'Inter,sans-serif',fontSize:10}}>({rawVal}% of {fmt(cashVal)})</span>
+                      </div>
+                    )}
+                    {mode==='%' && cashVal===0 && (
+                      <div style={{fontSize:11,color:'#854F0B',marginTop:4}}>Enter Current Cash Value above to compute amount</div>
+                    )}
+                  </div>
+                )
+              })}
             </>
           )}
 
@@ -1016,14 +1067,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             </div>
           )}
 
-          {/* ── Endowment investment fields ── */}
-          {isEndow && (
-            <div style={g2}>
-              <div><label style={lbl}>Current Cash Value / GMV ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
-              <div><label style={lbl}>Non-GMV ($)</label><input type="number" value={form.sumAssured||''} onChange={e=>f('sumAssured',+e.target.value)} style={inp}/></div>
-            </div>
-          )}
-
           {/* ── Premiums ── */}
           <div style={((isMedical && !isRider) || isLTC) ? g3 : g2}>
             <div><label style={lbl}>Premium — Cash ($)</label><input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/></div>
@@ -1043,7 +1086,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 {FREQ.map(f=><option key={f}>{f}</option>)}
               </select>
             </div>
-            {!isMedical && !isLTC && (
+            {!isMedical && !isLTC && !isEndow && (
               <div><label style={lbl}>Current Cash Value ($)</label><input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/></div>
             )}
           </div>
