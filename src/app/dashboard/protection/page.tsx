@@ -1,21 +1,6 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
-
-// Mocking Supabase client for the isolated preview environment
-const createClient = () => ({
-  from: () => {
-    const obj = {
-      select: () => obj,
-      eq: () => obj,
-      order: () => obj,
-      maybeSingle: async () => ({ data: null }),
-      update: async () => ({ error: null }),
-      insert: async () => ({ error: null }),
-    };
-    obj.then = (resolve) => resolve({ data: [] });
-    return obj;
-  }
-});
+import { createClient } from '@/lib/supabase'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
