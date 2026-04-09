@@ -669,7 +669,15 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
 
   // When category changes, reset downstream
   const onCatChange=(code:string)=>{
-    setForm(prev=>({...prev,categoryCode:code,policyTypeCode:'',companyName:'',productName:''}))
+    setForm(prev=>({
+      ...prev,
+      categoryCode:code,
+      policyTypeCode:'',
+      companyName:'',
+      productName:'',
+      premiumMaturity: code === 'medical' ? 'Renewable' : (prev.premiumMaturity === 'Renewable' ? '' : prev.premiumMaturity),
+      coverageMaturity: code === 'medical' ? 'Renewable' : (prev.coverageMaturity === 'Renewable' ? '' : prev.coverageMaturity)
+    }))
   }
   const onCompChange=(name:string)=>{
     setForm(prev=>({...prev,companyName:name,productName:''}))
@@ -686,6 +694,9 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const lbl:React.CSSProperties={display:'block',fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:5}
   const g2:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}
   const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14}
+
+  const medPayModes = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
+  const currentPayModes = isMedical ? medPayModes : PAY_MODES;
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.65)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
@@ -770,7 +781,17 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           {/* ── Brief description ── */}
           <div>
             <label style={lbl}>Brief Description</label>
-            <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp}/>
+            {isMedical && form.policyTypeCode?.toLowerCase() === 'main' ? (
+              <select value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} style={s}>
+                <option value="">Select…</option>
+                <option value="As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)</option>
+                <option value="As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)</option>
+                <option value="As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)</option>
+                <option value="As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)</option>
+              </select>
+            ) : (
+              <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp}/>
+            )}
           </div>
 
           {/* ── Life / WL benefit fields ── */}
@@ -789,8 +810,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             </>
           )}
 
-          {/* ── Medical / General sum assured ── */}
-          {(isMedical||isGeneral) && (
+          {/* ── General sum assured ── */}
+          {isGeneral && (
             <div><label style={lbl}>Sum Assured / Coverage Limit ($)</label><input type="number" value={form.sumAssured||''} onChange={e=>f('sumAssured',+e.target.value)} style={inp}/></div>
           )}
 
@@ -824,7 +845,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               <label style={lbl}>Payment Mode</label>
               <select value={form.premiumMode} onChange={e=>f('premiumMode',e.target.value)} style={s}>
                 <option value="">Select…</option>
-                {PAY_MODES.map(m=><option key={m}>{m}</option>)}
+                {currentPayModes.map(m=><option key={m}>{m}</option>)}
               </select>
             </div>
           </div>
@@ -841,8 +862,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           {/* ── Dates ── */}
           <div style={g3}>
             <div><label style={lbl}>Inception Date</label><input type="date" value={form.inceptionDate} onChange={e=>f('inceptionDate',e.target.value)} style={inp}/></div>
-            <div><label style={lbl}>Premium Maturity</label><input type="date" value={form.premiumMaturity} onChange={e=>f('premiumMaturity',e.target.value)} style={inp}/></div>
-            <div><label style={lbl}>Coverage Maturity</label><input type="date" value={form.coverageMaturity} onChange={e=>f('coverageMaturity',e.target.value)} style={inp}/></div>
+            <div><label style={lbl}>Premium Maturity</label><input type={isMedical || form.premiumMaturity === 'Renewable' ? 'text' : 'date'} value={form.premiumMaturity} onChange={e=>f('premiumMaturity',e.target.value)} style={inp}/></div>
+            <div><label style={lbl}>Coverage Maturity</label><input type={isMedical || form.coverageMaturity === 'Renewable' ? 'text' : 'date'} value={form.coverageMaturity} onChange={e=>f('coverageMaturity',e.target.value)} style={inp}/></div>
           </div>
 
           {/* ── Status + Remarks ── */}
