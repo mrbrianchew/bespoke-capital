@@ -211,7 +211,7 @@ export default function ProtectionPage() {
   }
 
   async function saveData(data: RiskMgmtData) {
-    if (!clientId) return; 
+    if (!clientId) return
     setSaving(true)
     try {
       const { data: rows, error: fetchError } = await supabase
@@ -227,13 +227,11 @@ export default function ProtectionPage() {
           .from('fact_finding')
           .update({ data: { ...existingData, risk_management: data } })
           .eq('id', rows[0].id)
-          
         if (updateError) throw updateError
       } else {
         const { error: insertError } = await supabase
           .from('fact_finding')
           .insert({ client_id: clientId, data: { risk_management: data } })
-          
         if (insertError) throw insertError
       }
     } catch (error) {
@@ -252,11 +250,26 @@ export default function ProtectionPage() {
   // ── Financial calculations ─────────────────────────────────────────────────
   const ff = ffData || {}
   const inflation = (Number(ff.inflation_rate) || 3) / 100
-  const p1Mo = Number(ff.monthly_income || ff.monthlyIncomeClient || 0)
-  const p2Mo = Number(ff.person2?.monthly_income || 0)
+
+  // FIX 1: Broader key coverage for spouse income
+  const p1Mo = Number(ff.monthly_income || ff.monthlyIncomeClient || ff.person1?.monthly_income || 0)
+  const p2Mo = Number(
+    ff.person2?.monthly_income ||
+    ff.person2?.monthlyIncome  ||
+    ff.monthly_income_spouse   ||
+    ff.monthlyIncomeSpouse     ||
+    ff.spouse_monthly_income   || 0
+  )
+
   const expCats = ['financial_commitments','household','personal','children','lifestyle']
   const p1Exp = expCats.reduce((s,c) => s + Number(ff[`d_${c}`]||0), 0) || (p1Mo*12*0.7)
-  const p2Exp = expCats.reduce((s,c) => s + Number(ff[`d2_${c}`]||0), 0) || (p2Mo*12*0.7)
+
+  // FIX 2: Broader key coverage for spouse expenses, with fallback chain
+  const p2ExpRaw = expCats.reduce((s,c) =>
+    s + Number(ff[`d2_${c}`] || ff.person2?.[`d_${c}`] || 0), 0
+  )
+  const p2Exp = p2ExpRaw || (p2Mo * 12 * 0.7) || (p1Exp * 0.7)
+
   let coverTerm = 25
   if (children.length > 0) {
     const minAge = Math.min(...children.map((c:any) => Number(c.age||0)))
@@ -319,7 +332,12 @@ export default function ProtectionPage() {
 
   const chartData = buildChart(aAge, aExp, aOffset, aCI)
 
-  // People list for dropdowns — spouse by actual name, each child by actual name
+  // FIX 3: Chart should show for spouse even when aDTPD is 0 due to missing data
+  // We show charts if: (a) we have a real need figure, OR (b) we're on spouse tab and have
+  // at least some financial data to render (exp > 0 acts as proxy)
+  const hasChartData = aDTPD > 0 || aCI > 0 || aExp > 0
+
+  // People list for dropdowns
   const allPeople = [
     { key: 'client', label: clientName },
     ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
@@ -383,12 +401,13 @@ export default function ProtectionPage() {
       {/* ── OVERVIEW ── */}
       {activeTab==='overview' && (
         <div style={{padding:'36px 48px',flex:1}}>
+          {/* FIX 4: KPI cards now use aName/aDTPD/aLH/aCI/aCH so they react to the person toggle */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:32}}>
             {[
               {label:'Total Policies',value:String(rmData.policies.length),sub:'all insured persons'},
               {label:'Annual Premium',value:fmt(totalPrem),sub:'combined portfolio'},
-              {label:`${clientName} — D/TPD Gap`,value:fmt(Math.max(0,clientDTPD-cLH)),sub:clientDTPD>0?`Need ${fmt(clientDTPD)}`:'Complete profile first'},
-              {label:`${clientName} — CI Gap`,value:fmt(Math.max(0,clientCI-cCH)),sub:clientCI>0?`Need ${fmt(clientCI)}`:'Complete profile first'},
+              {label:`${aName} — D/TPD Gap`,value:fmt(Math.max(0,aDTPD-aLH)),sub:aDTPD>0?`Need ${fmt(aDTPD)}`:'Complete profile first'},
+              {label:`${aName} — CI Gap`,value:fmt(Math.max(0,aCI-aCH)),sub:aCI>0?`Need ${fmt(aCI)}`:'Complete profile first'},
             ].map(c=>(
               <div key={c.label} style={{background:'white',border:'0.5px solid var(--line)',padding:'18px 22px'}}>
                 <div style={{fontSize:10,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>{c.label}</div>
@@ -413,10 +432,23 @@ export default function ProtectionPage() {
             dtpdNeed={aDTPD} ciNeed={aCI} lifeHave={aLH} ciHave={aCH}
             mortgageNeed={mort} educationNeed={edu} annualPremium={premHave(overviewPerson)} />
 
-          {aDTPD>0 ? (
+          {/* FIX 3: Show charts whenever we have any data; only hide when truly no profile at all */}
+          {hasChartData ? (
             <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-              <CoverageChart title="Death / TPD Coverage Needs Analysis" needLabel="Required Family Protection Capital" haveLabel="Existing Family Protection" data={chartData.map(d=>({age:d.age,need:d.dtpd,have:aLH}))} needColor="#00BCD4" />
-              <CoverageChart title="Critical Illness Coverage Needs Analysis" needLabel="Required Critical Illness Protection" haveLabel="Existing Critical Illness Protection" data={chartData.map(d=>({age:d.age,need:d.ci,have:aCH}))} needColor="#00BCD4" />
+              <CoverageChart
+                title="Death / TPD Coverage Needs Analysis"
+                needLabel="Required Family Protection Capital"
+                haveLabel="Existing Family Protection"
+                data={chartData.map(d=>({age:d.age,need:d.dtpd,have:aLH}))}
+                needColor="#00BCD4"
+              />
+              <CoverageChart
+                title="Critical Illness Coverage Needs Analysis"
+                needLabel="Required Critical Illness Protection"
+                haveLabel="Existing Critical Illness Protection"
+                data={chartData.map(d=>({age:d.age,need:d.ci,have:aCH}))}
+                needColor="#00BCD4"
+              />
             </div>
           ) : (
             <div style={{marginTop:20,padding:'24px',background:'white',border:'0.5px solid var(--line)',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
@@ -565,7 +597,7 @@ function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,mortgageNeed,educatio
         </div>
         {annualPremium>0&&<span style={{fontSize:12,color:'var(--ink3)'}}>Portfolio premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(annualPremium)}/yr</strong></span>}
       </div>
-      {dtpdNeed===0?(
+      {dtpdNeed===0&&ciNeed===0?(
         <div style={{padding:'24px',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>Complete the Financial Profile to see gap analysis.</div>
       ):(
         <>
@@ -700,7 +732,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const isGeneral  = form.categoryCode==='general'
   const isRider    = form.policyTypeCode?.toLowerCase() === 'rider'
 
-  // Safety logic to make standard LTC policy hiding fully robust (case-insensitive & space-trimming)
   const ltcProductName = (form.productName || '').trim().toLowerCase();
   const isStandardLTC = isLTC && ['careshield life', 'eldershield 300', 'eldershield 400'].includes(ltcProductName);
 
@@ -718,7 +749,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     return false;
   });
 
-  // LTC Specific Toggle States
   const [isOtherBenefitTerm, setIsOtherBenefitTerm] = useState(() => {
     return !!policy.benefitTerm && !['2/6 ADLs', '3/6 ADLs'].includes(policy.benefitTerm);
   });
@@ -726,7 +756,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     return !!policy.payoutTerm && policy.payoutTerm !== 'Lifetime';
   });
 
-  // Unified Maturity Toggle States
   const [premMatMode, setPremMatMode] = useState<'preset'|'date'|'text'>(() => {
     if (!policy.premiumMaturity) return 'preset';
     if (['Lifetime', 'Renewable', 'Age 67'].includes(policy.premiumMaturity)) return 'preset';
@@ -741,7 +770,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     return 'text';
   });
 
-  // Dynamic Brief Description for LTC
   useEffect(() => {
     if (form.categoryCode === 'ltc') {
       let expectedDesc = form.briefDescription || '';
@@ -790,7 +818,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
 
         <div style={{padding:'20px 26px',display:'flex',flexDirection:'column',gap:16}}>
 
-          {/* ── Row 1: Category + Policy Type (cascades from category) ── */}
+          {/* ── Row 1: Category + Policy Type ── */}
           <div style={g2}>
             <div>
               <label style={lbl}>Category</label>
@@ -825,7 +853,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             </div>
           </div>
 
-          {/* ── Row 3: Company (cascades from category) + Policy No ── */}
+          {/* ── Row 3: Company + Policy No ── */}
           <div style={g2}>
             <div>
               <label style={lbl}>Company</label>
@@ -840,7 +868,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             </div>
           </div>
 
-          {/* ── Row 4: Product (cascades from company, medical+ltc only) or manual ── */}
+          {/* ── Row 4: Product Name ── */}
           <div>
             <label style={lbl}>Product Name</label>
             {hasProducts && filtProds.length > 0 ? (
@@ -871,8 +899,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 </select>
               ) : isMedical && isRider ? (
                 <>
-                  <select 
-                    value={isOtherRiderDesc ? '__other' : form.briefDescription} 
+                  <select
+                    value={isOtherRiderDesc ? '__other' : form.briefDescription}
                     onChange={e => {
                       if (e.target.value === '__other') {
                         setIsOtherRiderDesc(true);
@@ -881,7 +909,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                         setIsOtherRiderDesc(false);
                         f('briefDescription', e.target.value);
                       }
-                    }} 
+                    }}
                     style={s}
                   >
                     <option value="">Select…</option>
@@ -889,13 +917,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                     <option value="__other">Others (Type Manually)</option>
                   </select>
                   {isOtherRiderDesc && (
-                    <input
-                      type="text"
-                      value={form.briefDescription}
-                      onChange={e=>f('briefDescription',e.target.value)}
-                      placeholder="Please type description manually..."
-                      style={{...inp, marginTop: 6}}
-                    />
+                    <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="Please type description manually..." style={{...inp, marginTop: 6}}/>
                   )}
                 </>
               ) : (
@@ -920,40 +942,38 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 <div><label style={lbl}>Step Down (%)</label><input type="number" value={form.stepDownPct||''} onChange={e=>f('stepDownPct',+e.target.value)} style={inp}/></div>
               </div>
 
-              {/* Dynamic Multiplier Coverage Calculation */}
               {(form.multiplier || 0) > 1 && (
-                <div style={{ padding: '16px', background: '#FAFAF8', border: '1px solid var(--line)', borderRadius: 4, marginTop: 4 }}>
-                  <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12, fontWeight: 600 }}>Coverage with Multiplier (x{form.multiplier})</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: form.multiplierEnd ? 16 : 0 }}>
-                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>DEATH</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseDeath || 0) * form.multiplier)}</div></div>
-                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>TPD</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseTPD || 0) * form.multiplier)}</div></div>
-                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>ADV CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseAdvCI || 0) * form.multiplier)}</div></div>
-                    <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>EARLY CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt((form.baseEarlyCI || 0) * form.multiplier)}</div></div>
+                <div style={{padding:'16px',background:'#FAFAF8',border:'1px solid var(--line)',borderRadius:4,marginTop:4}}>
+                  <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,fontWeight:600}}>Coverage with Multiplier (x{form.multiplier})</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14,marginBottom:form.multiplierEnd?16:0}}>
+                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>DEATH</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseDeath||0)*form.multiplier)}</div></div>
+                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>TPD</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseTPD||0)*form.multiplier)}</div></div>
+                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>ADV CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseAdvCI||0)*form.multiplier)}</div></div>
+                    <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>EARLY CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt((form.baseEarlyCI||0)*form.multiplier)}</div></div>
                   </div>
-
                   {form.multiplierEnd ? (
                     <>
-                      <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12, paddingTop: 16, borderTop: '1px dashed var(--line)', fontWeight: 600 }}>
+                      <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,paddingTop:16,borderTop:'1px dashed var(--line)',fontWeight:600}}>
                         Lifetime Coverage (After Age {form.multiplierEnd})
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-                        {(() => {
-                          const stepYrs = form.coverStep || 0;
-                          const stepPct = form.stepDownPct || 0;
-                          const getLifetime = (base: number) => {
-                            if (!base) return 0;
-                            if (stepYrs > 0 && stepPct > 0) {
-                              const dropDec = (stepYrs * stepPct) / 100;
-                              return Math.max(base, (base * form.multiplier) * (1 - dropDec));
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14}}>
+                        {(()=>{
+                          const stepYrs=form.coverStep||0
+                          const stepPct=form.stepDownPct||0
+                          const getLifetime=(base:number)=>{
+                            if (!base) return 0
+                            if (stepYrs>0&&stepPct>0) {
+                              const dropDec=(stepYrs*stepPct)/100
+                              return Math.max(base,(base*form.multiplier)*(1-dropDec))
                             }
-                            return base;
-                          };
+                            return base
+                          }
                           return (
                             <>
-                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>DEATH</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseDeath || 0))}</div></div>
-                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>TPD</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseTPD || 0))}</div></div>
-                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>ADV CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseAdvCI || 0))}</div></div>
-                              <div><div style={{fontSize: 9, color: 'var(--ink3)', marginBottom: 2}}>EARLY CI</div><div style={{fontFamily: 'DM Mono,monospace', fontSize: 13, color: 'var(--ink)', fontWeight: 500}}>{fmt(getLifetime(form.baseEarlyCI || 0))}</div></div>
+                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>DEATH</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseDeath||0))}</div></div>
+                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>TPD</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseTPD||0))}</div></div>
+                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>ADV CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseAdvCI||0))}</div></div>
+                              <div><div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>EARLY CI</div><div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(getLifetime(form.baseEarlyCI||0))}</div></div>
                             </>
                           )
                         })()}
@@ -976,38 +996,22 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               <div><label style={lbl}>Monthly Benefit ($)</label><input type="number" value={form.monthlyBenefit||''} onChange={e=>f('monthlyBenefit',+e.target.value)} style={inp}/></div>
               <div>
                 <label style={lbl}>Benefit Term</label>
-                <select
-                  value={isOtherBenefitTerm ? '__other' : (form.benefitTerm || '')}
-                  onChange={e => {
-                    if (e.target.value === '__other') { setIsOtherBenefitTerm(true); f('benefitTerm', ''); }
-                    else { setIsOtherBenefitTerm(false); f('benefitTerm', e.target.value); }
-                  }} style={s}
-                >
+                <select value={isOtherBenefitTerm?'__other':(form.benefitTerm||'')} onChange={e=>{if(e.target.value==='__other'){setIsOtherBenefitTerm(true);f('benefitTerm','');}else{setIsOtherBenefitTerm(false);f('benefitTerm',e.target.value);}}} style={s}>
                   <option value="">Select…</option>
                   <option value="2/6 ADLs">2/6 ADLs</option>
                   <option value="3/6 ADLs">3/6 ADLs</option>
                   <option value="__other">Others (Type Manually)</option>
                 </select>
-                {isOtherBenefitTerm && (
-                  <input type="text" value={form.benefitTerm||''} onChange={e=>f('benefitTerm',e.target.value)} placeholder="Type Benefit Term" style={{...inp, marginTop: 6}} />
-                )}
+                {isOtherBenefitTerm && <input type="text" value={form.benefitTerm||''} onChange={e=>f('benefitTerm',e.target.value)} placeholder="Type Benefit Term" style={{...inp,marginTop:6}}/>}
               </div>
               <div>
                 <label style={lbl}>Payout Term</label>
-                <select
-                  value={isOtherPayoutTerm ? '__other' : (form.payoutTerm || '')}
-                  onChange={e => {
-                    if (e.target.value === '__other') { setIsOtherPayoutTerm(true); f('payoutTerm', ''); }
-                    else { setIsOtherPayoutTerm(false); f('payoutTerm', e.target.value); }
-                  }} style={s}
-                >
+                <select value={isOtherPayoutTerm?'__other':(form.payoutTerm||'')} onChange={e=>{if(e.target.value==='__other'){setIsOtherPayoutTerm(true);f('payoutTerm','');}else{setIsOtherPayoutTerm(false);f('payoutTerm',e.target.value);}}} style={s}>
                   <option value="">Select…</option>
                   <option value="Lifetime">Lifetime</option>
                   <option value="__other">Others (Type Manually)</option>
                 </select>
-                {isOtherPayoutTerm && (
-                  <input type="text" value={form.payoutTerm||''} onChange={e=>f('payoutTerm',e.target.value)} placeholder="Type Payout Term" style={{...inp, marginTop: 6}} />
-                )}
+                {isOtherPayoutTerm && <input type="text" value={form.payoutTerm||''} onChange={e=>f('payoutTerm',e.target.value)} placeholder="Type Payout Term" style={{...inp,marginTop:6}}/>}
               </div>
             </div>
           )}
@@ -1049,51 +1053,29 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             <div><label style={lbl}>Inception Date</label><input type="date" value={form.inceptionDate} onChange={e=>f('inceptionDate',e.target.value)} style={inp}/></div>
             <div>
               <label style={lbl}>Premium Maturity</label>
-              <select
-                value={premMatMode === 'preset' ? (form.premiumMaturity || '') : (premMatMode === 'date' ? '__date' : '__other')}
-                onChange={e => {
-                  if (e.target.value === '__date') { setPremMatMode('date'); f('premiumMaturity', ''); }
-                  else if (e.target.value === '__other') { setPremMatMode('text'); f('premiumMaturity', ''); }
-                  else { setPremMatMode('preset'); f('premiumMaturity', e.target.value); }
-                }} style={s}
-              >
+              <select value={premMatMode==='preset'?(form.premiumMaturity||''):(premMatMode==='date'?'__date':'__other')} onChange={e=>{if(e.target.value==='__date'){setPremMatMode('date');f('premiumMaturity','');}else if(e.target.value==='__other'){setPremMatMode('text');f('premiumMaturity','');}else{setPremMatMode('preset');f('premiumMaturity',e.target.value);}}} style={s}>
                 <option value="">Select…</option>
                 <option value="Lifetime">Lifetime</option>
-                {(isMedical || form.premiumMaturity === 'Renewable') && <option value="Renewable">Renewable</option>}
-                {(isLTC || form.premiumMaturity === 'Age 67') && <option value="Age 67">Age 67</option>}
+                {(isMedical||form.premiumMaturity==='Renewable')&&<option value="Renewable">Renewable</option>}
+                {(isLTC||form.premiumMaturity==='Age 67')&&<option value="Age 67">Age 67</option>}
                 <option value="__date">Input Date</option>
                 <option value="__other">Type Manually</option>
               </select>
-              {premMatMode === 'date' && (
-                <input type="date" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} style={{...inp, marginTop: 6}}/>
-              )}
-              {premMatMode === 'text' && (
-                <input type="text" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
-              )}
+              {premMatMode==='date'&&<input type="date" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} style={{...inp,marginTop:6}}/>}
+              {premMatMode==='text'&&<input type="text" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} placeholder="Type manually" style={{...inp,marginTop:6}}/>}
             </div>
             <div>
               <label style={lbl}>Coverage Maturity</label>
-              <select
-                value={covMatMode === 'preset' ? (form.coverageMaturity || '') : (covMatMode === 'date' ? '__date' : '__other')}
-                onChange={e => {
-                  if (e.target.value === '__date') { setCovMatMode('date'); f('coverageMaturity', ''); }
-                  else if (e.target.value === '__other') { setCovMatMode('text'); f('coverageMaturity', ''); }
-                  else { setCovMatMode('preset'); f('coverageMaturity', e.target.value); }
-                }} style={s}
-              >
+              <select value={covMatMode==='preset'?(form.coverageMaturity||''):(covMatMode==='date'?'__date':'__other')} onChange={e=>{if(e.target.value==='__date'){setCovMatMode('date');f('coverageMaturity','');}else if(e.target.value==='__other'){setCovMatMode('text');f('coverageMaturity','');}else{setCovMatMode('preset');f('coverageMaturity',e.target.value);}}} style={s}>
                 <option value="">Select…</option>
                 <option value="Lifetime">Lifetime</option>
-                {(isMedical || form.coverageMaturity === 'Renewable') && <option value="Renewable">Renewable</option>}
-                {(isLTC || form.coverageMaturity === 'Age 67') && <option value="Age 67">Age 67</option>}
+                {(isMedical||form.coverageMaturity==='Renewable')&&<option value="Renewable">Renewable</option>}
+                {(isLTC||form.coverageMaturity==='Age 67')&&<option value="Age 67">Age 67</option>}
                 <option value="__date">Input Date</option>
                 <option value="__other">Type Manually</option>
               </select>
-              {covMatMode === 'date' && (
-                <input type="date" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} style={{...inp, marginTop: 6}}/>
-              )}
-              {covMatMode === 'text' && (
-                <input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp, marginTop: 6}}/>
-              )}
+              {covMatMode==='date'&&<input type="date" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} style={{...inp,marginTop:6}}/>}
+              {covMatMode==='text'&&<input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp,marginTop:6}}/>}
             </div>
           </div>
 
