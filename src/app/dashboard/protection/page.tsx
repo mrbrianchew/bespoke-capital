@@ -100,6 +100,18 @@ function gapSt(need: number, have: number) {
   return                   { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
 }
 
+function getAnnualPrem(p: Policy) {
+  const cash = p.isUSD ? (p.premiumCash || 0) * (p.fxRate || 1.35) : (p.premiumCash || 0)
+  const total = cash + (p.premiumMedisave || 0)
+  switch (p.frequency) {
+    case 'Semi-Annual': return total * 2
+    case 'Quarterly':   return total * 4
+    case 'Monthly':     return total * 12
+    case 'Single':      return total
+    default:            return total
+  }
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProtectionPage() {
   const supabase = createClient()
@@ -315,12 +327,12 @@ export default function ProtectionPage() {
       .reduce((s,p)=>s+toSGD(Math.max(p.baseAdvCI||0,p.baseEarlyCI||0),p),0)
   }
   function premHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+toSGD((p.premiumCash||0),p)+(p.premiumMedisave||0),0)
+    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+getAnnualPrem(p),0)
   }
 
   const cLH = lifeHave('client'), cCH = ciHave('client')
   const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
-  const totalPrem = rmData.policies.reduce((s,p)=>s+(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))+(p.premiumMedisave||0),0)
+  const totalPrem = rmData.policies.reduce((s,p)=>s+getAnnualPrem(p),0)
 
   // Chart data
   function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
@@ -495,7 +507,7 @@ export default function ProtectionPage() {
               const tabPolicies = isDependent&&childKeys
                 ? rmData.policies.filter(p=>childKeys.includes(p.person))
                 : rmData.policies.filter(p=>p.person===key)
-              const tabPrem = tabPolicies.reduce((s,p)=>s+(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))+(p.premiumMedisave||0),0)
+              const tabPrem = tabPolicies.reduce((s,p)=>s+getAnnualPrem(p),0)
               const isActive = portfolioPerson===key
               return (
                 <button key={key} onClick={()=>setPortfolioPerson(key)}
@@ -516,7 +528,7 @@ export default function ProtectionPage() {
               ? rmData.policies.filter(p=>childKeys.includes(p.person))
               : rmData.policies.filter(p=>p.person===key)
             const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
-            const secPrem = policies.reduce((s,p)=>s+(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))+(p.premiumMedisave||0),0)
+            const secPrem = policies.reduce((s,p)=>s+getAnnualPrem(p),0)
             const personAge = key==='client' ? clientAge : spouseAge
 
             // Category buckets
@@ -570,7 +582,7 @@ export default function ProtectionPage() {
                     {catBuckets.map(cat=>{
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
-                      const catPrem = catPols.reduce((s,p)=>s+(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))+(p.premiumMedisave||0),0)
+                      const catPrem = catPols.reduce((s,p)=>s+getAnnualPrem(p),0)
                       return (
                         <div key={cat.code} style={{marginBottom:28}}>
                           {/* Category header */}
@@ -736,7 +748,7 @@ function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,mortgageNeed,educatio
 
 // ─── Policy Table ─────────────────────────────────────────────────────────────
 function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
-  const sub=policies.reduce((s,p)=>s+(p.premiumCash||0)+(p.premiumMedisave||0),0)
+  const sub=policies.reduce((s,p)=>s+getAnnualPrem(p),0)
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
       <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
@@ -746,7 +758,11 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       </div>
       {policies.map((p,i)=>{
         const col=catColors[p.categoryCode]||'#999'
-        const mainBen=p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
+        let mainBen = p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
+        if (p.categoryCode === 'endowment') {
+          if (p.endowDeathMode === '%' && p.baseDeath) mainBen = (p.baseDeath / 100) * (p.currentCashValue || 0)
+          else if (p.endowTPDMode === '%' && p.baseTPD) mainBen = (p.baseTPD / 100) * (p.currentCashValue || 0)
+        }
         return(
           <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             <span style={{fontSize:10,fontWeight:600,color:col,padding:'2px 6px',background:col+'18',borderRadius:3}}>{catShort[p.categoryCode]||p.categoryCode}</span>
@@ -1360,22 +1376,11 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   )
 }
 
-
 // ─── Helpers (used by PersonPortfolioCharts) ─────────────────────────────────
 function _toSGD(val: number, p: Policy) {
   return p.isUSD ? val * (p.fxRate || 1.35) : val
 }
-function _annualPrem(p: Policy) {
-  const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
-  const total = cash + (p.premiumMedisave||0)
-  switch (p.frequency) {
-    case 'Semi-Annual': return total*2
-    case 'Quarterly':   return total*4
-    case 'Monthly':     return total*12
-    case 'Single':      return total
-    default:            return total
-  }
-}
+
 function _payMonths(p: Policy): number[] {
   const sm = p.inceptionDate ? new Date(p.inceptionDate).getMonth()+1 : 1
   switch (p.frequency) {
@@ -1387,15 +1392,18 @@ function _payMonths(p: Policy): number[] {
     default:            return [sm]
   }
 }
+
 function _coverAtAge(p: Policy, age: number, curAge: number) {
   const mult     = p.multiplier > 1 ? p.multiplier : 1
   const multEnd  = p.multiplierEnd || 999
   const actMult  = age <= multEnd ? mult : 1
   let stepFactor = 1
+
   if (p.coverStep && p.stepDownPct && age > multEnd) {
-    const drops = Math.floor((age-multEnd)/(p.coverStep||1))
-    stepFactor  = Math.max(0, 1-drops*((p.stepDownPct||0)/100))
+    const drops = Math.min(age - multEnd, p.coverStep)
+    stepFactor  = Math.max(0, 1 - drops*((p.stepDownPct||0)/100))
   }
+
   // Check maturity
   if (p.coverageMaturity && !['Lifetime','Renewable'].includes(p.coverageMaturity)) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(p.coverageMaturity)) {
@@ -1411,6 +1419,7 @@ function _coverAtAge(p: Policy, age: number, curAge: number) {
   const ci = _toSGD(Math.max((p.baseAdvCI||0),(p.baseEarlyCI||0))*actMult*stepFactor, p)
   return {d, t, ci}
 }
+
 function _fmtK(n: number) {
   if (n===0) return '$0'
   if (n>=1e6) return `$${(n/1e6).toFixed(2)}M`
@@ -1454,7 +1463,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totAdvCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseAdvCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totEarCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseEarlyCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totCI    = totAdvCI + totEarCI
-  const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
+  const totPrem  = policies.reduce((s,p)=>s+getAnnualPrem(p),0)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
   const W=560, H=180, PL=60, PR=8, PT=12, PB=24
