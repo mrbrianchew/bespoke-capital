@@ -1819,7 +1819,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Total Annual Premium', value:Math.round(totPrem), accent:'#A8834A', highlight: true},
+          {label:'Annual Premium', value:Math.round(totPrem), accent:'#A8834A', highlight: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
             background: COL_CARD_BG,
@@ -1955,7 +1955,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           padding: '22px 24px 20px 24px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
         }}>
-          <div style={{marginBottom: 20}}>
+          <div style={{marginBottom: 16}}>
             <div style={{
               fontSize: 11,
               letterSpacing: '0.1em',
@@ -1964,25 +1964,9 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               marginBottom: 6,
               fontWeight: 500
             }}>Premium Schedule</div>
-            <div style={{
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              fontSize: 28,
-              color: '#1A1A1A',
-              fontWeight: 600,
-              letterSpacing: '-0.02em',
-              lineHeight: 1.2
-            }}>
-              {_fmtK(totPrem)}
-              <span style={{
-                fontSize: 14,
-                color: '#999',
-                marginLeft: 6,
-                fontWeight: 400
-              }}>/yr</span>
-            </div>
           </div>
           
-          <div style={{display:'flex', flexDirection:'column', gap: 6, marginTop: 8}}>
+          <div style={{display:'flex', flexDirection:'column', gap: 6}}>
             {MONTHS.map((mon,mi)=>{
               const amt = monthly[mi]
               const pct = maxMonthly > 0 ? (amt/maxMonthly)*100 : 0
