@@ -901,24 +901,31 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           </div>
         )})}
         {/* Subtotal */}
-{/* Subtotal */}
-<div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-  <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
-  {hasMedisave ? (
-    <>
-      <div />
-      <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-        {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
-      </div>
-    </>
-  ) : (
-    <div />
-  )}
-  <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-    {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
-  </div>
-  <div/><div/><div/>
-</div>
+        {/* Subtotal */}
+        {hasMedisave ? (
+          <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+            <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+              {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
+            </div>
+            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+              {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
+            </div>
+            <div />
+            <div />
+            <div />
+          </div>
+        ) : (
+          <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+            <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+              {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
+            </div>
+            <div />
+            <div />
+            <div />
+          </div>
+        )}
       </div>
     )
   }
