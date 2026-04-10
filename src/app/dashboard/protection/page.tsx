@@ -178,14 +178,15 @@ export default function ProtectionPage() {
       supabase.from('ins_policy_types').select('*').order('sort_order'),
       supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
       supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
-    ])
+    ]) as any[] // Added 'as any[]' cast to fix "Property 'data' does not exist on type 'unknown'"
+
     if (cats)   setRefCategories(cats)
     if (ptypes) setRefPolicyTypes(ptypes)
     if (comps)  setRefCompanies(comps)
     if (prods)  setRefProducts(prods)
 
     // Client info
-    const { data: client } = await supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle()
+    const { data: client } = await supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle() as any
     if (client) {
       setClientName(client.name)
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25*24*3600*1000)))
@@ -193,13 +194,13 @@ export default function ProtectionPage() {
     }
 
     // Fact finding — merge all rows
-    const { data: rows } = await supabase.from('fact_finding').select('data').eq('client_id', id)
+    const { data: rows } = await supabase.from('fact_finding').select('data').eq('client_id', id) as any
     const merged: any = {}
     if (rows?.length) rows.forEach((r: any) => { if (r.data) Object.assign(merged, r.data) })
 
     // Also load family members from dedicated table (spouse + children)
     const { data: familyRows } = await supabase
-      .from('family_members').select('*').eq('client_id', id)
+      .from('family_members').select('*').eq('client_id', id) as any
 
     if (Object.keys(merged).length > 0) {
       setFfData(merged)
@@ -253,7 +254,7 @@ export default function ProtectionPage() {
       const { data: rows, error: fetchError } = await supabase
         .from('fact_finding')
         .select('id, data')
-        .eq('client_id', id)
+        .eq('client_id', id) as any
 
       if (fetchError) throw fetchError
 
@@ -262,12 +263,12 @@ export default function ProtectionPage() {
         const { error: updateError } = await supabase
           .from('fact_finding')
           .update({ data: { ...existingData, risk_management: data } })
-          .eq('id', rows[0].id)
+          .eq('id', rows[0].id) as any
         if (updateError) throw updateError
       } else {
         const { error: insertError } = await supabase
           .from('fact_finding')
-          .insert({ client_id: id, data: { risk_management: data } })
+          .insert({ client_id: id, data: { risk_management: data } }) as any
         if (insertError) throw insertError
       }
     } catch (error) {
