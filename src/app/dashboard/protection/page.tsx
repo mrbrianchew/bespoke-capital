@@ -639,7 +639,6 @@ export default function ProtectionPage() {
                                 <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(catPrem)}</strong>/yr
                               </span>
                             )}
-                                                  </div>
                           <PolicyTable
                             policies={catPols}
                             catShort={CAT_SHORT}
