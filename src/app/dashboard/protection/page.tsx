@@ -582,7 +582,7 @@ export default function ProtectionPage() {
               <div key={key}>
                                {/* Luxury charts — only for named persons (not dependents) */}
                 {!isDependent && policies.length > 0 && (
-                  <div className="print-charts-section">
+                    <div style={{pageBreakAfter: 'always', breakAfter: 'page'}}>
                     <PersonPortfolioCharts
                       personName={label}
                       personAge={personAge}
@@ -687,8 +687,8 @@ export default function ProtectionPage() {
                         )
                       }
                       
-                      return (
-                        <div key={cat.code} style={{marginBottom:28}} className="print-category-block">
+                                            return (
+                        <div key={cat.code} style={{marginBottom:28, pageBreakBefore: cat.code === 'life' ? 'always' : 'auto', breakBefore: cat.code === 'life' ? 'page' : 'auto'}} className="print-category-block">
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
