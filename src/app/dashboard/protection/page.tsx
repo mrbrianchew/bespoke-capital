@@ -1,13 +1,6 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-
-const createClient = () => {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
-  )
-}
+import { createClient } from '@/lib/supabase'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
