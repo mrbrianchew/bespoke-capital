@@ -1,6 +1,23 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
-import { createClient } from '@/lib/supabase'
+
+// Mock Supabase client for standalone execution
+const createClient = () => {
+  const chainable = {
+    select: () => chainable,
+    eq: () => chainable,
+    order: () => chainable,
+    maybeSingle: async () => ({ data: null }),
+    then: (resolve: any) => resolve({ data: [] })
+  };
+  return {
+    from: () => ({
+      ...chainable,
+      insert: async () => ({ error: null }),
+      update: () => ({ eq: async () => ({ error: null }) })
+    })
+  };
+};
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
@@ -676,26 +693,6 @@ export default function ProtectionPage() {
               </div>
             )
           })}
-
-          {/* Portfolio summary — always visible at bottom */}
-          {activePolicies.length>0 && (
-            <div style={{background:'#1C1A17',padding:'26px 32px',marginTop:32}}>
-              <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.7)',marginBottom:16}}>Portfolio Summary — All Insured</div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:24}}>
-                {[
-                  {label:'Total Active Policies',     val:String(activePolicies.length)},
-                  {label:'Total Annual Premium',val:fmt(totalPrem)},
-                  {label:`${clientName} — Life+TPD`, val:fmt(cLH)},
-                  {label:isCouple?`${spouseName} — Life+TPD`:'Client CI', val:isCouple?fmt(sLH):fmt(cCH)},
-                ].map(item=>(
-                  <div key={item.label}>
-                    <div style={{fontSize:10,color:'rgba(255,255,255,0.4)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:6}}>{item.label}</div>
-                    <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'#F0EDE8',fontWeight:300}}>{item.val}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
