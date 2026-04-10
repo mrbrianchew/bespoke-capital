@@ -554,8 +554,7 @@ export default function ProtectionPage() {
               )
             })}
           </div>
-
-          {/* Active person's policies */}
+                    {/* Active person's policies */}
           {sections.map(({key,label,isDependent,childKeys})=>{
             if (portfolioPerson!==key) return null
             const policies = isDependent&&childKeys
@@ -617,7 +616,7 @@ export default function ProtectionPage() {
                       </button>
                     </div>
 
-                                       {/* One block per category that has policies */}
+                    {/* One block per category that has policies */}
                     {catBuckets.map(cat=>{
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
@@ -647,51 +646,11 @@ export default function ProtectionPage() {
                             onEdit={openEdit}
                             onDelete={delPolicy}
                           />
-                          
-                          {/* Category Remarks Box */}
-                          {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
-                            <div style={{
-                              marginTop: 12,
-                              padding: '14px 18px',
-                              background: '#F8F7F4',
-                              border: '1px solid var(--line)',
-                              borderRadius: 6
-                            }}>
-                              <div style={{
-                                fontSize: 9,
-                                letterSpacing: '0.1em',
-                                textTransform: 'uppercase',
-                                color: 'var(--ink3)',
-                                marginBottom: 10
-                              }}>Policy Remarks</div>
-                              {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map(p => (
-                                <div key={p.id} style={{
-                                  marginBottom: 10,
-                                  paddingBottom: 10,
-                                  borderBottom: '1px solid var(--line)'
-                                }}>
-                                  <div style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: 'var(--ink)',
-                                    marginBottom: 4
-                                  }}>
-                                    {p.companyName} · {p.productName}
-                                  </div>
-                                  <div style={{
-                                    fontSize: 12,
-                                    color: 'var(--ink2)',
-                                    lineHeight: 1.5
-                                  }}>
-                                    {p.remarks}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       )
                     })}
+                  </div>
+                )}
 
                 {/* ── Inactive Policies Toggle ── */}
                 {inactiveTabPols.length > 0 && (
@@ -722,58 +681,16 @@ export default function ProtectionPage() {
                                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label} (Inactive)</span>
                                 </div>
                               </div>
-                                                        <PolicyTable
-                            policies={catPols}
-                            catShort={CAT_SHORT}
-                            catColors={CAT_COLORS}
-                            onEdit={openEdit}
-                            onDelete={delPolicy}
-                          />
-                          
-                          {/* Category Remarks Box */}
-                          {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
-                            <div style={{
-                              marginTop: 12,
-                              padding: '14px 18px',
-                              background: '#F8F7F4',
-                              border: '1px solid var(--line)',
-                              borderRadius: 6
-                            }}>
-                              <div style={{
-                                fontSize: 9,
-                                letterSpacing: '0.1em',
-                                textTransform: 'uppercase',
-                                color: 'var(--ink3)',
-                                marginBottom: 10
-                              }}>Policy Remarks</div>
-                              {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map(p => (
-                                <div key={p.id} style={{
-                                  marginBottom: 10,
-                                  paddingBottom: 10,
-                                  borderBottom: '1px solid var(--line)'
-                                }}>
-                                  <div style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: 'var(--ink)',
-                                    marginBottom: 4
-                                  }}>
-                                    {p.companyName} · {p.productName}
-                                  </div>
-                                  <div style={{
-                                    fontSize: 12,
-                                    color: 'var(--ink2)',
-                                    lineHeight: 1.5
-                                  }}>
-                                    {p.remarks}
-                                  </div>
-                                </div>
-                              ))}
+                              <PolicyTable
+                                policies={catPols}
+                                catShort={CAT_SHORT}
+                                catColors={CAT_COLORS}
+                                onEdit={openEdit}
+                                onDelete={delPolicy}
+                              />
                             </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -891,7 +808,6 @@ function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,mortgageNeed,educatio
     </div>
   )
 }
-
 // ─── Policy Table ─────────────────────────────────────────────────────────────
 function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
   function _sub(p: Policy) {
@@ -922,7 +838,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   // ── Essential layout (Medical / LTC / General) ──────────────────────────────
   if (isEssential) {
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
-    // Grid: INSURER (1.2fr) | BRIEF DESC (1.5fr) | MEDISAVE (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
+    // Grid: INSURER (1.2fr) | BRIEF DESC (1.5fr) | MEDISAVE (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
     const cols = hasMedisave
       ? '1.2fr 1.5fr 100px 100px 90px 160px 40px'
       : '1.2fr 1.5fr 100px 90px 160px 40px'
@@ -983,7 +899,6 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           </div>
         )})}
         {/* Subtotal */}
-        {/* Subtotal */}
         {hasMedisave ? (
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
@@ -1014,7 +929,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
 
   // ── Life layout (Core Protection) ───────────────────────────────────────────
   if (isLife) {
-    // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
+    // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
     const cols = '1.2fr 90px 90px 90px 90px 100px 90px 160px 40px'
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
@@ -1124,7 +1039,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   }
 
   // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
-  // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
+  // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
   const cols = '1.2fr 100px 100px 90px 160px 40px'
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
@@ -1191,7 +1106,6 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
     </div>
   )
 }
-
 // ─── Policy Modal (cascading dropdowns) ──────────────────────────────────────
 function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,companies,products,onSave,onClose}:{
   policy:Policy; personLabel:string
@@ -1506,8 +1420,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               )}
             </div>
           )}
-
-          {/* ── Life / WL benefit fields ── */}
+                    {/* ── Life / WL benefit fields ── */}
           {isLife && (
             <>
               {form.isUSD && (
@@ -1784,8 +1697,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     </div>
   )
 }
-
-
 // ─── Helpers (used by PersonPortfolioCharts) ─────────────────────────────────
 function _toSGD(val: number, p: Policy) {
   return p.isUSD ? val * (p.fxRate || 1.35) : val
@@ -1844,7 +1755,6 @@ function _fmtK(n: number) {
   return `$${Math.round(n).toLocaleString()}`
 }
 
-// ─── PersonPortfolioCharts ────────────────────────────────────────────────────
 // ─── PersonPortfolioCharts (Apple-Style Premium Design) ──────────────────────
 function PersonPortfolioCharts({ personName, personAge, policies }: {
   personName: string; personAge: number; policies: Policy[]
