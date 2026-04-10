@@ -1792,7 +1792,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
-  const W=560, H=180, PL=50, PR=12, PT=20, PB=24
+  const W=560, H=170, PL=50, PR=12, PT=20, PB=18
   const iW=W-PL-PR, iH=H-PT-PB
   const maxV = Math.max(...timeline.map(r=>Math.max(r.d,r.t,r.ci)),1)
   const bSlot = iW/timeline.length
@@ -1819,7 +1819,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Total Annual Premium', value:totPrem, accent:'#A8834A', highlight: true},
+          {label:'Total Annual Premium', value:Math.round(totPrem), accent:'#A8834A', highlight: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
             background: COL_CARD_BG,
@@ -1869,7 +1869,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           background: COL_CARD_BG,
           border: `1px solid ${COL_BORDER}`,
           borderRadius: 16,
-          padding: '22px 24px 20px 24px',
+          padding: '22px 24px 12px 24px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
         }}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: 16}}>
@@ -1906,7 +1906,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
             </div>
           </div>
           
-          <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible', display:'block'}}>
+          <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible', display:'block', marginBottom: '-8px'}}>
             {/* Grid lines - softer */}
             {ticks.map(f=>{
               const y=PT+iH-f*iH
@@ -1939,7 +1939,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           <div style={{
             fontSize: 10,
             color: '#AAA',
-            marginTop: 6,
+            marginTop: 2,
             fontStyle: 'italic',
             letterSpacing: '0.02em'
           }}>
