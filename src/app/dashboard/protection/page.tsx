@@ -582,13 +582,14 @@ export default function ProtectionPage() {
               <div key={key}>
                 {/* Luxury charts — only for named persons (not dependents) */}
                 {!isDependent && policies.length > 0 && (
-                  <div className="charts-wrapper" style={{pageBreakAfter: 'always'}}>
+                  <>
                     <PersonPortfolioCharts
                       personName={label}
                       personAge={personAge}
                       policies={policies}
                     />
-                  </div>
+                    <div style={{pageBreakAfter: 'always'}} />
+                  </>
                 )}
 
                 {/* Category-separated policy sections */}
@@ -627,7 +628,8 @@ export default function ProtectionPage() {
                       const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
                       
                       return (
-                        <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'core-protection-break' : ''}`}>
+                        <div key={cat.code} style={{marginBottom:28}}>
+                          {cat.code === 'life' && <div style={{pageBreakBefore: 'always'}} />}
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -748,7 +750,7 @@ export default function ProtectionPage() {
         />
       )}
 
-      <style>{`
+            <style>{`
         @media print {
           .no-print { display: none !important; }
           aside, nav { display: none !important; }
@@ -756,45 +758,12 @@ export default function ProtectionPage() {
           
           @page {
             size: A4 landscape;
-            margin: 1.5cm;
+            margin: 1cm;
           }
           
-          /* Ensure everything is visible */
           * {
-            visibility: visible !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-          
-          /* Hide only interactive elements */
-          button:not(.keep-for-print), 
-          .print-hide {
-            display: none !important;
-          }
-          
-          /* Force background colors and text colors to print */
-          div, span, p, h1, h2, h3, h4, h5, h6, table, tr, td, th {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          
-          /* Page break after charts */
-          .charts-wrapper {
-            page-break-after: always !important;
-            break-after: page !important;
-          }
-          
-          /* Page break before Core Protection */
-          .core-protection-break {
-            page-break-before: always !important;
-            break-before: page !important;
-          }
-          
-          /* Keep category blocks together */
-          .print-category-block {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
           }
         }
       `}</style>
