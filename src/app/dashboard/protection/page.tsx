@@ -1672,14 +1672,23 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           </div>
 
           {/* ── Status + Remarks ── */}
-          <div style={g2}>
+          <div style={{display:'flex', flexDirection:'column', gap: 14}}>
             <div>
               <label style={lbl}>Status</label>
               <select value={form.status} onChange={e=>f('status',e.target.value)} style={s}>
                 {STATUS_OPTS.map(st=><option key={st}>{st}</option>)}
               </select>
             </div>
-            <div><label style={lbl}>Remarks</label><input type="text" value={form.remarks} onChange={e=>f('remarks',e.target.value)} placeholder="e.g. In-Force, value as of 05/03/2026" style={inp}/></div>
+            <div>
+              <label style={lbl}>Remarks</label>
+              <textarea 
+                value={form.remarks} 
+                onChange={e=>f('remarks',e.target.value)} 
+                placeholder="e.g. In-Force, value as of 05/03/2026. Additional notes about the policy..."
+                rows={4}
+                style={{...inp, resize:'vertical', minHeight:'80px', fontFamily:'inherit'}}
+              />
+            </div>
           </div>
         </div>
 
