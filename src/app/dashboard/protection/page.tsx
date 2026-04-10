@@ -624,7 +624,7 @@ export default function ProtectionPage() {
                       const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
                       return (
                         <div key={cat.code} style={{marginBottom:28}}>
-                          {/* Category header */}
+                                                    {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
                               <div style={{width:2,height:14,background:cat.accent,flexShrink:0}}/>
@@ -692,8 +692,6 @@ export default function ProtectionPage() {
                         </div>
                       )
                     })}
-                  </div>
-                )}
 
                 {/* ── Inactive Policies Toggle ── */}
                 {inactiveTabPols.length > 0 && (
