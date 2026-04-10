@@ -112,6 +112,19 @@ function formatDate(dateStr: string): string {
   return dateStr
 }
 
+// Calculate benefit with multiplier
+function getMultipliedBenefit(p: Policy, benefitType: 'death' | 'tpd' | 'advCI' | 'earlyCI'): number {
+  const mult = p.multiplier || 1
+  let base = 0
+  switch (benefitType) {
+    case 'death': base = p.baseDeath || 0; break
+    case 'tpd': base = p.baseTPD || 0; break
+    case 'advCI': base = p.baseAdvCI || 0; break
+    case 'earlyCI': base = p.baseEarlyCI || 0; break
+  }
+  return base * mult
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProtectionPage() {
   const supabase = createClient()
@@ -815,24 +828,19 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   // Detect category — all policies in this table share the same category
   const cat = policies[0]?.categoryCode || 'life'
   const isEssential = ['medical','ltc','general'].includes(cat)
-
-  // Function to style statuses appropriately
-  const getStatusStyle = (status: string) => {
-    if (['In-Force', 'Paid-up'].includes(status)) return { bg: '#E8F5E9', col: '#2D6A4F' };
-    if (status === 'Premium Holiday') return { bg: '#FEF3C7', col: '#854F0B' };
-    return { bg: '#FEE2E2', col: '#9B1C1C' }; // Default for Terminated/Surrendered/Matured etc
-  };
+  const isLife = cat === 'life'
+  const isEndowment = cat === 'endowment'
 
   // ── Essential layout (Medical / LTC / General) ──────────────────────────────
   if (isEssential) {
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
-    // Grid: INSURER·PLAN | DATES | BRIEF DESCRIPTION | PREM MEDISAVE (if any) | PREM CASH | FREQ | actions
+    // Grid: INSURER·PLAN | DATES | BRIEF DESCRIPTION | PREM MEDISAVE (if any) | PREM CASH | FREQ+MODE | actions
     const cols = hasMedisave
-      ? '1fr 100px 1.5fr 100px 100px 80px 40px'
-      : '1fr 100px 1.5fr 120px 80px 40px'
+      ? '1fr 130px 1.5fr 100px 100px 90px 40px'
+      : '1fr 130px 1.5fr 120px 90px 40px'
     const headers = hasMedisave
-      ? ['INSURER · PLAN · PH / LA', 'INCEPTION · TERM', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREM (CASH)', 'FREQ', '']
-      : ['INSURER · PLAN · PH / LA', 'INCEPTION · TERM', 'BRIEF DESCRIPTION', 'PREM (CASH)', 'FREQ', '']
+      ? ['INSURER · PLAN · PH / LA', 'DATES', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREM (CASH)', 'FREQ / MODE', '']
+      : ['INSURER · PLAN · PH / LA', 'DATES', 'BRIEF DESCRIPTION', 'PREM (CASH)', 'FREQ / MODE', '']
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
@@ -841,8 +849,6 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           ))}
         </div>
         {policies.map((p,i)=>{
-          const stStyle = getStatusStyle(p.status);
-          const dateInfo = `${formatDate(p.inceptionDate)} · ${formatDate(p.premiumMaturity) || '—'}`;
           return (
           <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             {/* Insurer · Plan · PH / Policy No */}
@@ -856,15 +862,11 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
             </div>
-            {/* Dates - Inception & Term */}
+            {/* Dates */}
             <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:10}}>{formatDate(p.inceptionDate)}</div>
-              <div style={{fontSize:9,color:'var(--ink3)',marginTop:2}}>
-                <span style={{color:'var(--ink2)'}}>Prem:</span> {formatDate(p.premiumMaturity)}
-              </div>
-              <div style={{fontSize:9,color:'var(--ink3)'}}>
-                <span style={{color:'var(--ink2)'}}>Cov:</span> {formatDate(p.coverageMaturity)}
-              </div>
+              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
             </div>
             {/* Brief description */}
             <div style={{fontSize:11,color:'var(--ink3)',lineHeight:1.4,paddingRight:8}}>
@@ -880,10 +882,10 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:(p.premiumCash||0)>0?'var(--ink)':'var(--ink3)'}}>
               {(p.premiumCash||0)>0 ? fmt(p.premiumCash) : '—'}
             </div>
-            {/* Frequency */}
+            {/* Frequency + Mode */}
             <div style={{fontSize:10,color:'var(--ink3)'}}>
-              <span style={{display:'block'}}>{p.frequency||'—'}</span>
-              <span style={{fontSize:9,padding:'1px 5px',borderRadius:2,background:stStyle.bg,color:stStyle.col,marginTop:4,display:'inline-block'}}>{p.status}</span>
+              <div>{p.frequency||'—'}</div>
+              <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
             </div>
             {/* Actions - Compact */}
             <div style={{display:'flex',gap:3}} className="no-print">
@@ -909,22 +911,116 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
     )
   }
 
-  // ── Life / Endowment layout ─────────────────────────────────────────────────
+  // ── Life layout (Core Protection) ───────────────────────────────────────────
+  if (isLife) {
+    return (
+      <div style={{background:'white',border:'0.5px solid var(--line)'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 130px 90px 90px 90px 90px 100px 90px 40px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
+          {['INSURER · PLAN · PH / LA', 'DATES', 'DEATH', 'TPD', 'ADV CI', 'EARLY CI', 'PREMIUM (CASH)', 'FREQ / MODE', ''].map(h=>(
+            <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
+          ))}
+        </div>
+        {policies.map((p,i)=>{
+          const col=catColors[p.categoryCode]||'#999'
+          const deathBen = getMultipliedBenefit(p, 'death')
+          const tpdBen = getMultipliedBenefit(p, 'tpd')
+          const advCIBen = getMultipliedBenefit(p, 'advCI')
+          const earlyCIBen = getMultipliedBenefit(p, 'earlyCI')
+          return(
+            <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 130px 90px 90px 90px 90px 100px 90px 40px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
+                  {p.isUSD && <span style={{fontSize:9,fontWeight:700,color:'#A8834A',background:'#FDF6EC',border:'1px solid #c8a96e',padding:'1px 5px',borderRadius:2,letterSpacing:'0.06em'}}>USD</span>}
+                </div>
+                {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
+                  {p.policyholder&&<span>PH: {p.policyholder}</span>}
+                  {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
+                </div>}
+                {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+              </div>
+              {/* Dates */}
+              <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
+                <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
+                <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
+                <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
+              </div>
+              {/* Death Benefit */}
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:deathBen>0?'var(--ink)':'var(--ink3)'}}>
+                {p.isUSD && deathBen>0 ? (
+                  <>
+                    <div>USD {Math.round(deathBen).toLocaleString()}</div>
+                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(deathBen*(p.fxRate||1.35))}</div>
+                  </>
+                ) : fmt(deathBen)}
+              </div>
+              {/* TPD Benefit */}
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:tpdBen>0?'var(--ink)':'var(--ink3)'}}>
+                {p.isUSD && tpdBen>0 ? (
+                  <>
+                    <div>USD {Math.round(tpdBen).toLocaleString()}</div>
+                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(tpdBen*(p.fxRate||1.35))}</div>
+                  </>
+                ) : fmt(tpdBen)}
+              </div>
+              {/* Adv CI Benefit */}
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:advCIBen>0?'var(--ink)':'var(--ink3)'}}>
+                {p.isUSD && advCIBen>0 ? (
+                  <>
+                    <div>USD {Math.round(advCIBen).toLocaleString()}</div>
+                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(advCIBen*(p.fxRate||1.35))}</div>
+                  </>
+                ) : fmt(advCIBen)}
+              </div>
+              {/* Early CI Benefit */}
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:earlyCIBen>0?'var(--ink)':'var(--ink3)'}}>
+                {p.isUSD && earlyCIBen>0 ? (
+                  <>
+                    <div>USD {Math.round(earlyCIBen).toLocaleString()}</div>
+                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(earlyCIBen*(p.fxRate||1.35))}</div>
+                  </>
+                ) : fmt(earlyCIBen)}
+              </div>
+              {/* Cash premium */}
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
+                {fmt(p.premiumCash)}
+                {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
+              </div>
+              {/* Frequency + Mode */}
+              <div style={{fontSize:10,color:'var(--ink3)'}}>
+                <div>{p.frequency||'—'}</div>
+                <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
+              </div>
+              {/* Actions - Compact */}
+              <div style={{display:'flex',gap:3}} className="no-print">
+                <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
+                <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
+              </div>
+            </div>
+          )
+        })}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 130px 90px 90px 90px 90px 100px 90px 40px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+          <div style={{gridColumn:'1/8',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
+          <div/>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Endowment layout ────────────────────────────────────────────────────────
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 120px 100px 120px 80px 40px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-        {['CAT','TYPE','INSURER · PLAN · PH / LA','DATES','BENEFIT','PREMIUM (CASH)','STATUS',''].map(h=>(
+      <div style={{display:'grid',gridTemplateColumns:'1fr 130px 100px 100px 90px 40px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
+        {['INSURER · PLAN · PH / LA', 'DATES', 'BENEFIT', 'PREMIUM (CASH)', 'FREQ / MODE', ''].map(h=>(
           <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
         ))}
       </div>
       {policies.map((p,i)=>{
         const col=catColors[p.categoryCode]||'#999'
         const mainBen=p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
-        const stStyle = getStatusStyle(p.status)
         return(
-          <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 120px 100px 120px 80px 40px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
-            <span style={{fontSize:10,fontWeight:600,color:col,padding:'2px 6px',background:col+'18',borderRadius:3}}>{catShort[p.categoryCode]||p.categoryCode}</span>
-            <span style={{fontSize:11,color:'var(--ink3)'}}>{p.policyTypeCode||'—'}</span>
+          <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 130px 100px 100px 90px 40px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             <div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
@@ -936,32 +1032,30 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
             </div>
-            {/* Dates column */}
+            {/* Dates */}
             <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:10}}>{formatDate(p.inceptionDate)}</div>
-              <div style={{fontSize:9,color:'var(--ink3)',marginTop:2}}>
-                <span style={{color:'var(--ink2)'}}>Prem:</span> {formatDate(p.premiumMaturity)}
-              </div>
-              <div style={{fontSize:9,color:'var(--ink3)'}}>
-                <span style={{color:'var(--ink2)'}}>Cov:</span> {formatDate(p.coverageMaturity)}
-              </div>
+              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-              {['ltc'].includes(p.categoryCode)&&p.monthlyBenefit
-                ? `$${p.monthlyBenefit.toLocaleString()}/mo`
-                : p.isUSD && mainBen
-                  ? <>
-                      <div>USD {Math.round(mainBen).toLocaleString()}</div>
-                      <div style={{fontSize:10,color:'var(--ink3)'}}>≈ {fmt(mainBen*(p.fxRate||1.35))}</div>
-                    </>
-                  : fmt(mainBen)
+              {p.isUSD && mainBen
+                ? <>
+                    <div>USD {Math.round(mainBen).toLocaleString()}</div>
+                    <div style={{fontSize:10,color:'var(--ink3)'}}>≈ {fmt(mainBen*(p.fxRate||1.35))}</div>
+                  </>
+                : fmt(mainBen)
               }
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
               {fmt(p.premiumCash)}
               {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
             </div>
-            <span style={{fontSize:10,padding:'2px 7px',borderRadius:3,background:stStyle.bg,color:stStyle.col}}>{p.status}</span>
+            {/* Frequency + Mode */}
+            <div style={{fontSize:10,color:'var(--ink3)'}}>
+              <div>{p.frequency||'—'}</div>
+              <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
+            </div>
             {/* Actions - Compact */}
             <div style={{display:'flex',gap:3}} className="no-print">
               <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
@@ -970,10 +1064,10 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           </div>
         )
       })}
-      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 120px 100px 120px 80px 40px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-        <div style={{gridColumn:'1/6',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 130px 100px 100px 90px 40px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+        <div style={{gridColumn:'1/5',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
         <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
-        <div/><div/>
+        <div/>
       </div>
     </div>
   )
