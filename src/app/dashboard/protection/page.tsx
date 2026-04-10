@@ -1754,6 +1754,7 @@ function _fmtK(n: number) {
 }
 
 // ─── PersonPortfolioCharts ────────────────────────────────────────────────────
+// ─── PersonPortfolioCharts (Apple-Style Premium Design) ──────────────────────
 function PersonPortfolioCharts({ personName, personAge, policies }: {
   personName: string; personAge: number; policies: Policy[]
 }) {
@@ -1792,134 +1793,275 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
-  const W=560, H=180, PL=60, PR=8, PT=12, PB=24
+  const W=560, H=200, PL=50, PR=12, PT=20, PB=28
   const iW=W-PL-PR, iH=H-PT-PB
   const maxV = Math.max(...timeline.map(r=>Math.max(r.d,r.t,r.ci)),1)
   const bSlot = iW/timeline.length
-  const bW    = Math.max(1, bSlot*0.85)
-  const xOf   = (i:number) => PL + i*bSlot + bSlot/2
-  const yOf   = (v:number) => PT + iH - Math.min(1,v/maxV)*iH
+  const bW = Math.max(2, bSlot*0.7)
+  const xOf = (i:number) => PL + i*bSlot + bSlot/2
+  const yOf = (v:number) => PT + iH - Math.min(1,v/maxV)*iH
   const ticks = [0,0.25,0.5,0.75,1]
   const fmtAx = (n:number) => n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:''
 
-  // ── Bar colours ────────────────────────────────────────────────────────────
-  // D = gold, TPD = warm charcoal/slate, CI = soft teal
+  // Premium brand colors
   const COL_D  = '#C8A96E'
-  const COL_T  = '#6B7B8D'
+  const COL_T  = '#8B9DAF'
   const COL_CI = '#7FAAA0'
+  const COL_CARD_BG = '#FFFFFF'
+  const COL_BORDER = 'rgba(0,0,0,0.06)'
 
   return (
-    <div style={{marginBottom:8}}>
-      {/* ── KPI strip ─────────────────────────────────────────────────────── */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:1,marginBottom:1}}>
+    <div style={{marginBottom: 24}}>
+      
+      {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
+      <div style={{display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap: 12, marginBottom: 16}}>
         {[
-          {label:'Death Benefit',   value:totDeath, accent:COL_D},
-          {label:'TPD Benefit',     value:totTPD,   accent:COL_T},
-          {label:'Late Stage CI',   value:totAdvCI, accent:COL_CI},
-          {label:'Early Stage CI',  value:totEarCI, accent:COL_CI},
-          {label:'Total CI Benefit',value:totCI,    accent:'#A8834A', bold:true},
+          {label:'Death Benefit', value:totDeath, accent:COL_D},
+          {label:'TPD Benefit', value:totTPD, accent:COL_T},
+          {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
+          {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
+          {label:'Total CI Benefit', value:totCI, accent:'#A8834A', highlight: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
-            background:'#1C1A17', padding:'18px 20px',
-            borderLeft:`3px solid ${kpi.accent}`,
-            position:'relative', overflow:'hidden'
+            background: COL_CARD_BG,
+            border: `1px solid ${COL_BORDER}`,
+            borderRadius: 12,
+            padding: '18px 20px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+            transition: 'all 0.2s ease',
+            position: 'relative',
+            overflow: 'hidden'
           }}>
-            <div style={{fontSize:9,letterSpacing:'0.14em',textTransform:'uppercase',color:'rgba(255,255,255,0.4)',marginBottom:8}}>{kpi.label}</div>
+            {kpi.highlight && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: 3,
+                background: `linear-gradient(90deg, ${kpi.accent}, ${kpi.accent}cc)`
+              }} />
+            )}
             <div style={{
-              fontFamily:'Cormorant Garamond,Georgia,serif',
-              fontSize: kpi.bold ? 22 : 20,
-              fontWeight: kpi.bold ? 500 : 300,
-              color: kpi.bold ? '#c8a96e' : '#F0EDE8',
-              letterSpacing:'-0.01em'
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#8B8B8B',
+              marginBottom: 10,
+              fontWeight: 500
+            }}>{kpi.label}</div>
+            <div style={{
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontSize: kpi.highlight ? 26 : 24,
+              fontWeight: kpi.highlight ? 600 : 500,
+              color: kpi.highlight ? kpi.accent : '#1A1A1A',
+              letterSpacing: '-0.02em',
+              lineHeight: 1.2
             }}>{_fmtK(kpi.value)}</div>
-            {kpi.bold && <div style={{position:'absolute',top:0,right:0,width:3,height:'100%',background:'#c8a96e',opacity:0.4}}/>}
+            {kpi.highlight && (
+              <div style={{
+                fontSize: 11,
+                color: '#A8834A',
+                marginTop: 6,
+                fontWeight: 500,
+                opacity: 0.8
+              }}>
+                Combined Coverage
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      {/* ── Charts row ────────────────────────────────────────────────────── */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:1}}>
+      {/* ── Charts Row ────────────────────────────────────────────────────── */}
+      <div style={{display:'grid', gridTemplateColumns:'1fr 360px', gap: 12}}>
 
-        {/* Coverage Timeline */}
-        <div style={{background:'white',border:'0.5px solid var(--line)',padding:'20px 22px'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+        {/* Coverage Timeline Card */}
+        <div style={{
+          background: COL_CARD_BG,
+          border: `1px solid ${COL_BORDER}`,
+          borderRadius: 16,
+          padding: '22px 24px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+        }}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: 20}}>
             <div>
-              <div style={{fontSize:10,letterSpacing:'0.14em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:4}}>Coverage Timeline</div>
-              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,color:'var(--ink)',fontWeight:300}}>{personName} · Age {personAge} — 100</div>
+              <div style={{
+                fontSize: 11,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: '#8B8B8B',
+                marginBottom: 6,
+                fontWeight: 500
+              }}>Coverage Timeline</div>
+              <div style={{
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                fontSize: 18,
+                color: '#1A1A1A',
+                fontWeight: 500,
+                letterSpacing: '-0.01em'
+              }}>{personName} · Age {personAge} — 100</div>
             </div>
-            <div style={{display:'flex',gap:14,alignItems:'center'}}>
-              {[{c:COL_D,l:'Death'},{c:COL_T,l:'TPD'},{c:COL_CI,l:'CI'}].map(lg=>(
-                <div key={lg.l} style={{display:'flex',alignItems:'center',gap:5}}>
-                  <div style={{width:10,height:10,background:lg.c,borderRadius:1,flexShrink:0}}/>
-                  <span style={{fontSize:9,color:'var(--ink3)',letterSpacing:'0.06em'}}>{lg.l}</span>
+            <div style={{display:'flex', gap: 20, alignItems:'center'}}>
+              {[{c:COL_D, l:'Death'},{c:COL_T, l:'TPD'},{c:COL_CI, l:'CI'}].map(lg=>(
+                <div key={lg.l} style={{display:'flex', alignItems:'center', gap: 6}}>
+                  <div style={{
+                    width: 12,
+                    height: 12,
+                    background: lg.c,
+                    borderRadius: 3,
+                    flexShrink: 0
+                  }} />
+                  <span style={{fontSize: 11, color: '#666', fontWeight: 500}}>{lg.l}</span>
                 </div>
               ))}
             </div>
           </div>
+          
           <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible'}}>
-            {/* Grid lines */}
+            {/* Grid lines - softer */}
             {ticks.map(f=>{
               const y=PT+iH-f*iH
               return <g key={f}>
-                <line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="#F0EDE8" strokeWidth=".5"/>
-                <text x={PL-6} y={y+3.5} fontSize="7.5" fill="#AAA" textAnchor="end">{fmtAx(maxV*f)}</text>
+                <line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="#F0F0F0" strokeWidth="1" strokeDasharray="3,3"/>
+                <text x={PL-8} y={y+3.5} fontSize="9" fill="#AAA" textAnchor="end" fontWeight={400}>{fmtAx(maxV*f)}</text>
               </g>
             })}
-            {/* Bars — 3 per age, side-by-side, tight */}
+            
+            {/* Bars - with subtle rounding */}
             {timeline.map((row,i)=>{
               const cx = xOf(i)
-              const w3 = bW/3
+              const w3 = Math.max(2, bW/3 - 1)
               return <g key={row.age}>
-                <rect x={cx-bW/2}      y={yOf(row.d)}  width={w3} height={Math.max(0,iH-(yOf(row.d)-PT))}  fill={COL_D}  opacity=".88"/>
-                <rect x={cx-bW/2+w3}   y={yOf(row.t)}  width={w3} height={Math.max(0,iH-(yOf(row.t)-PT))}  fill={COL_T}  opacity=".80"/>
-                <rect x={cx-bW/2+w3*2} y={yOf(row.ci)} width={w3} height={Math.max(0,iH-(yOf(row.ci)-PT))} fill={COL_CI} opacity=".80"/>
+                <rect x={cx-bW/2} y={yOf(row.d)} width={w3} height={Math.max(0,iH-(yOf(row.d)-PT))} fill={COL_D} rx="2" ry="2" opacity="0.85"/>
+                <rect x={cx-bW/2+w3+1} y={yOf(row.t)} width={w3} height={Math.max(0,iH-(yOf(row.t)-PT))} fill={COL_T} rx="2" ry="2" opacity="0.85"/>
+                <rect x={cx-bW/2+w3*2+2} y={yOf(row.ci)} width={w3} height={Math.max(0,iH-(yOf(row.ci)-PT))} fill={COL_CI} rx="2" ry="2" opacity="0.85"/>
               </g>
             })}
+            
             {/* Baseline */}
-            <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="#DDD" strokeWidth=".5"/>
-            {/* Age labels — every 5 years */}
+            <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="#E5E5E5" strokeWidth="1"/>
+            
+            {/* Age labels - cleaner */}
             {timeline.filter(r=>(r.age%5===0||r.age===personAge)).map((r,i)=>(
-              <text key={r.age} x={xOf(timeline.indexOf(r))} y={PT+iH+11} fontSize="7" fill="#AAA" textAnchor="middle">{r.age}</text>
+              <text key={r.age} x={xOf(timeline.indexOf(r))} y={PT+iH+16} fontSize="9" fill="#AAA" textAnchor="middle" fontWeight={400}>{r.age}</text>
             ))}
           </svg>
-          <div style={{fontSize:8,color:'#C8C4BC',marginTop:6,fontStyle:'italic'}}>
+          
+          <div style={{
+            fontSize: 10,
+            color: '#AAA',
+            marginTop: 8,
+            fontStyle: 'italic',
+            letterSpacing: '0.02em'
+          }}>
             Excludes Accidental Death/TPD benefits and Endowment/Annuity sum assured
           </div>
         </div>
 
-        {/* Premium Schedule */}
-        <div style={{background:'white',border:'0.5px solid var(--line)',padding:'20px 22px'}}>
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:10,letterSpacing:'0.14em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:4}}>Premium Schedule</div>
-            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,color:'var(--ink)',fontWeight:300}}>
-              {_fmtK(totPrem)}<span style={{fontSize:12,color:'var(--ink3)',marginLeft:6,fontFamily:'inherit',fontWeight:300}}>/yr</span>
+        {/* Premium Schedule Card */}
+        <div style={{
+          background: COL_CARD_BG,
+          border: `1px solid ${COL_BORDER}`,
+          borderRadius: 16,
+          padding: '22px 24px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+        }}>
+          <div style={{marginBottom: 20}}>
+            <div style={{
+              fontSize: 11,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#8B8B8B',
+              marginBottom: 6,
+              fontWeight: 500
+            }}>Premium Schedule</div>
+            <div style={{
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontSize: 28,
+              color: '#1A1A1A',
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.2
+            }}>
+              {_fmtK(totPrem)}
+              <span style={{
+                fontSize: 14,
+                color: '#999',
+                marginLeft: 6,
+                fontWeight: 400
+              }}>/yr</span>
             </div>
           </div>
-          <div style={{display:'flex',flexDirection:'column',gap:4}}>
+          
+          <div style={{display:'flex', flexDirection:'column', gap: 6, marginTop: 8}}>
             {MONTHS.map((mon,mi)=>{
               const amt = monthly[mi]
-              const pct = (amt/maxMonthly)*100
+              const pct = maxMonthly > 0 ? (amt/maxMonthly)*100 : 0
               return (
-                <div key={mon} style={{display:'grid',gridTemplateColumns:'24px 1fr 72px',alignItems:'center',gap:6}}>
-                  <div style={{fontSize:8.5,color:'var(--ink3)',letterSpacing:'0.04em'}}>{mon}</div>
-                  <div style={{background:'#F5F3EE',height:10,borderRadius:1,overflow:'hidden'}}>
+                <div key={mon} style={{
+                  display:'grid',
+                  gridTemplateColumns:'32px 1fr 70px',
+                  alignItems:'center',
+                  gap: 10
+                }}>
+                  <div style={{
+                    fontSize: 11,
+                    color: amt > 0 ? '#444' : '#BBB',
+                    fontWeight: amt > 0 ? 500 : 400,
+                    letterSpacing: '0.02em'
+                  }}>{mon}</div>
+                  <div style={{
+                    background: '#F5F5F5',
+                    height: 8,
+                    borderRadius: 20,
+                    overflow: 'hidden'
+                  }}>
                     <div style={{
-                      height:'100%', borderRadius:1,
-                      width:`${pct}%`,
-                      background: pct>0 ? `linear-gradient(90deg,#c8a96e,#A8834A)` : 'transparent',
-                      transition:'width 0.3s ease'
-                    }}/>
+                      height: '100%',
+                      borderRadius: 20,
+                      width: `${pct}%`,
+                      background: amt > 0 
+                        ? `linear-gradient(90deg, ${COL_D}, ${COL_D}dd)`
+                        : 'transparent',
+                      transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }} />
                   </div>
-                  <div style={{fontSize:8.5,fontFamily:'DM Mono,monospace',color:amt>0?'var(--ink)':'var(--ink3)',textAlign:'right'}}>
-                    {amt>0?`$${amt.toFixed(2)}`:'—'}
+                  <div style={{
+                    fontSize: 12,
+                    fontFamily: 'DM Mono, monospace',
+                    color: amt > 0 ? '#1A1A1A' : '#CCC',
+                    textAlign: 'right',
+                    fontWeight: amt > 0 ? 500 : 400
+                  }}>
+                    {amt > 0 ? `$${amt.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}` : '—'}
                   </div>
                 </div>
               )
             })}
           </div>
-          <div style={{borderTop:'0.5px solid var(--line)',marginTop:10,paddingTop:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontSize:8,color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Annual Total</span>
-            <span style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--ink)',fontWeight:600}}>{_fmtK(totPrem)}</span>
+          
+          <div style={{
+            borderTop: '1px solid #F0F0F0',
+            marginTop: 18,
+            paddingTop: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span style={{
+              fontSize: 11,
+              color: '#999',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              fontWeight: 500
+            }}>Annual Total</span>
+            <span style={{
+              fontFamily: 'DM Mono, monospace',
+              fontSize: 15,
+              color: '#1A1A1A',
+              fontWeight: 600
+            }}>{_fmtK(totPrem)}</span>
           </div>
         </div>
       </div>
