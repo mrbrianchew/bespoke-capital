@@ -749,54 +749,34 @@ export default function ProtectionPage() {
         />
       )}
 
-           <style>{`
+                <style>{`
         @media print {
           .no-print { display: none !important; }
           aside, nav { display: none !important; }
           body { background: white !important; }
           
-          /* Landscape orientation */
           @page {
             size: A4 landscape;
-            margin: 1.5cm;
+            margin: 1cm;
           }
           
-          /* Page breaks for printing */
           .print-page-break {
-            page-break-before: always;
+            page-break-before: always !important;
+            display: block !important;
           }
           
-          /* Ensure charts stay on first page */
           .print-charts-section {
-            page-break-inside: avoid;
-            page-break-after: always;
+            page-break-after: always !important;
+            display: block !important;
           }
           
-          /* Medical, LTC, General on second page */
-          .print-essential-section {
-            page-break-inside: avoid;
-          }
-          
-          /* Core Protection and Wealth Accumulation on third page */
-          .print-life-endowment-section {
-            page-break-before: always;
-            page-break-inside: avoid;
-          }
-          
-          /* Category headers stay with their tables */
-          .print-category-block {
-            page-break-inside: avoid;
-          }
-          
-          /* Hide interactive elements */
           button, .print-hide {
             display: none !important;
           }
           
-          /* Ensure text is black for printing */
           * {
-            color-adjust: exact;
             print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
           }
         }
       `}</style>
