@@ -101,6 +101,17 @@ function gapSt(need: number, have: number) {
   return                   { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
 }
 
+// Helper to format dates nicely
+function formatDate(dateStr: string): string {
+  if (!dateStr) return '—'
+  if (dateStr === 'Lifetime' || dateStr === 'Renewable' || dateStr.startsWith('Age ')) return dateStr
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  return dateStr
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProtectionPage() {
   const supabase = createClient()
@@ -815,13 +826,13 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   // ── Essential layout (Medical / LTC / General) ──────────────────────────────
   if (isEssential) {
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
-    // Grid: INSURER·PLAN | BRIEF DESCRIPTION | PREM MEDISAVE (if any) | PREM CASH | FREQ | actions
+    // Grid: INSURER·PLAN | DATES | BRIEF DESCRIPTION | PREM MEDISAVE (if any) | PREM CASH | FREQ | actions
     const cols = hasMedisave
-      ? '1fr 1.8fr 110px 110px 80px 55px'
-      : '1fr 1.8fr 130px 80px 55px'
+      ? '1fr 100px 1.5fr 100px 100px 80px 40px'
+      : '1fr 100px 1.5fr 120px 80px 40px'
     const headers = hasMedisave
-      ? ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREM (CASH)', 'FREQ', '']
-      : ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (CASH)', 'FREQ', '']
+      ? ['INSURER · PLAN · PH / LA', 'INCEPTION · TERM', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREM (CASH)', 'FREQ', '']
+      : ['INSURER · PLAN · PH / LA', 'INCEPTION · TERM', 'BRIEF DESCRIPTION', 'PREM (CASH)', 'FREQ', '']
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
@@ -831,6 +842,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
         </div>
         {policies.map((p,i)=>{
           const stStyle = getStatusStyle(p.status);
+          const dateInfo = `${formatDate(p.inceptionDate)} · ${formatDate(p.premiumMaturity) || '—'}`;
           return (
           <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             {/* Insurer · Plan · PH / Policy No */}
@@ -843,6 +855,16 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                 {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+            </div>
+            {/* Dates - Inception & Term */}
+            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10}}>{formatDate(p.inceptionDate)}</div>
+              <div style={{fontSize:9,color:'var(--ink3)',marginTop:2}}>
+                <span style={{color:'var(--ink2)'}}>Prem:</span> {formatDate(p.premiumMaturity)}
+              </div>
+              <div style={{fontSize:9,color:'var(--ink3)'}}>
+                <span style={{color:'var(--ink2)'}}>Cov:</span> {formatDate(p.coverageMaturity)}
+              </div>
             </div>
             {/* Brief description */}
             <div style={{fontSize:11,color:'var(--ink3)',lineHeight:1.4,paddingRight:8}}>
@@ -863,16 +885,16 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               <span style={{display:'block'}}>{p.frequency||'—'}</span>
               <span style={{fontSize:9,padding:'1px 5px',borderRadius:2,background:stStyle.bg,color:stStyle.col,marginTop:4,display:'inline-block'}}>{p.status}</span>
             </div>
-            {/* Actions */}
-            <div style={{display:'flex',gap:5}} className="no-print">
-              <button onClick={()=>onEdit(p)} style={{fontSize:10,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer'}}>Edit</button>
-              <button onClick={()=>onDelete(p.id)} style={{fontSize:10,color:'#C0392B',background:'none',border:'none',cursor:'pointer'}}>✕</button>
+            {/* Actions - Compact */}
+            <div style={{display:'flex',gap:3}} className="no-print">
+              <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
+              <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
             </div>
           </div>
         )})}
         {/* Subtotal */}
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-          <div style={{gridColumn: hasMedisave ? '1/3' : '1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+          <div style={{gridColumn: hasMedisave ? '1/4' : '1/4',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
           {hasMedisave && (
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
               {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
@@ -887,11 +909,11 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
     )
   }
 
-  // ── Life / Endowment layout (original) ──────────────────────────────────────
+  // ── Life / Endowment layout ─────────────────────────────────────────────────
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-        {['CAT','TYPE','INSURER · PLAN · PH / LA','BENEFIT','PREMIUM (CASH)','STATUS',''].map(h=>(
+      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 120px 100px 120px 80px 40px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
+        {['CAT','TYPE','INSURER · PLAN · PH / LA','DATES','BENEFIT','PREMIUM (CASH)','STATUS',''].map(h=>(
           <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
         ))}
       </div>
@@ -900,7 +922,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
         const mainBen=p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
         const stStyle = getStatusStyle(p.status)
         return(
-          <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+          <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 120px 100px 120px 80px 40px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             <span style={{fontSize:10,fontWeight:600,color:col,padding:'2px 6px',background:col+'18',borderRadius:3}}>{catShort[p.categoryCode]||p.categoryCode}</span>
             <span style={{fontSize:11,color:'var(--ink3)'}}>{p.policyTypeCode||'—'}</span>
             <div>
@@ -913,6 +935,16 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                 {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+            </div>
+            {/* Dates column */}
+            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10}}>{formatDate(p.inceptionDate)}</div>
+              <div style={{fontSize:9,color:'var(--ink3)',marginTop:2}}>
+                <span style={{color:'var(--ink2)'}}>Prem:</span> {formatDate(p.premiumMaturity)}
+              </div>
+              <div style={{fontSize:9,color:'var(--ink3)'}}>
+                <span style={{color:'var(--ink2)'}}>Cov:</span> {formatDate(p.coverageMaturity)}
+              </div>
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
               {['ltc'].includes(p.categoryCode)&&p.monthlyBenefit
@@ -927,18 +959,19 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
               {fmt(p.premiumCash)}
-              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} Medisave</div>}
+              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
             </div>
             <span style={{fontSize:10,padding:'2px 7px',borderRadius:3,background:stStyle.bg,color:stStyle.col}}>{p.status}</span>
-            <div style={{display:'flex',gap:5}} className="no-print">
-              <button onClick={()=>onEdit(p)} style={{fontSize:10,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer'}}>Edit</button>
-              <button onClick={()=>onDelete(p.id)} style={{fontSize:10,color:'#C0392B',background:'none',border:'none',cursor:'pointer'}}>✕</button>
+            {/* Actions - Compact */}
+            <div style={{display:'flex',gap:3}} className="no-print">
+              <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
+              <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
             </div>
           </div>
         )
       })}
-      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-        <div style={{gridColumn:'1/5',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+      <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 120px 100px 120px 80px 40px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+        <div style={{gridColumn:'1/6',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
         <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
         <div/><div/>
       </div>
