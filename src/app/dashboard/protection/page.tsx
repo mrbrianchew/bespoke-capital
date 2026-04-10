@@ -682,16 +682,58 @@ export default function ProtectionPage() {
                                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label} (Inactive)</span>
                                 </div>
                               </div>
-                              <PolicyTable
-                                policies={catPols}
-                                catShort={CAT_SHORT}
-                                catColors={CAT_COLORS}
-                                onEdit={openEdit}
-                                onDelete={delPolicy}
-                              />
+                                                        <PolicyTable
+                            policies={catPols}
+                            catShort={CAT_SHORT}
+                            catColors={CAT_COLORS}
+                            onEdit={openEdit}
+                            onDelete={delPolicy}
+                          />
+                          
+                          {/* Category Remarks Box */}
+                          {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
+                            <div style={{
+                              marginTop: 12,
+                              padding: '14px 18px',
+                              background: '#F8F7F4',
+                              border: '1px solid var(--line)',
+                              borderRadius: 6
+                            }}>
+                              <div style={{
+                                fontSize: 9,
+                                letterSpacing: '0.1em',
+                                textTransform: 'uppercase',
+                                color: 'var(--ink3)',
+                                marginBottom: 10
+                              }}>Policy Remarks</div>
+                              {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map(p => (
+                                <div key={p.id} style={{
+                                  marginBottom: 10,
+                                  paddingBottom: 10,
+                                  borderBottom: '1px solid var(--line)'
+                                }}>
+                                  <div style={{
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: 'var(--ink)',
+                                    marginBottom: 4
+                                  }}>
+                                    {p.companyName} · {p.productName}
+                                  </div>
+                                  <div style={{
+                                    fontSize: 12,
+                                    color: 'var(--ink2)',
+                                    lineHeight: 1.5
+                                  }}>
+                                    {p.remarks}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          )
-                        })}
+                          )}
+                        </div>
+                      )
+                    })}
                       </div>
                     )}
                   </div>
