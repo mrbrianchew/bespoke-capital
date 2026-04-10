@@ -834,13 +834,13 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   // ── Essential layout (Medical / LTC / General) ──────────────────────────────
   if (isEssential) {
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
-    // Grid: INSURER·PLAN | DATES | BRIEF DESCRIPTION | PREM MEDISAVE (if any) | PREM CASH | FREQ+MODE | actions
+    // Grid: INSURER (1.2fr) | BRIEF DESC (1.5fr) | MEDISAVE (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
     const cols = hasMedisave
-      ? '1fr 130px 1.5fr 100px 100px 90px 40px'
-      : '1fr 130px 1.5fr 120px 90px 40px'
+      ? '1.2fr 1.5fr 100px 100px 90px 130px 40px'
+      : '1.2fr 1.5fr 100px 90px 130px 40px'
     const headers = hasMedisave
-      ? ['INSURER · PLAN · PH / LA', 'DATES', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREM (CASH)', 'FREQ / MODE', '']
-      : ['INSURER · PLAN · PH / LA', 'DATES', 'BRIEF DESCRIPTION', 'PREM (CASH)', 'FREQ / MODE', '']
+      ? ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
+      : ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
@@ -862,12 +862,6 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
             </div>
-            {/* Dates */}
-            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
-            </div>
             {/* Brief description */}
             <div style={{fontSize:11,color:'var(--ink3)',lineHeight:1.4,paddingRight:8}}>
               {p.briefDescription||'—'}
@@ -878,7 +872,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                 {(p.premiumMedisave||0)>0 ? fmt(p.premiumMedisave) : '—'}
               </div>
             )}
-            {/* Cash premium */}
+            {/* Premium (Cash) */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:(p.premiumCash||0)>0?'var(--ink)':'var(--ink3)'}}>
               {(p.premiumCash||0)>0 ? fmt(p.premiumCash) : '—'}
             </div>
@@ -886,6 +880,12 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             <div style={{fontSize:10,color:'var(--ink3)'}}>
               <div>{p.frequency||'—'}</div>
               <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
+            </div>
+            {/* Dates */}
+            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
+              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
             </div>
             {/* Actions - Compact */}
             <div style={{display:'flex',gap:3}} className="no-print">
@@ -896,7 +896,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
         )})}
         {/* Subtotal */}
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-          <div style={{gridColumn: hasMedisave ? '1/4' : '1/4',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+          <div style={{gridColumn: hasMedisave ? '1/4' : '1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
           {hasMedisave && (
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
               {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
@@ -905,7 +905,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
             {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
           </div>
-          <div/><div/>
+          <div/><div/><div/>
         </div>
       </div>
     )
@@ -913,21 +913,23 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
 
   // ── Life layout (Core Protection) ───────────────────────────────────────────
   if (isLife) {
+    // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
+    // The benefit block (DEATH through EARLY CI) uses fixed widths to stay side-by-side
+    const cols = '1.2fr 90px 90px 90px 90px 100px 90px 130px 40px'
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 130px 90px 90px 90px 90px 100px 90px 40px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-          {['INSURER · PLAN · PH / LA', 'DATES', 'DEATH', 'TPD', 'ADV CI', 'EARLY CI', 'PREMIUM (CASH)', 'FREQ / MODE', ''].map(h=>(
+        <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
+          {['INSURER · PLAN · PH / LA', 'DEATH', 'TPD', 'ADV CI', 'EARLY CI', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map(h=>(
             <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
           ))}
         </div>
         {policies.map((p,i)=>{
-          const col=catColors[p.categoryCode]||'#999'
           const deathBen = getMultipliedBenefit(p, 'death')
           const tpdBen = getMultipliedBenefit(p, 'tpd')
           const advCIBen = getMultipliedBenefit(p, 'advCI')
           const earlyCIBen = getMultipliedBenefit(p, 'earlyCI')
           return(
-            <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 130px 90px 90px 90px 90px 100px 90px 40px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+            <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
@@ -938,12 +940,6 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                   {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
                 </div>}
                 {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
-              </div>
-              {/* Dates */}
-              <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-                <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
-                <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
-                <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
               </div>
               {/* Death Benefit */}
               <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:deathBen>0?'var(--ink)':'var(--ink3)'}}>
@@ -981,7 +977,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                   </>
                 ) : fmt(earlyCIBen)}
               </div>
-              {/* Cash premium */}
+              {/* Premium */}
               <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
                 {fmt(p.premiumCash)}
                 {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
@@ -991,6 +987,12 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                 <div>{p.frequency||'—'}</div>
                 <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
               </div>
+              {/* Dates */}
+              <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
+                <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
+                <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
+                <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
+              </div>
               {/* Actions - Compact */}
               <div style={{display:'flex',gap:3}} className="no-print">
                 <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
@@ -999,28 +1001,30 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             </div>
           )
         })}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 130px 90px 90px 90px 90px 100px 90px 40px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-          <div style={{gridColumn:'1/8',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+        {/* Subtotal - premium value aligns under PREMIUM column */}
+        <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+          <div style={{gridColumn:'1/6',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
           <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
-          <div/>
+          <div/><div/><div/>
         </div>
       </div>
     )
   }
 
-  // ── Endowment layout ────────────────────────────────────────────────────────
+  // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
+  // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
+  const cols = '1.2fr 100px 100px 90px 130px 40px'
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 130px 100px 100px 90px 40px',padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-        {['INSURER · PLAN · PH / LA', 'DATES', 'BENEFIT', 'PREMIUM (CASH)', 'FREQ / MODE', ''].map(h=>(
+      <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
+        {['INSURER · PLAN · PH / LA', 'DEATH BENEFIT', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map(h=>(
           <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
         ))}
       </div>
       {policies.map((p,i)=>{
-        const col=catColors[p.categoryCode]||'#999'
-        const mainBen=p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
+        const mainBen = p.baseDeath || p.baseAdvCI || p.monthlyBenefit || p.sumAssured
         return(
-          <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 130px 100px 100px 90px 40px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+          <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             <div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
@@ -1032,12 +1036,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
             </div>
-            {/* Dates */}
-            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
-            </div>
+            {/* Death Benefit */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
               {p.isUSD && mainBen
                 ? <>
@@ -1047,6 +1046,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                 : fmt(mainBen)
               }
             </div>
+            {/* Premium */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
               {fmt(p.premiumCash)}
               {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
@@ -1056,6 +1056,12 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               <div>{p.frequency||'—'}</div>
               <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
             </div>
+            {/* Dates */}
+            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
+              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
+              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
+            </div>
             {/* Actions - Compact */}
             <div style={{display:'flex',gap:3}} className="no-print">
               <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
@@ -1064,10 +1070,11 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           </div>
         )
       })}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 130px 100px 100px 90px 40px',padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-        <div style={{gridColumn:'1/5',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+      {/* Subtotal - premium value aligns under PREMIUM column */}
+      <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+        <div style={{gridColumn:'1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
         <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
-        <div/>
+        <div/><div/><div/>
       </div>
     </div>
   )
