@@ -623,12 +623,72 @@ export default function ProtectionPage() {
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
                       const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
-                      // Determine print page grouping
                       const isEssential = ['medical','ltc','general'].includes(cat.code)
                       const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
                       
+                      // For Core Protection, add a page break div before it
+                      if (cat.code === 'life') {
+                        return (
+                          <div key={cat.code}>
+                            <div style={{pageBreakBefore: 'always', breakBefore: 'page'}} />
+                            <div style={{marginBottom:28}} className="print-category-block">
+                              {/* Category header - same as original */}
+                              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
+                                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                                  <div style={{width:2,height:14,background:cat.accent,flexShrink:0}}/>
+                                  <span style={{fontSize:11,fontWeight:600,color:'var(--ink)',letterSpacing:'0.04em'}}>{cat.label}</span>
+                                  <span style={{fontSize:10,color:'var(--ink3)',borderLeft:'1px solid var(--line)',paddingLeft:10}}>{cat.hint}</span>
+                                  <span style={{fontSize:10,color:cat.accent,fontFamily:'DM Mono,monospace',marginLeft:4}}>
+                                    {catPols.length} {catPols.length===1?'policy':'policies'}
+                                  </span>
+                                </div>
+                                {catPrem>0 && (
+                                  <span style={{fontSize:11,color:'var(--ink3)'}}>
+                                    <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(catPrem)}</strong>/yr
+                                  </span>
+                                )}
+                              </div>
+                              <PolicyTable
+                                policies={catPols}
+                                catShort={CAT_SHORT}
+                                catColors={CAT_COLORS}
+                                onEdit={openEdit}
+                                onDelete={delPolicy}
+                              />
+                              {/* Policy Remarks - Attached to table */}
+                              {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
+                                <div style={{
+                                  padding: '16px 18px',
+                                  background: '#FAFAF8',
+                                  borderLeft: '1px solid var(--line)',
+                                  borderRight: '1px solid var(--line)',
+                                  borderBottom: '1px solid var(--line)',
+                                  borderTop: '1px dashed var(--line)'
+                                }}>
+                                  {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map((p, idx) => (
+                                    <div key={p.id} style={{
+                                      marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
+                                      paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
+                                      borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid var(--line)',
+                                      fontSize: 12,
+                                      color: 'var(--ink2)',
+                                      lineHeight: 1.6
+                                    }}>
+                                      <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
+                                        {p.companyName} {p.productName}
+                                      </strong>
+                                      {' '}{p.remarks}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      }
+                      
                       return (
-                        <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'print-page-break' : ''}`}>
+                        <div key={cat.code} style={{marginBottom:28}} className="print-category-block">
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -749,7 +809,7 @@ export default function ProtectionPage() {
         />
       )}
 
-                <style>{`
+      <style>{`
         @media print {
           .no-print { display: none !important; }
           aside, nav { display: none !important; }
@@ -760,23 +820,39 @@ export default function ProtectionPage() {
             margin: 1cm;
           }
           
+          /* Force page breaks */
           .print-page-break {
             page-break-before: always !important;
-            display: block !important;
+            break-before: page !important;
           }
           
           .print-charts-section {
             page-break-after: always !important;
-            display: block !important;
+            break-after: page !important;
           }
           
+          /* Ensure each category block stays together */
+          .print-category-block {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          
+          /* Hide interactive elements */
           button, .print-hide {
             display: none !important;
           }
           
+          /* Ensure colors print correctly */
           * {
-            print-color-adjust: exact;
-            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
+          
+          /* Force background colors to print */
+          div, span, svg {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
       `}</style>
