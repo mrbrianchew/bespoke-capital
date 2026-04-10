@@ -823,6 +823,12 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       default:            return total
     }
   }
+  
+  // Helper to convert benefit to SGD for subtotal
+  function toSGDValue(val: number, p: Policy) {
+    return p.isUSD ? val * (p.fxRate || 1.35) : val
+  }
+  
   const sub = policies.reduce((s,p)=>s+_sub(p),0)
 
   // Detect category — all policies in this table share the same category
@@ -896,12 +902,16 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
         )})}
         {/* Subtotal */}
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-          <div style={{gridColumn: hasMedisave ? '1/4' : '1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+          <div style={{gridColumn:'1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
           {hasMedisave && (
-            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
-            </div>
+            <>
+              <div />
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+                {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
+              </div>
+            </>
           )}
+          {!hasMedisave && <div />}
           <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
             {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
           </div>
@@ -914,7 +924,6 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   // ── Life layout (Core Protection) ───────────────────────────────────────────
   if (isLife) {
     // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
-    // The benefit block (DEATH through EARLY CI) uses fixed widths to stay side-by-side
     const cols = '1.2fr 90px 90px 90px 90px 100px 90px 130px 40px'
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
@@ -1001,9 +1010,21 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             </div>
           )
         })}
-        {/* Subtotal - premium value aligns under PREMIUM column */}
+        {/* Subtotal - with benefit totals */}
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-          <div style={{gridColumn:'1/6',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+          <div style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'death'),p),0))}
+          </div>
+          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'tpd'),p),0))}
+          </div>
+          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'advCI'),p),0))}
+          </div>
+          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'earlyCI'),p),0))}
+          </div>
           <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
           <div/><div/><div/>
         </div>
@@ -1070,7 +1091,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           </div>
         )
       })}
-      {/* Subtotal - premium value aligns under PREMIUM column */}
+      {/* Subtotal */}
       <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
         <div style={{gridColumn:'1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
         <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
