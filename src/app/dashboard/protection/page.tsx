@@ -580,9 +580,9 @@ export default function ProtectionPage() {
 
             return (
               <div key={key}>
-                               {/* Luxury charts — only for named persons (not dependents) */}
+                {/* Luxury charts — only for named persons (not dependents) */}
                 {!isDependent && policies.length > 0 && (
-                    <div style={{pageBreakAfter: 'always', breakAfter: 'page'}}>
+                  <div className="charts-wrapper" style={{pageBreakAfter: 'always'}}>
                     <PersonPortfolioCharts
                       personName={label}
                       personAge={personAge}
@@ -688,7 +688,7 @@ export default function ProtectionPage() {
                       }
                       
                                             return (
-                        <div key={cat.code} style={{marginBottom:28, pageBreakBefore: cat.code === 'life' ? 'always' : 'auto', breakBefore: cat.code === 'life' ? 'page' : 'auto'}} className="print-category-block">
+                         <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'core-protection-break' : ''}`}>
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -809,7 +809,7 @@ export default function ProtectionPage() {
         />
       )}
 
-      <style>{`
+            <style>{`
         @media print {
           .no-print { display: none !important; }
           aside, nav { display: none !important; }
@@ -817,42 +817,39 @@ export default function ProtectionPage() {
           
           @page {
             size: A4 landscape;
-            margin: 1cm;
+            margin: 1.5cm;
           }
           
-          /* Force page breaks */
-          .print-page-break {
-            page-break-before: always !important;
-            break-before: page !important;
+          /* Ensure everything is visible */
+          * {
+            visibility: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
           }
           
-          .print-charts-section {
+          /* Hide only interactive elements */
+          button:not(.keep-for-print), 
+          .print-hide {
+            display: none !important;
+          }
+          
+          /* Force background colors and text colors to print */
+          div, span, p, h1, h2, h3, h4, h5, h6, table, tr, td, th {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          
+          /* Page break after charts */
+          .charts-wrapper {
             page-break-after: always !important;
             break-after: page !important;
           }
           
-          /* Ensure each category block stays together */
-          .print-category-block {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-          
-          /* Hide interactive elements */
-          button, .print-hide {
-            display: none !important;
-          }
-          
-          /* Ensure colors print correctly */
-          * {
-            print-color-adjust: exact !important;
-            -webkit-print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-          
-          /* Force background colors to print */
-          div, span, svg {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
+          /* Page break before Core Protection */
+          .core-protection-break {
+            page-break-before: always !important;
+            break-before: page !important;
           }
         }
       `}</style>
