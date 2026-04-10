@@ -648,22 +648,32 @@ export default function ProtectionPage() {
                           <div style={{
                             marginTop: 20,
                             padding: '20px 24px',
-                            background: '#FF0000',
-                            border: '3px solid #990000',
-                            borderRadius: 8,
-                            color: 'white'
+                            background: '#F8F9FA',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: 8
                           }}>
-                            <div style={{fontSize:16,fontWeight:'bold'}}>
-                              ⚠️ TEST BOX - IF YOU SEE THIS, THE BOX IS RENDERING! ⚠️
-                            </div>
-                            <div style={{marginTop:10}}>
-                              Policies in this category: {catPols.length}
-                            </div>
-                            <div>
-                              Policies with remarks: {catPols.filter(p => p.remarks && p.remarks.trim() !== '').length}
-                            </div>
+                            {catPols.map((p, idx) => (
+                              <div key={p.id} style={{
+                                marginBottom: idx === catPols.length - 1 ? 0 : 20,
+                                paddingBottom: idx === catPols.length - 1 ? 0 : 20,
+                                borderBottom: idx === catPols.length - 1 ? 'none' : '1px solid #E2E8F0'
+                              }}>
+                                <div style={{fontSize:13,fontWeight:600,color:'#1A1A1A',marginBottom:8}}>
+                                  {p.productName || p.companyName}
+                                </div>
+                                <div style={{fontSize:13,color:'#4A5568',lineHeight:1.7}}>
+                                  {p.remarks && p.remarks.trim() !== '' ? p.remarks : (
+                                    <span style={{color:'#A0AEC0',fontStyle:'italic'}}>
+                                      No remarks added yet. Click Edit (✎) to add detailed description.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                )}
+                       </div>
+                      )
+                    })}
 
                 {/* ── Inactive Policies Toggle ── */}
                 {inactiveTabPols.length > 0 && (
