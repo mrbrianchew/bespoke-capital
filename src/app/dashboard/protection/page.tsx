@@ -580,13 +580,15 @@ export default function ProtectionPage() {
 
             return (
               <div key={key}>
-                {/* Luxury charts — only for named persons (not dependents) */}
+                               {/* Luxury charts — only for named persons (not dependents) */}
                 {!isDependent && policies.length > 0 && (
-                  <PersonPortfolioCharts
-                    personName={label}
-                    personAge={personAge}
-                    policies={policies}
-                  />
+                  <div className="print-charts-section">
+                    <PersonPortfolioCharts
+                      personName={label}
+                      personAge={personAge}
+                      policies={policies}
+                    />
+                  </div>
                 )}
 
                 {/* Category-separated policy sections */}
@@ -621,8 +623,12 @@ export default function ProtectionPage() {
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
                       const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
+                      // Determine print page grouping
+                      const isEssential = ['medical','ltc','general'].includes(cat.code)
+                      const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
+                      
                       return (
-                        <div key={cat.code} style={{marginBottom:28}}>
+                        <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${isLifeOrEndowment && idx === 0 ? 'print-page-break' : ''}`}>
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -743,7 +749,57 @@ export default function ProtectionPage() {
         />
       )}
 
-      <style>{`@media print { .no-print{display:none!important} aside,nav{display:none!important} body{background:white!important} }`}</style>
+           <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          aside, nav { display: none !important; }
+          body { background: white !important; }
+          
+          /* Landscape orientation */
+          @page {
+            size: A4 landscape;
+            margin: 1.5cm;
+          }
+          
+          /* Page breaks for printing */
+          .print-page-break {
+            page-break-before: always;
+          }
+          
+          /* Ensure charts stay on first page */
+          .print-charts-section {
+            page-break-inside: avoid;
+            page-break-after: always;
+          }
+          
+          /* Medical, LTC, General on second page */
+          .print-essential-section {
+            page-break-inside: avoid;
+          }
+          
+          /* Core Protection and Wealth Accumulation on third page */
+          .print-life-endowment-section {
+            page-break-before: always;
+            page-break-inside: avoid;
+          }
+          
+          /* Category headers stay with their tables */
+          .print-category-block {
+            page-break-inside: avoid;
+          }
+          
+          /* Hide interactive elements */
+          button, .print-hide {
+            display: none !important;
+          }
+          
+          /* Ensure text is black for printing */
+          * {
+            color-adjust: exact;
+            print-color-adjust: exact;
+          }
+        }
+      `}</style>
     </div>
   )
 }
