@@ -647,56 +647,39 @@ export default function ProtectionPage() {
                             onDelete={delPolicy}
                           />
                           
-                          {/* Detailed Coverage Description Box */}
+                                                   {/* Detailed Description Box - Shows remarks from each policy */}
                           <div style={{
-                            marginTop: 16,
-                            padding: '18px 22px',
-                            background: '#FAFAF8',
-                            border: '1px solid var(--line)',
+                            marginTop: 20,
+                            padding: '20px 24px',
+                            background: '#F8F9FA',
+                            border: '1px solid #E2E8F0',
                             borderRadius: 8
                           }}>
-                            <div style={{
-                              fontSize: 10,
-                              letterSpacing: '0.1em',
-                              textTransform: 'uppercase',
-                              color: 'var(--ink3)',
-                              marginBottom: 14,
-                              fontWeight: 600
-                            }}>Coverage Details</div>
                             {catPols.map((p, idx) => (
                               <div key={p.id} style={{
-                                marginBottom: idx === catPols.length - 1 ? 0 : 16,
-                                paddingBottom: idx === catPols.length - 1 ? 0 : 16,
-                                borderBottom: idx === catPols.length - 1 ? 'none' : '1px solid var(--line)'
+                                marginBottom: idx === catPols.length - 1 ? 0 : 20,
+                                paddingBottom: idx === catPols.length - 1 ? 0 : 20,
+                                borderBottom: idx === catPols.length - 1 ? 'none' : '1px solid #E2E8F0'
                               }}>
                                 <div style={{
-                                  fontSize: 12,
+                                  fontSize: 13,
                                   fontWeight: 600,
-                                  color: 'var(--ink)',
-                                  marginBottom: 6
+                                  color: '#1A1A1A',
+                                  marginBottom: 8
                                 }}>
                                   {p.productName || p.companyName}
-                                  {p.policyTypeCode && <span style={{fontWeight: 400, color: 'var(--ink3)', marginLeft: 8}}>({p.policyTypeCode})</span>}
                                 </div>
                                 <div style={{
-                                  fontSize: 12,
-                                  color: 'var(--ink2)',
-                                  lineHeight: 1.6
+                                  fontSize: 13,
+                                  color: '#4A5568',
+                                  lineHeight: 1.7
                                 }}>
-                                  {p.briefDescription || '—'}
+                                  {p.remarks && p.remarks.trim() !== '' ? p.remarks : (
+                                    <span style={{color: '#A0AEC0', fontStyle: 'italic'}}>
+                                      No remarks added yet. Click Edit (✎) to add detailed description.
+                                    </span>
+                                  )}
                                 </div>
-                                {p.remarks && (
-                                  <div style={{
-                                    fontSize: 11,
-                                    color: 'var(--ink3)',
-                                    marginTop: 8,
-                                    fontStyle: 'italic',
-                                    paddingLeft: 12,
-                                    borderLeft: '2px solid var(--line)'
-                                  }}>
-                                    Note: {p.remarks}
-                                  </div>
-                                )}
                               </div>
                             ))}
                           </div>
