@@ -647,30 +647,40 @@ export default function ProtectionPage() {
                             onDelete={delPolicy}
                           />
                           
-                          {/* RED TEST BOX - Shows remarks from each policy */}
-                          <div style={{
-                            marginTop: 20,
-                            padding: '20px 24px',
-                            background: '#FF0000',
-                            border: '3px solid #990000',
-                            borderRadius: 8,
-                            color: 'white'
-                          }}>
-                            <div style={{fontSize:16,fontWeight:'bold'}}>
-                              ⚠️ TEST BOX - IF YOU SEE THIS, THE BOX IS RENDERING! ⚠️
+                                                   {/* Policy Remarks Box - Shows detailed remarks from each policy */}
+                          {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
+                            <div style={{
+                              marginTop: 20,
+                              padding: '20px 24px',
+                              background: '#F8F9FA',
+                              border: '1px solid #E2E8F0',
+                              borderRadius: 8
+                            }}>
+                              {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map((p, idx) => (
+                                <div key={p.id} style={{
+                                  marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 20,
+                                  paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 20,
+                                  borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid #E2E8F0'
+                                }}>
+                                  <div style={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: '#1A1A1A',
+                                    marginBottom: 8
+                                  }}>
+                                    {p.productName || p.companyName}
+                                  </div>
+                                  <div style={{
+                                    fontSize: 13,
+                                    color: '#4A5568',
+                                    lineHeight: 1.7
+                                  }}>
+                                    {p.remarks}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                            <div style={{marginTop:10}}>
-                              Policies in this category: {catPols.length}
-                            </div>
-                            <div>
-                              Policies with remarks: {catPols.filter(p => p.remarks && p.remarks.trim() !== '').length}
-                            </div>
-                            {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map(p => (
-                              <div key={p.id} style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(255,255,255,0.3)'}}>
-                                <strong>{p.productName || p.companyName}:</strong> {p.remarks}
-                              </div>
-                            ))}
-                          </div>
+                          )}
                         </div>
                       )
                     })}
