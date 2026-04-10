@@ -616,7 +616,7 @@ export default function ProtectionPage() {
                       </button>
                     </div>
 
-                    {/* One block per category that has policies */}
+                                       {/* One block per category that has policies */}
                     {catBuckets.map(cat=>{
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
@@ -646,6 +646,60 @@ export default function ProtectionPage() {
                             onEdit={openEdit}
                             onDelete={delPolicy}
                           />
+                          
+                          {/* Detailed Coverage Description Box */}
+                          <div style={{
+                            marginTop: 16,
+                            padding: '18px 22px',
+                            background: '#FAFAF8',
+                            border: '1px solid var(--line)',
+                            borderRadius: 8
+                          }}>
+                            <div style={{
+                              fontSize: 10,
+                              letterSpacing: '0.1em',
+                              textTransform: 'uppercase',
+                              color: 'var(--ink3)',
+                              marginBottom: 14,
+                              fontWeight: 600
+                            }}>Coverage Details</div>
+                            {catPols.map((p, idx) => (
+                              <div key={p.id} style={{
+                                marginBottom: idx === catPols.length - 1 ? 0 : 16,
+                                paddingBottom: idx === catPols.length - 1 ? 0 : 16,
+                                borderBottom: idx === catPols.length - 1 ? 'none' : '1px solid var(--line)'
+                              }}>
+                                <div style={{
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color: 'var(--ink)',
+                                  marginBottom: 6
+                                }}>
+                                  {p.productName || p.companyName}
+                                  {p.policyTypeCode && <span style={{fontWeight: 400, color: 'var(--ink3)', marginLeft: 8}}>({p.policyTypeCode})</span>}
+                                </div>
+                                <div style={{
+                                  fontSize: 12,
+                                  color: 'var(--ink2)',
+                                  lineHeight: 1.6
+                                }}>
+                                  {p.briefDescription || '—'}
+                                </div>
+                                {p.remarks && (
+                                  <div style={{
+                                    fontSize: 11,
+                                    color: 'var(--ink3)',
+                                    marginTop: 8,
+                                    fontStyle: 'italic',
+                                    paddingLeft: 12,
+                                    borderLeft: '2px solid var(--line)'
+                                  }}>
+                                    Note: {p.remarks}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )
                     })}
