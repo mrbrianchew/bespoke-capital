@@ -1789,11 +1789,10 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totTPD   = lifePols.reduce((s,p)=>s+_toSGD((p.baseTPD||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totAdvCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseAdvCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totEarCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseEarlyCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
-  const totCI    = totAdvCI + totEarCI
   const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
-  const W=560, H=200, PL=50, PR=12, PT=20, PB=28
+  const W=560, H=180, PL=50, PR=12, PT=20, PB=24
   const iW=W-PL-PR, iH=H-PT-PB
   const maxV = Math.max(...timeline.map(r=>Math.max(r.d,r.t,r.ci)),1)
   const bSlot = iW/timeline.length
@@ -1820,7 +1819,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Total CI Benefit', value:totCI, accent:'#A8834A', highlight: true},
+          {label:'Total Annual Premium', value:totPrem, accent:'#A8834A', highlight: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
             background: COL_CARD_BG,
@@ -1858,17 +1857,6 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               letterSpacing: '-0.02em',
               lineHeight: 1.2
             }}>{_fmtK(kpi.value)}</div>
-            {kpi.highlight && (
-              <div style={{
-                fontSize: 11,
-                color: '#A8834A',
-                marginTop: 6,
-                fontWeight: 500,
-                opacity: 0.8
-              }}>
-                Combined Coverage
-              </div>
-            )}
           </div>
         ))}
       </div>
@@ -1881,10 +1869,10 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           background: COL_CARD_BG,
           border: `1px solid ${COL_BORDER}`,
           borderRadius: 16,
-          padding: '22px 24px',
+          padding: '22px 24px 20px 24px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
         }}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: 20}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: 16}}>
             <div>
               <div style={{
                 fontSize: 11,
@@ -1918,7 +1906,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
             </div>
           </div>
           
-          <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible'}}>
+          <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible', display:'block'}}>
             {/* Grid lines - softer */}
             {ticks.map(f=>{
               const y=PT+iH-f*iH
@@ -1944,14 +1932,14 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
             
             {/* Age labels - cleaner */}
             {timeline.filter(r=>(r.age%5===0||r.age===personAge)).map((r,i)=>(
-              <text key={r.age} x={xOf(timeline.indexOf(r))} y={PT+iH+16} fontSize="9" fill="#AAA" textAnchor="middle" fontWeight={400}>{r.age}</text>
+              <text key={r.age} x={xOf(timeline.indexOf(r))} y={PT+iH+14} fontSize="9" fill="#AAA" textAnchor="middle" fontWeight={400}>{r.age}</text>
             ))}
           </svg>
           
           <div style={{
             fontSize: 10,
             color: '#AAA',
-            marginTop: 8,
+            marginTop: 6,
             fontStyle: 'italic',
             letterSpacing: '0.02em'
           }}>
@@ -1964,7 +1952,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           background: COL_CARD_BG,
           border: `1px solid ${COL_BORDER}`,
           borderRadius: 16,
-          padding: '22px 24px',
+          padding: '22px 24px 20px 24px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
         }}>
           <div style={{marginBottom: 20}}>
@@ -2039,29 +2027,6 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
                 </div>
               )
             })}
-          </div>
-          
-          <div style={{
-            borderTop: '1px solid #F0F0F0',
-            marginTop: 18,
-            paddingTop: 16,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <span style={{
-              fontSize: 11,
-              color: '#999',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              fontWeight: 500
-            }}>Annual Total</span>
-            <span style={{
-              fontFamily: 'DM Mono, monospace',
-              fontSize: 15,
-              color: '#1A1A1A',
-              fontWeight: 600
-            }}>{_fmtK(totPrem)}</span>
           </div>
         </div>
       </div>
