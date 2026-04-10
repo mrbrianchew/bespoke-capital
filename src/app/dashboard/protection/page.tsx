@@ -1790,6 +1790,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totAdvCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseAdvCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totEarCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseEarlyCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
+  const roundedTotPrem = Math.round(totPrem)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
   const W=560, H=170, PL=50, PR=12, PT=20, PB=18
@@ -1809,6 +1810,12 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const COL_CARD_BG = '#FFFFFF'
   const COL_BORDER = 'rgba(0,0,0,0.06)'
 
+  // Custom formatter for whole dollars only (no cents)
+  const fmtWhole = (n: number) => {
+    if (!n || n === 0) return '—'
+    return '$' + Math.round(n).toLocaleString()
+  }
+
   return (
     <div style={{marginBottom: 24}}>
       
@@ -1819,7 +1826,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Annual Premium', value:Math.round(totPrem), accent:'#A8834A', highlight: true},
+          {label:'Total Annual Premium', value:roundedTotPrem, accent:'#A8834A', highlight: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
             background: COL_CARD_BG,
@@ -1856,7 +1863,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               color: kpi.highlight ? kpi.accent : '#1A1A1A',
               letterSpacing: '-0.02em',
               lineHeight: 1.2
-            }}>{_fmtK(kpi.value)}</div>
+            }}>{fmtWhole(kpi.value)}</div>
           </div>
         ))}
       </div>
