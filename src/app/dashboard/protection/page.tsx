@@ -626,69 +626,8 @@ export default function ProtectionPage() {
                       const isEssential = ['medical','ltc','general'].includes(cat.code)
                       const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
                       
-                      // For Core Protection, add a page break div before it
-                      if (cat.code === 'life') {
-                        return (
-                          <div key={cat.code}>
-                            <div style={{pageBreakBefore: 'always', breakBefore: 'page'}} />
-                            <div style={{marginBottom:28}} className="print-category-block">
-                              {/* Category header - same as original */}
-                              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
-                                <div style={{display:'flex',alignItems:'center',gap:10}}>
-                                  <div style={{width:2,height:14,background:cat.accent,flexShrink:0}}/>
-                                  <span style={{fontSize:11,fontWeight:600,color:'var(--ink)',letterSpacing:'0.04em'}}>{cat.label}</span>
-                                  <span style={{fontSize:10,color:'var(--ink3)',borderLeft:'1px solid var(--line)',paddingLeft:10}}>{cat.hint}</span>
-                                  <span style={{fontSize:10,color:cat.accent,fontFamily:'DM Mono,monospace',marginLeft:4}}>
-                                    {catPols.length} {catPols.length===1?'policy':'policies'}
-                                  </span>
-                                </div>
-                                {catPrem>0 && (
-                                  <span style={{fontSize:11,color:'var(--ink3)'}}>
-                                    <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(catPrem)}</strong>/yr
-                                  </span>
-                                )}
-                              </div>
-                              <PolicyTable
-                                policies={catPols}
-                                catShort={CAT_SHORT}
-                                catColors={CAT_COLORS}
-                                onEdit={openEdit}
-                                onDelete={delPolicy}
-                              />
-                              {/* Policy Remarks - Attached to table */}
-                              {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
-                                <div style={{
-                                  padding: '16px 18px',
-                                  background: '#FAFAF8',
-                                  borderLeft: '1px solid var(--line)',
-                                  borderRight: '1px solid var(--line)',
-                                  borderBottom: '1px solid var(--line)',
-                                  borderTop: '1px dashed var(--line)'
-                                }}>
-                                  {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map((p, idx) => (
-                                    <div key={p.id} style={{
-                                      marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
-                                      paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
-                                      borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid var(--line)',
-                                      fontSize: 12,
-                                      color: 'var(--ink2)',
-                                      lineHeight: 1.6
-                                    }}>
-                                      <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                                        {p.companyName} {p.productName}
-                                      </strong>
-                                      {' '}{p.remarks}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      }
-                      
-                         return (
-                           <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'core-protection-break' : ''}`}>
+                      return (
+                        <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'core-protection-break' : ''}`}>
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -713,7 +652,7 @@ export default function ProtectionPage() {
                             onDelete={delPolicy}
                           />
                           
-                                                   {/* Policy Remarks - Attached to table */}
+                          {/* Policy Remarks - Attached to table */}
                           {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
                             <div style={{
                               padding: '16px 18px',
@@ -745,7 +684,8 @@ export default function ProtectionPage() {
                     })}
                   </div>
                 )}
-                                {/* ── Inactive Policies Toggle ── */}
+                
+                {/* ── Inactive Policies Toggle ── */}
                 {inactiveTabPols.length > 0 && (
                   <div style={{ marginTop: 40, borderTop: '1px dashed var(--line)', paddingTop: 24 }}>
                     <button
@@ -794,8 +734,7 @@ export default function ProtectionPage() {
           })}
         </div>
       )}
-
-      {showModal && editingPolicy && (
+            {showModal && editingPolicy && (
         <PolicyModal
           policy={editingPolicy}
           personLabel={sections.find(s=>s.key===modalPerson||s.childKeys?.includes(modalPerson))?.label||modalPerson}
@@ -809,7 +748,7 @@ export default function ProtectionPage() {
         />
       )}
 
-            <style>{`
+      <style>{`
         @media print {
           .no-print { display: none !important; }
           aside, nav { display: none !important; }
@@ -850,6 +789,12 @@ export default function ProtectionPage() {
           .core-protection-break {
             page-break-before: always !important;
             break-before: page !important;
+          }
+          
+          /* Keep category blocks together */
+          .print-category-block {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>
@@ -1063,8 +1008,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       </div>
     )
   }
-
-  // ── Life layout (Core Protection) ───────────────────────────────────────────
+    // ── Life layout (Core Protection) ───────────────────────────────────────────
   if (isLife) {
     // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
     const cols = '1.2fr 90px 90px 90px 90px 100px 90px 160px 40px'
@@ -1174,7 +1118,8 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       </div>
     )
   }
-    // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
+
+  // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
   // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
   const cols = '1.2fr 100px 100px 90px 160px 40px'
   return (
@@ -1475,8 +1420,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               <input type="text" placeholder="Enter product name" onChange={e=>f('productName',e.target.value)} style={{...inp,marginTop:6}}/>
             )}
           </div>
-
-          {/* ── USD Policy Toggle (Life only) ── */}
+                    {/* ── USD Policy Toggle (Life only) ── */}
           {isLife && (
             <div style={{background: form.isUSD ? '#FDF6EC' : '#FAFAF8', border: `1px solid ${form.isUSD ? '#c8a96e' : 'var(--line)'}`, borderRadius: 4, padding: '12px 16px'}}>
               <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
