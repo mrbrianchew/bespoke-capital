@@ -1,6 +1,13 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
-import { createClient } from '@/lib/supabase'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+
+const createClient = () => {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
+  )
+}
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
@@ -86,7 +93,8 @@ const CAT_SHORT: Record<string, string> = {
   life: 'Life', endowment: 'Endowment',
 }
 const FREQ = ['Annual','Semi-Annual','Quarterly','Monthly','Single']
-const STATUS_OPTS = ['In-Force','Lapsed','Surrendered','Matured','Pending']
+const STATUS_OPTS = ['In-Force', 'Terminated', 'Paid-up', 'Surrendered', 'Matured', 'Premium Holiday']
+const ACTIVE_STATUSES = ['In-Force', 'Premium Holiday', 'Paid-up']
 const PAY_MODES   = ['Cash', 'Credit Card', 'Giro', 'Medisave', 'CPF OA', 'CPF SA', 'CPF SRS', 'MS + Cash', 'MS + Giro', 'MS + CC']
 
 function fmt(n: number | null | undefined) {
@@ -265,7 +273,6 @@ export default function ProtectionPage() {
   const ff = ffData || {}
   const inflation = (Number(ff.inflation_rate) || 3) / 100
 
-  // FIX 1: Broader key coverage for spouse income
   const p1Mo = Number(ff.monthly_income || ff.monthlyIncomeClient || ff.person1?.monthly_income || 0)
   const p2Mo = Number(
     ff.person2?.monthly_income ||
@@ -278,7 +285,6 @@ export default function ProtectionPage() {
   const expCats = ['financial_commitments','household','personal','children','lifestyle']
   const p1Exp = expCats.reduce((s,c) => s + Number(ff[`d_${c}`]||0), 0) || (p1Mo*12*0.7)
 
-  // FIX 2: Broader key coverage for spouse expenses, with fallback chain
   const p2ExpRaw = expCats.reduce((s,c) =>
     s + Number(ff[`d2_${c}`] || ff.person2?.[`d_${c}`] || 0), 0
   )
@@ -311,7 +317,6 @@ export default function ProtectionPage() {
   function toSGD(val: number, p: Policy) {
     return p.isUSD ? val * (p.fxRate || 1.35) : val
   }
-  // Annualise a policy's premium correctly by frequency
   function annualPremSGD(p: Policy) {
     const cash  = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
     const total = cash + (p.premiumMedisave||0)
@@ -323,21 +328,25 @@ export default function ProtectionPage() {
       default:            return total // Annual
     }
   }
+
+  // CORE CHANGE: Only reflect active policies for gaps and dashboards
+  const activePolicies = rmData.policies.filter(p => ACTIVE_STATUSES.includes(p.status))
+
   function lifeHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person&&p.categoryCode==='life')
+    return activePolicies.filter(p=>p.person===person&&p.categoryCode==='life')
       .reduce((s,p)=>s+toSGD(Math.max(p.baseDeath||0,p.sumAssured||0),p),0)
   }
   function ciHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person&&p.categoryCode==='life')
+    return activePolicies.filter(p=>p.person===person&&p.categoryCode==='life')
       .reduce((s,p)=>s+toSGD(Math.max(p.baseAdvCI||0,p.baseEarlyCI||0),p),0)
   }
   function premHave(person: string) {
-    return rmData.policies.filter(p=>p.person===person).reduce((s,p)=>s+annualPremSGD(p),0)
+    return activePolicies.filter(p=>p.person===person).reduce((s,p)=>s+annualPremSGD(p),0)
   }
 
   const cLH = lifeHave('client'), cCH = ciHave('client')
   const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
-  const totalPrem = rmData.policies.reduce((s,p)=>s+annualPremSGD(p),0)
+  const totalPrem = activePolicies.reduce((s,p)=>s+annualPremSGD(p),0)
 
   // Chart data
   function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
@@ -360,10 +369,6 @@ export default function ProtectionPage() {
   const aName   = overviewPerson==='client' ? clientName : spouseName
 
   const chartData = buildChart(aAge, aExp, aOffset, aCI)
-
-  // FIX 3: Chart should show for spouse even when aDTPD is 0 due to missing data
-  // We show charts if: (a) we have a real need figure, OR (b) we're on spouse tab and have
-  // at least some financial data to render (exp > 0 acts as proxy)
   const hasChartData = aDTPD > 0 || aCI > 0 || aExp > 0
 
   // People list for dropdowns
@@ -395,6 +400,8 @@ export default function ProtectionPage() {
     setShowModal(true)
   }
   function openEdit(p: Policy) { setEditingPolicy({...p}); setModalPerson(p.person); setShowModal(true) }
+  
+  // Note: savePolicy and delPolicy operate on the full rmData.policies to not lose inactive ones during updates
   function savePolicy(p: Policy) {
     const exists = rmData.policies.find(x=>x.id===p.id)
     const next = exists
@@ -431,10 +438,9 @@ export default function ProtectionPage() {
       {/* ── OVERVIEW ── */}
       {activeTab==='overview' && (
         <div style={{padding:'36px 48px',flex:1}}>
-          {/* FIX 4: KPI cards now use aName/aDTPD/aLH/aCI/aCH so they react to the person toggle */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:32}}>
             {[
-              {label:'Total Policies',value:String(rmData.policies.length),sub:'all insured persons'},
+              {label:'Total Active Policies',value:String(activePolicies.length),sub:'all insured persons'},
               {label:'Annual Premium',value:fmt(totalPrem),sub:'combined portfolio'},
               {label:`${aName} — D/TPD Gap`,value:fmt(Math.max(0,aDTPD-aLH)),sub:aDTPD>0?`Need ${fmt(aDTPD)}`:'Complete profile first'},
               {label:`${aName} — CI Gap`,value:fmt(Math.max(0,aCI-aCH)),sub:aCI>0?`Need ${fmt(aCI)}`:'Complete profile first'},
@@ -462,7 +468,6 @@ export default function ProtectionPage() {
             dtpdNeed={aDTPD} ciNeed={aCI} lifeHave={aLH} ciHave={aCH}
             mortgageNeed={mort} educationNeed={edu} annualPremium={premHave(overviewPerson)} />
 
-          {/* FIX 3: Show charts whenever we have any data; only hide when truly no profile at all */}
           {hasChartData ? (
             <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
               <CoverageChart
@@ -502,7 +507,7 @@ export default function ProtectionPage() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}} className="no-print">
             <div>
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
-              <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{rmData.policies.length} {rmData.policies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
+              <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{activePolicies.length} active {activePolicies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
             </div>
             <button onClick={()=>window.print()} style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>Print / PDF</button>
           </div>
@@ -511,8 +516,8 @@ export default function ProtectionPage() {
           <div style={{display:'flex',gap:0,marginBottom:28,borderBottom:'1px solid var(--line)'}} className="no-print">
             {sections.map(({key,label,isDependent,childKeys})=>{
               const tabPolicies = isDependent&&childKeys
-                ? rmData.policies.filter(p=>childKeys.includes(p.person))
-                : rmData.policies.filter(p=>p.person===key)
+                ? activePolicies.filter(p=>childKeys.includes(p.person))
+                : activePolicies.filter(p=>p.person===key)
               const tabPrem = tabPolicies.reduce((s,p)=>s+annualPremSGD(p),0)
               const isActive = portfolioPerson===key
               return (
@@ -531,8 +536,8 @@ export default function ProtectionPage() {
           {sections.map(({key,label,isDependent,childKeys})=>{
             if (portfolioPerson!==key) return null
             const policies = isDependent&&childKeys
-              ? rmData.policies.filter(p=>childKeys.includes(p.person))
-              : rmData.policies.filter(p=>p.person===key)
+              ? activePolicies.filter(p=>childKeys.includes(p.person))
+              : activePolicies.filter(p=>p.person===key)
             const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
             const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p),0)
             const personAge = key==='client' ? clientAge : spouseAge
@@ -560,7 +565,7 @@ export default function ProtectionPage() {
                 {/* Category-separated policy sections */}
                 {policies.length===0 ? (
                   <div style={{background:'white',border:'0.5px dashed var(--line)',padding:'32px',textAlign:'center',fontSize:13,color:'var(--ink3)',marginTop: !isDependent ? 32 : 0}}>
-                    No policies recorded for {label}
+                    No active policies recorded for {label}
                     <div style={{marginTop:12}}>
                       <button onClick={()=>openNew(addKey)} className="no-print"
                         style={{padding:'7px 18px',background:'var(--ink)',color:'white',border:'none',cursor:'pointer',fontSize:12}}>
@@ -624,12 +629,12 @@ export default function ProtectionPage() {
           })}
 
           {/* Portfolio summary — always visible at bottom */}
-          {rmData.policies.length>0 && (
+          {activePolicies.length>0 && (
             <div style={{background:'#1C1A17',padding:'26px 32px',marginTop:32}}>
               <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.7)',marginBottom:16}}>Portfolio Summary — All Insured</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:24}}>
                 {[
-                  {label:'Total Policies',     val:String(rmData.policies.length)},
+                  {label:'Total Active Policies',     val:String(activePolicies.length)},
                   {label:'Total Annual Premium',val:fmt(totalPrem)},
                   {label:`${clientName} — Life+TPD`, val:fmt(cLH)},
                   {label:isCouple?`${spouseName} — Life+TPD`:'Client CI', val:isCouple?fmt(sLH):fmt(cCH)},
@@ -771,6 +776,13 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   const cat = policies[0]?.categoryCode || 'life'
   const isEssential = ['medical','ltc','general'].includes(cat)
 
+  // Function to style statuses appropriately
+  const getStatusStyle = (status: string) => {
+    if (['In-Force', 'Paid-up'].includes(status)) return { bg: '#E8F5E9', col: '#2D6A4F' };
+    if (status === 'Premium Holiday') return { bg: '#FEF3C7', col: '#854F0B' };
+    return { bg: '#FEE2E2', col: '#9B1C1C' }; // Default for Terminated/Surrendered/Matured etc
+  };
+
   // ── Essential layout (Medical / LTC / General) ──────────────────────────────
   if (isEssential) {
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
@@ -788,7 +800,9 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
           ))}
         </div>
-        {policies.map((p,i)=>(
+        {policies.map((p,i)=>{
+          const stStyle = getStatusStyle(p.status);
+          return (
           <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             {/* Insurer · Plan · PH / Policy No */}
             <div>
@@ -816,14 +830,17 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               {(p.premiumCash||0)>0 ? fmt(p.premiumCash) : '—'}
             </div>
             {/* Frequency */}
-            <div style={{fontSize:10,color:'var(--ink3)'}}>{p.frequency||'—'}</div>
+            <div style={{fontSize:10,color:'var(--ink3)'}}>
+              <span style={{display:'block'}}>{p.frequency||'—'}</span>
+              <span style={{fontSize:9,padding:'1px 5px',borderRadius:2,background:stStyle.bg,color:stStyle.col,marginTop:4,display:'inline-block'}}>{p.status}</span>
+            </div>
             {/* Actions */}
             <div style={{display:'flex',gap:5}} className="no-print">
               <button onClick={()=>onEdit(p)} style={{fontSize:10,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer'}}>Edit</button>
               <button onClick={()=>onDelete(p.id)} style={{fontSize:10,color:'#C0392B',background:'none',border:'none',cursor:'pointer'}}>✕</button>
             </div>
           </div>
-        ))}
+        )})}
         {/* Subtotal */}
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
           <div style={{gridColumn: hasMedisave ? '1/3' : '1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
@@ -852,6 +869,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       {policies.map((p,i)=>{
         const col=catColors[p.categoryCode]||'#999'
         const mainBen=p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
+        const stStyle = getStatusStyle(p.status)
         return(
           <div key={p.id} style={{display:'grid',gridTemplateColumns:'80px 80px 1fr 140px 130px 90px 55px',padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
             <span style={{fontSize:10,fontWeight:600,color:col,padding:'2px 6px',background:col+'18',borderRadius:3}}>{catShort[p.categoryCode]||p.categoryCode}</span>
@@ -882,7 +900,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               {fmt(p.premiumCash)}
               {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} Medisave</div>}
             </div>
-            <span style={{fontSize:10,padding:'2px 7px',borderRadius:3,background:p.status==='In-Force'?'#E8F5E9':'#FEE2E2',color:p.status==='In-Force'?'#2D6A4F':'#9B1C1C'}}>{p.status}</span>
+            <span style={{fontSize:10,padding:'2px 7px',borderRadius:3,background:stStyle.bg,color:stStyle.col}}>{p.status}</span>
             <div style={{display:'flex',gap:5}} className="no-print">
               <button onClick={()=>onEdit(p)} style={{fontSize:10,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer'}}>Edit</button>
               <button onClick={()=>onDelete(p.id)} style={{fontSize:10,color:'#C0392B',background:'none',border:'none',cursor:'pointer'}}>✕</button>
@@ -984,7 +1002,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     "Coverage for Deductibles, subject to 5% Co-Insurance",
     "Coverage for Deductibles, subject to 10% Co-Insurance",
     "Coverage for Co-Insurance, Subject to Deductible and 5% Co-Insurance",
-    "Coverage for Deductibles and Co-Insurance."
+    "Coverage for Deductibles and Co-Insurance.",
+    "Coverage for Outpatient Cancer Treatment and Services (Subject to Deductibles)"
   ];
 
   const [isOtherRiderDesc, setIsOtherRiderDesc] = useState(() => {
