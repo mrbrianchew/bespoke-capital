@@ -687,8 +687,8 @@ export default function ProtectionPage() {
                         )
                       }
                       
-                                            return (
-                         <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'core-protection-break' : ''}`}>
+                         return (
+                           <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'core-protection-break' : ''}`}>
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
