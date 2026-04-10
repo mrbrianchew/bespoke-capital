@@ -647,7 +647,7 @@ export default function ProtectionPage() {
                             onDelete={delPolicy}
                           />
                           
-                          {/* Policy Remarks - Attached to table */}
+                                                   {/* Policy Remarks - Attached to table */}
                           {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
                             <div style={{
                               padding: '16px 18px',
@@ -659,25 +659,17 @@ export default function ProtectionPage() {
                             }}>
                               {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map((p, idx) => (
                                 <div key={p.id} style={{
-                                  marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 16,
-                                  paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 16,
-                                  borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid var(--line)'
+                                  marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
+                                  paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
+                                  borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid var(--line)',
+                                  fontSize: 12,
+                                  color: 'var(--ink2)',
+                                  lineHeight: 1.6
                                 }}>
-                                  <div style={{
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    color: 'var(--ink)',
-                                    marginBottom: 6
-                                  }}>
-                                    {p.productName || p.companyName}
-                                  </div>
-                                  <div style={{
-                                    fontSize: 12,
-                                    color: 'var(--ink2)',
-                                    lineHeight: 1.6
-                                  }}>
-                                    {p.remarks}
-                                  </div>
+                                  <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
+                                    {p.companyName} {p.productName}
+                                  </strong>
+                                  {' '}{p.remarks}
                                 </div>
                               ))}
                             </div>
