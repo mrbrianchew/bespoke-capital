@@ -457,8 +457,7 @@ export default function ProtectionPage() {
           </div>
         </div>
       </div>
-
-      {/* ── OVERVIEW ── */}
+            {/* ── OVERVIEW ── */}
       {activeTab==='overview' && (
         <div style={{padding:'36px 48px',flex:1}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:32}}>
@@ -554,7 +553,8 @@ export default function ProtectionPage() {
               )
             })}
           </div>
-                    {/* Active person's policies */}
+
+          {/* Active person's policies */}
           {sections.map(({key,label,isDependent,childKeys})=>{
             if (portfolioPerson!==key) return null
             const policies = isDependent&&childKeys
@@ -616,13 +616,14 @@ export default function ProtectionPage() {
                       </button>
                     </div>
 
-                                       {/* One block per category that has policies */}
+                    {/* One block per category that has policies */}
                     {catBuckets.map(cat=>{
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
                       const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
                       return (
                         <div key={cat.code} style={{marginBottom:28}}>
+                          {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
                               <div style={{width:2,height:14,background:cat.accent,flexShrink:0}}/>
@@ -645,37 +646,37 @@ export default function ProtectionPage() {
                             onEdit={openEdit}
                             onDelete={delPolicy}
                           />
+                          
+                          {/* RED TEST BOX - Shows remarks from each policy */}
                           <div style={{
                             marginTop: 20,
                             padding: '20px 24px',
-                            background: '#F8F9FA',
-                            border: '1px solid #E2E8F0',
-                            borderRadius: 8
+                            background: '#FF0000',
+                            border: '3px solid #990000',
+                            borderRadius: 8,
+                            color: 'white'
                           }}>
-                            {catPols.map((p, idx) => (
-                              <div key={p.id} style={{
-                                marginBottom: idx === catPols.length - 1 ? 0 : 20,
-                                paddingBottom: idx === catPols.length - 1 ? 0 : 20,
-                                borderBottom: idx === catPols.length - 1 ? 'none' : '1px solid #E2E8F0'
-                              }}>
-                                <div style={{fontSize:13,fontWeight:600,color:'#1A1A1A',marginBottom:8}}>
-                                  {p.productName || p.companyName}
-                                </div>
-                                <div style={{fontSize:13,color:'#4A5568',lineHeight:1.7}}>
-                                  {p.remarks && p.remarks.trim() !== '' ? p.remarks : (
-                                    <span style={{color:'#A0AEC0',fontStyle:'italic'}}>
-                                      No remarks added yet. Click Edit (✎) to add detailed description.
-                                    </span>
-                                  )}
-                                </div>
+                            <div style={{fontSize:16,fontWeight:'bold'}}>
+                              ⚠️ TEST BOX - IF YOU SEE THIS, THE BOX IS RENDERING! ⚠️
+                            </div>
+                            <div style={{marginTop:10}}>
+                              Policies in this category: {catPols.length}
+                            </div>
+                            <div>
+                              Policies with remarks: {catPols.filter(p => p.remarks && p.remarks.trim() !== '').length}
+                            </div>
+                            {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map(p => (
+                              <div key={p.id} style={{marginTop:10,paddingTop:10,borderTop:'1px solid rgba(255,255,255,0.3)'}}>
+                                <strong>{p.productName || p.companyName}:</strong> {p.remarks}
                               </div>
                             ))}
                           </div>
-                       </div>
+                        </div>
                       )
                     })}
-
-                {/* ── Inactive Policies Toggle ── */}
+                  </div>
+                )}
+                                {/* ── Inactive Policies Toggle ── */}
                 {inactiveTabPols.length > 0 && (
                   <div style={{ marginTop: 40, borderTop: '1px dashed var(--line)', paddingTop: 24 }}>
                     <button
@@ -831,6 +832,7 @@ function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,mortgageNeed,educatio
     </div>
   )
 }
+
 // ─── Policy Table ─────────────────────────────────────────────────────────────
 function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
   function _sub(p: Policy) {
@@ -1060,8 +1062,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       </div>
     )
   }
-
-  // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
+    // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
   // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
   const cols = '1.2fr 100px 100px 90px 160px 40px'
   return (
@@ -1129,6 +1130,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
     </div>
   )
 }
+
 // ─── Policy Modal (cascading dropdowns) ──────────────────────────────────────
 function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,companies,products,onSave,onClose}:{
   policy:Policy; personLabel:string
@@ -1443,7 +1445,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               )}
             </div>
           )}
-                    {/* ── Life / WL benefit fields ── */}
+
+          {/* ── Life / WL benefit fields ── */}
           {isLife && (
             <>
               {form.isUSD && (
@@ -1720,6 +1723,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     </div>
   )
 }
+
+
 // ─── Helpers (used by PersonPortfolioCharts) ─────────────────────────────────
 function _toSGD(val: number, p: Policy) {
   return p.isUSD ? val * (p.fxRate || 1.35) : val
