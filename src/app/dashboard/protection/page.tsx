@@ -623,7 +623,6 @@ export default function ProtectionPage() {
                       const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
                       return (
                         <div key={cat.code} style={{marginBottom:28}}>
-                          {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
                               <div style={{width:2,height:14,background:cat.accent,flexShrink:0}}/>
@@ -646,8 +645,6 @@ export default function ProtectionPage() {
                             onEdit={openEdit}
                             onDelete={delPolicy}
                           />
-                          
-                                                   {/* Detailed Description Box - Shows remarks from each policy */}
                           <div style={{
                             marginTop: 20,
                             padding: '20px 24px',
@@ -661,21 +658,12 @@ export default function ProtectionPage() {
                                 paddingBottom: idx === catPols.length - 1 ? 0 : 20,
                                 borderBottom: idx === catPols.length - 1 ? 'none' : '1px solid #E2E8F0'
                               }}>
-                                <div style={{
-                                  fontSize: 13,
-                                  fontWeight: 600,
-                                  color: '#1A1A1A',
-                                  marginBottom: 8
-                                }}>
+                                <div style={{fontSize:13,fontWeight:600,color:'#1A1A1A',marginBottom:8}}>
                                   {p.productName || p.companyName}
                                 </div>
-                                <div style={{
-                                  fontSize: 13,
-                                  color: '#4A5568',
-                                  lineHeight: 1.7
-                                }}>
+                                <div style={{fontSize:13,color:'#4A5568',lineHeight:1.7}}>
                                   {p.remarks && p.remarks.trim() !== '' ? p.remarks : (
-                                    <span style={{color: '#A0AEC0', fontStyle: 'italic'}}>
+                                    <span style={{color:'#A0AEC0',fontStyle:'italic'}}>
                                       No remarks added yet. Click Edit (✎) to add detailed description.
                                     </span>
                                   )}
