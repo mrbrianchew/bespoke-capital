@@ -135,6 +135,7 @@ export default function ProtectionPage() {
   const [editingPolicy,   setEditingPolicy]   = useState<Policy | null>(null)
   const [showModal,       setShowModal]       = useState(false)
   const [modalPerson,     setModalPerson]     = useState('client')
+  const [showInactive,    setShowInactive]    = useState(false)
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
@@ -142,6 +143,11 @@ export default function ProtectionPage() {
   }, [])
 
   useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
+
+  useEffect(() => {
+    // Reset the inactive toggle when switching people
+    setShowInactive(false)
+  }, [portfolioPerson])
 
   async function loadAll(id: string) {
     // Reference tables
@@ -531,6 +537,11 @@ export default function ProtectionPage() {
             const policies = isDependent&&childKeys
               ? activePolicies.filter(p=>childKeys.includes(p.person))
               : activePolicies.filter(p=>p.person===key)
+            
+            const inactiveTabPols = isDependent&&childKeys
+              ? rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && childKeys.includes(p.person))
+              : rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && p.person===key)
+
             const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
             const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p),0)
             const personAge = key==='client' ? clientAge : spouseAge
@@ -617,6 +628,51 @@ export default function ProtectionPage() {
                     })}
                   </div>
                 )}
+
+                {/* ── Inactive Policies Toggle ── */}
+                {inactiveTabPols.length > 0 && (
+                  <div style={{ marginTop: 40, borderTop: '1px dashed var(--line)', paddingTop: 24 }}>
+                    <button
+                      onClick={() => setShowInactive(!showInactive)}
+                      className="no-print"
+                      style={{
+                        padding: '8px 16px', background: showInactive ? '#F8F7F4' : 'white',
+                        border: '1px solid var(--line)', color: 'var(--ink3)',
+                        cursor: 'pointer', fontSize: 12, borderRadius: 4, transition: 'all 0.2s'
+                      }}
+                    >
+                      {showInactive ? 'Hide Inactive Policies' : `Show Inactive Policies (${inactiveTabPols.length})`}
+                    </button>
+
+                    {showInactive && (
+                      <div style={{ marginTop: 24, opacity: 0.8 }}>
+                        <div style={{ fontSize: 14, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16 }}>Inactive / Terminated Policies</div>
+                        {catBuckets.map(cat => {
+                          const catPols = inactiveTabPols.filter(p => p.categoryCode === cat.code)
+                          if (catPols.length === 0) return null
+                          return (
+                            <div key={`inactive-${cat.code}`} style={{ marginBottom: 28 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${cat.accent}22` }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{ width: 2, height: 14, background: cat.accent, flexShrink: 0 }} />
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label} (Inactive)</span>
+                                </div>
+                              </div>
+                              <PolicyTable
+                                policies={catPols}
+                                catShort={CAT_SHORT}
+                                catColors={CAT_COLORS}
+                                onEdit={openEdit}
+                                onDelete={delPolicy}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </div>
             )
           })}
