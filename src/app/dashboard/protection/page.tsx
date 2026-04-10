@@ -842,8 +842,8 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
     // Grid: INSURER (1.2fr) | BRIEF DESC (1.5fr) | MEDISAVE (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
     const cols = hasMedisave
-      ? '1.2fr 1.5fr 100px 100px 90px 130px 40px'
-      : '1.2fr 1.5fr 100px 90px 130px 40px'
+      ? '1.2fr 1.5fr 100px 100px 90px 160px 40px'
+      : '1.2fr 1.5fr 100px 90px 160px 40px'
     const headers = hasMedisave
       ? ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
       : ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
@@ -901,22 +901,24 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           </div>
         )})}
         {/* Subtotal */}
-        <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-          <div style={{gridColumn:'1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
-          {hasMedisave && (
-            <>
-              <div />
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-                {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
-              </div>
-            </>
-          )}
-          {!hasMedisave && <div />}
-          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-            {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
-          </div>
-          <div/><div/><div/>
-        </div>
+{/* Subtotal */}
+<div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+  <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+  {hasMedisave ? (
+    <>
+      <div />
+      <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+        {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
+      </div>
+    </>
+  ) : (
+    <div />
+  )}
+  <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
+    {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
+  </div>
+  <div/><div/><div/>
+</div>
       </div>
     )
   }
@@ -924,7 +926,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   // ── Life layout (Core Protection) ───────────────────────────────────────────
   if (isLife) {
     // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
-    const cols = '1.2fr 90px 90px 90px 90px 100px 90px 130px 40px'
+    const cols = '1.2fr 90px 90px 90px 90px 100px 90px 160px 40px'
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
@@ -1034,7 +1036,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
 
   // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
   // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (130px) | ACTIONS (40px)
-  const cols = '1.2fr 100px 100px 90px 130px 40px'
+  const cols = '1.2fr 100px 100px 90px 160px 40px'
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
       <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
