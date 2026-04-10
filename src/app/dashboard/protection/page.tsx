@@ -628,7 +628,7 @@ export default function ProtectionPage() {
                       const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
                       
                       return (
-                        <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${isLifeOrEndowment && idx === 0 ? 'print-page-break' : ''}`}>
+                        <div key={cat.code} style={{marginBottom:28}} className={`print-category-block ${cat.code === 'life' ? 'print-page-break' : ''}`}>
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
