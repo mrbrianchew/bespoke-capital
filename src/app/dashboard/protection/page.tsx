@@ -617,14 +617,14 @@ export default function ProtectionPage() {
                       </button>
                     </div>
 
-                    {/* One block per category that has policies */}
+                                       {/* One block per category that has policies */}
                     {catBuckets.map(cat=>{
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
                       const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
                       return (
                         <div key={cat.code} style={{marginBottom:28}}>
-                                                    {/* Category header */}
+                          {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
                               <div style={{width:2,height:14,background:cat.accent,flexShrink:0}}/>
