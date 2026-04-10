@@ -647,33 +647,34 @@ export default function ProtectionPage() {
                             onDelete={delPolicy}
                           />
                           
-                                                   {/* Policy Remarks Box - Shows detailed remarks from each policy */}
+                          {/* Policy Remarks - Attached to table */}
                           {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
                             <div style={{
-                              marginTop: 20,
-                              padding: '20px 24px',
-                              background: '#F8F9FA',
-                              border: '1px solid #E2E8F0',
-                              borderRadius: 8
+                              padding: '16px 18px',
+                              background: '#FAFAF8',
+                              borderLeft: '1px solid var(--line)',
+                              borderRight: '1px solid var(--line)',
+                              borderBottom: '1px solid var(--line)',
+                              borderTop: '1px dashed var(--line)'
                             }}>
                               {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map((p, idx) => (
                                 <div key={p.id} style={{
-                                  marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 20,
-                                  paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 20,
-                                  borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid #E2E8F0'
+                                  marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 16,
+                                  paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 16,
+                                  borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid var(--line)'
                                 }}>
                                   <div style={{
-                                    fontSize: 13,
+                                    fontSize: 12,
                                     fontWeight: 600,
-                                    color: '#1A1A1A',
-                                    marginBottom: 8
+                                    color: 'var(--ink)',
+                                    marginBottom: 6
                                   }}>
                                     {p.productName || p.companyName}
                                   </div>
                                   <div style={{
-                                    fontSize: 13,
-                                    color: '#4A5568',
-                                    lineHeight: 1.7
+                                    fontSize: 12,
+                                    color: 'var(--ink2)',
+                                    lineHeight: 1.6
                                   }}>
                                     {p.remarks}
                                   </div>
