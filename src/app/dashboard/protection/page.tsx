@@ -200,7 +200,11 @@ export default function ProtectionPage() {
     }
 
     // Fact finding — merge all rows
-    const { data: rows } = await supabase.from('fact_finding').select('data').eq('client_id', id)
+    const { data: rows } = await supabase
+  .from('fact_finding')
+  .select('section, data')
+  .eq('client_id', id)
+  .in('section', ['financials', 'protection_needs', 'protection_portfolio'])
     const merged: any = {}
     if (rows?.length) rows.forEach((r: any) => { if (r.data) Object.assign(merged, r.data) })
 
@@ -257,10 +261,11 @@ export default function ProtectionPage() {
     if (!id) { console.warn('saveData: no clientId'); return }
     setSaving(true)
     try {
-      const { data: rows, error: fetchError } = await supabase
-        .from('fact_finding')
-        .select('id, data')
-        .eq('client_id', id)
+     const { data: rows, error: fetchError } = await supabase
+  .from('fact_finding')
+  .select('id, data')
+  .eq('client_id', id)
+  .eq('section', 'protection_portfolio')
 
       if (fetchError) throw fetchError
 
@@ -274,7 +279,7 @@ export default function ProtectionPage() {
       } else {
         const { error: insertError } = await supabase
           .from('fact_finding')
-          .insert({ client_id: id, data: { risk_management: data } })
+.insert({ client_id: id, section: 'protection_portfolio', data: { risk_management: data } })
         if (insertError) throw insertError
       }
     } catch (error) {
