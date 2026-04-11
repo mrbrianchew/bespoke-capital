@@ -204,7 +204,7 @@ export default function ProtectionPage() {
   .from('fact_finding')
   .select('section, data')
   .eq('client_id', id)
-  .in('section', ['financials', 'protection_needs', 'protection_portfolio'])
+.in('section', ['financials', 'protection_needs', 'protection_portfolio', 'all'])
     const merged: any = {}
     if (rows?.length) rows.forEach((r: any) => { if (r.data) Object.assign(merged, r.data) })
 
