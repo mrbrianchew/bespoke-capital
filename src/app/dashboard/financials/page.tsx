@@ -684,34 +684,41 @@ function PropertyPortfolioBlock({
                 </div>
 
                 {/* Ownership */}
-                <div>
-                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Ownership</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Ownership Type</div>
-                      <select value={prop.ownershipType || ''} onChange={e => upd(prop.id, 'ownershipType', e.target.value)}
-                        className="w-full text-xs px-2 py-1.5 outline-none"
-                        style={{ border: '1px solid var(--line)', background: 'white', color: prop.ownershipType ? 'var(--ink)' : 'var(--ink3)' }}
-                        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}>
-                        <option value="">Select…</option>
-                        {(['Client Only','Spouse Only','Joint Tenancy','Tenancy-in-Common'] as OwnershipType[]).map(o => (
-                          <option key={o} value={o}>{o}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {prop.ownershipType === 'Tenancy-in-Common' && (
-                      <div>
-                        <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Ownership Split (e.g. 60/40)</div>
-                        <input value={prop.ownershipSplit || ''} onChange={e => upd(prop.id, 'ownershipSplit', e.target.value)}
-                          placeholder="60/40" className="w-full text-xs px-2 py-1.5 outline-none"
-                          style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-                          onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                          onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-                      </div>
-                    )}
-                  </div>
-                </div>
+              <div>
+  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Ownership</div>
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+    <div>
+      <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Ownership Type</div>
+      <select 
+        value={prop.ownershipType || ''} 
+        onChange={(e) => {
+          const newValue = e.target.value
+          console.log('Changing ownership to:', newValue)
+          upd(prop.id, 'ownershipType', newValue)
+        }}
+        className="w-full text-xs px-2 py-1.5 outline-none"
+        style={{ border: '1px solid var(--line)', background: 'white', color: prop.ownershipType ? 'var(--ink)' : 'var(--ink3)' }}
+        onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+        onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}
+      >
+        <option value="">Select…</option>
+        {(['Client Only','Spouse Only','Joint Tenancy','Tenancy-in-Common'] as OwnershipType[]).map(o => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+    </div>
+    {prop.ownershipType === 'Tenancy-in-Common' && (
+      <div>
+        <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Ownership Split (e.g. 60/40)</div>
+        <input value={prop.ownershipSplit || ''} onChange={e => upd(prop.id, 'ownershipSplit', e.target.value)}
+          placeholder="60/40" className="w-full text-xs px-2 py-1.5 outline-none"
+          style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+          onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+          onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+      </div>
+    )}
+  </div>
+</div>
 
                 {/* Mortgage */}
                 <div>
