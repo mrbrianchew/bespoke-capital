@@ -540,11 +540,11 @@ function PropertyPortfolioBlock({
 
   const remove = (id: string) => onChange(properties.filter(p => p.id !== id))
 
-  const addProperty = () => {
-    const id = Math.random().toString(36).slice(2)
-    onChange([...properties, { id, label: 'Property ' + (properties.length + 1) }])
-    setExpanded(e => ({ ...e, [id]: true }))
-  }
+ const addProperty = () => {
+  const id = crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)
+  onChange([...properties, { id, label: 'Property ' + (properties.length + 1) }])
+  setExpanded(e => ({ ...e, [id]: true }))
+}
 
   return (
     <div style={{ background: 'white', border: '1px solid var(--line)' }}>
