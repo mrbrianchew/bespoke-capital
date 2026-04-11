@@ -541,7 +541,7 @@ export default function ObjectivesPage() {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
       const childAge = child.age ?? getAge(child.date_of_birth)
-      const defaultEntryAge = child.gender === 'Male' ? 21 : 18
+      const defaultEntryAge = child.gender === 'Male' ? 21 : 19
       const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
       // In CI mode: only include children who haven't reached university yet
       if (ciMode && childAge >= uniEntryAge) return sum
