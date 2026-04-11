@@ -1126,7 +1126,7 @@ function FactFindingPage() {
     setSaving(true)
     const { client_id, ...data } = ff
     await supabase.from('fact_finding').upsert(
-      { client_id: client.id, section: 'all', data, updated_at: new Date().toISOString() },
+      { client_id: client.id, section: 'financials', data, updated_at: new Date().toISOString() },
       { onConflict: 'client_id,section' }
     )
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500)
