@@ -377,7 +377,7 @@ export default function ObjectivesPage() {
       const merged: FactFinding = { client_id: id }
       for (const row of ffRows) Object.assign(merged, row.data || {})
       // Load protection settings from the protection section row
-      const protRow = ffRows.find((r: any) => r.section === 'protection' || r.data?.protection)
+      const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
       const protData = protRow?.data?.protection
       if (protData) {
         setP(prev => ({ ...prev, ...protData }))
@@ -417,7 +417,7 @@ export default function ObjectivesPage() {
       await supabase
         .from('fact_finding')
         .upsert(
-          { client_id: clientId, section: 'protection', data: { protection: updated }, updated_at: new Date().toISOString() },
+          { client_id: clientId, section: 'protection_needs', data: { protection: updated }, updated_at: new Date().toISOString() },
           { onConflict: 'client_id,section' }
         )
       setSaving(false)
