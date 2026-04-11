@@ -541,7 +541,7 @@ export default function ObjectivesPage() {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
       const childAge = child.age ?? getAge(child.date_of_birth)
-      const defaultEntryAge = child.gender === 'Male' ? 20 : 18
+      const defaultEntryAge = child.gender === 'Male' ? 21 : 18
       const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
       // In CI mode: only include children who haven't reached university yet
       if (ciMode && childAge >= uniEntryAge) return sum
@@ -1687,7 +1687,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
 
   function calcChildFund(child: FamilyMember, ec: EduChild, who: 'client' | 'spouse' | 'total'): number {
     const childAge = child.age ?? getAge(child.date_of_birth)
-    const defaultEntryAge = child.gender === 'Male' ? 20 : 18
+    const defaultEntryAge = child.gender === 'Male' ? 21 : 19
     const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
     const yearsToUni = Math.max(0, uniEntryAge - childAge)
     const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
@@ -1723,7 +1723,7 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
           {children.map(child => {
             const ec = (p.educationChildren ?? []).find(e => e.childId === child.id) ?? { childId: child.id }
             const childAge = child.age ?? getAge(child.date_of_birth)
-            const defaultEntryAge = child.gender === 'Male' ? 20 : 18
+            const defaultEntryAge = child.gender === 'Male' ? 21 : 19
             const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
             const yearsToUni = Math.max(0, uniEntryAge - childAge)
             const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
