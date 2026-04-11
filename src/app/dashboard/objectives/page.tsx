@@ -367,23 +367,26 @@ export default function ObjectivesPage() {
   }
 
   async function loadData(id: string) {
-    setLoading(true)
-    // Load fact_finding - merge all rows (same as financials page)
-    const { data: ffRows } = await supabase
-      .from('fact_finding')
-      .select('*')
-      .eq('client_id', id)
-    if (ffRows && ffRows.length > 0) {
-      const merged: FactFinding = { client_id: id }
-      for (const row of ffRows) Object.assign(merged, row.data || {})
-      // Load protection settings from the protection section row
-      const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
-      const protData = protRow?.data?.protection
-      if (protData) {
-        setP(prev => ({ ...prev, ...protData }))
-      }
-      setFf(merged)
+  setLoading(true)
+  // Load BOTH financials and protection_needs data
+  const { data: ffRows } = await supabase
+    .from('fact_finding')
+    .select('*')
+    .eq('client_id', id)
+    .in('section', ['financials', 'protection_needs'])
+    
+  if (ffRows && ffRows.length > 0) {
+    const merged: FactFinding = { client_id: id }
+    for (const row of ffRows) Object.assign(merged, row.data || {})
+    
+    // Load protection settings from the protection_needs section row
+    const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
+    const protData = protRow?.data?.protection
+    if (protData) {
+      setP(prev => ({ ...prev, ...protData }))
     }
+    setFf(merged)
+  }
     // Load client name
     const { data: clientData } = await supabase
       .from('clients')
@@ -397,7 +400,7 @@ export default function ObjectivesPage() {
     const { data: familyData } = await supabase
       .from('family_members')
       .select('*')
-      .eq('client_id', id)
+      .eq('client_id', id).in('section', ['financials', 'protection_needs'])
     if (familyData) {
       const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
       if (spouse) setSpouseName(spouse.name || 'Spouse')
