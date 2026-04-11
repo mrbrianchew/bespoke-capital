@@ -1114,7 +1114,7 @@ if (financialsRow?.data) {
   })
 }
 setLoading(false)
-
+  }
   const upd = useCallback((key: keyof FactFinding, val: unknown) => {
     setFf(prev => prev ? { ...prev, [key]: val } : prev); setSaved(false)
   }, [])
