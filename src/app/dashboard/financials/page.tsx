@@ -1093,23 +1093,27 @@ function FactFindingPage() {
     const { data: fam } = await supabase.from('family_members').select('*').eq('client_id', c.id)
     const sp = fam?.find((f: FamilyMember) => f.relationship === 'Spouse')
     if (sp) setSpouse(sp)
-    const { data: rows } = await supabase.from('fact_finding').select('*').eq('client_id', c.id)
-    if (rows && rows.length > 0) {
-      const merged: FactFinding = { client_id: c.id }
-      for (const row of rows) Object.assign(merged, row.data || {})
-      setFf(merged)
-    } else {
-      setFf({
-        client_id: c.id, mode: 'single', expense_mode: 'simple',
-        person1: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
-        person2: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
-        a_cash_custom: [], a_invested_custom: [], a_personal_custom: [],
-        l_st_custom: [], l_lt_custom: [],
-        d_custom_financial: [], d_custom_household: [], d_custom_personal: [], d_custom_children: [], d_custom_lifestyle: [],
-      })
-    }
-    setLoading(false)
-  }
+ // Only load the 'financials' section data
+const { data: financialsRow } = await supabase
+  .from('fact_finding')
+  .select('data')
+  .eq('client_id', c.id)
+  .eq('section', 'financials')
+  .maybeSingle()
+
+if (financialsRow?.data) {
+  setFf({ ...financialsRow.data, client_id: c.id })
+} else {
+  setFf({
+    client_id: c.id, mode: 'single', expense_mode: 'simple',
+    person1: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
+    person2: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
+    a_cash_custom: [], a_invested_custom: [], a_personal_custom: [],
+    l_st_custom: [], l_lt_custom: [],
+    d_custom_financial: [], d_custom_household: [], d_custom_personal: [], d_custom_children: [], d_custom_lifestyle: [],
+  })
+}
+setLoading(false)
 
   const upd = useCallback((key: keyof FactFinding, val: unknown) => {
     setFf(prev => prev ? { ...prev, [key]: val } : prev); setSaved(false)
