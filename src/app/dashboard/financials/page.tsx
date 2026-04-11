@@ -1115,8 +1115,10 @@ const { data: financialsRow } = await supabase
   .maybeSingle()
 
 if (financialsRow?.data) {
+  console.log('Loaded properties from Supabase:', financialsRow.data.properties)
   setFf({ ...financialsRow.data, client_id: c.id })
 } else {
+  console.log('No financials data found, using defaults')
   setFf({
     client_id: c.id, mode: 'single', expense_mode: 'simple',
     person1: { citizenship: 'SC', pr_year: '3+', other_incomes: [] },
