@@ -1121,16 +1121,55 @@ function FactFindingPage() {
 
   const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
 
-  async function save() {
-    if (!ff || !client) return
-    setSaving(true)
-    const { client_id, ...data } = ff
-    await supabase.from('fact_finding').upsert(
-      { client_id: client.id, section: 'financials', data, updated_at: new Date().toISOString() },
-      { onConflict: 'client_id,section' }
-    )
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500)
+async function save() {
+  if (!ff || !client) return
+  setSaving(true)
+  
+  const { client_id, ...data } = ff
+  
+  // First, check if a row already exists
+  const { data: existing } = await supabase
+    .from('fact_finding')
+    .select('id')
+    .eq('client_id', client.id)
+    .eq('section', 'financials')
+    .maybeSingle()
+  
+  let error = null
+  
+  if (existing) {
+    // Update existing row
+    const { error: updateError } = await supabase
+      .from('fact_finding')
+      .update({ 
+        data: data, 
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', existing.id)
+    error = updateError
+  } else {
+    // Insert new row
+    const { error: insertError } = await supabase
+      .from('fact_finding')
+      .insert({ 
+        client_id: client.id, 
+        section: 'financials', 
+        data: data, 
+        updated_at: new Date().toISOString() 
+      })
+    error = insertError
   }
+  
+  setSaving(false)
+  
+  if (error) {
+    console.error('Save error:', error)
+    alert('Save failed: ' + error.message)
+  } else {
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+}
 
   if (loading) return <div className="flex items-center justify-center h-full"><div className="text-sm" style={{ color: 'var(--ink3)' }}>Loading…</div></div>
   if (!client) return <div className="flex flex-col items-center justify-center h-full gap-4"><div className="font-serif text-2xl" style={{ color: 'var(--ink)' }}>No Client Selected</div></div>
