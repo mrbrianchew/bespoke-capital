@@ -1139,7 +1139,9 @@ setLoading(false)
     
     const { client_id, ...data } = ff
     
-    // Check if financials row exists
+    // ADDED: Check what properties we're saving
+    console.log('Saving properties:', data.properties)
+    
     const { data: existing } = await supabase
       .from('fact_finding')
       .select('id')
@@ -1158,6 +1160,8 @@ setLoading(false)
         })
         .eq('id', existing.id)
       error = updateError
+      // ADDED: Check if update worked
+      console.log('Update result:', error ? 'Failed' : 'Success')
     } else {
       const { error: insertError } = await supabase
         .from('fact_finding')
@@ -1168,6 +1172,8 @@ setLoading(false)
           updated_at: new Date().toISOString() 
         })
       error = insertError
+      // ADDED: Check if insert worked
+      console.log('Insert result:', error ? 'Failed' : 'Success')
     }
     
     setSaving(false)
