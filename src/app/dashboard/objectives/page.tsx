@@ -397,10 +397,10 @@ export default function ObjectivesPage() {
       setClientName(clientData.name || 'Client')
     }
     // Load family members - spouse name + children
-    const { data: familyData } = await supabase
-      .from('family_members')
-      .select('*')
-      .eq('client_id', id).in('section', ['financials', 'protection_needs'])
+   const { data: familyData } = await supabase
+  .from('family_members')
+  .select('*')
+  .eq('client_id', id)
     if (familyData) {
       const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
       if (spouse) setSpouseName(spouse.name || 'Spouse')
