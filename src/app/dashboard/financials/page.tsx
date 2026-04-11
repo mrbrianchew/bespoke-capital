@@ -1116,30 +1116,8 @@ if (financialsRow?.data) {
 }
 setLoading(false)
   }
-const upd = useCallback((key: keyof FactFinding, val: unknown) => {
-  setFf(prev => {
-    if (!prev) return prev
-    const next = { ...prev, [key]: val }
-    scheduleSave()
-    return next
-  })
-  setSaved(false)
-}, [scheduleSave])
-
-  const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
-  setFf(prev => {
-    if (!prev) return prev
-    const next = { ...prev, [person]: { ...prev[person], [key]: val } }
-    scheduleSave()
-    return next
-  })
-  setSaved(false)
-}, [scheduleSave])
-
-  const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
-
-// Auto-save function (debounced)
-const scheduleSave = useCallback(() => {
+  // 1. scheduleSave FIRST
+  const scheduleSave = useCallback(() => {
   if (!ff || !client) return
   
   if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -1190,6 +1168,29 @@ const scheduleSave = useCallback(() => {
     }
   }, 800)
 }, [ff, client, supabase])
+const upd = useCallback((key: keyof FactFinding, val: unknown) => {
+  setFf(prev => {
+    if (!prev) return prev
+    const next = { ...prev, [key]: val }
+    scheduleSave()
+    return next
+  })
+  setSaved(false)
+}, [scheduleSave])
+
+  const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
+  setFf(prev => {
+    if (!prev) return prev
+    const next = { ...prev, [person]: { ...prev[person], [key]: val } }
+    scheduleSave()
+    return next
+  })
+  setSaved(false)
+}, [scheduleSave])
+
+  const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
+
+// Auto-save function (debounced)
 
   if (loading) return <div className="flex items-center justify-center h-full"><div className="text-sm" style={{ color: 'var(--ink3)' }}>Loading…</div></div>
   if (!client) return <div className="flex flex-col items-center justify-center h-full gap-4"><div className="font-serif text-2xl" style={{ color: 'var(--ink)' }}>No Client Selected</div></div>
