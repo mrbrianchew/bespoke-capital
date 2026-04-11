@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback, Suspense } from 'react'
+import React, { useEffect, useState, useCallback, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
@@ -1071,6 +1071,7 @@ function FactFindingPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -1115,65 +1116,80 @@ if (financialsRow?.data) {
 }
 setLoading(false)
   }
-  const upd = useCallback((key: keyof FactFinding, val: unknown) => {
-    setFf(prev => prev ? { ...prev, [key]: val } : prev); setSaved(false)
-  }, [])
+const upd = useCallback((key: keyof FactFinding, val: unknown) => {
+  setFf(prev => {
+    if (!prev) return prev
+    const next = { ...prev, [key]: val }
+    scheduleSave()
+    return next
+  })
+  setSaved(false)
+}, [scheduleSave])
 
   const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
-    setFf(prev => { if (!prev) return prev; return { ...prev, [person]: { ...prev[person], [key]: val } } }); setSaved(false)
-  }, [])
+  setFf(prev => {
+    if (!prev) return prev
+    const next = { ...prev, [person]: { ...prev[person], [key]: val } }
+    scheduleSave()
+    return next
+  })
+  setSaved(false)
+}, [scheduleSave])
 
   const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
 
-async function save() {
+// Auto-save function (debounced)
+const scheduleSave = useCallback(() => {
   if (!ff || !client) return
-  setSaving(true)
   
-  const { client_id, ...data } = ff
+  if (saveTimer.current) clearTimeout(saveTimer.current)
   
-  // First, check if a row already exists
-  const { data: existing } = await supabase
-    .from('fact_finding')
-    .select('id')
-    .eq('client_id', client.id)
-    .eq('section', 'financials')
-    .maybeSingle()
-  
-  let error = null
-  
-  if (existing) {
-    // Update existing row
-    const { error: updateError } = await supabase
+  saveTimer.current = setTimeout(async () => {
+    setSaving(true)
+    
+    const { client_id, ...data } = ff
+    
+    // Check if financials row exists
+    const { data: existing } = await supabase
       .from('fact_finding')
-      .update({ 
-        data: data, 
-        updated_at: new Date().toISOString() 
-      })
-      .eq('id', existing.id)
-    error = updateError
-  } else {
-    // Insert new row
-    const { error: insertError } = await supabase
-      .from('fact_finding')
-      .insert({ 
-        client_id: client.id, 
-        section: 'financials', 
-        data: data, 
-        updated_at: new Date().toISOString() 
-      })
-    error = insertError
-  }
-  
-  setSaving(false)
-  
-  if (error) {
-    console.error('Save error:', error)
-    alert('Save failed: ' + error.message)
-  } else {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
-  }
-}
+      .select('id')
+      .eq('client_id', client.id)
+      .eq('section', 'financials')
+      .maybeSingle()
+    
+    let error = null
+    
+    if (existing) {
+      const { error: updateError } = await supabase
+        .from('fact_finding')
+        .update({ 
+          data: data, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', existing.id)
+      error = updateError
+    } else {
+      const { error: insertError } = await supabase
+        .from('fact_finding')
+        .insert({ 
+          client_id: client.id, 
+          section: 'financials', 
+          data: data, 
+          updated_at: new Date().toISOString() 
+        })
+      error = insertError
+    }
+    
+    setSaving(false)
+    
+    if (error) {
+      console.error('Save error:', error)
+    } else {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }
+  }, 800)
+}, [ff, client, supabase])
 
   if (loading) return <div className="flex items-center justify-center h-full"><div className="text-sm" style={{ color: 'var(--ink3)' }}>Loading…</div></div>
   if (!client) return <div className="flex flex-col items-center justify-center h-full gap-4"><div className="font-serif text-2xl" style={{ color: 'var(--ink)' }}>No Client Selected</div></div>
@@ -1354,10 +1370,9 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 </div>
               ))}
             </div>
-            <button onClick={save} disabled={saving} className="px-5 py-2 text-sm font-medium"
-              style={{ background: saved ? 'var(--emerald)' : saving ? 'rgba(255,255,255,0.1)' : 'rgba(168,131,74,0.9)', color: 'white', border: 'none' }}>
-              {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save'}
-            </button>
+            <div className="px-5 py-2 text-sm font-medium" style={{ color: 'rgba(255,255,255,0.6)' }}>
+  {saved ? '✓ Saved' : saving ? 'Saving…' : ''}
+</div>
           </div>
         </div>
         <div className="flex">
