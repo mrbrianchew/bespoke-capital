@@ -841,6 +841,7 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
       print-color-adjust: exact !important;
     }
 
+.print-hide-from-p2 { display: none !important; }
     .print-page-break-before {
       page-break-before: always !important;
       break-before: page !important;
