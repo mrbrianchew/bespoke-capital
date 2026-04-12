@@ -1350,7 +1350,7 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
         {youngestAge !== null ? (
           <div>
             <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
-              Coverage term auto-calculated based on youngest child reaching university graduation (age 26).
+             Coverage term auto-calculated based on the child with the most years to graduation.
             </p>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               {children.map(c => {
