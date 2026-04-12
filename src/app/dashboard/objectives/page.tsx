@@ -471,9 +471,20 @@ export default function ObjectivesPage() {
   // Coverage term
   const childAges = children.map(c => c.age ?? getAge(c.date_of_birth))
   const youngestAge = childAges.length > 0 ? Math.min(...childAges) : null
-  const coverageTerm = youngestAge !== null
-    ? Math.max(0, (22 + 4) - youngestAge)
-    : (p.coverageTermOverride ?? 20)
+const coverageTerm = (() => {
+  if (youngestAge === null) return p.coverageTermOverride ?? 20
+  const eduKids = p.educationChildren ?? []
+  const terms = children.map(c => {
+    const ec = eduKids.find(e => e.childId === c.id)
+    const childAge = c.age ?? getAge(c.date_of_birth)
+    const defaultEntry = c.gender === 'Male' ? 21 : 19
+    const entryAge = ec?.uniEntryAge ?? defaultEntry
+    const duration = ec?.courseDuration ?? 4
+    const gradAge = entryAge + duration
+    return Math.max(0, gradAge - childAge)
+  })
+  return terms.length > 0 ? Math.max(...terms) : (p.coverageTermOverride ?? 20)
+})()
 
   // Default cover pcts based on expense share
   const defaultClientPct = annExpTotal > 0 ? (annExpClient / annExpTotal * 100) : 100
@@ -1321,7 +1332,12 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               {children.map(c => {
                 const age = c.age ?? getAge(c.date_of_birth)
-                const uniGrad = Math.max(0, 26 - age)
+const ec = (p.educationChildren ?? []).find(e => e.childId === c.id)
+const defaultEntry = c.gender === 'Male' ? 21 : 19
+const entryAge = ec?.uniEntryAge ?? defaultEntry
+const duration = ec?.courseDuration ?? 4
+const gradAge = entryAge + duration
+const uniGrad = Math.max(0, gradAge - age)
                 return (
                   <div key={c.id} style={{ padding: '10px 16px', background: '#F5F0E8', borderRadius: 6, borderLeft: '3px solid #A8834A' }}>
                     <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
