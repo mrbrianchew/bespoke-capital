@@ -199,14 +199,32 @@ export default function ProtectionPage() {
       else if (client.age) setClientAge(Number(client.age))
     }
 
-    // Fact finding — merge all rows
-    const { data: rows } = await supabase
+// Get financials data (income, expenses, assets, properties)
+const { data: financialsRow } = await supabase
   .from('fact_finding')
-  .select('section, data')
+  .select('data')
   .eq('client_id', id)
-.in('section', ['financials', 'protection_needs', 'protection_portfolio'])
-    const merged: any = {}
-    if (rows?.length) rows.forEach((r: any) => { if (r.data) Object.assign(merged, r.data) })
+  .eq('section', 'financials')
+  .maybeSingle()
+
+// Get protection portfolio (existing policies)
+const { data: portfolioRow } = await supabase
+  .from('fact_finding')
+  .select('data')
+  .eq('client_id', id)
+  .eq('section', 'protection_portfolio')
+  .maybeSingle()
+
+// Merge the data
+const merged: any = {
+  ...(financialsRow?.data || {}),
+  ...(portfolioRow?.data || {})
+}
+
+// Debug - check what was loaded
+console.log('Loaded financial data:', financialsRow?.data)
+console.log('Person1 gross monthly:', merged.person1?.gross_monthly)
+console.log('Properties:', merged.properties)
 
     // Also load family members from dedicated table (spouse + children)
     const { data: familyRows } = await supabase
@@ -301,17 +319,32 @@ export default function ProtectionPage() {
   const ff = ffData || {}
   const inflation = (Number(ff.inflation_rate) || 3) / 100
 
-  const p1Mo = Number(ff.monthly_income || ff.monthlyIncomeClient || ff.person1?.monthly_income || 0)
-  const p2Mo = Number(
-    ff.person2?.monthly_income ||
-    ff.person2?.monthlyIncome  ||
-    ff.monthly_income_spouse   ||
-    ff.monthlyIncomeSpouse     ||
-    ff.spouse_monthly_income   || 0
-  )
+// Income from Financial Profile - stored in person1.gross_monthly
+const p1Mo = Number(ff.person1?.gross_monthly || ff.monthly_income || 0)
+const p2Mo = Number(ff.person2?.gross_monthly || ff.monthly_income_spouse || 0)
 
-  const expCats = ['financial_commitments','household','personal','children','lifestyle']
-  const p1Exp = expCats.reduce((s,c) => s + Number(ff[`d_${c}`]||0), 0) || (p1Mo*12*0.7)
+// Calculate annual expenses from the financials data
+// The Financial Profile saves expenses in s_* fields for simple mode
+const p1Exp = 
+  (Number(ff.s_financial) || 0) +
+  (Number(ff.s_household) || 0) +
+  (Number(ff.s_personal) || 0) +
+  (Number(ff.s_children) || 0) +
+  (Number(ff.s_lifestyle) || 0) +
+  (Number(ff.s_mortgage) || 0)
+
+// If no expenses entered, estimate as 70% of income
+const finalP1Exp = p1Exp > 0 ? p1Exp : (p1Mo * 12 * 0.7)
+
+const p2ExpRaw = 
+  (Number(ff.s2_financial) || 0) +
+  (Number(ff.s2_household) || 0) +
+  (Number(ff.s2_personal) || 0) +
+  (Number(ff.s2_children) || 0) +
+  (Number(ff.s2_lifestyle) || 0) +
+  (Number(ff.s2_mortgage) || 0)
+
+const finalP2Exp = p2ExpRaw > 0 ? p2ExpRaw : (p2Mo * 12 * 0.7)
 
   const p2ExpRaw = expCats.reduce((s,c) =>
     s + Number(ff[`d2_${c}`] || ff.person2?.[`d_${c}`] || 0), 0
@@ -337,10 +370,10 @@ export default function ProtectionPage() {
   const p1Liq  = Number(ff.a_savings||0)+Number(ff.a_alternatives||0)
   const p2Liq  = Number(ff.a2_savings||0)+Number(ff.a2_alternatives||0)
 
-  const clientDTPD = Math.max(0, fvAnn(p1Exp,inflation,coverTerm)+mort+edu-p1CPF-p1Prop)
-  const clientCI   = Math.max(0, p1Mo*24 - p1Liq)
-  const spouseDTPD = isCouple ? Math.max(0, fvAnn(p2Exp,inflation,coverTerm)+mort-p2CPF-p2Prop) : 0
-  const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
+const clientDTPD = Math.max(0, fvAnn(finalP1Exp,inflation,coverTerm)+mort+edu-p1CPF-p1Prop)
+const clientCI   = Math.max(0, p1Mo*24 - p1Liq)
+const spouseDTPD = isCouple ? Math.max(0, fvAnn(finalP2Exp,inflation,coverTerm)+mort-p2CPF-p2Prop) : 0
+const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
 
   function toSGD(val: number, p: Policy) {
     return p.isUSD ? val * (p.fxRate || 1.35) : val
@@ -392,7 +425,7 @@ export default function ProtectionPage() {
   const aCI     = overviewPerson==='client' ? clientCI   : spouseCI
   const aLH     = overviewPerson==='client' ? cLH        : sLH
   const aCH     = overviewPerson==='client' ? cCH        : sCH
-  const aExp    = overviewPerson==='client' ? p1Exp      : p2Exp
+  const aExp    = overviewPerson==='client' ? finalP1Exp      : finalP2Exp
   const aOffset = overviewPerson==='client' ? p1CPF+p1Prop : p2CPF+p2Prop
   const aName   = overviewPerson==='client' ? clientName : spouseName
 
