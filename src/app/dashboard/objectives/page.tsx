@@ -288,7 +288,21 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
   }, 0)
   return liquid + cpf + propertyValue
 }
-
+function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYears: number, startMmYyyy: string): number {
+  if (!initialLoan || !tenureYears) return 0
+  const parts = startMmYyyy.split('/')
+  if (parts.length !== 2) return initialLoan
+  const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+  const today = new Date()
+  const monthsElapsed = (today.getFullYear() - startDate.getFullYear()) * 12 + (today.getMonth() - startDate.getMonth())
+  if (monthsElapsed <= 0) return initialLoan
+  const n = tenureYears * 12
+  if (monthsElapsed >= n) return 0
+  if (!annualRate) return Math.round(initialLoan * (1 - monthsElapsed / n))
+  const r = annualRate / 100 / 12
+  const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+  return Math.max(0, Math.round(initialLoan * Math.pow(1 + r, monthsElapsed) - pmt * (Math.pow(1 + r, monthsElapsed) - 1) / r))
+}
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export default function ObjectivesPage() {
@@ -500,7 +514,7 @@ export default function ObjectivesPage() {
           remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
         }
       }
-      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+      const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
       const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
       return {
         id: prop.id,
@@ -589,7 +603,7 @@ export default function ObjectivesPage() {
           remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
         }
       }
-      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+     const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
       const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
       return {
         id: prop.id,
@@ -726,7 +740,7 @@ export default function ObjectivesPage() {
           remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
         }
       }
-      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+      const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
       const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
       return {
         id: prop.id,
@@ -975,7 +989,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
           remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
         }
       }
-      const outstanding = prop.outstanding ?? pmtCalc(initialLoan, interestRate, initialTenure) * 12 * remainingTenure
+     const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
       const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
       return {
         id: prop.id,
