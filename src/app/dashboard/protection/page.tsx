@@ -493,8 +493,7 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
             {/* ── OVERVIEW ── */}
       {activeTab==='overview' && (
         <div style={{padding:'36px 48px',flex:1}}>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:32}}>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:32}}>
 
   {/* Life & Disability Cover */}
   <div style={{background:'#1C1A17',padding:'24px 28px',position:'relative'}}>
@@ -528,6 +527,41 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
       </div>
     </div>
   </div>
+
+  {/* Critical Illness Cover */}
+  <div style={{background:'#1C1A17',padding:'24px 28px',position:'relative'}}>
+    <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#2D6A4F'}}/>
+    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(45,106,79,0.9)',marginBottom:16}}>Critical Illness Cover</div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
+      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',paddingRight:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Need</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#F0EDE8'}}>{fmt(aCI)}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>5yr expense window</div>
+      </div>
+      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',padding:'0 20px'}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Have</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#C4A464'}}>{fmt(aCH)}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>Active policies</div>
+      </div>
+      <div style={{paddingLeft:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Gap</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aCI-aCH)>0?'#E08080':'#80C4A0'}}>{fmt(Math.max(0,aCI-aCH))}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</div>
+      </div>
+    </div>
+    <div style={{marginTop:16}}>
+      <div style={{height:3,background:'rgba(255,255,255,0.07)',position:'relative'}}>
+        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aCI>0?Math.round(Math.min(aCH,aCI)/aCI*100):0}%`,background:Math.max(0,aCI-aCH)>0?'#C4A464':'#80C4A0'}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'rgba(255,255,255,0.18)'}}>
+        <span>0%</span>
+        <span style={{color:Math.max(0,aCI-aCH)>0?'#C4A464':'#80C4A0',fontWeight:500}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</span>
+        <span>100%</span>
+      </div>
+    </div>
+  </div>
+
+</div>
 
   {/* Critical Illness Cover */}
   <div style={{background:'#1C1A17',padding:'24px 28px',position:'relative'}}>
