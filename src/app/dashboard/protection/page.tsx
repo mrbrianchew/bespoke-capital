@@ -647,11 +647,11 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
 
             // Category buckets
             const catBuckets = [
-              { code:'medical',    label:'Medical Insurance',                    accent:'#7A9CBF', hint:'Medical & hospitalisation coverage' },
-              { code:'ltc',        label:'Long Term Disability Care Insurance',  accent:'#9B7BAA', hint:'LTC / disability income protection' },
-              { code:'general',    label:'General Insurance',                    accent:'#8A9A7E', hint:'Personal accident, travel, maid' },
-              { code:'life',       label:'Core Protection',                      accent:'#c8a96e', hint:'Life, WL, Term, UL, IUL, VUL' },
-              { code:'endowment',  label:'Wealth Accumulation Portfolio',        accent:'#B8956A', hint:'Endowment, annuity, investments, ILP' },
+{ code:'medical',    label:'Medical Insurance',                    accent:'#7A9CBF', hint:'Medical & hospitalisation coverage',  printBreak: 'before-p2' },
+{ code:'ltc',        label:'Long Term Disability Care Insurance',  accent:'#9B7BAA', hint:'LTC / disability income protection',  printBreak: '' },
+{ code:'general',    label:'General Insurance',                    accent:'#8A9A7E', hint:'Personal accident, travel, maid',      printBreak: '' },
+{ code:'life',       label:'Core Protection',                      accent:'#c8a96e', hint:'Life, WL, Term, UL, IUL, VUL',        printBreak: 'before-p3' },
+{ code:'endowment',  label:'Wealth Accumulation Portfolio',        accent:'#B8956A', hint:'Endowment, annuity, investments, ILP', printBreak: '' },
             ]
 
             return (
@@ -704,8 +704,7 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
                       const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
                       
                       return (
-                        <div key={cat.code} style={{marginBottom:28}}>
-                          {cat.code === 'life' && <div style={{pageBreakBefore: 'always'}} />}
+  <div key={cat.code} style={{marginBottom:28}} className={cat.printBreak === 'before-p2' || cat.printBreak === 'before-p3' ? 'print-page-break-before' : ''}>
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -826,23 +825,33 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
         />
       )}
 
-            <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          aside, nav { display: none !important; }
-          body { background: white !important; }
-          
-          @page {
-            size: A4 landscape;
-            margin: 1cm;
-          }
-          
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-        }
-      `}</style>
+<style>{`
+  @media print {
+    .no-print { display: none !important; }
+    aside, nav { display: none !important; }
+    body { background: white !important; }
+    
+    @page {
+      size: A4 landscape;
+      margin: 1.2cm;
+    }
+    
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .print-page-break-before {
+      page-break-before: always !important;
+      break-before: page !important;
+    }
+
+    .print-page-break-after {
+      page-break-after: always !important;
+      break-after: page !important;
+    }
+  }
+`}</style>
     </div>
   )
 }
