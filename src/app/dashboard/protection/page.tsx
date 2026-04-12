@@ -664,7 +664,7 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
                       personAge={personAge}
                       policies={policies}
                     />
-                    <div style={{pageBreakAfter: 'always'}} />
+                  <div style={{pageBreakAfter:'always',breakAfter:'page'}} />
                   </>
                 )}
 
@@ -704,7 +704,7 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
                       const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
                       
                       return (
-  <div key={cat.code} style={{marginBottom:28}} className={cat.printBreak === 'before-p2' || cat.printBreak === 'before-p3' ? 'print-page-break-before' : ''}>
+ <div key={cat.code} style={{marginBottom:28}} className={cat.printBreak === 'page' ? 'print-break-before' : ''}>
                           {/* Category header */}
                           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
                             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -830,26 +830,20 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
     .no-print { display: none !important; }
     aside, nav { display: none !important; }
     body { background: white !important; }
-    
+
     @page {
       size: A4 landscape;
       margin: 1.2cm;
     }
-    
+
     * {
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
 
-.print-hide-from-p2 { display: none !important; }
-    .print-page-break-before {
+    .print-break-before {
       page-break-before: always !important;
       break-before: page !important;
-    }
-
-    .print-page-break-after {
-      page-break-after: always !important;
-      break-after: page !important;
     }
   }
 `}</style>
