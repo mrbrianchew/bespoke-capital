@@ -1196,11 +1196,31 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   setFf(prev => {
     if (!prev) return prev
     const next = { ...prev, [key]: val }
-    scheduleSave()
+    // Schedule save with the fresh next state directly
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      if (!client) return
+      setSaving(true)
+      const { client_id, ...data } = next
+      const { data: existing } = await supabase
+        .from('fact_finding')
+        .select('id')
+        .eq('client_id', client.id)
+        .eq('section', 'financials')
+        .maybeSingle()
+      if (existing) {
+        await supabase.from('fact_finding').update({ data, updated_at: new Date().toISOString() }).eq('id', existing.id)
+      } else {
+        await supabase.from('fact_finding').insert({ client_id: client.id, section: 'financials', data, updated_at: new Date().toISOString() })
+      }
+      setSaving(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }, 800)
     return next
   })
   setSaved(false)
-}, [scheduleSave])
+}, [client, supabase])
 
   const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
   setFf(prev => {
