@@ -406,10 +406,16 @@ const activePols = allPolicies.filter((pol: any) => ['In-Force', 'Premium Holida
 const toSGDVal = (val: number, pol: any) => pol.isUSD ? val * (pol.fxRate || 1.35) : val
 const calcLifeHave = (person: string) => activePols
   .filter((pol: any) => pol.person === person && pol.categoryCode === 'life')
-  .reduce((s: number, pol: any) => s + toSGDVal(Math.max(pol.baseDeath || 0, pol.sumAssured || 0), pol), 0)
+  .reduce((s: number, pol: any) => {
+    const mult = (pol.multiplier || 1)
+    return s + toSGDVal(Math.max((pol.baseDeath || 0) * mult, pol.sumAssured || 0), pol)
+  }, 0)
 const calcCIHave = (person: string) => activePols
   .filter((pol: any) => pol.person === person && pol.categoryCode === 'life')
-  .reduce((s: number, pol: any) => s + toSGDVal(Math.max(pol.baseAdvCI || 0, pol.baseEarlyCI || 0), pol), 0)
+  .reduce((s: number, pol: any) => {
+    const mult = (pol.multiplier || 1)
+    return s + toSGDVal(Math.max((pol.baseAdvCI || 0) * mult, (pol.baseEarlyCI || 0) * mult), pol)
+  }, 0)
 setP(prev => ({
   ...prev,
   existingLifeCoverClient: calcLifeHave('client'),
