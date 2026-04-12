@@ -387,7 +387,7 @@ export default function ObjectivesPage() {
     .from('fact_finding')
     .select('*')
     .eq('client_id', id)
-    .in('section', ['financials', 'protection_needs'])
+  .in('section', ['financials', 'protection_needs', 'protection_portfolio'])
     
   if (ffRows && ffRows.length > 0) {
     const merged: FactFinding = { client_id: id }
@@ -400,6 +400,23 @@ export default function ObjectivesPage() {
       setP(prev => ({ ...prev, ...protData }))
     }
     setFf(merged)
+    const portfolioRow = ffRows.find((r: any) => r.section === 'protection_portfolio')
+const allPolicies: any[] = portfolioRow?.data?.risk_management?.policies ?? []
+const activePols = allPolicies.filter((pol: any) => ['In-Force', 'Premium Holiday', 'Paid-up'].includes(pol.status))
+const toSGDVal = (val: number, pol: any) => pol.isUSD ? val * (pol.fxRate || 1.35) : val
+const calcLifeHave = (person: string) => activePols
+  .filter((pol: any) => pol.person === person && pol.categoryCode === 'life')
+  .reduce((s: number, pol: any) => s + toSGDVal(Math.max(pol.baseDeath || 0, pol.sumAssured || 0), pol), 0)
+const calcCIHave = (person: string) => activePols
+  .filter((pol: any) => pol.person === person && pol.categoryCode === 'life')
+  .reduce((s: number, pol: any) => s + toSGDVal(Math.max(pol.baseAdvCI || 0, pol.baseEarlyCI || 0), pol), 0)
+setP(prev => ({
+  ...prev,
+  existingLifeCoverClient: calcLifeHave('client'),
+  existingLifeCoverSpouse: calcLifeHave('spouse'),
+  existingCICoverClient: calcCIHave('client'),
+  existingCICoverSpouse: calcCIHave('spouse'),
+}))
   }
     // Load client name
     const { data: clientData } = await supabase
