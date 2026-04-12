@@ -563,11 +563,7 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
   </div>
 
 </div>
-              <div key={c.label} style={{background:'white',border:'0.5px solid var(--line)',padding:'18px 22px'}}>
-                <div style={{fontSize:10,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>{c.label}</div>
-                <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,color:'var(--ink)',fontWeight:300}}>{c.value}</div>
-                <div style={{fontSize:11,color:'var(--ink3)',marginTop:2}}>{c.sub}</div>
-              </div>
+              
             ))}
           </div>
 
