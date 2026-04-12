@@ -494,12 +494,75 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
       {activeTab==='overview' && (
         <div style={{padding:'36px 48px',flex:1}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:32}}>
-            {[
-              {label:'Total Active Policies',value:String(activePolicies.length),sub:'all insured persons'},
-              {label:'Annual Premium',value:fmt(totalPrem),sub:'combined portfolio'},
-              {label:`${aName} — D/TPD Gap`,value:fmt(Math.max(0,aDTPD-aLH)),sub:aDTPD>0?`Need ${fmt(aDTPD)}`:'Complete profile first'},
-              {label:`${aName} — CI Gap`,value:fmt(Math.max(0,aCI-aCH)),sub:aCI>0?`Need ${fmt(aCI)}`:'Complete profile first'},
-            ].map(c=>(
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}}>
+
+  {/* Life & Disability Cover */}
+  <div style={{background:'#1C1A17',padding:'24px 28px',position:'relative'}}>
+    <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#A8834A'}}/>
+    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.75)',marginBottom:16}}>Life &amp; Disability Cover</div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
+      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',paddingRight:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Need</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#F0EDE8'}}>{fmt(aDTPD)}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>FV annuity · {coverTerm}yr</div>
+      </div>
+      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',padding:'0 20px'}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Have</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#C4A464'}}>{fmt(aLH)}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>Active policies</div>
+      </div>
+      <div style={{paddingLeft:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Gap</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aDTPD-aLH)>0?'#E08080':'#80C4A0'}}>{fmt(Math.max(0,aDTPD-aLH))}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</div>
+      </div>
+    </div>
+    <div style={{marginTop:16}}>
+      <div style={{height:3,background:'rgba(255,255,255,0.07)',position:'relative'}}>
+        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aDTPD>0?Math.round(Math.min(aLH,aDTPD)/aDTPD*100):0}%`,background:Math.max(0,aDTPD-aLH)>0?'#E08080':'#80C4A0'}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'rgba(255,255,255,0.18)'}}>
+        <span>0%</span>
+        <span style={{color:Math.max(0,aDTPD-aLH)>0?'#E08080':'#80C4A0',fontWeight:500}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</span>
+        <span>100%</span>
+      </div>
+    </div>
+  </div>
+
+  {/* Critical Illness Cover */}
+  <div style={{background:'#1C1A17',padding:'24px 28px',position:'relative'}}>
+    <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#2D6A4F'}}/>
+    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(45,106,79,0.9)',marginBottom:16}}>Critical Illness Cover</div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
+      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',paddingRight:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Need</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#F0EDE8'}}>{fmt(aCI)}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>5yr expense window</div>
+      </div>
+      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',padding:'0 20px'}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Have</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#C4A464'}}>{fmt(aCH)}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>Active policies</div>
+      </div>
+      <div style={{paddingLeft:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Gap</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aCI-aCH)>0?'#E08080':'#80C4A0'}}>{fmt(Math.max(0,aCI-aCH))}</div>
+        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</div>
+      </div>
+    </div>
+    <div style={{marginTop:16}}>
+      <div style={{height:3,background:'rgba(255,255,255,0.07)',position:'relative'}}>
+        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aCI>0?Math.round(Math.min(aCH,aCI)/aCI*100):0}%`,background:Math.max(0,aCI-aCH)>0?'#C4A464':'#80C4A0'}}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'rgba(255,255,255,0.18)'}}>
+        <span>0%</span>
+        <span style={{color:Math.max(0,aCI-aCH)>0?'#C4A464':'#80C4A0',fontWeight:500}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</span>
+        <span>100%</span>
+      </div>
+    </div>
+  </div>
+
+</div>
               <div key={c.label} style={{background:'white',border:'0.5px solid var(--line)',padding:'18px 22px'}}>
                 <div style={{fontSize:10,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>{c.label}</div>
                 <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,color:'var(--ink)',fontWeight:300}}>{c.value}</div>
@@ -525,20 +588,8 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
 
           {hasChartData ? (
             <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-              <CoverageChart
-                title="Death / TPD Coverage Needs Analysis"
-                needLabel="Required Family Protection Capital"
-                haveLabel="Existing Family Protection"
-                data={chartData.map(d=>({age:d.age,need:d.dtpd,have:aLH}))}
-                needColor="#00BCD4"
-              />
-              <CoverageChart
-                title="Critical Illness Coverage Needs Analysis"
-                needLabel="Required Critical Illness Protection"
-                haveLabel="Existing Critical Illness Protection"
-                data={chartData.map(d=>({age:d.age,need:d.ci,have:aCH}))}
-                needColor="#00BCD4"
-              />
+              <CoverageChart eyebrow="Life & Disability" title="Death / TPD Coverage Needs Analysis" needLabel="Required capital" haveLabel="Existing portfolio" data={chartData.map(d=>({age:d.age,need:d.dtpd,have:aLH}))} accentColor="#C4A464" />
+             <CoverageChart eyebrow="Critical Illness" title="Critical Illness Coverage Needs Analysis" needLabel="Required capital" haveLabel="Existing portfolio" data={chartData.map(d=>({age:d.age,need:d.ci,have:aCH}))} accentColor="#2D6A4F" />
             </div>
           ) : (
             <div style={{marginTop:20,padding:'24px',background:'white',border:'0.5px solid var(--line)',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
@@ -805,36 +856,56 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
 }
 
 // ─── Coverage Chart ───────────────────────────────────────────────────────────
-function CoverageChart({title,needLabel,haveLabel,data,needColor}:{title:string;needLabel:string;haveLabel:string;data:{age:number;need:number;have:number}[];needColor:string}) {
-  const W=520,H=240,PL=72,PR=12,PT=16,PB=32
+function CoverageChart({title,eyebrow,needLabel,haveLabel,data,accentColor}:{
+  title:string; eyebrow:string; needLabel:string; haveLabel:string
+  data:{age:number;need:number;have:number}[]; accentColor:string
+}) {
+  const W=520,H=180,PL=52,PR=12,PT=16,PB=28
   const iW=W-PL-PR, iH=H-PT-PB
   if (!data.length) return null
-  const maxV = Math.max(...data.map(d=>d.need),1)
+  const maxV = Math.max(...data.map(d=>Math.max(d.need,d.have)),1)
   const minA=data[0].age, aR=data[data.length-1].age-minA||1
   const xP=(a:number)=>((a-minA)/aR)*iW
   const yP=(v:number)=>iH-Math.min(1,v/maxV)*iH
-  const path=data.map((d,i)=>`${i===0?'M':'L'}${(PL+xP(d.age)).toFixed(1)},${(PT+yP(d.need)).toFixed(1)}`).join(' ')
-  const ticks=[0,.25,.5,.75,1]
-  const bW=Math.max(1.5,iW/data.length-0.5)
-  const fmtAx=(n:number)=>n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${n.toFixed(0)}`
+  const fmtAx=(n:number)=>n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:''
+  const ticks=[0,0.33,0.66,1]
+  const needPath=data.map((d,i)=>`${i===0?'M':'L'}${(PL+xP(d.age)).toFixed(1)},${(PT+yP(d.need)).toFixed(1)}`).join(' ')
+  const havePath=data.map((d,i)=>`${i===0?'M':'L'}${(PL+xP(d.age)).toFixed(1)},${(PT+yP(d.have)).toFixed(1)}`).join(' ')
+  const gapTop=data.map(d=>`${(PL+xP(d.age)).toFixed(1)},${(PT+yP(Math.max(d.need,d.have))).toFixed(1)}`).join(' ')
+  const gapBot=[...data].reverse().map(d=>`${(PL+xP(d.age)).toFixed(1)},${(PT+yP(Math.min(d.need,d.have))).toFixed(1)}`).join(' ')
+  const ageLabels=data.filter((_,i,arr)=>i===0||i===arr.length-1||i%(Math.floor(arr.length/6))===0)
   return (
-    <div style={{background:'white',border:'0.5px solid var(--line)',padding:'18px 22px'}}>
-      <div style={{fontSize:13,fontWeight:500,color:'var(--ink)',marginBottom:8}}>{title}</div>
-      <div style={{display:'flex',gap:14,marginBottom:10}}>
-        {[{col:'#4A90BF',lbl:haveLabel,bar:true},{col:needColor,lbl:needLabel,bar:false}].map(l=>(
-          <div key={l.lbl} style={{display:'flex',alignItems:'center',gap:5}}>
-            {l.bar?<div style={{width:18,height:10,background:l.col,opacity:.65}}/>:<svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke={l.col} strokeWidth="2"/></svg>}
-            <span style={{fontSize:10,color:'var(--ink3)'}}>{l.lbl}</span>
-          </div>
-        ))}
+    <div style={{background:'#161412',padding:'20px 22px'}}>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:`${accentColor}99`,marginBottom:4}}>{eyebrow}</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:17,fontWeight:300,color:'#F0EDE8'}}>{title}</div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible'}}>
-        {ticks.map(f=>{const y=PT+iH-f*iH;return(<g key={f}><line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="#E8E6E2" strokeWidth=".5"/><text x={PL-5} y={y+3} fontSize="8" fill="#999" textAnchor="end">{fmtAx(maxV*f)}</text></g>)})}
-        {data.map(d=><rect key={d.age} x={PL+xP(d.age)-bW/2} y={PT+yP(d.have)} width={bW} height={Math.max(0,iH-yP(d.have))} fill="#4A90BF" opacity=".6"/>)}
-        <path d={path} stroke={needColor} strokeWidth="1.8" fill="none" strokeLinejoin="round"/>
-        <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="#CCC" strokeWidth=".5"/>
-        {data.filter((_,i)=>i%4===0).map(d=><text key={d.age} x={PL+xP(d.age)} y={PT+iH+12} fontSize="8" fill="#999" textAnchor="middle">{d.age}</text>)}
+      <div style={{display:'flex',gap:20,marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:7}}>
+          <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#00C9A7" strokeWidth="1.8"/></svg>
+          <span style={{fontSize:10,color:'rgba(255,255,255,0.35)'}}>{needLabel}</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:7}}>
+          <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke={accentColor} strokeWidth="1.8" strokeDasharray="4,3"/></svg>
+          <span style={{fontSize:10,color:'rgba(255,255,255,0.35)'}}>{haveLabel}</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:7}}>
+          <div style={{width:14,height:8,background:'rgba(224,128,128,0.25)'}}/>
+          <span style={{fontSize:10,color:'rgba(255,255,255,0.35)'}}>Gap</span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block',overflow:'visible'}}>
+        {ticks.map(f=>{const y=PT+iH-f*iH;return(<g key={f}><line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" strokeDasharray="3,4"/><text x={PL-6} y={y+3.5} fontSize="9" fill="rgba(255,255,255,0.22)" textAnchor="end">{fmtAx(maxV*f)}</text></g>)})}
+        <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
+        <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
+        <polygon points={`${gapTop} ${gapBot}`} fill="rgba(224,128,128,0.14)"/>
+        <path d={havePath} stroke={accentColor} strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5,3" opacity="0.8"/>
+        <path d={needPath} stroke="#00C9A7" strokeWidth="1.8" fill="none" strokeLinejoin="round" strokeLinecap="round"/>
+        {ageLabels.map(d=>(<text key={d.age} x={(PL+xP(d.age)).toFixed(1)} y={PT+iH+16} fontSize="9" fill="rgba(255,255,255,0.2)" textAnchor="middle">{d.age}</text>))}
       </svg>
+      <div style={{marginTop:6,fontSize:10,color:'rgba(255,255,255,0.14)',fontStyle:'italic'}}>
+        Solid line = required · Dashed line = existing portfolio · Shaded area = protection gap
+      </div>
     </div>
   )
 }
