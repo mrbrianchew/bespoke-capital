@@ -346,11 +346,6 @@ const p2ExpRaw =
 
 const finalP2Exp = p2ExpRaw > 0 ? p2ExpRaw : (p2Mo * 12 * 0.7)
 
-  const p2ExpRaw = expCats.reduce((s,c) =>
-    s + Number(ff[`d2_${c}`] || ff.person2?.[`d_${c}`] || 0), 0
-  )
-  const p2Exp = p2ExpRaw || (p2Mo * 12 * 0.7) || (p1Exp * 0.7)
-
   let coverTerm = 25
   if (children.length > 0) {
     const minAge = Math.min(...children.map((c:any) => Number(c.age||0)))
