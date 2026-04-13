@@ -399,9 +399,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [clientAge, setClientAge] = useState(40)
   const [clientName, setClientName] = useState('')
   const year = new Date().getFullYear()
-  const page1Ref = useRef<HTMLDivElement>(null)
-  const page2Ref = useRef<HTMLDivElement>(null)
-  const page3Ref = useRef<HTMLDivElement>(null)
+const page1Ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => { loadShare() }, [])
 
@@ -568,7 +566,7 @@ setPolicies(filtered)
       </div>
 
       {/* PAGE 1 */}
-      <div ref={page1Ref} style={{width:1100,overflow:'hidden'}}>
+      <div ref={page1Ref}>
         <div style={hero('')}>
           <div>
             <div style={{fontSize:10,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:6}}>Bespoke Capital · Wealth Protection</div>
@@ -606,37 +604,25 @@ setPolicies(filtered)
         </div>
       </div>
 
-      {/* PAGE 2 — Medical, LTC, General */}
-      <div ref={page2Ref} className="print-break-before" style={{width:1100,overflow:'hidden'}}>
-        <div style={hero('')}>
-          <div>
-            <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
-            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>Basic Essential Protection · {clientName}</div>
-          </div>
-          <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>Prepared by Chew Zhiquan Brian</div>
-        </div>
-        <div style={pageBody}>
-          {catBuckets.filter(c=>['medical','ltc','general'].includes(c.code)).map(cat=>(
-            <CatSection key={cat.code} cat={cat}/>
-          ))}
-        </div>
-      </div>
-
-      {/* PAGE 3 — Core Protection & Wealth Accumulation */}
-      <div ref={page3Ref} className="print-break-before" style={{width:1100,overflow:'hidden'}}>
-        <div style={hero('')}>
-          <div>
-            <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
-            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>Core Protection & Wealth Accumulation · {clientName}</div>
-          </div>
-          <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>Prepared by Chew Zhiquan Brian</div>
-        </div>
-        <div style={pageBody}>
-          {catBuckets.filter(c=>['life','endowment'].includes(c.code)).map(cat=>(
-            <CatSection key={cat.code} cat={cat}/>
-          ))}
-        </div>
-      </div>
+      {/* ONE PAGE PER CATEGORY — only rendered if category has policies */}
+        {catBuckets.map(cat => {
+          const catPols = policies.filter(p => p.categoryCode === cat.code)
+          if (catPols.length === 0) return null
+          return (
+            <div key={cat.code} className="print-break-before">
+              <div style={hero('')}>
+                <div>
+                  <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
+                  <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>{cat.label} · {clientName}</div>
+                </div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>Prepared by Chew Zhiquan Brian</div>
+              </div>
+              <div style={pageBody}>
+                <CatSection cat={cat}/>
+              </div>
+            </div>
+          )
+        })}
 
       {/* Footer */}
       <div style={{minWidth:1100,background:'#1C1A17',padding:'20px 40px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
