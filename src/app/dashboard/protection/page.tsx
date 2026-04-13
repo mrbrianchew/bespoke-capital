@@ -430,8 +430,7 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
   for (let i = 0; i < 100-age; i++) {
     const a = age+i
     const yLeft = Math.max(0, (age+coverTerm)-a)
-    const yearlyOffset = offset / Math.max(1, coverTerm)
-    dtpdArray.push(Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - yearlyOffset*yLeft))
+dtpdArray.push(Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - (i===0?offset:0)))
   }
   
   // Find mortgage drop age from DTPD
