@@ -637,16 +637,10 @@ async function handleGenerateShare() {
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
               <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{activePolicies.length} active {activePolicies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
             </div>
-<div style={{display:'flex',gap:8}}>
-  <button onClick={()=>{setShowShareModal(true);setShareLink('');setSharePassword('');setShareCopied(false)}}
-    style={{padding:'8px 18px',background:'#1C1A17',color:'#c8a96e',border:'1px solid #c8a96e',cursor:'pointer',fontSize:12}}>
-    Share
-  </button>
-  <button onClick={()=>window.print()}
-    style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>
-    Print / PDF
-  </button>
-</div>
+<button onClick={()=>{setShowShareModal(true);setShareLink('');setSharePassword('');setShareCopied(false)}}
+  style={{padding:'8px 18px',background:'#1C1A17',color:'#c8a96e',border:'1px solid #c8a96e',cursor:'pointer',fontSize:12}}>
+  Share
+</button>
           </div>
 
           {/* Person tabs */}
