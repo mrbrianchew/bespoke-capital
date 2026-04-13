@@ -523,69 +523,69 @@ async function handleGenerateShare() {
             {/* ── OVERVIEW ── */}
       {activeTab==='overview' && (
         <div style={{padding:'36px 48px',flex:1}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:32}}>
+       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:32}}>
 
   {/* Life & Disability Cover */}
-  <div style={{background:'#1C1A17',padding:'24px 28px',position:'relative'}}>
+  <div style={{background:'white',border:'0.5px solid var(--line)',padding:'24px 28px',position:'relative'}}>
     <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#A8834A'}}/>
-    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.75)',marginBottom:16}}>Life &amp; Disability Cover</div>
+    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'#A8834A',marginBottom:16}}>Life &amp; Disability Cover</div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
-      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',paddingRight:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Need</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#F0EDE8'}}>{fmt(aDTPD)}</div>
-        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>FV annuity · {coverTerm}yr</div>
+      <div style={{borderRight:'1px solid var(--line)',paddingRight:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Need</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'var(--ink)'}}>{fmt(aDTPD)}</div>
+        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>FV annuity · {coverTerm}yr</div>
       </div>
-      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',padding:'0 20px'}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Have</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#C4A464'}}>{fmt(aLH)}</div>
-        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>Active policies</div>
+      <div style={{borderRight:'1px solid var(--line)',padding:'0 20px'}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Have</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#A8834A'}}>{fmt(aLH)}</div>
+        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>Active policies</div>
       </div>
       <div style={{paddingLeft:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Gap</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aDTPD-aLH)>0?'#E08080':'#80C4A0'}}>{fmt(Math.max(0,aDTPD-aLH))}</div>
-        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</div>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Gap</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F'}}>{fmt(Math.max(0,aDTPD-aLH))}</div>
+        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</div>
       </div>
     </div>
     <div style={{marginTop:16}}>
-      <div style={{height:3,background:'rgba(255,255,255,0.07)',position:'relative'}}>
-        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aDTPD>0?Math.round(Math.min(aLH,aDTPD)/aDTPD*100):0}%`,background:Math.max(0,aDTPD-aLH)>0?'#E08080':'#80C4A0'}}/>
+      <div style={{height:3,background:'var(--line)',position:'relative'}}>
+        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aDTPD>0?Math.round(Math.min(aLH,aDTPD)/aDTPD*100):0}%`,background:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F'}}/>
       </div>
-      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'rgba(255,255,255,0.18)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'var(--ink3)'}}>
         <span>0%</span>
-        <span style={{color:Math.max(0,aDTPD-aLH)>0?'#E08080':'#80C4A0',fontWeight:500}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</span>
+        <span style={{color:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F',fontWeight:500}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</span>
         <span>100%</span>
       </div>
     </div>
   </div>
 
   {/* Critical Illness Cover */}
-  <div style={{background:'#1C1A17',padding:'24px 28px',position:'relative'}}>
+  <div style={{background:'white',border:'0.5px solid var(--line)',padding:'24px 28px',position:'relative'}}>
     <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#2D6A4F'}}/>
-    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(45,106,79,0.9)',marginBottom:16}}>Critical Illness Cover</div>
+    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'#2D6A4F',marginBottom:16}}>Critical Illness Cover</div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
-      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',paddingRight:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Need</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#F0EDE8'}}>{fmt(aCI)}</div>
-        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>5yr expense window</div>
+      <div style={{borderRight:'1px solid var(--line)',paddingRight:20}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Need</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'var(--ink)'}}>{fmt(aCI)}</div>
+        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>24-month income window</div>
       </div>
-      <div style={{borderRight:'1px solid rgba(255,255,255,0.08)',padding:'0 20px'}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Have</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#C4A464'}}>{fmt(aCH)}</div>
-        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>Active policies</div>
+      <div style={{borderRight:'1px solid var(--line)',padding:'0 20px'}}>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Have</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#A8834A'}}>{fmt(aCH)}</div>
+        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>Active policies</div>
       </div>
       <div style={{paddingLeft:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:8}}>Gap</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aCI-aCH)>0?'#E08080':'#80C4A0'}}>{fmt(Math.max(0,aCI-aCH))}</div>
-        <div style={{fontSize:10,color:'rgba(255,255,255,0.22)',marginTop:4}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</div>
+        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Gap</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F'}}>{fmt(Math.max(0,aCI-aCH))}</div>
+        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</div>
       </div>
     </div>
     <div style={{marginTop:16}}>
-      <div style={{height:3,background:'rgba(255,255,255,0.07)',position:'relative'}}>
-        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aCI>0?Math.round(Math.min(aCH,aCI)/aCI*100):0}%`,background:Math.max(0,aCI-aCH)>0?'#C4A464':'#80C4A0'}}/>
+      <div style={{height:3,background:'var(--line)',position:'relative'}}>
+        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aCI>0?Math.round(Math.min(aCH,aCI)/aCI*100):0}%`,background:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F'}}/>
       </div>
-      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'rgba(255,255,255,0.18)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'var(--ink3)'}}>
         <span>0%</span>
-        <span style={{color:Math.max(0,aCI-aCH)>0?'#C4A464':'#80C4A0',fontWeight:500}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</span>
+        <span style={{color:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F',fontWeight:500}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</span>
         <span>100%</span>
       </div>
     </div>
@@ -606,7 +606,7 @@ async function handleGenerateShare() {
 
           <GapSection title={`${aName} — Coverage Gap Analysis`}
             dtpdNeed={aDTPD} ciNeed={aCI} lifeHave={aLH} ciHave={aCH}
-            mortgageNeed={mort} educationNeed={edu} annualPremium={premHave(overviewPerson)} />
+            annualPremium={premHave(overviewPerson)} />
 
           {hasChartData ? (
             <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
@@ -1025,12 +1025,10 @@ function CoverageChart({title,eyebrow,needLabel,haveLabel,data,accentColor}:{
 }
 
 // ─── Gap Section ──────────────────────────────────────────────────────────────
-function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,mortgageNeed,educationNeed,annualPremium}:{title:string;dtpdNeed:number;ciNeed:number;lifeHave:number;ciHave:number;mortgageNeed:number;educationNeed:number;annualPremium:number}) {
+function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,annualPremium}:{title:string;dtpdNeed:number;ciNeed:number;lifeHave:number;ciHave:number;annualPremium:number}) {
   const rows=[
     {label:'Life / Death & TPD',need:dtpdNeed,have:lifeHave},
-    {label:'Critical Illness',need:ciNeed,have:ciHave},
-    ...(mortgageNeed>0?[{label:'Mortgage Clearance',need:mortgageNeed,have:0}]:[]),
-    ...(educationNeed>0?[{label:"Children's Education",need:educationNeed,have:0}]:[]),
+    {label:'Critical Illness (Late Stage)',need:ciNeed,have:ciHave},
   ]
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
