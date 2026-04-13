@@ -722,35 +722,193 @@ const coverageTerm = (() => {
   // Save calculated needs to database
 async function saveNeedsToDatabase() {
   if (!clientId) return
-  
+
+  // ── Helper: build milestone map for one person ──────────────────────────
+  function buildMilestoneMap(
+    who: 'client' | 'spouse',
+    personAge: number,
+    annExp: number,
+    coverPct: number,
+    dtpdResult: CalcResult,
+    ciResult: CalcResult,
+  ) {
+    // Mortgages with per-person coverage %
+    const mortgageList = (ff.properties ?? [])
+      .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+      .map((prop: any, i: number) => {
+        const startDate = prop.loanStartDate ?? ''
+        const initialTenure = prop.initialTenure ?? 25
+        const interestRate = prop.interestRate ?? 0
+        const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+
+        let remainingTenure = prop.remainingTenure ?? initialTenure
+        if (!prop.remainingTenure && startDate) {
+          const [mm, yyyy] = startDate.split('/')
+          if (mm && yyyy) {
+            const start = new Date(parseInt(yyyy), parseInt(mm) - 1)
+            const now = new Date()
+            const elapsedYears = (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+            remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+          }
+        }
+
+        const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+
+        // PMT
+        let monthlyRepayment = prop.monthlyRepayment ?? 0
+        if (!monthlyRepayment && outstanding && remainingTenure) {
+          if (!interestRate) {
+            monthlyRepayment = Math.round(outstanding / (remainingTenure * 12))
+          } else {
+            const r = interestRate / 100 / 12
+            const n = remainingTenure * 12
+            monthlyRepayment = Math.round(outstanding * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1))
+          }
+        }
+
+        const pcts = who === 'client'
+          ? (p.mortgageCoverPctsClient ?? [])
+          : (p.mortgageCoverPctsSpouse ?? [])
+        const coverPctMortgage = !isCouple ? 100 : (pcts[i] ?? 100)
+
+        return {
+          label: prop.label || `Mortgage ${i + 1}`,
+          payoffAge: Math.round(personAge + remainingTenure),
+          outstanding: Math.round(outstanding * coverPctMortgage / 100),
+          monthlyRepayment: Math.round(monthlyRepayment * coverPctMortgage / 100),
+          coverPct: coverPctMortgage,
+        }
+      })
+
+    // Education funds — drop at university ENTRY age
+    const eduFunds = p.provideEducationFund
+      ? children.map(child => {
+          const ec = (p.educationChildren ?? []).find(e => e.childId === child.id)
+          if (!ec) return null
+          const childAge = child.age ?? getAge(child.date_of_birth)
+          const defaultEntry = child.gender === 'Male' ? 21 : 19
+          const uniEntryAge = ec.uniEntryAge ?? defaultEntry
+          const yearsToUni = Math.max(0, uniEntryAge - childAge)
+          const fundDropAge = personAge + yearsToUni
+
+          const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+          const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+          const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+          const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+          const inflation = (p.inflationRate ?? 3) / 100
+          const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+          const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
+          const totalFund = fvTuition + fvLiving
+
+          const pct = !isCouple
+            ? 1
+            : (who === 'client'
+                ? (ec.coverPctClient ?? 50)
+                : (ec.coverPctSpouse ?? 50)) / 100
+
+          return {
+            childName: child.name || child.relationship || 'Child',
+            fundDropAge,
+            amount: Math.round(totalFund * pct),
+          }
+        }).filter(Boolean)
+      : []
+
+    // Family dependency ends when youngest child finishes uni (coverageTerm from parent scope)
+    const familyDepEndsAge = personAge + coverageTerm
+
+    // Last milestone age — after this only the retirement floor applies
+    const mortgagePayoffAges = mortgageList.map(m => m.payoffAge)
+    const eduDropAges = eduFunds.map((e: any) => e.fundDropAge)
+    const allMilestoneAges = [familyDepEndsAge, ...mortgagePayoffAges, ...eduDropAges].filter(a => a > personAge)
+    const lastMilestoneAge = allMilestoneAges.length > 0 ? Math.max(...allMilestoneAges) : familyDepEndsAge
+
+    // Asset offset (constant throughout)
+    const assetOffset = dtpdResult.assets
+
+    // Retirement floor: (household + personal expenses) × 12 × ciYears
+    // Using simple expense fields as proxy for household + personal
+    const householdAnnual = isDetailed
+      ? getDetailedCategoryTotal(ff, 'household', who, p.expenseSubItems ?? {})
+      : getSimpleCategoryTotal(ff, { household: true }, who)
+    const personalAnnual = isDetailed
+      ? getDetailedCategoryTotal(ff, 'personal', who, p.expenseSubItems ?? {})
+      : getSimpleCategoryTotal(ff, { personal: true }, who)
+    const retirementFloorAnnual = (householdAnnual + personalAnnual) * (p.ciYears ?? 5)
+
+    return {
+      personAge,
+      familyDepEndsAge,
+      lastMilestoneAge,
+      annualExpense: Math.round(annExp),
+      coverPct: Math.round(coverPct * 100),
+      mortgages: mortgageList,
+      educationFunds: eduFunds,
+      ciYears: p.ciYears ?? 5,
+      assetOffset: Math.round(assetOffset),
+      retirementFloorAnnual: Math.round(retirementFloorAnnual),
+      inflationRate: p.inflationRate ?? 3,
+    }
+  }
+
+  // ── Client age lookup ────────────────────────────────────────────────────
+  const { data: clientRow } = await supabase
+    .from('clients')
+    .select('age, dob')
+    .eq('id', clientId)
+    .maybeSingle()
+  const clientAgeVal = clientRow?.dob
+    ? Math.floor((Date.now() - new Date(clientRow.dob).getTime()) / (365.25 * 24 * 3600 * 1000))
+    : (clientRow?.age ?? 40)
+
+  const { data: familyRows } = await supabase
+    .from('family_members')
+    .select('*')
+    .eq('client_id', clientId)
+  const spouseRow = familyRows?.find((f: any) => f.relationship === 'Spouse')
+  const spouseAgeVal = spouseRow?.dob
+    ? Math.floor((Date.now() - new Date(spouseRow.dob).getTime()) / (365.25 * 24 * 3600 * 1000))
+    : (spouseRow?.age ?? 38)
+
+  // ── Build needs + milestones payload ────────────────────────────────────
+  const clientCoverPctVal = !isCouple ? 1 : (p.expenseCoverPctClient ?? defaultClientPct) / 100
+  const spouseCoverPctVal = (p.expenseCoverPctSpouse ?? defaultSpousePct) / 100
+
   const needs: any = {
     p1_dtpd_need: dtpdClient.net,
     p1_ci_need: ciClient.net,
+    p1_milestones: buildMilestoneMap(
+      'client', clientAgeVal, annExpClient, clientCoverPctVal,
+      dtpdClient, ciClient,
+    ),
   }
-  
+
   if (isCouple) {
     needs.p2_dtpd_need = dtpdSpouse.net
     needs.p2_ci_need = ciSpouse.net
+    needs.p2_milestones = buildMilestoneMap(
+      'spouse', spouseAgeVal, annExpSpouse, spouseCoverPctVal,
+      dtpdSpouse, ciSpouse,
+    )
   }
-  
-  // Get existing protection_needs data
+
+  // ── Upsert into protection_needs ─────────────────────────────────────────
   const { data: existing } = await supabase
     .from('fact_finding')
     .select('data')
     .eq('client_id', clientId)
     .eq('section', 'protection_needs')
     .maybeSingle()
-  
+
   const existingData = existing?.data || {}
-  
-  // Save back with needs included
+
   await supabase
     .from('fact_finding')
     .upsert({
       client_id: clientId,
       section: 'protection_needs',
       data: { ...existingData, ...needs },
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'client_id,section' })
 }
   // Auto-save needs whenever they change
