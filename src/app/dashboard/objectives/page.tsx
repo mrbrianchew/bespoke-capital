@@ -913,13 +913,13 @@ async function saveNeedsToDatabase() {
 }
   // Auto-save needs whenever they change
 useEffect(() => {
-  if (clientId && (dtpdClient.net > 0 || ciClient.net > 0)) {
+  if (clientId && !loading && (dtpdClient.net > 0 || ciClient.net > 0)) {
     if (needsSaveTimer.current) clearTimeout(needsSaveTimer.current)
     needsSaveTimer.current = setTimeout(() => {
       saveNeedsToDatabase()
-    }, 2000) // Wait 2 seconds after last change
+    }, 2000)
   }
-}, [clientId, dtpdClient.net, ciClient.net, dtpdSpouse?.net, ciSpouse?.net])
+}, [clientId, loading, dtpdClient.net, ciClient.net, dtpdSpouse?.net, ciSpouse?.net])
 
   // Gaps
   const existingLifeClient = p.existingLifeCoverClient ?? 0
