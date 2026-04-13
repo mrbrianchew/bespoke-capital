@@ -428,7 +428,15 @@ export default function SharePage({ params }: { params: { token: string } }) {
     }
     const { data: row } = await supabase.from('fact_finding').select('data').eq('client_id',shareData.client_id).eq('section','protection_portfolio').maybeSingle()
     const all: Policy[] = row?.data?.risk_management?.policies||[]
-    setPolicies(all.filter(p=>ACTIVE_STATUSES.includes(p.status)))
+const person = shareData.person || 'client'
+const filtered = all.filter(p => {
+  if (!ACTIVE_STATUSES.includes(p.status)) return false
+  if (person === 'dependents') {
+    return p.person !== 'client' && p.person !== 'spouse'
+  }
+  return p.person === person
+})
+setPolicies(filtered)
     setStage('unlocked')
   }
 
@@ -439,7 +447,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
     const pageW=297
     async function addPage(ref: React.RefObject<HTMLDivElement>, isFirst: boolean) {
       if (!ref.current) return
-      const canvas = await html2canvas(ref.current,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false})
+      const canvas = await html2canvas(ref.current,{scale:3,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:1200})
       const imgData = canvas.toDataURL('image/jpeg',0.95)
       const imgH = (canvas.height*pageW)/canvas.width
       if (!isFirst) pdf.addPage()
