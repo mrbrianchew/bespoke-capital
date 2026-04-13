@@ -980,7 +980,7 @@ async function handleGenerateShare() {
   )
 }
 
-// ─── Premium Coverage Chart (Apple/Private Banking Style) ─────────────────────
+// ─── Premium Coverage Chart (Apple/Private Banking Style) ────────────────────
 function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}: {
   title: string; eyebrow: string; needLabel: string; haveLabel: string
   data: {age: number; need: number; have: number}[]
