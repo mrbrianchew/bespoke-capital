@@ -373,6 +373,10 @@ const finalP2Exp = p2ExpRaw > 0 ? p2ExpRaw : (p2Mo * 12 * 0.7)
     if (y<=0) return 0; if (r===0) return annual*y
     return annual*((Math.pow(1+r,y)-1)/r)
   }
+  function pvAnn(annual: number, r: number, y: number) {
+    if (y<=0) return 0; if (r===0) return annual*y
+    return annual*((1-Math.pow(1+r,-y))/r)
+  }
   const mort = Number(ff.l_mortgage_residing||0) + Number(ff.l2_mortgage_residing||0) + Number(ff.d_mortgage_cpf||0)
   const edu  = Number(ff.strategic_objectives?.ed_total||0)
   const p1CPF  = Number(ff.a_cpf_oa||0)+Number(ff.a_cpf_sa||0)+Number(ff.a_cpf_ma||0)
@@ -431,7 +435,7 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
     const a = age+i
     const yLeft = Math.max(0, (age+coverTerm)-a)
 const remainingOffset = offset * Math.max(0, 1 - i / Math.max(1, coverTerm))
-    dtpdArray.push(Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - remainingOffset))
+    dtpdArray.push(Math.max(0, pvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - remainingOffset))
   }
   
   // Find mortgage drop age from DTPD
