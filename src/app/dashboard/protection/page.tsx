@@ -416,7 +416,7 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || Math.max(0, p2Mo*
       .reduce((s,p)=>s+toSGD(Math.max((p.baseAdvCI||0),(p.baseEarlyCI||0))*(p.multiplier>1?p.multiplier:1),p),0)
   }
   function premHave(person: string) {
-    return activePolicies.filter(p=>p.person===person).reduce((s,p)=>s+annualPremSGD(p),0)
+    return activePolicies.filter(p=>p.person===person&&p.categoryCode!=='endowment').reduce((s,p)=>s+annualPremSGD(p),0)
   }
 
   const cLH = lifeHave('client'), cCH = ciHave('client')
