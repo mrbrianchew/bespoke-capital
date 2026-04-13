@@ -161,6 +161,7 @@ export default function ProtectionPage() {
   const [modalPerson,     setModalPerson]     = useState('client')
   const [showInactive,    setShowInactive]    = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [sharePerson, setSharePerson] = useState<string>('client')
 const [shareLink, setShareLink] = useState('')
 const [shareExpiry, setShareExpiry] = useState<'7d'|'30d'|'permanent'>('30d')
 const [sharePassword, setSharePassword] = useState('')
@@ -485,9 +486,9 @@ async function handleGenerateShare() {
     if (shareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
     if (shareExpiry==='30d') expiresAt = new Date(Date.now()+30*24*3600*1000).toISOString()
     const { error } = await supabase.from('client_shares').insert({
-      client_id: clientId, token, expires_at: expiresAt,
-      password_hash: hashHex, password_hint: shareHint,
-    })
+  client_id: clientId, token, expires_at: expiresAt,
+  password_hash: hashHex, password_hint: shareHint, person: sharePerson,
+})
     if (error) throw error
     setShareLink(`${window.location.origin}/share/${token}`)
   } catch(e) {
@@ -873,6 +874,18 @@ async function handleGenerateShare() {
       <div style={{padding:'20px 26px',display:'flex',flexDirection:'column',gap:16}}>
         {!shareLink ? (
           <>
+            <div>
+  <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Share For</div>
+  <div style={{display:'flex',gap:8,flexWrap:'wrap' as const}}>
+    {[{key:'client',label:clientName},...(isCouple?[{key:'spouse',label:spouseName}]:[]),...(children.length>0?[{key:'dependents',label:'Dependents'}]:[])].map(p=>(
+      <button key={p.key} onClick={()=>setSharePerson(p.key)}
+        style={{padding:'7px 16px',fontSize:12,border:`1px solid ${sharePerson===p.key?'#1C1A17':'var(--line)'}`,
+          background:sharePerson===p.key?'#1C1A17':'white',color:sharePerson===p.key?'white':'var(--ink)',cursor:'pointer'}}>
+        {p.label}
+      </button>
+    ))}
+  </div>
+</div>
             <div>
               <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Link Expiry</div>
               <div style={{display:'flex',gap:8}}>
