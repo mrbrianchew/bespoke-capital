@@ -1052,7 +1052,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   data: {age: number; need: number; have: number}[]
   accentColor: string
   milestones?: {
-    mortgageEnd?: number | null
+    mortgageEnds?: number[]  // Changed from mortgageEnd to mortgageEnds (array)
     educationEnds?: number[]
     coverageEnds?: number | null
     clientAge?: number
