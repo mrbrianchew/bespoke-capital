@@ -1024,12 +1024,11 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
     return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
   }).join(' ')
   
-  // Find milestone ages where need drops significantly
+  // Find milestone ages
   const milestones: {age: number; label: string; type: 'end' | 'change'}[] = []
   for (let i = 1; i < data.length; i++) {
     const prevNeed = data[i - 1].need
     const currNeed = data[i].need
-    // Detect 50%+ drop in need
     if (prevNeed > 0 && currNeed < prevNeed * 0.5) {
       milestones.push({
         age: data[i].age,
@@ -1038,7 +1037,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
       })
     }
   }
-  // Add final milestone when need reaches zero
   const zeroNeedAge = data.find(d => d.need === 0)?.age
   if (zeroNeedAge && !milestones.find(m => m.age === zeroNeedAge)) {
     milestones.push({
@@ -1048,7 +1046,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
     })
   }
   
-  // Build gap areas - Red for underinsured (Need > Have), Green for overinsured (Have > Need)
+  // Build gap areas
   const redGapPaths: string[] = []
   const greenGapPaths: string[] = []
   
@@ -1057,13 +1055,12 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   let inRedGap = false
   let inGreenGap = false
   
-  data.forEach((d, i) => {
+  data.forEach((d) => {
     const x = PL + xP(d.age)
     const yNeed = PT + yP(d.need)
     const yHave = PT + yP(d.have)
     
     if (d.need > d.have) {
-      // Red gap - underinsured
       if (!inRedGap) {
         inRedGap = true
         currentRedPath = [`M ${x} ${yNeed}`, `L ${x} ${yHave}`]
@@ -1072,7 +1069,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
         currentRedPath.push(`L ${x} ${yHave}`)
       }
     } else {
-      // End red gap if we were in one
       if (inRedGap && currentRedPath.length > 0) {
         redGapPaths.push(currentRedPath.join(' ') + ' Z')
         inRedGap = false
@@ -1081,7 +1077,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
     }
     
     if (d.have > d.need) {
-      // Green gap - overinsured
       if (!inGreenGap) {
         inGreenGap = true
         currentGreenPath = [`M ${x} ${yHave}`, `L ${x} ${yNeed}`]
@@ -1090,7 +1085,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
         currentGreenPath.push(`L ${x} ${yNeed}`)
       }
     } else {
-      // End green gap if we were in one
       if (inGreenGap && currentGreenPath.length > 0) {
         greenGapPaths.push(currentGreenPath.join(' ') + ' Z')
         inGreenGap = false
@@ -1099,7 +1093,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
     }
   })
   
-  // Close any open paths
   if (inRedGap && currentRedPath.length > 0) {
     redGapPaths.push(currentRedPath.join(' ') + ' Z')
   }
@@ -1109,7 +1102,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
   
-  // Handle mouse move for hover
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const svg = e.currentTarget
     const rect = svg.getBoundingClientRect()
@@ -1148,18 +1140,16 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   const coveragePct = hovered && hovered.need > 0 ? Math.min(100, (hovered.have / hovered.need) * 100) : 0
   const isOverinsured = hovered && hovered.have > hovered.need
   
-  // Premium color palette - ENHANCED VISIBILITY
   const needColor = '#1C1A17'
   const haveColor = accentColor
-  const underinsuredColor = 'rgba(231, 76, 60, 0.18)'    // More visible red
-  const overinsuredColor = 'rgba(39, 174, 96, 0.14)'     // More visible green
-  const underinsuredBorder = 'rgba(231, 76, 60, 0.35)'   // Red border for definition
-  const overinsuredBorder = 'rgba(39, 174, 96, 0.30)'    // Green border for definition
+  const underinsuredColor = 'rgba(231, 76, 60, 0.18)'
+  const overinsuredColor = 'rgba(39, 174, 96, 0.14)'
+  const underinsuredBorder = 'rgba(231, 76, 60, 0.35)'
+  const overinsuredBorder = 'rgba(39, 174, 96, 0.30)'
   const gridColor = 'rgba(0, 0, 0, 0.04)'
   const textColor = '#8B8B8B'
   const milestoneColor = '#A8834A'
   
-  // Check if hover is near a milestone
   const nearbyMilestone = hovered 
     ? milestones.find(m => Math.abs(m.age - hovered.age) <= 2)
     : null
@@ -1171,9 +1161,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
       borderRadius: 16,
       padding: '24px 24px 20px 24px',
       boxShadow: '0 2px 12px rgba(0, 0, 0, 0.02)',
-      transition: 'box-shadow 0.3s ease',
     }}>
-      {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <div style={{
           fontSize: 10,
@@ -1192,7 +1180,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
         }}>{title}</div>
       </div>
       
-      {/* Legend */}
       <div style={{ display: 'flex', gap: 24, marginBottom: 16, alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 20, height: 2, background: needColor }} />
@@ -1225,7 +1212,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
         )}
       </div>
       
-      {/* Chart */}
       <div style={{ position: 'relative' }}>
         <svg
           viewBox={`0 0 ${W} ${H}`}
@@ -1234,152 +1220,59 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
-          {/* Grid lines */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
             return (
               <g key={f}>
-                <line
-                  x1={PL}
-                  y1={y}
-                  x2={PL + iW}
-                  y2={y}
-                  stroke={gridColor}
-                  strokeWidth="1"
-                />
-                <text
-                  x={PL - 8}
-                  y={y + 4}
-                  fontSize="10"
-                  fill={textColor}
-                  textAnchor="end"
-                  fontWeight={400}
-                >
+                <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke={gridColor} strokeWidth="1" />
+                <text x={PL - 8} y={y + 4} fontSize="10" fill={textColor} textAnchor="end" fontWeight={400}>
                   {fmtAx(maxV * f)}
                 </text>
               </g>
             )
           })}
           
-          {/* Axes */}
           <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
           <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
           
-          {/* Red gap areas (underinsured) - Enhanced visibility */}
           {redGapPaths.map((path, idx) => (
-            <path
-              key={`red-${idx}`}
-              d={path}
-              fill={underinsuredColor}
-              stroke={underinsuredBorder}
-              strokeWidth="0.8"
-            />
+            <path key={`red-${idx}`} d={path} fill={underinsuredColor} stroke={underinsuredBorder} strokeWidth="0.8" />
           ))}
           
-          {/* Green gap areas (overinsured) - Enhanced visibility */}
           {greenGapPaths.map((path, idx) => (
-            <path
-              key={`green-${idx}`}
-              d={path}
-              fill={overinsuredColor}
-              stroke={overinsuredBorder}
-              strokeWidth="0.8"
-            />
+            <path key={`green-${idx}`} d={path} fill={overinsuredColor} stroke={overinsuredBorder} strokeWidth="0.8" />
           ))}
           
-          {/* Have line (drawn first so it's behind) */}
-          <path
-            d={havePath}
-            stroke={haveColor}
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            opacity="0.6"
-            strokeDasharray="4,3"
-          />
+          <path d={havePath} stroke={haveColor} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" strokeDasharray="4,3" />
+          <path d={needPath} stroke={needColor} strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round" />
           
-          {/* Need line */}
-          <path
-            d={needPath}
-            stroke={needColor}
-            strokeWidth="2"
-            fill="none"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-          
-          {/* Milestone markers */}
           {milestones.map((m, idx) => {
             const x = PL + xP(m.age)
             return (
               <g key={`milestone-${idx}`}>
-                <line
-                  x1={x}
-                  y1={PT}
-                  x2={x}
-                  y2={PT + iH}
-                  stroke={milestoneColor}
-                  strokeWidth="0.5"
-                  strokeDasharray="2,4"
-                  opacity="0.4"
-                />
+                <line x1={x} y1={PT} x2={x} y2={PT + iH} stroke={milestoneColor} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.4" />
               </g>
             )
           })}
           
-          {/* Hover vertical line */}
           {mouseX && (
-            <line
-              x1={mouseX}
-              y1={PT}
-              x2={mouseX}
-              y2={PT + iH}
-              stroke="rgba(28, 26, 23, 0.15)"
-              strokeWidth="1"
-              strokeDasharray="4,3"
-            />
+            <line x1={mouseX} y1={PT} x2={mouseX} y2={PT + iH} stroke="rgba(28, 26, 23, 0.15)" strokeWidth="1" strokeDasharray="4,3" />
           )}
           
-          {/* Hover points */}
           {hovered && (
             <>
-              <circle
-                cx={hovered.x}
-                cy={PT + yP(hovered.need)}
-                r="4"
-                fill="white"
-                stroke={needColor}
-                strokeWidth="2"
-              />
-              <circle
-                cx={hovered.x}
-                cy={PT + yP(hovered.have)}
-                r="4"
-                fill="white"
-                stroke={haveColor}
-                strokeWidth="2"
-              />
+              <circle cx={hovered.x} cy={PT + yP(hovered.need)} r="4" fill="white" stroke={needColor} strokeWidth="2" />
+              <circle cx={hovered.x} cy={PT + yP(hovered.have)} r="4" fill="white" stroke={haveColor} strokeWidth="2" />
             </>
           )}
           
-          {/* Age labels */}
           {ageLabels.map(d => (
-            <text
-              key={d.age}
-              x={PL + xP(d.age)}
-              y={PT + iH + 18}
-              fontSize="10"
-              fill={textColor}
-              textAnchor="middle"
-              fontWeight={400}
-            >
+            <text key={d.age} x={PL + xP(d.age)} y={PT + iH + 18} fontSize="10" fill={textColor} textAnchor="middle" fontWeight={400}>
               {d.age}
             </text>
           ))}
         </svg>
         
-        {/* Hover Tooltip */}
         {hovered && (
           <div style={{
             position: 'absolute',
@@ -1412,7 +1305,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                 </span>
               </div>
               
-              {/* Milestone indicator in tooltip */}
               {nearbyMilestone && (
                 <div style={{
                   marginTop: 4,
@@ -1449,7 +1341,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                 </span>
               </div>
             </div>
-            {/* Arrow */}
             <div style={{
               position: 'absolute',
               bottom: -6,
@@ -1465,7 +1356,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
         )}
       </div>
       
-      {/* Footer note */}
       <div style={{
         fontSize: 10,
         color: 'rgba(0, 0, 0, 0.4)',
@@ -1479,12 +1369,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
       </div>
     </div>
   )
-}
-
-// Helper fmt function if not already available
-function fmt(n: number | null | undefined) {
-  if (!n || n === 0) return '—'
-  return '$' + Math.round(n).toLocaleString()
 }
 
 // ─── Gap Section ──────────────────────────────────────────────────────────────
