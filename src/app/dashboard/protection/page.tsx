@@ -980,57 +980,358 @@ async function handleGenerateShare() {
   )
 }
 
-// ─── Coverage Chart ───────────────────────────────────────────────────────────
-function CoverageChart({title,eyebrow,needLabel,haveLabel,data,accentColor}:{
-  title:string; eyebrow:string; needLabel:string; haveLabel:string
-  data:{age:number;need:number;have:number}[]; accentColor:string
+// ─── Premium Coverage Chart (Apple/Private Banking Style) ─────────────────────
+function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}: {
+  title: string; eyebrow: string; needLabel: string; haveLabel: string
+  data: {age: number; need: number; have: number}[]
+  accentColor: string
 }) {
-  const [hovered, setHovered] = useState<{age:number;need:number;have:number;x:number;y:number}|null>(null)
-  const W=520,H=180,PL=52,PR=12,PT=16,PB=28
-  const iW=W-PL-PR, iH=H-PT-PB
+  const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number; y: number} | null>(null)
+  const [mouseX, setMouseX] = useState<number | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  
+  const W = 600, H = 220, PL = 60, PR = 20, PT = 30, PB = 35
+  const iW = W - PL - PR
+  const iH = H - PT - PB
+  
   if (!data.length) return null
-  const maxV = Math.max(...data.map(d=>Math.max(d.need,d.have)),1)
-  const minA=data[0].age, aR=data[data.length-1].age-minA||1
-  const xP=(a:number)=>((a-minA)/aR)*iW
-  const yP=(v:number)=>iH-Math.min(1,v/maxV)*iH
-  const fmtAx=(n:number)=>n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:''
-  const ticks=[0,0.33,0.66,1]
-  const needPath=data.map((d,i)=>`${i===0?'M':'L'}${(PL+xP(d.age)).toFixed(1)},${(PT+yP(d.need)).toFixed(1)}`).join(' ')
-  const havePath=data.map((d,i)=>`${i===0?'M':'L'}${(PL+xP(d.age)).toFixed(1)},${(PT+yP(d.have)).toFixed(1)}`).join(' ')
-  const gapTop=data.map(d=>`${(PL+xP(d.age)).toFixed(1)},${(PT+yP(Math.max(d.need,d.have))).toFixed(1)}`).join(' ')
-  const gapBot=[...data].reverse().map(d=>`${(PL+xP(d.age)).toFixed(1)},${(PT+yP(Math.min(d.need,d.have))).toFixed(1)}`).join(' ')
-  const ageLabels=data.filter((_,i,arr)=>i===0||i===arr.length-1||i%(Math.floor(arr.length/6))===0)
+  
+  const maxV = Math.max(...data.map(d => Math.max(d.need, d.have)), 1)
+  const minA = data[0].age
+  const aR = data[data.length - 1].age - minA || 1
+  
+  const xP = (a: number) => ((a - minA) / aR) * iW
+  const yP = (v: number) => iH - Math.min(1, v / maxV) * iH
+  
+  const fmtAx = (n: number) => {
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`
+    return `$${Math.round(n).toLocaleString()}`
+  }
+  
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+  
+  // Generate smooth curves
+  const needPath = data.map((d, i) => {
+    const x = PL + xP(d.age)
+    const y = PT + yP(d.need)
+    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+  }).join(' ')
+  
+  const havePath = data.map((d, i) => {
+    const x = PL + xP(d.age)
+    const y = PT + yP(d.have)
+    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
+  }).join(' ')
+  
+  // Gap area polygon
+  const gapArea = data.map((d, i) => {
+    const x = PL + xP(d.age)
+    const yTop = PT + yP(Math.max(d.need, d.have))
+    const yBottom = PT + yP(Math.min(d.need, d.have))
+    return i === 0 
+      ? `M ${x} ${yTop} L ${x} ${yBottom}` 
+      : `L ${x} ${yTop} L ${x} ${yBottom}`
+  }).join(' ')
+  
+  const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
+  
+  // Handle mouse move for hover
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget
+    const rect = svg.getBoundingClientRect()
+    const svgX = e.clientX - rect.left
+    const svgWidth = rect.width
+    
+    // Convert to SVG coordinate space
+    const scaleX = W / svgWidth
+    const mouseSvgX = svgX * scaleX
+    
+    if (mouseSvgX >= PL && mouseSvgX <= PL + iW) {
+      setMouseX(mouseSvgX)
+      
+      // Find closest data point
+      const relativeX = (mouseSvgX - PL) / iW
+      const targetAge = minA + relativeX * aR
+      const closestPoint = data.reduce((prev, curr) => {
+        return Math.abs(curr.age - targetAge) < Math.abs(prev.age - targetAge) ? curr : prev
+      })
+      
+      setHovered({
+        ...closestPoint,
+        x: PL + xP(closestPoint.age),
+        y: PT + yP(closestPoint.need)
+      })
+    } else {
+      setMouseX(null)
+      setHovered(null)
+    }
+  }
+  
+  const handleMouseLeave = () => {
+    setMouseX(null)
+    setHovered(null)
+  }
+  
+  const gap = hovered ? Math.max(0, hovered.need - hovered.have) : 0
+  const coveragePct = hovered && hovered.need > 0 ? Math.min(100, (hovered.have / hovered.need) * 100) : 0
+  
+  // Premium color palette
+  const needColor = '#1C1A17'
+  const haveColor = accentColor
+  const gapColor = 'rgba(200, 169, 110, 0.12)'
+  const gridColor = 'rgba(0, 0, 0, 0.04)'
+  const textColor = '#8B8B8B'
+  
   return (
-   <div style={{background:'white',border:'0.5px solid var(--line)',padding:'20px 22px'}}>
-      <div style={{marginBottom:14}}>
-        <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:accentColor,marginBottom:4}}>{eyebrow}</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:17,fontWeight:300,color:'var(--ink)'}}>{title}</div>
+    <div ref={containerRef} style={{
+      background: '#FFFFFF',
+      border: '1px solid rgba(0, 0, 0, 0.06)',
+      borderRadius: 16,
+      padding: '24px 24px 20px 24px',
+      boxShadow: '0 2px 12px rgba(0, 0, 0, 0.02)',
+      transition: 'box-shadow 0.3s ease',
+    }}>
+      {/* Header */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{
+          fontSize: 10,
+          letterSpacing: '0.15em',
+          textTransform: 'uppercase',
+          color: accentColor,
+          marginBottom: 6,
+          fontWeight: 600
+        }}>{eyebrow}</div>
+        <div style={{
+          fontFamily: 'Cormorant Garamond, Georgia, serif',
+          fontSize: 18,
+          fontWeight: 400,
+          color: '#1C1A17',
+          letterSpacing: '-0.01em'
+        }}>{title}</div>
       </div>
-      <div style={{display:'flex',gap:20,marginBottom:12}}>
-        <div style={{display:'flex',alignItems:'center',gap:7}}>
-          <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#00C9A7" strokeWidth="1.8"/></svg>
-          <span style={{fontSize:10,color:'var(--ink3)'}}>{needLabel}</span>
+      
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 20, height: 2, background: needColor }} />
+          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{needLabel}</span>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:7}}>
-          <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke={accentColor} strokeWidth="1.8" strokeDasharray="4,3"/></svg>
-          <span style={{fontSize:10,color:'var(--ink3)'}}>{haveLabel}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 20, height: 2, background: haveColor, opacity: 0.7 }} />
+          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{haveLabel}</span>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:7}}>
-          <div style={{width:14,height:8,background:'rgba(224,128,128,0.25)'}}/>
-          <span style={{fontSize:10,color:'var(--ink3)'}}>Gap</span>
-        </div>
+        {hovered && (
+          <div style={{
+            marginLeft: 'auto',
+            fontSize: 11,
+            color: '#1C1A17',
+            background: '#F8F7F4',
+            padding: '6px 14px',
+            borderRadius: 20,
+            fontWeight: 500
+          }}>
+            Age {hovered.age} • Gap {fmt(gap)}
+          </div>
+        )}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block',overflow:'visible'}}>
-        {ticks.map(f=>{const y=PT+iH-f*iH;return(<g key={f}><line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="rgba(0,0,0,0.06)" strokeWidth="0.5" strokeDasharray="3,4"/><text x={PL-6} y={y+3.5} fontSize="9" fill="var(--ink3)" textAnchor="end">{fmtAx(maxV*f)}</text></g>)})}
-        <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(0,0,0,0.08)" strokeWidth="0.5"/>
-        <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(0,0,0,0.08)" strokeWidth="0.5"/>
-        <polygon points={`${gapTop} ${gapBot}`} fill="rgba(224,128,128,0.14)"/>
-        <path d={havePath} stroke={accentColor} strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5,3" opacity="0.8"/>
-        <path d={needPath} stroke="#00C9A7" strokeWidth="1.8" fill="none" strokeLinejoin="round" strokeLinecap="round"/>
-        {ageLabels.map(d=>(<text key={d.age} x={(PL+xP(d.age)).toFixed(1)} y={PT+iH+16} fontSize="9" fill="var(--ink3)" textAnchor="middle">{d.age}</text>))}
-      </svg>
-      <div style={{marginTop:6,fontSize:10,color:'var(--ink3)',fontStyle:'italic'}}>
-        Solid line = required · Dashed line = existing portfolio · Shaded area = protection gap
+      
+      {/* Chart */}
+      <div style={{ position: 'relative' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width="100%"
+          style={{ display: 'block', overflow: 'visible' }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
+          {/* Grid lines */}
+          {ticks.map(f => {
+            const y = PT + iH - f * iH
+            return (
+              <g key={f}>
+                <line
+                  x1={PL}
+                  y1={y}
+                  x2={PL + iW}
+                  y2={y}
+                  stroke={gridColor}
+                  strokeWidth="1"
+                />
+                <text
+                  x={PL - 8}
+                  y={y + 4}
+                  fontSize="10"
+                  fill={textColor}
+                  textAnchor="end"
+                  fontWeight={400}
+                >
+                  {fmtAx(maxV * f)}
+                </text>
+              </g>
+            )
+          })}
+          
+          {/* Axes */}
+          <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
+          <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
+          
+          {/* Gap area */}
+          <path
+            d={gapArea}
+            fill={gapColor}
+            stroke="none"
+          />
+          
+          {/* Have line (drawn first so it's behind) */}
+          <path
+            d={havePath}
+            stroke={haveColor}
+            strokeWidth="1.5"
+            fill="none"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity="0.6"
+          />
+          
+          {/* Need line */}
+          <path
+            d={needPath}
+            stroke={needColor}
+            strokeWidth="2"
+            fill="none"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+          
+          {/* Hover vertical line */}
+          {mouseX && (
+            <line
+              x1={mouseX}
+              y1={PT}
+              x2={mouseX}
+              y2={PT + iH}
+              stroke="rgba(28, 26, 23, 0.15)"
+              strokeWidth="1"
+              strokeDasharray="4,3"
+            />
+          )}
+          
+          {/* Hover points */}
+          {hovered && (
+            <>
+              <circle
+                cx={hovered.x}
+                cy={PT + yP(hovered.need)}
+                r="4"
+                fill="white"
+                stroke={needColor}
+                strokeWidth="2"
+              />
+              <circle
+                cx={hovered.x}
+                cy={PT + yP(hovered.have)}
+                r="4"
+                fill="white"
+                stroke={haveColor}
+                strokeWidth="2"
+              />
+            </>
+          )}
+          
+          {/* Age labels */}
+          {ageLabels.map(d => (
+            <text
+              key={d.age}
+              x={PL + xP(d.age)}
+              y={PT + iH + 18}
+              fontSize="10"
+              fill={textColor}
+              textAnchor="middle"
+              fontWeight={400}
+            >
+              {d.age}
+            </text>
+          ))}
+        </svg>
+        
+        {/* Hover Tooltip */}
+        {hovered && (
+          <div style={{
+            position: 'absolute',
+            left: `${((hovered.x - PL) / iW) * 100}%`,
+            top: '0',
+            transform: 'translateX(-50%)',
+            background: '#1C1A17',
+            color: 'white',
+            padding: '12px 16px',
+            borderRadius: 8,
+            fontSize: 12,
+            pointerEvents: 'none',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
+            zIndex: 10,
+            whiteSpace: 'nowrap',
+            marginTop: -60
+          }}>
+            <div style={{ marginBottom: 8, color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: '0.1em' }}>
+              AGE {hovered.age}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
+                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Coverage Need</span>
+                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{fmt(hovered.need)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
+                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Current Portfolio</span>
+                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace', color: accentColor }}>
+                  {fmt(hovered.have)}
+                </span>
+              </div>
+              <div style={{ 
+                marginTop: 4, 
+                paddingTop: 6, 
+                borderTop: '1px solid rgba(255,255,255,0.15)',
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                gap: 24 
+              }}>
+                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                  {gap > 0 ? 'Protection Gap' : 'Coverage'}
+                </span>
+                <span style={{ 
+                  fontWeight: 600, 
+                  fontFamily: 'DM Mono, monospace',
+                  color: gap > 0 ? '#E74C3C' : '#27AE60'
+                }}>
+                  {gap > 0 ? fmt(gap) : `${Math.round(coveragePct)}% Covered`}
+                </span>
+              </div>
+            </div>
+            {/* Arrow */}
+            <div style={{
+              position: 'absolute',
+              bottom: -6,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '6px solid transparent',
+              borderRight: '6px solid transparent',
+              borderTop: '6px solid #1C1A17'
+            }} />
+          </div>
+        )}
+      </div>
+      
+      {/* Footer note */}
+      <div style={{
+        fontSize: 10,
+        color: 'rgba(0, 0, 0, 0.4)',
+        marginTop: 12,
+        fontStyle: 'italic',
+        letterSpacing: '0.02em'
+      }}>
+        Solid line = required • Dashed line = existing • Shaded area = protection gap
       </div>
     </div>
   )
