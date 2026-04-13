@@ -424,15 +424,45 @@ const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
   const totalPrem = activePolicies.reduce((s,p)=>s+annualPremSGD(p),0)
 
   // Chart data
-  function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
-    return Array.from({length:100-age}, (_,i) => {
-      const a = age+i
-      const yLeft = Math.max(0, (age+coverTerm)-a)
-      const dtpd = Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - (i===0?offset:0))
-      const ciFactor = a < age+coverTerm ? 1.0 : Math.max(0, 1-(a-(age+coverTerm))*0.04)
-      return { age: a, dtpd, ci: Math.max(0, ciNeed*ciFactor) }
-    })
-  }
+  // Chart data
+function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
+  // Get CI breakdown from ff data if available
+  const ciMort = Number(ff.p1_ci_mort || 0)
+  const ciEdu = Number(ff.p1_ci_edu || 0)
+  const ciFd = ciNeed - ciMort - ciEdu
+  
+  return Array.from({length:100-age}, (_,i) => {
+    const a = age+i
+    const yLeft = Math.max(0, (age+coverTerm)-a)
+    
+    // DTPD calculation (unchanged)
+    const dtpd = Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - (i===0?offset:0))
+    
+    // CI calculation with mortgage and education drop-offs
+    let ci = ciFd
+    if (ciMort > 0) {
+      const mortEndAge = 60 // Mortgage paid off at 60
+      if (a < mortEndAge) {
+        ci += ciMort
+      } else if (a < mortEndAge + 5) {
+        ci += ciMort * (1 - (a - mortEndAge) / 5)
+      }
+    }
+    if (ciEdu > 0) {
+      const eduEndAge = 62 // Education completes around 62
+      if (a < eduEndAge) {
+        ci += ciEdu
+      } else if (a < eduEndAge + 5) {
+        ci += ciEdu * (1 - (a - eduEndAge) / 5)
+      }
+    }
+    
+    // Apply coverage term taper
+    const ciFactor = a < age+coverTerm ? 1.0 : Math.max(0, 1-(a-(age+coverTerm))*0.04)
+    
+    return { age: a, dtpd, ci: Math.max(0, ci * ciFactor) }
+  })
+}
 
   const aAge    = overviewPerson==='client' ? clientAge  : spouseAge
   const aDTPD   = overviewPerson==='client' ? clientDTPD : spouseDTPD
