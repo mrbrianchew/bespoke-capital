@@ -980,17 +980,17 @@ async function handleGenerateShare() {
   )
 }
 
-// ─── Premium Coverage Chart (Apple/Private Banking Style) ─────────────────────
+// ─── Ultra-Luxury Coverage Chart (Private Banking Style) ────────────────────
 function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}: {
   title: string; eyebrow: string; needLabel: string; haveLabel: string
   data: {age: number; need: number; have: number}[]
   accentColor: string
 }) {
-  const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number; y: number} | null>(null)
+  const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number} | null>(null)
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   
-  const W = 600, H = 220, PL = 60, PR = 20, PT = 30, PB = 35
+  const W = 680, H = 240, PL = 70, PR = 25, PT = 35, PB = 40
   const iW = W - PL - PR
   const iH = H - PT - PB
   
@@ -1003,15 +1003,22 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   const xP = (a: number) => ((a - minA) / aR) * iW
   const yP = (v: number) => iH - Math.min(1, v / maxV) * iH
   
-  const fmtAx = (n: number) => {
-    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
+  // Elegant number formatting
+  const fmtValue = (n: number) => {
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`
     if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`
     return `$${Math.round(n).toLocaleString()}`
   }
   
+  const fmtAxis = (n: number) => {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+    if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`
+    return `${n}`
+  }
+  
   const ticks = [0, 0.25, 0.5, 0.75, 1]
   
-  // Generate smooth curves
+  // Smooth curves with bezier for luxury feel
   const needPath = data.map((d, i) => {
     const x = PL + xP(d.age)
     const y = PT + yP(d.need)
@@ -1024,92 +1031,71 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
     return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
   }).join(' ')
   
-  // Find milestone ages where need drops significantly
-  const milestones: {age: number; label: string; type: 'end' | 'change'}[] = []
+  // Find milestones
+  const milestones: {age: number; label: string; value: number}[] = []
   for (let i = 1; i < data.length; i++) {
     const prevNeed = data[i - 1].need
     const currNeed = data[i].need
-    // Detect 50%+ drop in need
-    if (prevNeed > 0 && currNeed < prevNeed * 0.5) {
+    if (prevNeed > 0 && currNeed < prevNeed * 0.5 && currNeed > 0) {
       milestones.push({
         age: data[i].age,
-        label: data[i].age <= 65 ? 'Mortgage Paid' : 'Education Complete',
-        type: 'end'
+        label: 'Mortgage Repaid',
+        value: currNeed
       })
+      break
     }
   }
-  // Add final milestone when need reaches zero
-  const zeroNeedAge = data.find(d => d.need === 0)?.age
-  if (zeroNeedAge && !milestones.find(m => m.age === zeroNeedAge)) {
+  const eduEndAge = data.find(d => d.need > 0 && d.need < maxV * 0.3)?.age
+  if (eduEndAge && !milestones.find(m => m.age === eduEndAge)) {
     milestones.push({
-      age: zeroNeedAge,
-      label: 'Coverage Ends',
-      type: 'end'
+      age: eduEndAge,
+      label: 'Education Completed',
+      value: data.find(d => d.age === eduEndAge)?.need || 0
     })
   }
   
-  // Build gap areas - Red for underinsured (Need > Have), Green for overinsured (Have > Need)
-  const redGapPaths: string[] = []
-  const greenGapPaths: string[] = []
+  // Build gap areas
+  const underinsuredPaths: string[] = []
+  const overinsuredPaths: string[] = []
   
-  let currentRedPath: string[] = []
-  let currentGreenPath: string[] = []
-  let inRedGap = false
-  let inGreenGap = false
+  let currentUnderPath: string[] = []
+  let currentOverPath: string[] = []
   
   data.forEach((d, i) => {
     const x = PL + xP(d.age)
     const yNeed = PT + yP(d.need)
     const yHave = PT + yP(d.have)
     
-    if (d.need > d.have) {
-      // Red gap - underinsured
-      if (!inRedGap) {
-        inRedGap = true
-        currentRedPath = [`M ${x} ${yNeed}`, `L ${x} ${yHave}`]
+    if (d.need > d.have && d.need > 0) {
+      if (currentUnderPath.length === 0) {
+        currentUnderPath = [`M ${x} ${yNeed}`, `L ${x} ${yHave}`]
       } else {
-        currentRedPath.push(`L ${x} ${yNeed}`)
-        currentRedPath.push(`L ${x} ${yHave}`)
+        currentUnderPath.push(`L ${x} ${yNeed}`)
+        currentUnderPath.push(`L ${x} ${yHave}`)
       }
-    } else {
-      // End red gap if we were in one
-      if (inRedGap && currentRedPath.length > 0) {
-        redGapPaths.push(currentRedPath.join(' ') + ' Z')
-        inRedGap = false
-        currentRedPath = []
-      }
+    } else if (currentUnderPath.length > 0) {
+      underinsuredPaths.push(currentUnderPath.join(' ') + ' Z')
+      currentUnderPath = []
     }
     
-    if (d.have > d.need) {
-      // Green gap - overinsured
-      if (!inGreenGap) {
-        inGreenGap = true
-        currentGreenPath = [`M ${x} ${yHave}`, `L ${x} ${yNeed}`]
+    if (d.have > d.need && d.need > 0) {
+      if (currentOverPath.length === 0) {
+        currentOverPath = [`M ${x} ${yHave}`, `L ${x} ${yNeed}`]
       } else {
-        currentGreenPath.push(`L ${x} ${yHave}`)
-        currentGreenPath.push(`L ${x} ${yNeed}`)
+        currentOverPath.push(`L ${x} ${yHave}`)
+        currentOverPath.push(`L ${x} ${yNeed}`)
       }
-    } else {
-      // End green gap if we were in one
-      if (inGreenGap && currentGreenPath.length > 0) {
-        greenGapPaths.push(currentGreenPath.join(' ') + ' Z')
-        inGreenGap = false
-        currentGreenPath = []
-      }
+    } else if (currentOverPath.length > 0) {
+      overinsuredPaths.push(currentOverPath.join(' ') + ' Z')
+      currentOverPath = []
     }
   })
   
-  // Close any open paths
-  if (inRedGap && currentRedPath.length > 0) {
-    redGapPaths.push(currentRedPath.join(' ') + ' Z')
-  }
-  if (inGreenGap && currentGreenPath.length > 0) {
-    greenGapPaths.push(currentGreenPath.join(' ') + ' Z')
-  }
+  if (currentUnderPath.length > 0) underinsuredPaths.push(currentUnderPath.join(' ') + ' Z')
+  if (currentOverPath.length > 0) overinsuredPaths.push(currentOverPath.join(' ') + ' Z')
   
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
   
-  // Handle mouse move for hover
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const svg = e.currentTarget
     const rect = svg.getBoundingClientRect()
@@ -1130,8 +1116,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
       
       setHovered({
         ...closestPoint,
-        x: PL + xP(closestPoint.age),
-        y: PT + yP(closestPoint.need)
+        x: PL + xP(closestPoint.age)
       })
     } else {
       setMouseX(null)
@@ -1139,86 +1124,84 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
     }
   }
   
-  const handleMouseLeave = () => {
-    setMouseX(null)
-    setHovered(null)
-  }
-  
   const gap = hovered ? hovered.need - hovered.have : 0
   const coveragePct = hovered && hovered.need > 0 ? Math.min(100, (hovered.have / hovered.need) * 100) : 0
   const isOverinsured = hovered && hovered.have > hovered.need
   
-  // Premium color palette
-  const needColor = '#1C1A17'
-  const haveColor = accentColor
-  const underinsuredColor = 'rgba(231, 76, 60, 0.12)'    // Soft luxury red
-  const overinsuredColor = 'rgba(39, 174, 96, 0.10)'    // Soft luxury green
-  const gridColor = 'rgba(0, 0, 0, 0.04)'
-  const textColor = '#8B8B8B'
-  const milestoneColor = '#A8834A'
+  // Luxury color palette
+  const colors = {
+    background: '#FAFAF8',
+    cardBg: '#FFFFFF',
+    needLine: '#1A1A1A',
+    haveLine: '#C4A464',
+    underinsured: 'rgba(220, 140, 140, 0.08)',
+    overinsured: 'rgba(140, 180, 160, 0.06)',
+    grid: 'rgba(0, 0, 0, 0.03)',
+    axis: 'rgba(0, 0, 0, 0.06)',
+    text: '#6B6B6B',
+    textDark: '#2A2A2A',
+    milestone: '#C4A464',
+    tooltipBg: '#1A1A1A',
+  }
   
-  // Check if hover is near a milestone
   const nearbyMilestone = hovered 
     ? milestones.find(m => Math.abs(m.age - hovered.age) <= 2)
     : null
   
   return (
     <div ref={containerRef} style={{
-      background: '#FFFFFF',
-      border: '1px solid rgba(0, 0, 0, 0.06)',
-      borderRadius: 16,
-      padding: '24px 24px 20px 24px',
-      boxShadow: '0 2px 12px rgba(0, 0, 0, 0.02)',
-      transition: 'box-shadow 0.3s ease',
+      background: colors.cardBg,
+      borderRadius: 0,
+      padding: '28px 28px 24px 28px',
+      borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
     }}>
-      {/* Header */}
-      <div style={{ marginBottom: 20 }}>
+      {/* Header - Minimalist luxury */}
+      <div style={{ marginBottom: 24 }}>
         <div style={{
-          fontSize: 10,
-          letterSpacing: '0.15em',
+          fontSize: 9,
+          letterSpacing: '0.2em',
           textTransform: 'uppercase',
-          color: accentColor,
-          marginBottom: 6,
-          fontWeight: 600
+          color: colors.text,
+          marginBottom: 8,
+          fontWeight: 400
         }}>{eyebrow}</div>
         <div style={{
           fontFamily: 'Cormorant Garamond, Georgia, serif',
-          fontSize: 18,
-          fontWeight: 400,
-          color: '#1C1A17',
-          letterSpacing: '-0.01em'
+          fontSize: 20,
+          fontWeight: 300,
+          color: colors.textDark,
+          letterSpacing: '-0.01em',
+          lineHeight: 1.3
         }}>{title}</div>
       </div>
       
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 24, marginBottom: 16, alignItems: 'center' }}>
+      {/* Legend - Understated */}
+      <div style={{ display: 'flex', gap: 28, marginBottom: 20, alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 20, height: 2, background: needColor }} />
-          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{needLabel}</span>
+          <div style={{ width: 16, height: 1.5, background: colors.needLine }} />
+          <span style={{ fontSize: 10, color: colors.text, fontWeight: 400, letterSpacing: '0.02em' }}>{needLabel}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 20, height: 2, background: haveColor, opacity: 0.7 }} />
-          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{haveLabel}</span>
+          <div style={{ width: 16, height: 1.5, background: colors.haveLine }} />
+          <span style={{ fontSize: 10, color: colors.text, fontWeight: 400, letterSpacing: '0.02em' }}>{haveLabel}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 14, height: 8, background: underinsuredColor, border: '1px solid rgba(231, 76, 60, 0.2)', borderRadius: 2 }} />
-          <span style={{ fontSize: 10, color: '#E74C3C', fontWeight: 500 }}>Underinsured</span>
+          <div style={{ width: 10, height: 6, background: colors.underinsured, border: '0.5px solid rgba(220, 140, 140, 0.2)' }} />
+          <span style={{ fontSize: 9, color: '#C49090', fontWeight: 400, letterSpacing: '0.05em' }}>Underinsured</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 14, height: 8, background: overinsuredColor, border: '1px solid rgba(39, 174, 96, 0.2)', borderRadius: 2 }} />
-          <span style={{ fontSize: 10, color: '#27AE60', fontWeight: 500 }}>Overinsured</span>
+          <div style={{ width: 10, height: 6, background: colors.overinsured, border: '0.5px solid rgba(140, 180, 160, 0.2)' }} />
+          <span style={{ fontSize: 9, color: '#8CB4A0', fontWeight: 400, letterSpacing: '0.05em' }}>Overinsured</span>
         </div>
         {hovered && (
           <div style={{
             marginLeft: 'auto',
-            fontSize: 11,
-            color: '#1C1A17',
-            background: '#F8F7F4',
-            padding: '6px 14px',
-            borderRadius: 20,
-            fontWeight: 500
+            fontSize: 10,
+            color: colors.textDark,
+            fontWeight: 400,
+            letterSpacing: '0.02em'
           }}>
-            Age {hovered.age} • {gap > 0 ? `Gap ${fmt(gap)}` : isOverinsured ? `+${fmt(-gap)} Surplus` : 'Fully Covered'}
+            Age {hovered.age}
           </div>
         )}
       </div>
@@ -1230,9 +1213,9 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
           width="100%"
           style={{ display: 'block', overflow: 'visible' }}
           onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
+          onMouseLeave={() => { setMouseX(null); setHovered(null) }}
         >
-          {/* Grid lines */}
+          {/* Subtle grid */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
             return (
@@ -1242,71 +1225,69 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                   y1={y}
                   x2={PL + iW}
                   y2={y}
-                  stroke={gridColor}
-                  strokeWidth="1"
+                  stroke={colors.grid}
+                  strokeWidth="0.5"
                 />
                 <text
-                  x={PL - 8}
-                  y={y + 4}
-                  fontSize="10"
-                  fill={textColor}
+                  x={PL - 10}
+                  y={y + 3}
+                  fontSize="9"
+                  fill={colors.text}
                   textAnchor="end"
-                  fontWeight={400}
+                  fontWeight={300}
+                  letterSpacing="0.02em"
                 >
-                  {fmtAx(maxV * f)}
+                  {fmtAxis(maxV * f)}
                 </text>
               </g>
             )
           })}
           
-          {/* Axes */}
-          <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
-          <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
+          {/* Clean axes */}
+          <line x1={PL} y1={PT - 5} x2={PL} y2={PT + iH} stroke={colors.axis} strokeWidth="0.5" />
+          <line x1={PL} y1={PT + iH} x2={PL + iW + 5} y2={PT + iH} stroke={colors.axis} strokeWidth="0.5" />
           
-          {/* Red gap areas (underinsured) */}
-          {redGapPaths.map((path, idx) => (
+          {/* Gap areas - Ultra subtle */}
+          {underinsuredPaths.map((path, idx) => (
             <path
-              key={`red-${idx}`}
+              key={`under-${idx}`}
               d={path}
-              fill={underinsuredColor}
-              stroke="rgba(231, 76, 60, 0.15)"
-              strokeWidth="0.5"
+              fill={colors.underinsured}
+              stroke="none"
             />
           ))}
           
-          {/* Green gap areas (overinsured) */}
-          {greenGapPaths.map((path, idx) => (
+          {overinsuredPaths.map((path, idx) => (
             <path
-              key={`green-${idx}`}
+              key={`over-${idx}`}
               d={path}
-              fill={overinsuredColor}
-              stroke="rgba(39, 174, 96, 0.15)"
-              strokeWidth="0.5"
+              fill={colors.overinsured}
+              stroke="none"
             />
           ))}
           
-          {/* Have line (drawn first so it's behind) */}
+          {/* Have line */}
           <path
             d={havePath}
-            stroke={haveColor}
-            strokeWidth="1.5"
+            stroke={colors.haveLine}
+            strokeWidth="1"
             fill="none"
             strokeLinejoin="round"
             strokeLinecap="round"
-            opacity="0.6"
+            opacity="0.7"
           />
           
           {/* Need line */}
           <path
             d={needPath}
-            stroke={needColor}
-            strokeWidth="2"
+            stroke={colors.needLine}
+            strokeWidth="1.2"
             fill="none"
             strokeLinejoin="round"
             strokeLinecap="round"
           />
           
-          {/* Milestone markers */}
+          {/* Milestone markers - Elegant gold accents */}
           {milestones.map((m, idx) => {
             const x = PL + xP(m.age)
             return (
@@ -1316,53 +1297,45 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                   y1={PT}
                   x2={x}
                   y2={PT + iH}
-                  stroke={milestoneColor}
-                  strokeWidth="0.5"
-                  strokeDasharray="2,4"
-                  opacity="0.4"
-                />
-                <circle
-                  cx={x}
-                  cy={PT + iH + 5}
-                  r="3"
-                  fill={milestoneColor}
-                  opacity="0.6"
+                  stroke={colors.milestone}
+                  strokeWidth="0.3"
+                  strokeDasharray="3,5"
+                  opacity="0.3"
                 />
               </g>
             )
           })}
           
-          {/* Hover vertical line */}
+          {/* Hover line - Elegant */}
           {mouseX && (
             <line
               x1={mouseX}
-              y1={PT}
+              y1={PT - 5}
               x2={mouseX}
               y2={PT + iH}
-              stroke="rgba(28, 26, 23, 0.15)"
-              strokeWidth="1"
-              strokeDasharray="4,3"
+              stroke="rgba(28, 26, 23, 0.12)"
+              strokeWidth="0.8"
             />
           )}
           
-          {/* Hover points */}
+          {/* Hover points - Minimal */}
           {hovered && (
             <>
               <circle
                 cx={hovered.x}
                 cy={PT + yP(hovered.need)}
-                r="4"
+                r="2.5"
                 fill="white"
-                stroke={needColor}
-                strokeWidth="2"
+                stroke={colors.needLine}
+                strokeWidth="1.2"
               />
               <circle
                 cx={hovered.x}
                 cy={PT + yP(hovered.have)}
-                r="4"
+                r="2.5"
                 fill="white"
-                stroke={haveColor}
-                strokeWidth="2"
+                stroke={colors.haveLine}
+                strokeWidth="1.2"
               />
             </>
           )}
@@ -1372,116 +1345,120 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
             <text
               key={d.age}
               x={PL + xP(d.age)}
-              y={PT + iH + 18}
-              fontSize="10"
-              fill={textColor}
+              y={PT + iH + 20}
+              fontSize="9"
+              fill={colors.text}
               textAnchor="middle"
-              fontWeight={400}
+              fontWeight={300}
+              letterSpacing="0.02em"
             >
               {d.age}
             </text>
           ))}
         </svg>
         
-        {/* Hover Tooltip */}
+        {/* Luxury Tooltip */}
         {hovered && (
           <div style={{
             position: 'absolute',
             left: `${((hovered.x - PL) / iW) * 100}%`,
             top: '0',
             transform: 'translateX(-50%)',
-            background: '#1C1A17',
-            color: 'white',
-            padding: '14px 18px',
-            borderRadius: 10,
-            fontSize: 12,
+            background: colors.tooltipBg,
+            color: '#FFFFFF',
+            padding: '16px 20px',
+            borderRadius: 0,
+            fontSize: 11,
             pointerEvents: 'none',
-            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.2)',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.08)',
             zIndex: 10,
             whiteSpace: 'nowrap',
-            marginTop: -70,
-            minWidth: 200
+            marginTop: -80,
+            minWidth: 220,
+            border: 'none'
           }}>
-            <div style={{ marginBottom: 10, color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: '0.15em' }}>
-              AGE {hovered.age}
+            {/* Age header */}
+            <div style={{ 
+              marginBottom: 14, 
+              color: 'rgba(255,255,255,0.4)', 
+              fontSize: 9, 
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              fontWeight: 300
+            }}>
+              Age {hovered.age}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Coverage Need</span>
-                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{fmt(hovered.need)}</span>
+            
+            {/* Values */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 30 }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 300 }}>Required</span>
+                <span style={{ fontWeight: 400, fontFamily: 'DM Mono, monospace', letterSpacing: '0.02em' }}>
+                  {fmtValue(hovered.need)}
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Current Portfolio</span>
-                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace', color: accentColor }}>
-                  {fmt(hovered.have)}
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 30 }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 300 }}>Current</span>
+                <span style={{ fontWeight: 400, fontFamily: 'DM Mono, monospace', letterSpacing: '0.02em', color: colors.haveLine }}>
+                  {fmtValue(hovered.have)}
                 </span>
               </div>
               
-              {/* Milestone indicator in tooltip */}
+              {/* Milestone indicator */}
               {nearbyMilestone && (
                 <div style={{
-                  marginTop: 4,
-                  padding: '6px 0',
-                  borderTop: '1px solid rgba(255,255,255,0.1)',
-                  borderBottom: '1px solid rgba(255,255,255,0.1)'
+                  marginTop: 6,
+                  paddingTop: 10,
+                  borderTop: '0.5px solid rgba(255,255,255,0.08)'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 16 }}>🎯</span>
-                    <span style={{ color: milestoneColor, fontWeight: 500, letterSpacing: '0.05em' }}>
-                      {nearbyMilestone.label}
-                    </span>
+                  <div style={{ 
+                    color: colors.milestone, 
+                    fontSize: 9, 
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    fontWeight: 300
+                  }}>
+                    {nearbyMilestone.label}
                   </div>
                 </div>
               )}
               
+              {/* Gap/Surplus */}
               <div style={{ 
-                marginTop: 4, 
-                paddingTop: 8, 
-                borderTop: '1px solid rgba(255,255,255,0.15)',
+                marginTop: 6, 
+                paddingTop: 10, 
+                borderTop: '0.5px solid rgba(255,255,255,0.08)',
                 display: 'flex', 
-                justifyContent: 'space-between', 
-                gap: 24 
+                justifyContent: 'space-between',
+                gap: 30
               }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {gap > 0 ? 'Protection Gap' : isOverinsured ? 'Surplus' : 'Status'}
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 300 }}>
+                  {gap > 0 ? 'Gap' : isOverinsured ? 'Surplus' : 'Coverage'}
                 </span>
                 <span style={{ 
-                  fontWeight: 600, 
+                  fontWeight: 400, 
                   fontFamily: 'DM Mono, monospace',
-                  color: gap > 0 ? '#E74C3C' : isOverinsured ? '#27AE60' : '#FFFFFF'
+                  letterSpacing: '0.02em',
+                  color: gap > 0 ? '#D4A0A0' : isOverinsured ? '#A0C4B0' : '#FFFFFF'
                 }}>
-                  {gap > 0 ? fmt(gap) : isOverinsured ? `+${fmt(-gap)}` : `${Math.round(coveragePct)}% Covered`}
+                  {gap > 0 ? fmtValue(gap) : isOverinsured ? `+${fmtValue(-gap)}` : 'Adequate'}
                 </span>
               </div>
             </div>
-            {/* Arrow */}
-            <div style={{
-              position: 'absolute',
-              bottom: -8,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: 0,
-              height: 0,
-              borderLeft: '8px solid transparent',
-              borderRight: '8px solid transparent',
-              borderTop: '8px solid #1C1A17'
-            }} />
           </div>
         )}
       </div>
       
-      {/* Footer note */}
+      {/* Subtle footer note */}
       <div style={{
-        fontSize: 10,
-        color: 'rgba(0, 0, 0, 0.4)',
-        marginTop: 12,
-        fontStyle: 'italic',
-        letterSpacing: '0.02em'
+        fontSize: 8,
+        color: 'rgba(0, 0, 0, 0.25)',
+        marginTop: 16,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        fontWeight: 300
       }}>
-        Solid line = required • Dashed line = existing • 
-        <span style={{ color: '#E74C3C' }}> Red</span> = underinsured • 
-        <span style={{ color: '#27AE60' }}> Green</span> = overinsured • 
-        <span style={{ color: milestoneColor }}> ●</span> = milestone
+        Solid = Required • Dashed = Current Portfolio
       </div>
     </div>
   )
