@@ -443,12 +443,7 @@ setPolicies(filtered)
   function handleDownloadPDF() {
   window.print()
 }
-    await addPage(page1Ref,true)
-    await addPage(page2Ref,false)
-    await addPage(page3Ref,false)
-    pdf.save(`Portfolio_Summary_${year}_${clientName.replace(/\s+/g,'_')}.pdf`)
-  }
-
+  
   const darkBg: React.CSSProperties = {background:'#1C1A17',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',fontFamily:'Inter,sans-serif',padding:24}
 
   if (stage==='loading') return (
