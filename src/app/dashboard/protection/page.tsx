@@ -980,7 +980,7 @@ async function handleGenerateShare() {
   )
 }
 
-// ─── Ultra-Luxury Coverage Chart (Private Banking Style) ────────────────────
+// ─── Refined Luxury Coverage Chart ────────────────────────────────────────────
 function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}: {
   title: string; eyebrow: string; needLabel: string; haveLabel: string
   data: {age: number; need: number; have: number}[]
@@ -990,7 +990,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   
-  const W = 680, H = 240, PL = 70, PR = 25, PT = 35, PB = 40
+  const W = 620, H = 230, PL = 65, PR = 20, PT = 30, PB = 38
   const iW = W - PL - PR
   const iH = H - PT - PB
   
@@ -1003,7 +1003,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   const xP = (a: number) => ((a - minA) / aR) * iW
   const yP = (v: number) => iH - Math.min(1, v / maxV) * iH
   
-  // Elegant number formatting
   const fmtValue = (n: number) => {
     if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`
     if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`
@@ -1013,12 +1012,11 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   const fmtAxis = (n: number) => {
     if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
     if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`
-    return `${n}`
+    return `${Math.round(n)}`
   }
   
   const ticks = [0, 0.25, 0.5, 0.75, 1]
   
-  // Smooth curves with bezier for luxury feel
   const needPath = data.map((d, i) => {
     const x = PL + xP(d.age)
     const y = PT + yP(d.need)
@@ -1032,26 +1030,18 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   }).join(' ')
   
   // Find milestones
-  const milestones: {age: number; label: string; value: number}[] = []
+  const milestones: {age: number; label: string}[] = []
   for (let i = 1; i < data.length; i++) {
     const prevNeed = data[i - 1].need
     const currNeed = data[i].need
     if (prevNeed > 0 && currNeed < prevNeed * 0.5 && currNeed > 0) {
-      milestones.push({
-        age: data[i].age,
-        label: 'Mortgage Repaid',
-        value: currNeed
-      })
+      milestones.push({ age: data[i].age, label: 'Mortgage Repaid' })
       break
     }
   }
-  const eduEndAge = data.find(d => d.need > 0 && d.need < maxV * 0.3)?.age
-  if (eduEndAge && !milestones.find(m => m.age === eduEndAge)) {
-    milestones.push({
-      age: eduEndAge,
-      label: 'Education Completed',
-      value: data.find(d => d.age === eduEndAge)?.need || 0
-    })
+  const zeroNeedAge = data.find(d => d.need === 0)?.age
+  if (zeroNeedAge && !milestones.find(m => m.age === zeroNeedAge)) {
+    milestones.push({ age: zeroNeedAge, label: 'Coverage Ends' })
   }
   
   // Build gap areas
@@ -1128,20 +1118,21 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   const coveragePct = hovered && hovered.need > 0 ? Math.min(100, (hovered.have / hovered.need) * 100) : 0
   const isOverinsured = hovered && hovered.have > hovered.need
   
-  // Luxury color palette
+  // Luxury color palette - refined
   const colors = {
-    background: '#FAFAF8',
     cardBg: '#FFFFFF',
+    border: 'rgba(0, 0, 0, 0.05)',
     needLine: '#1A1A1A',
     haveLine: '#C4A464',
-    underinsured: 'rgba(220, 140, 140, 0.08)',
-    overinsured: 'rgba(140, 180, 160, 0.06)',
-    grid: 'rgba(0, 0, 0, 0.03)',
-    axis: 'rgba(0, 0, 0, 0.06)',
-    text: '#6B6B6B',
+    underinsured: 'rgba(220, 150, 140, 0.10)',
+    overinsured: 'rgba(130, 170, 150, 0.08)',
+    grid: 'rgba(0, 0, 0, 0.04)',
+    axis: 'rgba(0, 0, 0, 0.08)',
+    text: '#7A7A7A',
     textDark: '#2A2A2A',
     milestone: '#C4A464',
-    tooltipBg: '#1A1A1A',
+    tooltipBg: '#1C1A17',
+    accentLight: '#F5F0E8',
   }
   
   const nearbyMilestone = hovered 
@@ -1151,57 +1142,60 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   return (
     <div ref={containerRef} style={{
       background: colors.cardBg,
-      borderRadius: 0,
-      padding: '28px 28px 24px 28px',
-      borderBottom: '1px solid rgba(0, 0, 0, 0.04)',
+      border: `1px solid ${colors.border}`,
+      borderRadius: 8,
+      padding: '24px 24px 20px 24px',
+      boxShadow: '0 2px 12px rgba(0, 0, 0, 0.02)',
     }}>
-      {/* Header - Minimalist luxury */}
-      <div style={{ marginBottom: 24 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 22 }}>
         <div style={{
           fontSize: 9,
-          letterSpacing: '0.2em',
+          letterSpacing: '0.18em',
           textTransform: 'uppercase',
-          color: colors.text,
-          marginBottom: 8,
-          fontWeight: 400
+          color: colors.haveLine,
+          marginBottom: 6,
+          fontWeight: 500
         }}>{eyebrow}</div>
         <div style={{
           fontFamily: 'Cormorant Garamond, Georgia, serif',
-          fontSize: 20,
-          fontWeight: 300,
+          fontSize: 19,
+          fontWeight: 400,
           color: colors.textDark,
-          letterSpacing: '-0.01em',
-          lineHeight: 1.3
+          letterSpacing: '-0.01em'
         }}>{title}</div>
       </div>
       
-      {/* Legend - Understated */}
-      <div style={{ display: 'flex', gap: 28, marginBottom: 20, alignItems: 'center' }}>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 24, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 16, height: 1.5, background: colors.needLine }} />
-          <span style={{ fontSize: 10, color: colors.text, fontWeight: 400, letterSpacing: '0.02em' }}>{needLabel}</span>
+          <div style={{ width: 18, height: 1.5, background: colors.needLine }} />
+          <span style={{ fontSize: 10, color: colors.text, fontWeight: 400, letterSpacing: '0.03em' }}>{needLabel}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 16, height: 1.5, background: colors.haveLine }} />
-          <span style={{ fontSize: 10, color: colors.text, fontWeight: 400, letterSpacing: '0.02em' }}>{haveLabel}</span>
+          <div style={{ width: 18, height: 1.5, background: colors.haveLine }} />
+          <span style={{ fontSize: 10, color: colors.text, fontWeight: 400, letterSpacing: '0.03em' }}>{haveLabel}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 10, height: 6, background: colors.underinsured, border: '0.5px solid rgba(220, 140, 140, 0.2)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 12, height: 8, background: colors.underinsured, border: '0.5px solid rgba(220, 150, 140, 0.2)', borderRadius: 2 }} />
           <span style={{ fontSize: 9, color: '#C49090', fontWeight: 400, letterSpacing: '0.05em' }}>Underinsured</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 10, height: 6, background: colors.overinsured, border: '0.5px solid rgba(140, 180, 160, 0.2)' }} />
-          <span style={{ fontSize: 9, color: '#8CB4A0', fontWeight: 400, letterSpacing: '0.05em' }}>Overinsured</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 12, height: 8, background: colors.overinsured, border: '0.5px solid rgba(130, 170, 150, 0.2)', borderRadius: 2 }} />
+          <span style={{ fontSize: 9, color: '#7FB090', fontWeight: 400, letterSpacing: '0.05em' }}>Overinsured</span>
         </div>
         {hovered && (
           <div style={{
             marginLeft: 'auto',
             fontSize: 10,
             color: colors.textDark,
+            background: colors.accentLight,
+            padding: '5px 14px',
+            borderRadius: 20,
             fontWeight: 400,
             letterSpacing: '0.02em'
           }}>
-            Age {hovered.age}
+            Age {hovered.age} • {gap > 0 ? `Gap ${fmtValue(gap)}` : isOverinsured ? `Surplus ${fmtValue(-gap)}` : `${Math.round(coveragePct)}% Covered`}
           </div>
         )}
       </div>
@@ -1215,7 +1209,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
           onMouseMove={handleMouseMove}
           onMouseLeave={() => { setMouseX(null); setHovered(null) }}
         >
-          {/* Subtle grid */}
+          {/* Grid lines */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
             return (
@@ -1227,10 +1221,11 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                   y2={y}
                   stroke={colors.grid}
                   strokeWidth="0.5"
+                  strokeDasharray="3,3"
                 />
                 <text
                   x={PL - 10}
-                  y={y + 3}
+                  y={y + 4}
                   fontSize="9"
                   fill={colors.text}
                   textAnchor="end"
@@ -1243,17 +1238,18 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
             )
           })}
           
-          {/* Clean axes */}
-          <line x1={PL} y1={PT - 5} x2={PL} y2={PT + iH} stroke={colors.axis} strokeWidth="0.5" />
-          <line x1={PL} y1={PT + iH} x2={PL + iW + 5} y2={PT + iH} stroke={colors.axis} strokeWidth="0.5" />
+          {/* Axes */}
+          <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke={colors.axis} strokeWidth="0.5" />
+          <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke={colors.axis} strokeWidth="0.5" />
           
-          {/* Gap areas - Ultra subtle */}
+          {/* Gap areas */}
           {underinsuredPaths.map((path, idx) => (
             <path
               key={`under-${idx}`}
               d={path}
               fill={colors.underinsured}
-              stroke="none"
+              stroke="rgba(220, 150, 140, 0.15)"
+              strokeWidth="0.5"
             />
           ))}
           
@@ -1262,7 +1258,8 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
               key={`over-${idx}`}
               d={path}
               fill={colors.overinsured}
-              stroke="none"
+              stroke="rgba(130, 170, 150, 0.12)"
+              strokeWidth="0.5"
             />
           ))}
           
@@ -1270,24 +1267,25 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
           <path
             d={havePath}
             stroke={colors.haveLine}
-            strokeWidth="1"
+            strokeWidth="1.3"
             fill="none"
             strokeLinejoin="round"
             strokeLinecap="round"
             opacity="0.7"
+            strokeDasharray="5,3"
           />
           
           {/* Need line */}
           <path
             d={needPath}
             stroke={colors.needLine}
-            strokeWidth="1.2"
+            strokeWidth="1.6"
             fill="none"
             strokeLinejoin="round"
             strokeLinecap="round"
           />
           
-          {/* Milestone markers - Elegant gold accents */}
+          {/* Milestone markers */}
           {milestones.map((m, idx) => {
             const x = PL + xP(m.age)
             return (
@@ -1298,19 +1296,19 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                   x2={x}
                   y2={PT + iH}
                   stroke={colors.milestone}
-                  strokeWidth="0.3"
-                  strokeDasharray="3,5"
-                  opacity="0.3"
+                  strokeWidth="0.4"
+                  strokeDasharray="2,6"
+                  opacity="0.35"
                 />
               </g>
             )
           })}
           
-          {/* Hover line - Elegant */}
+          {/* Hover vertical line */}
           {mouseX && (
             <line
               x1={mouseX}
-              y1={PT - 5}
+              y1={PT}
               x2={mouseX}
               y2={PT + iH}
               stroke="rgba(28, 26, 23, 0.12)"
@@ -1318,24 +1316,24 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
             />
           )}
           
-          {/* Hover points - Minimal */}
+          {/* Hover points */}
           {hovered && (
             <>
               <circle
                 cx={hovered.x}
                 cy={PT + yP(hovered.need)}
-                r="2.5"
+                r="3"
                 fill="white"
                 stroke={colors.needLine}
-                strokeWidth="1.2"
+                strokeWidth="1.5"
               />
               <circle
                 cx={hovered.x}
                 cy={PT + yP(hovered.have)}
-                r="2.5"
+                r="3"
                 fill="white"
                 stroke={colors.haveLine}
-                strokeWidth="1.2"
+                strokeWidth="1.5"
               />
             </>
           )}
@@ -1366,82 +1364,75 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
             transform: 'translateX(-50%)',
             background: colors.tooltipBg,
             color: '#FFFFFF',
-            padding: '16px 20px',
-            borderRadius: 0,
+            padding: '14px 18px',
+            borderRadius: 6,
             fontSize: 11,
             pointerEvents: 'none',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.08)',
+            boxShadow: '0 16px 32px rgba(0, 0, 0, 0.12)',
             zIndex: 10,
             whiteSpace: 'nowrap',
-            marginTop: -80,
-            minWidth: 220,
-            border: 'none'
+            marginTop: -75,
+            minWidth: 210,
           }}>
-            {/* Age header */}
             <div style={{ 
-              marginBottom: 14, 
+              marginBottom: 12, 
               color: 'rgba(255,255,255,0.4)', 
               fontSize: 9, 
               letterSpacing: '0.15em',
               textTransform: 'uppercase',
-              fontWeight: 300
+              fontWeight: 400
             }}>
               Age {hovered.age}
             </div>
             
-            {/* Values */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 30 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 28 }}>
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 300 }}>Required</span>
-                <span style={{ fontWeight: 400, fontFamily: 'DM Mono, monospace', letterSpacing: '0.02em' }}>
-                  {fmtValue(hovered.need)}
-                </span>
+                <span style={{ fontWeight: 400, fontFamily: 'DM Mono, monospace' }}>{fmtValue(hovered.need)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 30 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 28 }}>
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 300 }}>Current</span>
-                <span style={{ fontWeight: 400, fontFamily: 'DM Mono, monospace', letterSpacing: '0.02em', color: colors.haveLine }}>
+                <span style={{ fontWeight: 400, fontFamily: 'DM Mono, monospace', color: colors.haveLine }}>
                   {fmtValue(hovered.have)}
                 </span>
               </div>
               
-              {/* Milestone indicator */}
               {nearbyMilestone && (
                 <div style={{
-                  marginTop: 6,
-                  paddingTop: 10,
-                  borderTop: '0.5px solid rgba(255,255,255,0.08)'
+                  marginTop: 4,
+                  padding: '8px 0',
+                  borderTop: '0.5px solid rgba(255,255,255,0.08)',
+                  borderBottom: '0.5px solid rgba(255,255,255,0.08)'
                 }}>
                   <div style={{ 
                     color: colors.milestone, 
                     fontSize: 9, 
-                    letterSpacing: '0.12em',
+                    letterSpacing: '0.1em',
                     textTransform: 'uppercase',
-                    fontWeight: 300
+                    fontWeight: 400
                   }}>
-                    {nearbyMilestone.label}
+                    ◆ {nearbyMilestone.label}
                   </div>
                 </div>
               )}
               
-              {/* Gap/Surplus */}
               <div style={{ 
-                marginTop: 6, 
-                paddingTop: 10, 
+                marginTop: 4, 
+                paddingTop: 8, 
                 borderTop: '0.5px solid rgba(255,255,255,0.08)',
                 display: 'flex', 
                 justifyContent: 'space-between',
-                gap: 30
+                gap: 28
               }}>
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 300 }}>
-                  {gap > 0 ? 'Gap' : isOverinsured ? 'Surplus' : 'Coverage'}
+                  {gap > 0 ? 'Protection Gap' : isOverinsured ? 'Surplus' : 'Coverage'}
                 </span>
                 <span style={{ 
                   fontWeight: 400, 
                   fontFamily: 'DM Mono, monospace',
-                  letterSpacing: '0.02em',
                   color: gap > 0 ? '#D4A0A0' : isOverinsured ? '#A0C4B0' : '#FFFFFF'
                 }}>
-                  {gap > 0 ? fmtValue(gap) : isOverinsured ? `+${fmtValue(-gap)}` : 'Adequate'}
+                  {gap > 0 ? fmtValue(gap) : isOverinsured ? `+${fmtValue(-gap)}` : `${Math.round(coveragePct)}%`}
                 </span>
               </div>
             </div>
@@ -1449,16 +1440,16 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
         )}
       </div>
       
-      {/* Subtle footer note */}
+      {/* Footer */}
       <div style={{
-        fontSize: 8,
-        color: 'rgba(0, 0, 0, 0.25)',
-        marginTop: 16,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
+        fontSize: 9,
+        color: 'rgba(0, 0, 0, 0.3)',
+        marginTop: 14,
+        letterSpacing: '0.06em',
+        fontStyle: 'italic',
         fontWeight: 300
       }}>
-        Solid = Required • Dashed = Current Portfolio
+        Solid line = Required • Dashed line = Current Portfolio • Shaded areas = Protection gap/surplus
       </div>
     </div>
   )
