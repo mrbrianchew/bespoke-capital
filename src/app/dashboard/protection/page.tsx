@@ -427,31 +427,30 @@ const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
   const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
   const totalPrem = activePolicies.reduce((s,p)=>s+annualPremSGD(p),0)
 
- // Chart data
+  // Chart data
 function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
-  // First build the DTPD array
+  // Use the Strategic Objectives need directly
+  const dtpdNeed = overviewPerson === 'client' ? clientDTPD : spouseDTPD
+  
+  // Build the DTPD array - flat until coverage term ends, then zero
   const dtpdArray: number[] = []
   for (let i = 0; i < 100-age; i++) {
     const a = age+i
     const yLeft = Math.max(0, (age+coverTerm)-a)
     
-    // Full mortgage and education amounts until coverage ends
-    const remainingMortgage = yLeft > 0 ? mort : 0
-    const remainingEducation = yLeft > 0 ? edu : 0
-    
-    dtpdArray.push(Math.max(0, 
-      pvAnn(annExp, inflation, yLeft) + 
-      remainingMortgage + 
-      remainingEducation - 
-      offset
-    ))
+    // Need is constant during coverage term, then drops to zero
+    if (yLeft > 0) {
+      dtpdArray.push(Math.max(0, dtpdNeed - offset))
+    } else {
+      dtpdArray.push(0)
+    }
   }
   
-  // Find mortgage drop age from DTPD
+  // Find mortgage drop age from DTPD (for CI calculation)
   let mortgageEndAge = 60 // default
   for (let i = 1; i < dtpdArray.length; i++) {
     const drop = dtpdArray[i-1] - dtpdArray[i]
-    const pctDrop = drop / dtpdArray[i-1]
+    const pctDrop = dtpdArray[i-1] > 0 ? drop / dtpdArray[i-1] : 0
     if (pctDrop > 0.15 && pctDrop < 0.40) {
       mortgageEndAge = age + i
       break
@@ -462,16 +461,18 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
     const a = age+i
     const dtpd = dtpdArray[i]
     
-    // CI calculation - drops at mortgage payoff
+    // CI calculation - use Strategic Objectives CI need
+    const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
+    
     let ciFactor = 1.0
     if (a >= mortgageEndAge) {
-      ciFactor = 0.4 // Drop to 40% after mortgage paid
+      ciFactor = 0.4
     }
     if (a >= age+coverTerm) {
       ciFactor = Math.min(ciFactor, Math.max(0, 1-(a-(age+coverTerm))*0.04))
     }
     
-    return { age: a, dtpd, ci: Math.max(0, ciNeed * ciFactor) }
+    return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
   })
 }
     
