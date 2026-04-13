@@ -921,7 +921,7 @@ async function handleGenerateShare() {
               setTimeout(()=>setShareCopied(false),3000)
             }}
               style={{padding:'10px',background:'#1C1A17',color:'#c8a96e',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
-              {shareCopied?'✓ Copied to clipboard!`:`Copy "Portfolio Summary ${new Date().getFullYear()} — ${clientName}"`}
+              {shareCopied?'✓ Copied to clipboard!':'Copy "Portfolio Summary ' + new Date().getFullYear() + ' — ' + clientName + '"'}
             </button>
             <div style={{fontSize:11,color:'var(--ink3)',textAlign:'center'}}>
               {shareExpiry==='permanent'?'This link does not expire.':shareExpiry==='7d'?'Expires in 7 days.':'Expires in 30 days.'}
