@@ -621,7 +621,29 @@ async function handleGenerateShare() {
 
           {hasChartData ? (
             <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-              <CoverageChart eyebrow="Life & Disability" title="Death / TPD Coverage Needs Analysis" needLabel="Required capital" haveLabel="Existing portfolio" data={chartData.map(d=>({age:d.age,need:d.dtpd,have:aLH}))} accentColor="#C4A464" />
+             <CoverageChart 
+  eyebrow="Critical Illness" 
+  title="Critical Illness Coverage Needs Analysis" 
+  needLabel="Required capital" 
+  haveLabel="Existing portfolio" 
+  data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))} 
+  accentColor="#2D6A4F"
+  milestones={{
+    mortgageEnd: ff.p1_ci_mort > 0 ? 60 : null,
+    educationEnds: children.map((child: any) => {
+      const childAge = child.age || 0
+      const uniEntryAge = child.gender === 'Male' ? 21 : 19
+      return aAge + (uniEntryAge - childAge) + 4
+    }),
+    coverageEnds: (() => {
+      for (let i = chartData.length - 1; i >= 0; i--) {
+        if (chartData[i].ci > 0) return chartData[i].age
+      }
+      return null
+    })(),
+    clientAge: aAge
+  }}
+/>
              <CoverageChart eyebrow="Critical Illness" title="Critical Illness Coverage Needs Analysis" needLabel="Required capital" haveLabel="Existing portfolio" data={chartData.map(d=>({age:d.age,need:d.ci,have:aCH}))} accentColor="#2D6A4F" />
             </div>
           ) : (
@@ -981,10 +1003,16 @@ async function handleGenerateShare() {
 }
 
 // ─── Premium Coverage Chart (Apple/Private Banking Style) ─────────────────────
-function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}: {
+function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
   title: string; eyebrow: string; needLabel: string; haveLabel: string
   data: {age: number; need: number; have: number}[]
   accentColor: string
+  milestones?: {
+    mortgageEnd?: number | null
+    educationEnds?: number[]
+    coverageEnds?: number | null
+    clientAge?: number
+  }
 }) {
   const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number; y: number} | null>(null)
   const [mouseX, setMouseX] = useState<number | null>(null)
@@ -1024,26 +1052,43 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
     return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
   }).join(' ')
   
-  // Find milestone ages
-  const milestones: {age: number; label: string; type: 'end' | 'change'}[] = []
-  for (let i = 1; i < data.length; i++) {
-    const prevNeed = data[i - 1].need
-    const currNeed = data[i].need
-    if (prevNeed > 0 && currNeed < prevNeed * 0.5) {
-      milestones.push({
-        age: data[i].age,
-        label: data[i].age <= 65 ? 'Mortgage Paid' : 'Education Complete',
-        type: 'end'
+   // Build accurate milestones from passed data
+  const chartMilestones: {age: number; label: string; type: string; color?: string}[] = []
+
+  if (milestones) {
+    // Mortgage paid off
+    if (milestones.mortgageEnd && milestones.mortgageEnd > (milestones.clientAge || 0)) {
+      chartMilestones.push({
+        age: milestones.mortgageEnd,
+        label: 'Mortgage Repaid',
+        type: 'mortgage',
+        color: '#C4A464'
       })
     }
-  }
-  const zeroNeedAge = data.find(d => d.need === 0)?.age
-  if (zeroNeedAge && !milestones.find(m => m.age === zeroNeedAge)) {
-    milestones.push({
-      age: zeroNeedAge,
-      label: 'Coverage Ends',
-      type: 'end'
-    })
+    
+    // Education completed for each child
+    if (milestones.educationEnds) {
+      const uniqueEduEnds = [...new Set(milestones.educationEnds.filter(age => age > (milestones.clientAge || 0)))]
+      uniqueEduEnds.sort((a, b) => a - b).forEach((age, idx) => {
+        const childNumber = uniqueEduEnds.length > 1 ? `Child ${idx + 1}` : 'Child'
+        chartMilestones.push({
+          age: age,
+          label: `${childNumber} Graduates`,
+          type: 'education',
+          color: '#7FAAA0'
+        })
+      })
+    }
+    
+    // Coverage ends
+    if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge || 0)) {
+      chartMilestones.push({
+        age: milestones.coverageEnds,
+        label: 'Coverage Ends',
+        type: 'coverage',
+        color: '#8B9DAF'
+      })
+    }
   }
   
   // Build gap areas
@@ -1150,8 +1195,8 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
   const textColor = '#8B8B8B'
   const milestoneColor = '#A8834A'
   
-  const nearbyMilestone = hovered 
-    ? milestones.find(m => Math.abs(m.age - hovered.age) <= 2)
+    const nearbyMilestone = hovered 
+    ? chartMilestones.find(m => Math.abs(m.age - hovered.age) <= 2)
     : null
   
   return (
@@ -1246,11 +1291,33 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
           <path d={havePath} stroke={haveColor} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" strokeDasharray="4,3" />
           <path d={needPath} stroke={needColor} strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round" />
           
-          {milestones.map((m, idx) => {
+                    {/* Milestone markers */}
+          {chartMilestones.map((m, idx) => {
             const x = PL + xP(m.age)
+            const lineColor = m.color || milestoneColor
             return (
               <g key={`milestone-${idx}`}>
-                <line x1={x} y1={PT} x2={x} y2={PT + iH} stroke={milestoneColor} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.4" />
+                <line 
+                  x1={x} 
+                  y1={PT} 
+                  x2={x} 
+                  y2={PT + iH} 
+                  stroke={lineColor} 
+                  strokeWidth="0.6" 
+                  strokeDasharray={m.type === 'coverage' ? '4,4' : '2,4'} 
+                  opacity="0.5" 
+                />
+                <text 
+                  x={x} 
+                  y={PT - 6} 
+                  fontSize="8" 
+                  fill={lineColor} 
+                  textAnchor="middle" 
+                  fontWeight={500}
+                  letterSpacing="0.03em"
+                >
+                  {m.label.split(' ')[0]}
+                </text>
               </g>
             )
           })}
@@ -1305,7 +1372,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                 </span>
               </div>
               
-              {nearbyMilestone && (
+                           {nearbyMilestone && (
                 <div style={{
                   marginTop: 4,
                   padding: '6px 0',
@@ -1313,9 +1380,12 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor}
                   borderBottom: '1px solid rgba(255,255,255,0.1)'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 14 }}>🎯</span>
-                    <span style={{ color: milestoneColor, fontWeight: 500, letterSpacing: '0.05em' }}>
-                      {nearbyMilestone.label}
+                    <span style={{ fontSize: 14 }}>
+                      {nearbyMilestone.type === 'mortgage' ? '🏠' : 
+                       nearbyMilestone.type === 'education' ? '🎓' : '🏁'}
+                    </span>
+                    <span style={{ color: nearbyMilestone.color || milestoneColor, fontWeight: 500, letterSpacing: '0.05em' }}>
+                      {nearbyMilestone.label} at Age {nearbyMilestone.age}
                     </span>
                   </div>
                 </div>
