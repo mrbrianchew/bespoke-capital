@@ -1377,26 +1377,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
           <path d={havePath} stroke={haveColor} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" strokeDasharray="4,3" />
           <path d={needPath} stroke={needColor} strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round" />
           
-                    {/* Milestone markers */}
-          {chartMilestones.map((m, idx) => {
-            const x = PL + xP(m.age)
-            const lineColor = m.color || milestoneColor
-            return (
-              <g key={`milestone-${idx}`}>
-                <line 
-                  x1={x} 
-                  y1={PT} 
-                  x2={x} 
-                  y2={PT + iH} 
-                  stroke={lineColor} 
-                  strokeWidth="0.6" 
-                  strokeDasharray={m.type === 'coverage' ? '4,4' : '2,4'} 
-                  opacity="0.5" 
-                />
-              </g>
-            )
-          })}
-          
           {mouseX && (
             <line x1={mouseX} y1={PT} x2={mouseX} y2={PT + iH} stroke="rgba(28, 26, 23, 0.15)" strokeWidth="1" strokeDasharray="4,3" />
           )}
