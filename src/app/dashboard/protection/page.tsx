@@ -160,6 +160,13 @@ export default function ProtectionPage() {
   const [showModal,       setShowModal]       = useState(false)
   const [modalPerson,     setModalPerson]     = useState('client')
   const [showInactive,    setShowInactive]    = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
+const [shareLink, setShareLink] = useState('')
+const [shareExpiry, setShareExpiry] = useState<'7d'|'30d'|'permanent'>('30d')
+const [sharePassword, setSharePassword] = useState('')
+const [shareHint, setShareHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
+const [shareGenerating, setShareGenerating] = useState(false)
+const [shareCopied, setShareCopied] = useState(false)
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
@@ -466,7 +473,29 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
     updateRm(next); setShowModal(false); setEditingPolicy(null)
   }
   function delPolicy(id: string) { updateRm({...rmData, policies: rmData.policies.filter(p=>p.id!==id)}) }
-
+async function handleGenerateShare() {
+  if (!sharePassword.trim()) return
+  setShareGenerating(true)
+  try {
+    const encoder = new TextEncoder()
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(sharePassword.trim()))
+    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(36)).join('').slice(0,12)
+    let expiresAt: string|null = null
+    if (shareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
+    if (shareExpiry==='30d') expiresAt = new Date(Date.now()+30*24*3600*1000).toISOString()
+    const { error } = await supabase.from('client_shares').insert({
+      client_id: clientId, token, expires_at: expiresAt,
+      password_hash: hashHex, password_hint: shareHint,
+    })
+    if (error) throw error
+    setShareLink(`${window.location.origin}/share/${token}`)
+  } catch(e) {
+    console.error('Share failed:', e)
+  } finally {
+    setShareGenerating(false)
+  }
+}
   return (
     <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
       {/* Hero */}
@@ -607,7 +636,16 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
               <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{activePolicies.length} active {activePolicies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
             </div>
-            <button onClick={()=>window.print()} style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>Print / PDF</button>
+<div style={{display:'flex',gap:8}}>
+  <button onClick={()=>{setShowShareModal(true);setShareLink('');setSharePassword('');setShareCopied(false)}}
+    style={{padding:'8px 18px',background:'#1C1A17',color:'#c8a96e',border:'1px solid #c8a96e',cursor:'pointer',fontSize:12}}>
+    Share
+  </button>
+  <button onClick={()=>window.print()}
+    style={{padding:'8px 18px',background:'#c8a96e',color:'white',border:'none',cursor:'pointer',fontSize:12}}>
+    Print / PDF
+  </button>
+</div>
           </div>
 
           {/* Person tabs */}
@@ -824,7 +862,80 @@ const spouseCI   = isCouple ? Math.max(0, p2Mo*24 - p2Liq) : 0
           onClose={()=>{ setShowModal(false); setEditingPolicy(null) }}
         />
       )}
-
+{showShareModal && (
+  <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.7)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <div style={{background:'white',width:'100%',maxWidth:520,boxShadow:'0 24px 64px rgba(0,0,0,0.3)'}}>
+      <div style={{padding:'18px 26px',borderBottom:'1px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,color:'var(--ink)'}}>Share Portfolio</div>
+        <button onClick={()=>{setShowShareModal(false);setShareLink('');setSharePassword('');setShareCopied(false)}}
+          style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--ink3)'}}>✕</button>
+      </div>
+      <div style={{padding:'20px 26px',display:'flex',flexDirection:'column',gap:16}}>
+        {!shareLink ? (
+          <>
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Link Expiry</div>
+              <div style={{display:'flex',gap:8}}>
+                {([['7d','7 Days'],['30d','30 Days'],['permanent','Permanent']] as const).map(([val,label])=>(
+                  <button key={val} onClick={()=>setShareExpiry(val)}
+                    style={{padding:'7px 16px',fontSize:12,border:`1px solid ${shareExpiry===val?'#1C1A17':'var(--line)'}`,
+                      background:shareExpiry===val?'#1C1A17':'white',color:shareExpiry===val?'white':'var(--ink)',cursor:'pointer'}}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Password</div>
+              <input type="text" value={sharePassword} onChange={e=>setSharePassword(e.target.value)}
+                placeholder="e.g. 567A1980"
+                style={{width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none',boxSizing:'border-box' as const,fontFamily:'DM Mono,monospace'}}/>
+            </div>
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Password Hint (shown to client)</div>
+              <textarea value={shareHint} onChange={e=>setShareHint(e.target.value)} rows={3}
+                style={{width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:12,outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const,fontFamily:'Inter,sans-serif',lineHeight:1.6}}/>
+            </div>
+            <button onClick={handleGenerateShare} disabled={!sharePassword.trim()||shareGenerating}
+              style={{padding:'10px',background:sharePassword.trim()?'#1C1A17':'#ccc',color:'white',border:'none',cursor:sharePassword.trim()?'pointer':'default',fontSize:13,fontWeight:500}}>
+              {shareGenerating?'Generating…':'Generate Link'}
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{padding:'16px',background:'#F5F3EE',border:'1px solid #E0DDD6'}}>
+              <div style={{fontSize:10,color:'var(--ink3)',marginBottom:6,letterSpacing:'0.08em',textTransform:'uppercase'}}>Your shareable link</div>
+              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,color:'var(--ink)',marginBottom:6}}>
+                Portfolio Summary {new Date().getFullYear()} — {clientName}
+              </div>
+              <div style={{fontSize:10,color:'var(--ink3)',fontFamily:'DM Mono,monospace',wordBreak:'break-all' as const}}>{shareLink}</div>
+            </div>
+            <div style={{fontSize:12,color:'var(--ink3)',lineHeight:1.6,background:'#FFFBF5',padding:'12px',border:'1px solid #F0E8D8'}}>
+              Copy the button below and paste into WhatsApp. The client sees a tappable link with the document title.
+            </div>
+            <button onClick={async()=>{
+              const year = new Date().getFullYear()
+              const text = `Portfolio Summary ${year} — ${clientName}\n${shareLink}`
+              await navigator.clipboard.writeText(text)
+              setShareCopied(true)
+              setTimeout(()=>setShareCopied(false),3000)
+            }}
+              style={{padding:'10px',background:'#1C1A17',color:'#c8a96e',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
+              {shareCopied?'✓ Copied to clipboard!`:`Copy "Portfolio Summary ${new Date().getFullYear()} — ${clientName}"`}
+            </button>
+            <div style={{fontSize:11,color:'var(--ink3)',textAlign:'center'}}>
+              {shareExpiry==='permanent'?'This link does not expire.':shareExpiry==='7d'?'Expires in 7 days.':'Expires in 30 days.'}
+            </div>
+            <button onClick={()=>{setShareLink('');setSharePassword('')}}
+              style={{padding:'8px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:12}}>
+              Generate Another Link
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  </div>
+)}
 <style>{`
   @media print {
     .no-print { display: none !important; }
