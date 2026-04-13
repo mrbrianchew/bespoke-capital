@@ -346,6 +346,7 @@ export default function ObjectivesPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const needsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ─── LOAD DATA ─────────────────────────────────────────────────────────────
 
@@ -718,6 +719,49 @@ const coverageTerm = (() => {
   const dtpdSpouse = calcDTPDNeed('spouse')
   const ciClient = calcCINeed('client')
   const ciSpouse = calcCINeed('spouse')
+  // Save calculated needs to database
+async function saveNeedsToDatabase() {
+  if (!clientId) return
+  
+  const needs: any = {
+    p1_dtpd_need: dtpdClient.net,
+    p1_ci_need: ciClient.net,
+  }
+  
+  if (isCouple) {
+    needs.p2_dtpd_need = dtpdSpouse.net
+    needs.p2_ci_need = ciSpouse.net
+  }
+  
+  // Get existing protection_needs data
+  const { data: existing } = await supabase
+    .from('fact_finding')
+    .select('data')
+    .eq('client_id', clientId)
+    .eq('section', 'protection_needs')
+    .maybeSingle()
+  
+  const existingData = existing?.data || {}
+  
+  // Save back with needs included
+  await supabase
+    .from('fact_finding')
+    .upsert({
+      client_id: clientId,
+      section: 'protection_needs',
+      data: { ...existingData, ...needs },
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'client_id,section' })
+}
+  // Auto-save needs whenever they change
+useEffect(() => {
+  if (clientId && (dtpdClient.net > 0 || ciClient.net > 0)) {
+    if (needsSaveTimer.current) clearTimeout(needsSaveTimer.current)
+    needsSaveTimer.current = setTimeout(() => {
+      saveNeedsToDatabase()
+    }, 2000) // Wait 2 seconds after last change
+  }
+}, [clientId, dtpdClient.net, ciClient.net, dtpdSpouse?.net, ciSpouse?.net])
 
   // Gaps
   const existingLifeClient = p.existingLifeCoverClient ?? 0
