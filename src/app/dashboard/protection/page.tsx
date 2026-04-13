@@ -423,39 +423,43 @@ const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
   const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
   const totalPrem = activePolicies.reduce((s,p)=>s+annualPremSGD(p),0)
 
-  // Chart data
-  // Chart data
+ // Chart data
 function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
-  // Get CI breakdown from ff data if available
-  const ciMort = Number(ff.p1_ci_mort || 0)
-  const ciEdu = Number(ff.p1_ci_edu || 0)
-  const ciFd = ciNeed - ciMort - ciEdu
+  // First build the DTPD array to detect drops
+  const dtpdArray: number[] = []
+  for (let i = 0; i < 100-age; i++) {
+    const a = age+i
+    const yLeft = Math.max(0, (age+coverTerm)-a)
+    dtpdArray.push(Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - (i===0?offset:0)))
+  }
+  
+  // Find mortgage drop age from DTPD
+  let mortgageEndAge = 60 // default
+  for (let i = 1; i < dtpdArray.length; i++) {
+    const drop = dtpdArray[i-1] - dtpdArray[i]
+    const pctDrop = drop / dtpdArray[i-1]
+    if (pctDrop > 0.15 && pctDrop < 0.40) {
+      mortgageEndAge = age + i
+      break
+    }
+  }
   
   return Array.from({length:100-age}, (_,i) => {
     const a = age+i
-    const yLeft = Math.max(0, (age+coverTerm)-a)
+    const dtpd = dtpdArray[i]
     
-    // DTPD calculation (unchanged)
-    const dtpd = Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - (i===0?offset:0))
+    // CI calculation - drops at mortgage payoff
+    let ciFactor = 1.0
+    if (a >= mortgageEndAge) {
+      ciFactor = 0.4 // Drop to 40% after mortgage paid
+    }
+    if (a >= age+coverTerm) {
+      ciFactor = Math.min(ciFactor, Math.max(0, 1-(a-(age+coverTerm))*0.04))
+    }
     
-    // CI calculation with mortgage and education drop-offs
-    let ci = ciFd
-    if (ciMort > 0) {
-      const mortEndAge = 60 // Mortgage paid off at 60
-      if (a < mortEndAge) {
-        ci += ciMort
-      } else if (a < mortEndAge + 5) {
-        ci += ciMort * (1 - (a - mortEndAge) / 5)
-      }
-    }
-    if (ciEdu > 0) {
-      const eduEndAge = 62 // Education completes around 62
-      if (a < eduEndAge) {
-        ci += ciEdu
-      } else if (a < eduEndAge + 5) {
-        ci += ciEdu * (1 - (a - eduEndAge) / 5)
-      }
-    }
+    return { age: a, dtpd, ci: Math.max(0, ciNeed * ciFactor) }
+  })
+}
     
     // Apply coverage term taper
     const ciFactor = a < age+coverTerm ? 1.0 : Math.max(0, 1-(a-(age+coverTerm))*0.04)
@@ -1396,17 +1400,6 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
                   strokeDasharray={m.type === 'coverage' ? '4,4' : '2,4'} 
                   opacity="0.5" 
                 />
-                <text 
-                  x={x} 
-                  y={PT - 6} 
-                  fontSize="8" 
-                  fill={lineColor} 
-                  textAnchor="middle" 
-                  fontWeight={500}
-                  letterSpacing="0.03em"
-                >
-                  {m.label.split(' ')[0]}
-                </text>
               </g>
             )
           })}
