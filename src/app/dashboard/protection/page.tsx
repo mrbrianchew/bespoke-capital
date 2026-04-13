@@ -384,10 +384,10 @@ const finalP2Exp = p2ExpRaw > 0 ? p2ExpRaw : (p2Mo * 12 * 0.7)
   const p2Liq  = Number(ff.a2_savings||0)+Number(ff.a2_alternatives||0)
 
 // Prefer saved needs from Strategic Objectives; fall back to local estimate if not yet calculated
-const clientDTPD = Number(ff.p1_dtpd_need || 0) || Math.max(0, fvAnn(finalP1Exp,inflation,coverTerm)+mort+edu-p1CPF-p1Prop)
-const clientCI   = Number(ff.p1_ci_need   || 0) || Math.max(0, p1Mo*60 - p1Liq)
-const spouseDTPD = isCouple ? (Number(ff.p2_dtpd_need || 0) || Math.max(0, fvAnn(finalP2Exp,inflation,coverTerm)+mort-p2CPF-p2Prop)) : 0
-const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || Math.max(0, p2Mo*60 - p2Liq)) : 0
+const clientDTPD = Number(ff.p1_dtpd_need || 0)
+const clientCI   = Number(ff.p1_ci_need || 0)
+const spouseDTPD = isCouple ? Number(ff.p2_dtpd_need || 0) : 0
+const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
 
   function toSGD(val: number, p: Policy) {
     return p.isUSD ? val * (p.fxRate || 1.35) : val
