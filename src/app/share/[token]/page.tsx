@@ -440,19 +440,9 @@ setPolicies(filtered)
     setStage('unlocked')
   }
 
-  async function handleDownloadPDF() {
-    const { default: jsPDF } = await import('jspdf')
-    const { default: html2canvas } = await import('html2canvas')
-    const pdf = new jsPDF({orientation:'landscape',unit:'mm',format:'a4'})
-    const pageW=297
-    async function addPage(ref: React.RefObject<HTMLDivElement>, isFirst: boolean) {
-      if (!ref.current) return
-      const canvas = await html2canvas(ref.current,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:1100,width:1100,height:ref.current.scrollHeight,windowHeight:ref.current.scrollHeight})
-const imgData = canvas.toDataURL('image/jpeg',0.95)
-const imgH = (canvas.height*pageW)/canvas.width
-if (!isFirst) pdf.addPage()
-pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
-    }
+  function handleDownloadPDF() {
+  window.print()
+}
     await addPage(page1Ref,true)
     await addPage(page2Ref,false)
     await addPage(page3Ref,false)
@@ -541,10 +531,31 @@ pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
 
   return (
     <div style={{background:'#F5F3EE',minHeight:'100vh',fontFamily:'Inter,sans-serif',overflowX:'auto'}}>
-      <style>{`@media print{@page{size:A4 landscape;margin:0}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}`}</style>
+     <style>{`
+  @media print {
+    @page {
+      size: A4 landscape;
+      margin: 1.2cm 1.5cm;
+    }
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .no-print {
+      display: none !important;
+    }
+    .print-break-before {
+      page-break-before: always !important;
+      break-before: page !important;
+    }
+    body {
+      background: white !important;
+    }
+  }
+`}</style>
 
       {/* Sticky nav */}
-      <div style={{position:'sticky',top:0,zIndex:100,background:'#1C1A17',padding:'10px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',minWidth:1100}}>
+     <div className="no-print" style={{position:'sticky',top:0,zIndex:100,background:'#1C1A17',padding:'10px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',minWidth:1100}}>
         <div style={{display:'flex',alignItems:'center',gap:16}}>
           <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)'}}>Bespoke Capital</div>
           <div style={{width:1,height:14,background:'rgba(255,255,255,0.15)'}}/>
@@ -601,7 +612,7 @@ pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
       </div>
 
       {/* PAGE 2 — Medical, LTC, General */}
-      <div ref={page2Ref} style={{width:1100,overflow:'hidden'}}>
+      <div ref={page2Ref} className="print-break-before" style={{width:1100,overflow:'hidden'}}>
         <div style={hero('')}>
           <div>
             <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
@@ -617,7 +628,7 @@ pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
       </div>
 
       {/* PAGE 3 — Core Protection & Wealth Accumulation */}
-      <div ref={page3Ref} style={{width:1100,overflow:'hidden'}}>
+      <div ref={page3Ref} className="print-break-before" style={{width:1100,overflow:'hidden'}}>
         <div style={hero('')}>
           <div>
             <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
