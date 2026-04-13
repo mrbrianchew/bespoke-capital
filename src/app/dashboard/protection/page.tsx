@@ -1052,23 +1052,38 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
   }).join(' ')
   
-   // Build accurate milestones from passed data
+     // Build accurate milestones from passed data
   const chartMilestones: {age: number; label: string; type: string; color?: string}[] = []
 
   if (milestones) {
-    // Mortgage paid off
-    if (milestones.mortgageEnd && milestones.mortgageEnd > (milestones.clientAge || 0)) {
-      chartMilestones.push({
-        age: milestones.mortgageEnd,
-        label: 'Mortgage Repaid',
-        type: 'mortgage',
-        color: '#C4A464'
+    // Mortgage paid off - handles MULTIPLE mortgages
+    if (milestones.mortgageEnds && milestones.mortgageEnds.length > 0) {
+      const sortedMortgageAges = [...milestones.mortgageEnds].sort((a, b) => a - b)
+      sortedMortgageAges.forEach((age, idx) => {
+        const mortgageNumber = sortedMortgageAges.length > 1 ? `Mortgage ${idx + 1}` : 'Mortgage'
+        chartMilestones.push({
+          age: age,
+          label: `${mortgageNumber} Repaid`,
+          type: 'mortgage',
+          color: '#C4A464'
+        })
       })
     }
     
-    // Education completed for each child
-    if (milestones.educationEnds) {
-      const uniqueEduEnds = [...new Set(milestones.educationEnds.filter(age => age > (milestones.clientAge || 0)))]
+    // Education completed - handles ANY number of children
+    if (milestones.educationEnds && milestones.educationEnds.length > 0) {
+      // Filter valid ages first
+      const validEduAges = milestones.educationEnds.filter(age => age > (milestones.clientAge || 0))
+      
+      // Remove duplicates manually
+      const uniqueEduEnds: number[] = []
+      validEduAges.forEach(age => {
+        if (!uniqueEduEnds.includes(age)) {
+          uniqueEduEnds.push(age)
+        }
+      })
+      
+      // Sort and create milestones
       uniqueEduEnds.sort((a, b) => a - b).forEach((age, idx) => {
         const childNumber = uniqueEduEnds.length > 1 ? `Child ${idx + 1}` : 'Child'
         chartMilestones.push({
