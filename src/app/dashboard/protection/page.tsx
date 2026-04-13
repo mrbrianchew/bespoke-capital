@@ -434,7 +434,18 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
   for (let i = 0; i < 100-age; i++) {
     const a = age+i
     const yLeft = Math.max(0, (age+coverTerm)-a)
-    dtpdArray.push(Math.max(0, pvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - offset))
+    
+    // Calculate what portion of mortgage/education remains
+    // If we're past the coverage term, they're fully paid
+    const remainingMortgage = yLeft > 0 ? mort : 0
+    const remainingEducation = yLeft > 0 ? edu : 0
+    
+    dtpdArray.push(Math.max(0, 
+      pvAnn(annExp, inflation, yLeft) + 
+      remainingMortgage + 
+      remainingEducation - 
+      offset
+    ))
   }
   
   // Find mortgage drop age from DTPD
@@ -447,6 +458,23 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
       break
     }
   }
+  
+  return Array.from({length:100-age}, (_,i) => {
+    const a = age+i
+    const dtpd = dtpdArray[i]
+    
+    // CI calculation - drops at mortgage payoff
+    let ciFactor = 1.0
+    if (a >= mortgageEndAge) {
+      ciFactor = 0.4 // Drop to 40% after mortgage paid
+    }
+    if (a >= age+coverTerm) {
+      ciFactor = Math.min(ciFactor, Math.max(0, 1-(a-(age+coverTerm))*0.04))
+    }
+    
+    return { age: a, dtpd, ci: Math.max(0, ciNeed * ciFactor) }
+  })
+}
   
   return Array.from({length:100-age}, (_,i) => {
     const a = age+i
