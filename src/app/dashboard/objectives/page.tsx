@@ -1,2455 +1,2446 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 
-// ─── Reference types (loaded from DB) ────────────────────────────────────────
-interface InsCategory   { id: number; code: string; name: string; sort_order: number }
-interface InsPolicyType { id: number; category_id: number; code: string; name: string }
-interface InsCompany    { id: number; category_id: number; name: string }
-interface InsProduct    { id: number; category_id: number; company_id: number; name: string }
+// Module-level fallback so sub-components can access defaults before hook loads
+let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
 
-// ─── Policy record ────────────────────────────────────────────────────────────
-interface Policy {
+// ─── INTERFACES ──────────────────────────────────────────────────────────────
+
+interface MortgageProperty {
   id: string
-  // Classification
-  categoryCode:   string  // 'medical' | 'ltc' | 'general' | 'life' | 'endowment'
-  policyTypeCode: string
-  companyName:    string
-  productName:    string
-  // People
-  policyholder: string
-  lifeAssured:  string
-  // Policy details
-  policyNo:     string
-  briefDescription: string
-  // Sums
-  baseDeath:    number
-  baseTPD:      number
-  baseAdvCI:    number
-  baseEarlyCI:  number
-  sumAssured:   number
-  monthlyBenefit: number
-  deferredPeriod: string
-  benefitTerm?: string
-  payoutTerm?:  string
-  multiplier:   number
-  multiplierEnd?: number
-  coverStep:    number
-  stepDownPct?: number
-  currentCashValue: number
-  // Endowment benefit input modes: '$' or '%'
-  endowDeathMode?: '%' | '$'
-  endowTPDMode?:   '%' | '$'
-  // Premiums
-  premiumMedisave: number
-  premiumCash:     number
-  premiumMode:     string
-  frequency:       string
-  // Dates
-  inceptionDate:    string
-  premiumMaturity:  string
-  coverageMaturity: string
-  // Status
-  status:  string
-  remarks: string
-  // Section
-  person: string
-  // USD policy flag
-  isUSD?:  boolean
-  fxRate?: number   // USD/SGD rate stored at time of entry
+  label: string
+  outstanding: number
+  interestRate: number
+  monthlyRepayment: number
+  tenure: number
+  initialLoanAmount: number
+  initialTenure: number
+  loanStartDate: string
+  remainingTenure: number
 }
 
-interface RiskMgmtData { policies: Policy[]; advisorNotes: string }
-const EMPTY_RM: RiskMgmtData = { policies: [], advisorNotes: '' }
+interface FamilyMember {
+  id: string
+  name: string
+  relationship: string
+  gender?: string
+  date_of_birth?: string
+  age?: number
+}
 
-function emptyPolicy(person: string, ph = '', la = ''): Policy {
-  return {
-    id: crypto.randomUUID(), categoryCode: 'life', policyTypeCode: '', companyName: '', productName: '',
-    policyholder: ph, lifeAssured: la, policyNo: '', briefDescription: '',
-    baseDeath: 0, baseTPD: 0, baseAdvCI: 0, baseEarlyCI: 0, sumAssured: 0,
-    monthlyBenefit: 0, deferredPeriod: '', benefitTerm: '', payoutTerm: '', multiplier: 0, multiplierEnd: 0, coverStep: 0, stepDownPct: 0, currentCashValue: 0,
-    endowDeathMode: '$', endowTPDMode: '$',
-    premiumMedisave: 0, premiumCash: 0, premiumMode: '', frequency: 'Annual',
-    inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
-    status: 'In-Force', remarks: '', person,
-    isUSD: false, fxRate: 1.35,
+interface FactFinding {
+  // Expense mode
+  expense_mode?: 'simple' | 'detailed'
+  // Simplified expenses client
+  s_income_tax?: number; s_insurance?: number; s_regular_savings?: number
+  s_housing?: number; s_utilities?: number; s_family_food?: number
+  s_transport?: number; s_children?: number; s_lifestyle?: number; s_others?: number
+  // Simplified expenses spouse
+  s2_income_tax?: number; s2_insurance?: number; s2_regular_savings?: number
+  s2_housing?: number; s2_utilities?: number; s2_family_food?: number
+  s2_transport?: number; s2_children?: number; s2_lifestyle?: number; s2_others?: number
+  // Detailed expenses client
+  d_rental_expense?: number; d_income_tax?: number; d_insurance?: number; d_regular_savings?: number
+  d_conservancy?: number; d_utilities?: number; d_family_food?: number
+  d_maid?: number; d_other_household?: number; d_personal_food?: number
+  d_transport?: number; d_car_petrol?: number; d_car_insurance?: number
+  d_childcare?: number; d_school_fees?: number; d_school_transport?: number
+  d_allowance_children?: number; d_other_children?: number
+  d_holidays?: number; d_hobbies?: number; d_allowance_parents?: number
+  d_others_lifestyle?: number; d_mortgage_cpf?: number; d_mortgage_cash?: number
+  // Detailed expenses spouse
+  d2_rental_expense?: number; d2_income_tax?: number; d2_insurance?: number; d2_regular_savings?: number
+  d2_conservancy?: number; d2_utilities?: number; d2_family_food?: number
+  d2_maid?: number; d2_other_household?: number; d2_personal_food?: number
+  d2_transport?: number; d2_car_petrol?: number; d2_car_insurance?: number
+  d2_childcare?: number; d2_school_fees?: number; d2_school_transport?: number
+  d2_allowance_children?: number; d2_other_children?: number
+  d2_holidays?: number; d2_hobbies?: number; d2_allowance_parents?: number
+  d2_others_lifestyle?: number; d2_mortgage_cpf?: number; d2_mortgage_cash?: number
+  // Assets client
+  a_savings?: number; a_fixed_deposit?: number; a_srs?: number
+  a_shares?: number; a_etf?: number; a_unit_trust?: number; a_bonds?: number
+  a_alternatives?: number; a_cpf_oa?: number; a_cpf_sa?: number
+  a_cpf_ma?: number; a_cpf_ra?: number; a_inv_property_res?: number; a_inv_property_com?: number
+  // Assets spouse
+  a2_savings?: number; a2_fixed_deposit?: number; a2_srs?: number
+  a2_shares?: number; a2_etf?: number; a2_unit_trust?: number; a2_bonds?: number
+  a2_alternatives?: number; a2_cpf_oa?: number; a2_cpf_sa?: number
+  a2_cpf_ma?: number; a2_cpf_ra?: number; a2_inv_property_res?: number; a2_inv_property_com?: number
+  // Mortgages
+  mortgages?: MortgageProperty[]
+  properties?: any[]
+  // Other
+  strategic_objectives?: Record<string, unknown>
+  protection?: ProtectionData
+  [key: string]: unknown
+}
+
+interface ProtectionData {
+  planType?: 'individual' | 'couple'
+  expenseMode?: 'simple' | 'detailed'
+  inflationRate?: number
+  wpSubTab?: number
+  expenseCategories?: { financial?: boolean; household?: boolean; personal?: boolean; children?: boolean; lifestyle?: boolean }
+  expenseSubItems?: Record<string, boolean>
+  expenseCoverPctClient?: number
+  expenseCoverPctSpouse?: number
+  fdModeClient?: 'own' | 'combined'
+  fdModeSpouse?: 'own' | 'combined'
+  coverageTermOverride?: number
+  mortgageCoverPcts?: number[]
+  mortgageCoverPctsClient?: number[]
+  mortgageCoverPctsSpouse?: number[]
+  nonMortgageDebts?: { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; owner: 'client' | 'spouse' | 'joint' }[]
+  provideEducationFund?: boolean
+  educationFundPct?: number
+  educationChildren?: { childId: string; uniType?: string; courseDuration?: number; annualTuition?: number; annualLiving?: number; uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number }[]
+  ciStage?: 'early_late' | 'late_only'
+  ciYears?: number
+  ciMortgagePctClient?: number
+  ciMortgagePctSpouse?: number
+  includeEduInCI?: boolean
+  existingLifeCoverClient?: number; existingLifeCoverSpouse?: number
+  existingCICoverClient?: number; existingCICoverSpouse?: number
+  disabilityIncomeClient?: number; disabilityIncomeSpouse?: number
+  advisorNotes?: string
+}
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+
+const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
+  financial: 'Financial Commitments',
+  household: 'Household Expenses',
+  personal:  'Personal Expenses',
+  children:  'Children Expenses',
+  lifestyle: 'Lifestyle & Others',
+}
+
+const DETAILED_EXPENSE_MAP: Record<string, string[]> = {
+  financial: ['d_rental_expense','d_income_tax','d_regular_savings','d_insurance'],
+  household: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'],
+  personal:  ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'],
+  children:  ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'],
+  lifestyle: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'],
+}
+
+const DETAILED_EXPENSE_LABELS: Record<string, string> = {
+  d_rental_expense: 'Rental / Housing Expense',
+  d_income_tax: 'Income Tax',
+  d_regular_savings: 'Regular Savings / Investments',
+  d_insurance: 'Insurance Premium',
+  d_conservancy: 'Conservancy & S&CC Fees',
+  d_utilities: 'Utilities (Water, Gas, Electricity)',
+  d_family_food: 'Groceries & Family Food',
+  d_maid: 'Domestic Helper / Maid Levy',
+  d_other_household: 'Other Household Expenses',
+  d_personal_food: 'Personal Meals & Dining',
+  d_transport: 'Public Transport',
+  d_car_petrol: 'Car Petrol',
+  d_car_insurance: 'Car Insurance & Road Tax',
+  d_childcare: 'Childcare / Infant Care',
+  d_school_fees: 'School Fees & Tuition',
+  d_school_transport: 'School Transport',
+  d_allowance_children: 'Allowance for Children',
+  d_other_children: 'Other Children Expenses',
+  d_holidays: 'Holidays & Travel',
+  d_hobbies: 'Hobbies & Leisure',
+  d_allowance_parents: 'Allowance for Parents',
+  d_others_lifestyle: 'Other Lifestyle Expenses',
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+function fv(rate: number, nper: number, pmt: number): number {
+  if (nper <= 0) return 0
+  if (rate === 0) return pmt * nper
+  return pmt * ((Math.pow(1 + rate, nper) - 1) / rate) * (1 + rate)
+}
+
+function fmt(n: number): string {
+  return '$' + Math.round(n).toLocaleString('en-SG')
+}
+
+function getAge(dob?: string): number {
+  if (!dob) return 10
+  const birth = new Date(dob)
+  const today = new Date()
+  let age = today.getFullYear() - birth.getFullYear()
+  if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) age--
+  return Math.max(0, age)
+}
+
+function getSimpleTotal(ff: FactFinding, prefix: 'client' | 'spouse'): number {
+  const p = prefix === 'spouse' ? 's2_' : 's_'
+  return (
+    (ff[`${p}income_tax`] as number || 0) +
+    (ff[`${p}insurance`] as number || 0) +
+    (ff[`${p}regular_savings`] as number || 0) +
+    (ff[`${p}housing`] as number || 0) +
+    (ff[`${p}utilities`] as number || 0) +
+    (ff[`${p}family_food`] as number || 0) +
+    (ff[`${p}transport`] as number || 0) +
+    (ff[`${p}children`] as number || 0) +
+    (ff[`${p}lifestyle`] as number || 0) +
+    (ff[`${p}others`] as number || 0)
+  )
+}
+
+function getDetailedCategoryTotal(ff: FactFinding, category: string, prefix: 'client' | 'spouse', subItems?: Record<string, boolean>): number {
+  const sp = prefix === 'spouse' ? 'd2_' : 'd_'
+  const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
+  const keys = DETAILED_EXPENSE_MAP[category] || []
+  return keys.reduce((sum, k) => {
+    if (subItems) {
+      const personKey = k + perPersonKey
+      if (personKey in subItems) {
+        if (subItems[personKey] === false) return sum
+      } else {
+        if (subItems[k] === false) return sum
+      }
+    }
+    return sum + (ff[k.replace('d_', sp)] as number || 0)
+  }, 0)
+}
+
+function getDetailedTotal(ff: FactFinding, categories: Record<string, boolean>, subItems: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
+  const sp = prefix === 'spouse' ? 'd2_' : 'd_'
+  const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
+  let total = 0
+  Object.entries(categories).forEach(([cat, enabled]) => {
+    if (!enabled) return
+    DETAILED_EXPENSE_MAP[cat]?.forEach(key => {
+      // Check per-person toggle first (key_c or key_s), fall back to shared toggle (key)
+      const personKey = key + perPersonKey
+      if (personKey in subItems) {
+        if (subItems[personKey] === false) return
+      } else {
+        if (subItems[key] === false) return
+      }
+      total += (ff[key.replace('d_', sp)] as number || 0)
+    })
+  })
+  return total
+}
+
+function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
+  const p = prefix === 'spouse' ? 's2_' : 's_'
+  let total = 0
+  const catMap: Record<string, string[]> = {
+    financial: [`${p}income_tax`, `${p}insurance`, `${p}regular_savings`],
+    household: [`${p}housing`, `${p}utilities`, `${p}family_food`],
+    personal:  [`${p}transport`],
+    children:  [`${p}children`],
+    lifestyle: [`${p}lifestyle`, `${p}others`],
   }
+  Object.entries(categories).forEach(([cat, enabled]) => {
+    if (!enabled) return
+    catMap[cat]?.forEach(k => { total += (ff[k] as number || 0) })
+  })
+  return total
 }
 
-// ─── Display helpers ──────────────────────────────────────────────────────────
-const CAT_COLORS: Record<string, string> = {
-  medical: '#7A9CBF', ltc: '#9B7BAA', general: '#8A9A7E',
-  life: '#c8a96e', endowment: '#B8956A',
+function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtpd' | 'ci', p?: ProtectionData): number {
+  const ap = prefix === 'spouse' ? 'a2_' : 'a_'
+  const liquid =
+    (ff[`${ap}savings`] as number || 0) +
+    (ff[`${ap}fixed_deposit`] as number || 0) +
+    (ff[`${ap}srs`] as number || 0) +
+    (ff[`${ap}shares`] as number || 0) +
+    (ff[`${ap}etf`] as number || 0) +
+    (ff[`${ap}unit_trust`] as number || 0) +
+    (ff[`${ap}bonds`] as number || 0) +
+    (ff[`${ap}alternatives`] as number || 0)
+  if (type === 'ci') return liquid
+  const cpf =
+    (ff[`${ap}cpf_oa`] as number || 0) +
+    (ff[`${ap}cpf_sa`] as number || 0) +
+    (ff[`${ap}cpf_ma`] as number || 0) +
+    (ff[`${ap}cpf_ra`] as number || 0)
+  // All properties: full property value × mortgage slider pct for this person
+  // Slider indices map to the filtered mortgage list, so match by property ID
+  const properties = (ff.properties ?? []) as any[]
+  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+  const propertyValue = properties.reduce((sum: number, prop: any) => {
+    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
+    // Find this property's index in the mortgage list (slider index)
+    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
+    if (mortgageIdx === -1) {
+      // No mortgage — property belongs to whoever is recorded as sole owner, or split if joint
+      // Default: include fully for client (or split 50/50 if no ownership info)
+      const ot = prop.ownershipType ?? ''
+      let pct = 1
+      if (ot === 'Spouse Only') pct = prefix === 'spouse' ? 1 : 0
+      else if (ot === 'Joint Tenancy') pct = 0.5
+      else if (ot === 'Tenancy-in-Common') {
+        const parts = (prop.ownershipSplit ?? '50/50').split('/')
+        pct = prefix === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
+      } else pct = prefix === 'client' ? 1 : 0
+      return sum + val * pct
+    }
+    // Has mortgage — use slider pct
+    const pcts = prefix === 'client' ? (p?.mortgageCoverPctsClient ?? []) : (p?.mortgageCoverPctsSpouse ?? [])
+    const pct = (pcts[mortgageIdx] ?? 100) / 100
+    return sum + val * pct
+  }, 0)
+  return liquid + cpf + propertyValue
 }
-const CAT_SHORT: Record<string, string> = {
-  medical: 'Medical', ltc: 'LTC/DI', general: 'General',
-  life: 'Life', endowment: 'Endowment',
+function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYears: number, startMmYyyy: string): number {
+  if (!initialLoan || !tenureYears) return 0
+  const parts = startMmYyyy.split('/')
+  if (parts.length !== 2) return initialLoan
+  const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+  const today = new Date()
+  const monthsElapsed = (today.getFullYear() - startDate.getFullYear()) * 12 + (today.getMonth() - startDate.getMonth())
+  if (monthsElapsed <= 0) return initialLoan
+  const n = tenureYears * 12
+  if (monthsElapsed >= n) return 0
+  if (!annualRate) return Math.round(initialLoan * (1 - monthsElapsed / n))
+  const r = annualRate / 100 / 12
+  const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+  return Math.max(0, Math.round(initialLoan * Math.pow(1 + r, monthsElapsed) - pmt * (Math.pow(1 + r, monthsElapsed) - 1) / r))
 }
-const FREQ = ['Annual','Semi-Annual','Quarterly','Monthly','Single']
-const STATUS_OPTS = ['In-Force', 'Terminated', 'Paid-up', 'Surrendered', 'Matured', 'Premium Holiday']
-const ACTIVE_STATUSES = ['In-Force', 'Premium Holiday', 'Paid-up']
-const PAY_MODES   = ['Cash', 'Credit Card', 'Giro', 'Medisave', 'CPF OA', 'CPF SA', 'CPF SRS', 'MS + Cash', 'MS + Giro', 'MS + CC']
+// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
-function fmt(n: number | null | undefined) {
-  if (!n || n === 0) return '—'
-  return '$' + Math.round(n).toLocaleString()
-}
-function gapSt(need: number, have: number) {
-  if (need <= 0) return { label: 'N/A',     color: '#555',    bg: '#F0EEE9' }
-  if (have >= need) return { label: 'Covered', color: '#2D6A4F', bg: '#E8F5E9' }
-  if (have > 0)     return { label: 'Partial',  color: '#854F0B', bg: '#FEF3C7' }
-  return                   { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
-}
-
-// Helper to format dates nicely
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '—'
-  if (dateStr === 'Lifetime' || dateStr === 'Renewable' || dateStr.startsWith('Age ')) return dateStr
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    const d = new Date(dateStr)
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  }
-  return dateStr
-}
-
-// Calculate benefit with multiplier
-function getMultipliedBenefit(p: Policy, benefitType: 'death' | 'tpd' | 'advCI' | 'earlyCI'): number {
-  const mult = p.multiplier || 1
-  let base = 0
-  switch (benefitType) {
-    case 'death': base = p.baseDeath || 0; break
-    case 'tpd': base = p.baseTPD || 0; break
-    case 'advCI': base = p.baseAdvCI || 0; break
-    case 'earlyCI': base = p.baseEarlyCI || 0; break
-  }
-  return base * mult
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function ProtectionPage() {
+export default function ObjectivesPage() {
   const supabase = createClient()
-
-  // Client / family
-  const [clientId,   setClientId]   = useState<string | null>(null)
-  const clientIdRef = useRef<string | null>(null)
+  const { uniCosts: _uniCosts } = useUniCosts()
+  UNI_COST_DEFAULTS = _uniCosts
+  const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
-  const [clientAge,  setClientAge]  = useState(40)
   const [spouseName, setSpouseName] = useState('Spouse')
-  const [spouseAge,  setSpouseAge]  = useState(38)
-  const [isCouple,   setIsCouple]   = useState(false)
-  const [children,   setChildren]   = useState<any[]>([])
-  const [ffData,     setFfData]     = useState<any>(null)
-
-  // Reference data from DB
-  const [refCategories,  setRefCategories]  = useState<InsCategory[]>([])
-  const [refPolicyTypes, setRefPolicyTypes] = useState<InsPolicyType[]>([])
-  const [refCompanies,   setRefCompanies]   = useState<InsCompany[]>([])
-  const [refProducts,    setRefProducts]    = useState<InsProduct[]>([])
-
-  // Portfolio data
-  const [rmData,  setRmData]  = useState<RiskMgmtData>(EMPTY_RM)
-  const [saving,  setSaving]  = useState(false)
-  const [saveError, setSaveError] = useState(false)
+  const [ff, setFf] = useState<FactFinding>({})
+  const [p, setP] = useState<ProtectionData>({
+    planType: 'individual',
+    inflationRate: 3,
+    wpSubTab: 0,
+    expenseCategories: { financial: true, household: true, personal: true, children: true, lifestyle: true },
+    expenseSubItems: {},
+    expenseCoverPctClient: 100,
+    expenseCoverPctSpouse: 100,
+    coverageTermOverride: 20,
+    mortgageCoverPcts: [],
+    mortgageCoverPctsClient: [],
+    mortgageCoverPctsSpouse: [],
+    provideEducationFund: false,
+    educationFundPct: 100,
+    educationChildren: [],
+    ciStage: 'early_late',
+    ciYears: 5,
+    ciMortgagePctClient: 100,
+    ciMortgagePctSpouse: 100,
+    includeEduInCI: false,
+    existingLifeCoverClient: 0, existingLifeCoverSpouse: 0,
+    existingCICoverClient: 0, existingCICoverSpouse: 0,
+    disabilityIncomeClient: 0, disabilityIncomeSpouse: 0,
+    advisorNotes: '',
+  })
+  const [children, setChildren] = useState<FamilyMember[]>([])
+  const [activeSection, setActiveSection] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const needsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // UI state
-  const [activeTab,       setActiveTab]       = useState<'overview'|'portfolio'>('overview')
-  const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
-  const [portfolioPerson, setPortfolioPerson] = useState<string>('client')
-  const [editingPolicy,   setEditingPolicy]   = useState<Policy | null>(null)
-  const [showModal,       setShowModal]       = useState(false)
-  const [modalPerson,     setModalPerson]     = useState('client')
-  const [showInactive,    setShowInactive]    = useState(false)
-  const [showShareModal, setShowShareModal] = useState(false)
-  const [sharePerson, setSharePerson] = useState<string>('client')
-const [shareLink, setShareLink] = useState('')
-const [shareExpiry, setShareExpiry] = useState<'7d'|'30d'|'permanent'>('30d')
-const [sharePassword, setSharePassword] = useState('')
-const [shareHint, setShareHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
-const [shareGenerating, setShareGenerating] = useState(false)
-const [shareCopied, setShareCopied] = useState(false)
+  // ─── LOAD DATA ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Try localStorage first, fall back to auth-based lookup
     const id = localStorage.getItem('selectedClientId')
-    if (id) { setClientId(id); clientIdRef.current = id }
+    if (id) {
+      setClientId(id)
+      loadData(id)
+    } else {
+      // Fall back: get most recent client for this advisor
+      loadDataFromAuth()
+    }
   }, [])
 
-  useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
+  async function loadDataFromAuth() {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setLoading(false); return }
+    const { data: clients } = await supabase
+      .from('clients')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (clients && clients.length > 0) {
+      const id = clients[0].id
+      setClientId(id)
+      localStorage.setItem('selectedClientId', id)
+      loadData(id)
+    } else {
+      setLoading(false)
+    }
+  }
+
+  async function loadData(id: string) {
+  setLoading(true)
+  // Load BOTH financials and protection_needs data
+  const { data: ffRows } = await supabase
+    .from('fact_finding')
+    .select('*')
+    .eq('client_id', id)
+  .in('section', ['financials', 'protection_needs', 'protection_portfolio'])
+    
+  if (ffRows && ffRows.length > 0) {
+    const merged: FactFinding = { client_id: id }
+    for (const row of ffRows) Object.assign(merged, row.data || {})
+    
+    // Load protection settings from the protection_needs section row
+    const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
+    const protData = protRow?.data?.protection
+    if (protData) {
+      setP(prev => ({ ...prev, ...protData }))
+    }
+    setFf(merged)
+    const portfolioRow = ffRows.find((r: any) => r.section === 'protection_portfolio')
+const allPolicies: any[] = portfolioRow?.data?.risk_management?.policies ?? []
+const activePols = allPolicies.filter((pol: any) => ['In-Force', 'Premium Holiday', 'Paid-up'].includes(pol.status))
+const toSGDVal = (val: number, pol: any) => pol.isUSD ? val * (pol.fxRate || 1.35) : val
+const calcLifeHave = (person: string) => activePols
+  .filter((pol: any) => pol.person === person && pol.categoryCode === 'life')
+  .reduce((s: number, pol: any) => {
+    const mult = (pol.multiplier || 1)
+    return s + toSGDVal(Math.max((pol.baseDeath || 0) * mult, pol.sumAssured || 0), pol)
+  }, 0)
+const calcCIHave = (person: string) => activePols
+  .filter((pol: any) => pol.person === person && pol.categoryCode === 'life')
+  .reduce((s: number, pol: any) => {
+    const mult = (pol.multiplier || 1)
+    return s + toSGDVal(Math.max((pol.baseAdvCI || 0) * mult, (pol.baseEarlyCI || 0) * mult), pol)
+  }, 0)
+setP(prev => ({
+  ...prev,
+  existingLifeCoverClient: calcLifeHave('client'),
+  existingLifeCoverSpouse: calcLifeHave('spouse'),
+  existingCICoverClient: calcCIHave('client'),
+  existingCICoverSpouse: calcCIHave('spouse'),
+}))
+  }
+    // Load client name
+    const { data: clientData } = await supabase
+      .from('clients')
+      .select('name')
+      .eq('id', id)
+      .single()
+    if (clientData) {
+      setClientName(clientData.name || 'Client')
+    }
+    // Load family members - spouse name + children
+   const { data: familyData } = await supabase
+  .from('family_members')
+  .select('*')
+  .eq('client_id', id)
+    if (familyData) {
+      const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
+      if (spouse) setSpouseName(spouse.name || 'Spouse')
+      const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
+      setChildren(kids)
+    }
+    setLoading(false)
+  }
+
+  // ─── AUTO-SAVE ─────────────────────────────────────────────────────────────
+
+  const scheduleSave = useCallback((updated: ProtectionData) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      if (!clientId) return
+      setSaving(true)
+      await supabase
+        .from('fact_finding')
+        .upsert(
+          { client_id: clientId, section: 'protection_needs', data: { protection: updated }, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+      setSaving(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    }, 800)
+  }, [clientId, supabase])
+
+  function updateP(changes: Partial<ProtectionData>) {
+    setP(prev => {
+      const next = { ...prev, ...changes }
+      scheduleSave(next)
+      return next
+    })
+  }
+
+  // ─── CALCULATIONS ──────────────────────────────────────────────────────────
+
+  const isCouple = p.planType === 'couple'
+  const inflation = (p.inflationRate ?? 3) / 100
+  const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
+  const subItems = p.expenseSubItems ?? {}
+  const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
+
+  function getAnnualExpense(who: 'client' | 'spouse'): number {
+    if (isDetailed) return getDetailedTotal(ff, cats, subItems, who)
+    return getSimpleCategoryTotal(ff, cats, who)
+  }
+
+  const annExpClient = getAnnualExpense('client')
+  const annExpSpouse = getAnnualExpense('spouse')
+  const annExpTotal = annExpClient + annExpSpouse
+
+  // Coverage term
+  const childAges = children.map(c => c.age ?? getAge(c.date_of_birth))
+  const youngestAge = childAges.length > 0 ? Math.min(...childAges) : null
+const coverageTerm = (() => {
+  if (youngestAge === null) return p.coverageTermOverride ?? 20
+  const eduKids = p.educationChildren ?? []
+  const terms = children.map(c => {
+    const ec = eduKids.find(e => e.childId === c.id)
+    const childAge = c.age ?? getAge(c.date_of_birth)
+    const defaultEntry = c.gender === 'Male' ? 21 : 19
+    const entryAge = ec?.uniEntryAge ?? defaultEntry
+    const duration = ec?.courseDuration ?? 4
+    const gradAge = entryAge + duration
+    return Math.max(0, gradAge - childAge)
+  })
+  return terms.length > 0 ? Math.max(...terms) : (p.coverageTermOverride ?? 20)
+})()
+
+  // Default cover pcts based on expense share
+  const defaultClientPct = annExpTotal > 0 ? (annExpClient / annExpTotal * 100) : 100
+  const defaultSpousePct = annExpTotal > 0 ? (annExpSpouse / annExpTotal * 100) : 100
+
+  const clientCoverPct = !isCouple ? 1 : (p.expenseCoverPctClient ?? defaultClientPct) / 100
+  const spouseCoverPct = (p.expenseCoverPctSpouse ?? defaultSpousePct) / 100
+
+  // Family dependency
+  function calcFamilyDep(annExp: number, coverPct: number, years: number): number {
+    return fv(inflation, years, annExp * coverPct)
+  }
+
+  // Mortgage coverage
+  function calcMortgageForPerson(who: 'client' | 'spouse'): number {
+    const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      }
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+        }
+      }
+      const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
+      }
+    })
+    const mortgageTotal = mortgages.reduce((sum, m, i) => {
+      const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
+      const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
+      return sum + m.outstanding * pct
+    }, 0)
+    // Add non-mortgage debts (outstanding balance for D/TPD)
+    const debtTotal = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
+      const owner = (d as any).owner ?? 'client'
+      if (!isCouple) return sum + d.amount
+      if (owner === 'joint') return sum + d.amount * 0.5
+      if (owner === who) return sum + d.amount
+      return sum
+    }, 0)
+    return mortgageTotal + debtTotal
+  }
+
+  // Education fund — FV-based calculation
+  // Tuition inflates at 5% p.a.; living costs inflate at the client's chosen inflation rate
+  function calcEducationForPerson(who: 'client' | 'spouse', ciMode = false): number {
+    if (!p.provideEducationFund) return 0
+    const eduKids = p.educationChildren ?? []
+    const livingInflation = inflation // uses p.inflationRate / 100
+    return children.reduce((sum, child) => {
+      const ec = eduKids.find(e => e.childId === child.id)
+      if (!ec) return sum
+      const childAge = child.age ?? getAge(child.date_of_birth)
+      const defaultEntryAge = child.gender === 'Male' ? 21 : 19
+      const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+      // In CI mode: only include children who haven't reached university yet
+      if (ciMode && childAge >= uniEntryAge) return sum
+      const yearsToUni = Math.max(0, uniEntryAge - childAge)
+      const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+      const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+      const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+      const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+      // FV of each cost component at start of university
+      const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+      const fvLiving = baseLiving * Math.pow(1 + livingInflation, yearsToUni) * dur
+      const pct = !isCouple ? 1 : (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
+      return sum + (fvTuition + fvLiving) * pct
+    }, 0)
+  }
+
+  // CI calcs
+  function calcCIFamilyDep(annExp: number, coverPct: number): number {
+    return fv(inflation, p.ciYears ?? 5, annExp * coverPct)
+  }
+
+  function calcCIMortgage(who: 'client' | 'spouse'): number {
+    const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      }
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+        }
+      }
+     const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
+      }
+    })
+    const ciYrs = p.ciYears ?? 5
+    // Mortgage monthly repayments × CI years
+    const mortgageCI = mortgages.reduce((sum, m, i) => {
+      const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
+      const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
+      return sum + m.monthlyRepayment * 12 * ciYrs * pct
+    }, 0)
+    // Non-mortgage debt monthly repayments × remaining tenure (capped at CI years)
+    const debtCI = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
+      const owner = (d as any).owner ?? 'client'
+      let applies = false
+      if (!isCouple) applies = true
+      else if (owner === 'joint') applies = true
+      else if (owner === who) applies = true
+      if (!applies) return sum
+      const monthlyPmt = calcDebtPMT(d.amount, d.interestRate, d.tenureLeft)
+      // CI covers repayments for min(tenureLeft, ciYears)
+      const coverYears = Math.min(d.tenureLeft, ciYrs)
+      const split = (!isCouple || owner !== 'joint') ? 1 : 0.5
+      return sum + monthlyPmt * 12 * coverYears * split
+    }, 0)
+    return mortgageCI + debtCI
+  }
+
+  function calcDebtPMT(amount: number, annualRate: number, years: number): number {
+    if (years <= 0 || amount <= 0) return 0
+    if (annualRate === 0) return amount / (years * 12)
+    const r = annualRate / 100 / 12
+    const n = years * 12
+    return amount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+  }
+
+  // Full needs
+  function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
+    const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
+    const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
+    // Own mode: cover only their own expenses; Combined mode: cover % of total household expenses
+    const fdBase = fdMode === 'own'
+      ? (who === 'client' ? annExpClient : annExpSpouse)
+      : annExpTotal * coverPct
+    const fd = fv(inflation, coverageTerm, fdBase)
+    const mort = calcMortgageForPerson(who)
+    const edu = calcEducationForPerson(who)
+    const gross = fd + mort + edu
+    const assets = getAssetOffset(ff, who, 'dtpd', p)
+    return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
+  }
+
+  function calcCINeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
+    const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
+    const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
+    const fdBase = fdMode === 'own'
+      ? (who === 'client' ? annExpClient : annExpSpouse)
+      : annExpTotal * coverPct
+    const fd = fv(inflation, p.ciYears ?? 5, fdBase)
+    const mort = calcCIMortgage(who)
+    const edu = p.provideEducationFund ? calcEducationForPerson(who, true) : 0
+    const gross = fd + mort + edu
+    const assets = getAssetOffset(ff, who, 'ci')
+    return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
+  }
+
+  const dtpdClient = calcDTPDNeed('client')
+  const dtpdSpouse = calcDTPDNeed('spouse')
+  const ciClient = calcCINeed('client')
+  const ciSpouse = calcCINeed('spouse')
+  // Save calculated needs to database
+async function saveNeedsToDatabase() {
+  if (!clientId) return
+  
+  const needs: any = {
+    p1_dtpd_need: dtpdClient.net,
+    p1_ci_need: ciClient.net,
+  }
+  
+  if (isCouple) {
+    needs.p2_dtpd_need = dtpdSpouse.net
+    needs.p2_ci_need = ciSpouse.net
+  }
+  
+  // Get existing protection_needs data
+  const { data: existing } = await supabase
+    .from('fact_finding')
+    .select('data')
+    .eq('client_id', clientId)
+    .eq('section', 'protection_needs')
+    .maybeSingle()
+  
+  const existingData = existing?.data || {}
+  
+  // Save back with needs included
+  await supabase
+    .from('fact_finding')
+    .upsert({
+      client_id: clientId,
+      section: 'protection_needs',
+      data: { ...existingData, ...needs },
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'client_id,section' })
+}
+  // Auto-save needs whenever they change
+useEffect(() => {
+  if (clientId && (dtpdClient.net > 0 || ciClient.net > 0)) {
+    if (needsSaveTimer.current) clearTimeout(needsSaveTimer.current)
+    needsSaveTimer.current = setTimeout(() => {
+      saveNeedsToDatabase()
+    }, 2000) // Wait 2 seconds after last change
+  }
+}, [clientId, dtpdClient.net, ciClient.net, dtpdSpouse?.net, ciSpouse?.net])
+
+  // Gaps
+  const existingLifeClient = p.existingLifeCoverClient ?? 0
+  const existingLifeSpouse = p.existingLifeCoverSpouse ?? 0
+  const existingCIClient = p.existingCICoverClient ?? 0
+  const existingCISpouse = p.existingCICoverSpouse ?? 0
+
+  const lifeGapClient = Math.max(0, dtpdClient.net - existingLifeClient)
+  const lifeGapSpouse = Math.max(0, dtpdSpouse.net - existingLifeSpouse)
+  const ciGapClient = Math.max(0, ciClient.net - existingCIClient)
+  const ciGapSpouse = Math.max(0, ciSpouse.net - existingCISpouse)
+
+  // ─── EDUCATION CHILDREN INIT ───────────────────────────────────────────────
 
   useEffect(() => {
-    // Reset the inactive toggle when switching people
-    setShowInactive(false)
-  }, [portfolioPerson])
-
-  async function loadAll(id: string) {
-    // Reference tables
-    const [
-      { data: cats },
-      { data: ptypes },
-      { data: comps },
-      { data: prods },
-    ] = await Promise.all([
-      supabase.from('ins_categories').select('*').order('sort_order'),
-      supabase.from('ins_policy_types').select('*').order('sort_order'),
-      supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
-      supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
-    ])
-    if (cats)   setRefCategories(cats)
-    if (ptypes) setRefPolicyTypes(ptypes)
-    if (comps)  setRefCompanies(comps)
-    if (prods)  setRefProducts(prods)
-
-    // Client info
-    const { data: client } = await supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle()
-    if (client) {
-      setClientName(client.name)
-      if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25*24*3600*1000)))
-      else if (client.age) setClientAge(Number(client.age))
+    if (children.length > 0 && (p.educationChildren?.length ?? 0) === 0) {
+      const eduKids = children.map(c => ({
+        childId: c.id,
+        uniType: 'sg_local',
+        courseDuration: 4,
+        annualCost: UNI_COST_DEFAULTS.sg_local.annual_fees_living,
+        coverPctClient: isCouple ? 50 : 100,
+        coverPctSpouse: 50,
+      }))
+      updateP({ educationChildren: eduKids })
     }
+  }, [children])
 
-// Get financials data (income, expenses, assets, properties)
-const { data: financialsRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'financials')
-  .maybeSingle()
+  // ─── MORTGAGE INIT ─────────────────────────────────────────────────────────
 
-// Get protection portfolio (existing policies)
-// Get protection portfolio (existing policies)
-const { data: portfolioRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'protection_portfolio')
-  .maybeSingle()
-
-// Get protection needs (calculated by Strategic Objectives)
-const { data: needsRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'protection_needs')
-  .maybeSingle()
-
-// Merge the data
-const merged: any = {
-  ...(financialsRow?.data || {}),
-  ...(portfolioRow?.data || {}),
-  ...(needsRow?.data || {})
-}
-
-// Debug - check what was loaded
-console.log('Loaded financial data:', financialsRow?.data)
-console.log('Protection needs data:', needsRow?.data)
-console.log('All merged keys:', Object.keys(merged))
-
-    // Also load family members from dedicated table (spouse + children)
-    const { data: familyRows } = await supabase
-      .from('family_members').select('*').eq('client_id', id)
-
-    if (Object.keys(merged).length > 0) {
-      setFfData(merged)
-
-      // Spouse: try person2 first, then family_members table
-      const p2 = merged.person2
-      if (p2?.name) {
-        setSpouseName(p2.name); setIsCouple(true)
-        if (p2.age) setSpouseAge(Number(p2.age))
-        else if (p2.dob) setSpouseAge(Math.floor((Date.now() - new Date(p2.dob).getTime()) / (365.25*24*3600*1000)))
-      } else if (merged.mode === 'couple') {
-        setIsCouple(true)
-        const sn = merged.spouse_name || merged.spouseName || ''
-        if (sn) setSpouseName(sn)
+  useEffect(() => {
+    const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
       }
-
-      // Children: try family_members table first (most reliable), then merged JSON
-      if (familyRows && familyRows.length > 0) {
-        const spouse = familyRows.find((m: any) =>
-          m.relationship?.toLowerCase() === 'spouse'
-        )
-        if (spouse?.name && !merged.person2?.name) {
-          setSpouseName(spouse.name); setIsCouple(true)
-          if (spouse.age) setSpouseAge(Number(spouse.age))
-          else if (spouse.dob) setSpouseAge(Math.floor((Date.now() - new Date(spouse.dob).getTime()) / (365.25*24*3600*1000)))
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
         }
-        const kids = familyRows.filter((m: any) =>
-          m.relationship?.toLowerCase() !== 'spouse'
-        )
-        if (kids.length > 0) {
-          setChildren(kids.map((k: any) => ({ name: k.name, age: k.age, id: k.id })))
-        } else {
-          const jsonKids = merged.children || []
-          setChildren(Array.isArray(jsonKids) ? jsonKids : [])
-        }
-      } else {
-        const jsonKids = merged.children || []
-        setChildren(Array.isArray(jsonKids) ? jsonKids : [])
       }
-
-      const rm = merged.risk_management
-      if (rm) setRmData({ ...EMPTY_RM, ...rm })
-    }
-  }
-
-  async function saveData(data: RiskMgmtData) {
-    const id = clientIdRef.current
-    if (!id) { console.warn('saveData: no clientId'); return }
-    setSaving(true)
-    try {
-     const { data: rows, error: fetchError } = await supabase
-  .from('fact_finding')
-  .select('id, data')
-  .eq('client_id', id)
-  .eq('section', 'protection_portfolio')
-
-      if (fetchError) throw fetchError
-
-      if (rows && rows.length > 0) {
-        const existingData = rows[0].data || {}
-        const { error: updateError } = await supabase
-          .from('fact_finding')
-          .update({ data: { ...existingData, risk_management: data } })
-          .eq('id', rows[0].id)
-        if (updateError) throw updateError
-      } else {
-        const { error: insertError } = await supabase
-          .from('fact_finding')
-.insert({ client_id: id, section: 'protection_portfolio', data: { risk_management: data } })
-        if (insertError) throw insertError
+      const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
       }
-    } catch (error) {
-      console.error('Risk management save error:', error)
-      setSaveError(true)
-      setTimeout(() => setSaveError(false), 4000)
-    } finally {
-      setSaving(false)
+    })
+    if (mortgages.length > 0) {
+      const clientPcts = p.mortgageCoverPctsClient ?? []
+      const spousePcts = p.mortgageCoverPctsSpouse ?? []
+      if (clientPcts.length !== mortgages.length || spousePcts.length !== mortgages.length) {
+        const totalMortgageClient = mortgages.reduce((s, m) => {
+          const cpf = ff.d_mortgage_cpf ?? 0; const cash = ff.d_mortgage_cash ?? 0
+          return s + (cpf + cash)
+        }, 0)
+        updateP({
+          mortgageCoverPctsClient: mortgages.map(() => 100),
+          mortgageCoverPctsSpouse: mortgages.map(() => 100),
+          mortgageCoverPcts: mortgages.map(() => 100),
+        })
+      }
     }
+  }, [ff.properties])
+
+  // ─── SUB-COMPONENTS ────────────────────────────────────────────────────────
+
+  const WP_TABS = ['Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset']
+
+  // ─── RENDER ────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ background: '#EEEADE' }}>
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-3" style={{ borderColor: '#A8834A', borderTopColor: 'transparent' }} />
+          <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter, sans-serif' }}>Loading</p>
+        </div>
+      </div>
+    )
   }
 
-  function updateRm(next: RiskMgmtData) {
-    setRmData(next)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => saveData(next), 1000)
+  if (!clientId) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ background: '#EEEADE' }}>
+        <div className="text-center">
+          <p style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: '#1C1A17', marginBottom: 8 }}>No Client Selected</p>
+          <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter, sans-serif' }}>Please select a client from the dashboard</p>
+        </div>
+      </div>
+    )
   }
 
-  // ── Financial calculations ─────────────────────────────────────────────────
-  const ff = ffData || {}
-  const inflation = (Number(ff.inflation_rate) || 3) / 100
-
-// Income from Financial Profile - stored in person1.gross_monthly
-const p1Mo = Number(ff.person1?.gross_monthly || ff.monthly_income || 0)
-const p2Mo = Number(ff.person2?.gross_monthly || ff.monthly_income_spouse || 0)
-
-// Calculate annual expenses from the financials data
-// The Financial Profile saves expenses in s_* fields for simple mode
-const p1Exp = 
-  (Number(ff.s_financial) || 0) +
-  (Number(ff.s_household) || 0) +
-  (Number(ff.s_personal) || 0) +
-  (Number(ff.s_children) || 0) +
-  (Number(ff.s_lifestyle) || 0) +
-  (Number(ff.s_mortgage) || 0)
-
-// If no expenses entered, estimate as 70% of income
-const finalP1Exp = p1Exp > 0 ? p1Exp : (p1Mo * 12 * 0.7)
-
-const p2ExpRaw = 
-  (Number(ff.s2_financial) || 0) +
-  (Number(ff.s2_household) || 0) +
-  (Number(ff.s2_personal) || 0) +
-  (Number(ff.s2_children) || 0) +
-  (Number(ff.s2_lifestyle) || 0) +
-  (Number(ff.s2_mortgage) || 0)
-
-const finalP2Exp = p2ExpRaw > 0 ? p2ExpRaw : (p2Mo * 12 * 0.7)
-
-  let coverTerm = 25
-  if (children.length > 0) {
-    const minAge = Math.min(...children.map((c:any) => Number(c.age||0)))
-    coverTerm = Math.max(5, 26 - minAge)
-  }
-  function fvAnn(annual: number, r: number, y: number) {
-    if (y<=0) return 0; if (r===0) return annual*y
-    return annual*((Math.pow(1+r,y)-1)/r)
-  }
-  const mort = Number(ff.l_mortgage_residing||0) + Number(ff.l2_mortgage_residing||0) + Number(ff.d_mortgage_cpf||0)
-  const edu  = Number(ff.strategic_objectives?.ed_total||0)
-  const p1CPF  = Number(ff.a_cpf_oa||0)+Number(ff.a_cpf_sa||0)+Number(ff.a_cpf_ma||0)
-  const p2CPF  = Number(ff.a2_cpf_oa||0)+Number(ff.a2_cpf_sa||0)+Number(ff.a2_cpf_ma||0)
-  const props: any[] = ff.properties||[]
-  const p1Prop = props.filter((p:any)=>p.owner==='client'||p.owner==='joint').reduce((s:number,p:any)=>s+Number(p.current_value||0)*(p.owner==='joint'?0.5:1),0)
-  const p2Prop = props.filter((p:any)=>p.owner==='spouse'||p.owner==='joint').reduce((s:number,p:any)=>s+Number(p.current_value||0)*(p.owner==='joint'?0.5:1),0)
-  const p1Liq  = Number(ff.a_savings||0)+Number(ff.a_alternatives||0)
-  const p2Liq  = Number(ff.a2_savings||0)+Number(ff.a2_alternatives||0)
-
-// Prefer saved needs from Strategic Objectives; fall back to local estimate if not yet calculated
-const clientDTPD = Number(ff.p1_dtpd_need || 0)
-const clientCI   = Number(ff.p1_ci_need || 0)
-const spouseDTPD = isCouple ? Number(ff.p2_dtpd_need || 0) : 0
-const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
-
-  function toSGD(val: number, p: Policy) {
-    return p.isUSD ? val * (p.fxRate || 1.35) : val
-  }
-  function annualPremSGD(p: Policy) {
-    const cash  = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
-    const total = cash + (p.premiumMedisave||0)
-    switch (p.frequency) {
-      case 'Semi-Annual': return total * 2
-      case 'Quarterly':   return total * 4
-      case 'Monthly':     return total * 12
-      case 'Single':      return total
-      default:            return total // Annual
-    }
-  }
-
-  // CORE CHANGE: Only reflect active policies for gaps and dashboards
-  const activePolicies = rmData.policies.filter(p => ACTIVE_STATUSES.includes(p.status))
-
-  function lifeHave(person: string) {
-    return activePolicies.filter(p=>p.person===person&&p.categoryCode==='life')
-      .reduce((s,p)=>s+toSGD((p.baseDeath||0)*(p.multiplier>1?p.multiplier:1),p),0)
-  }
-  function ciHave(person: string) {
-    return activePolicies.filter(p=>p.person===person&&p.categoryCode==='life')
-      .reduce((s,p)=>s+toSGD(Math.max((p.baseAdvCI||0),(p.baseEarlyCI||0))*(p.multiplier>1?p.multiplier:1),p),0)
-  }
-  function premHave(person: string) {
-    return activePolicies.filter(p=>p.person===person&&p.categoryCode!=='endowment').reduce((s,p)=>s+annualPremSGD(p),0)
-  }
-
-  const cLH = lifeHave('client'), cCH = ciHave('client')
-  const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
-  const totalPrem = activePolicies.reduce((s,p)=>s+annualPremSGD(p),0)
-
- // Chart data
-function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
-  // First build the DTPD array to detect drops
-  const dtpdArray: number[] = []
-  for (let i = 0; i < 100-age; i++) {
-    const a = age+i
-    const yLeft = Math.max(0, (age+coverTerm)-a)
-    dtpdArray.push(Math.max(0, fvAnn(annExp,inflation,yLeft) + mort*(yLeft/Math.max(1,coverTerm)) + edu*(yLeft/Math.max(1,coverTerm)) - (i===0?offset:0)))
-  }
-  
-  // Find mortgage drop age from DTPD
-  let mortgageEndAge = 60 // default
-  for (let i = 1; i < dtpdArray.length; i++) {
-    const drop = dtpdArray[i-1] - dtpdArray[i]
-    const pctDrop = drop / dtpdArray[i-1]
-    if (pctDrop > 0.15 && pctDrop < 0.40) {
-      mortgageEndAge = age + i
-      break
-    }
-  }
-  
-  return Array.from({length:100-age}, (_,i) => {
-    const a = age+i
-    const dtpd = dtpdArray[i]
-    
-    // CI calculation - drops at mortgage payoff
-    let ciFactor = 1.0
-    if (a >= mortgageEndAge) {
-      ciFactor = 0.4 // Drop to 40% after mortgage paid
-    }
-    if (a >= age+coverTerm) {
-      ciFactor = Math.min(ciFactor, Math.max(0, 1-(a-(age+coverTerm))*0.04))
-    }
-    
-    return { age: a, dtpd, ci: Math.max(0, ciNeed * ciFactor) }
-  })
-}
-    
-  const aAge    = overviewPerson==='client' ? clientAge  : spouseAge
-  const aDTPD   = overviewPerson==='client' ? clientDTPD : spouseDTPD
-  const aCI     = overviewPerson==='client' ? clientCI   : spouseCI
-  const aLH     = overviewPerson==='client' ? cLH        : sLH
-  const aCH     = overviewPerson==='client' ? cCH        : sCH
-  const aExp    = overviewPerson==='client' ? finalP1Exp      : finalP2Exp
-  const aOffset = overviewPerson==='client' ? p1CPF+p1Prop : p2CPF+p2Prop
-  const aName   = overviewPerson==='client' ? clientName : spouseName
-
-  const chartData = buildChart(aAge, aExp, aOffset, aCI)
-  const hasChartData = aDTPD > 0 || aCI > 0 || aExp > 0
-
-  // People list for dropdowns
-  const allPeople = [
-    { key: 'client', label: clientName },
-    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
-    ...children.map((c: any) => ({
-      key: `child_${c.name || c.id}`,
-      label: c.name || 'Child',
-    })),
-  ]
-
-  // Portfolio sections
-  const sections = [
-    { key: 'client', label: clientName },
-    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
-    ...(children.length > 0 ? [{
-      key: 'dependents',
-      label: 'Dependents',
-      isDependent: true,
-      childKeys: children.map((c: any) => `child_${c.name || c.id || c}`),
-    }] : []),
-  ]
-
-  function openNew(person: string) {
-    const label = allPeople.find(p=>p.key===person)?.label||person
-    setEditingPolicy(emptyPolicy(person, label, label))
-    setModalPerson(person)
-    setShowModal(true)
-  }
-  function openEdit(p: Policy) { setEditingPolicy({...p}); setModalPerson(p.person); setShowModal(true) }
-  
-  // Note: savePolicy and delPolicy operate on the full rmData.policies to not lose inactive ones during updates
-  function savePolicy(p: Policy) {
-    const exists = rmData.policies.find(x=>x.id===p.id)
-    const next = exists
-      ? {...rmData, policies: rmData.policies.map(x=>x.id===p.id?p:x)}
-      : {...rmData, policies: [...rmData.policies, p]}
-    updateRm(next); setShowModal(false); setEditingPolicy(null)
-  }
-  function delPolicy(id: string) { updateRm({...rmData, policies: rmData.policies.filter(p=>p.id!==id)}) }
-async function handleGenerateShare() {
-  if (!sharePassword.trim()) return
-  setShareGenerating(true)
-  try {
-    const encoder = new TextEncoder()
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(sharePassword.trim()))
-    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(36)).join('').slice(0,12)
-    let expiresAt: string|null = null
-    if (shareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
-    if (shareExpiry==='30d') expiresAt = new Date(Date.now()+30*24*3600*1000).toISOString()
-    const { error } = await supabase.from('client_shares').insert({
-  client_id: clientId, token, expires_at: expiresAt,
-  password_hash: hashHex, password_hint: shareHint, person: sharePerson,
-})
-    if (error) throw error
-    setShareLink(`${window.location.origin}/share/${token}`)
-  } catch(e) {
-    console.error('Share failed:', e)
-  } finally {
-    setShareGenerating(false)
-  }
-}
   return (
-    <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
-      {/* Hero */}
-      <div style={{background:'#1C1A17',padding:'0 48px'}}>
-        <div style={{paddingTop:32,paddingBottom:28,display:'flex',alignItems:'flex-end',justifyContent:'space-between'}}>
+    <div className="min-h-screen" style={{ background: '#EEEADE', fontFamily: 'Inter, sans-serif' }}>
+
+      {/* HERO BAND */}
+      <div style={{ background: '#1C1A17', padding: '28px 40px 24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div style={{fontSize:11,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.8)',marginBottom:6}}>Risk Management</div>
-            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:32,fontWeight:300,color:'#F0EDE8'}}>Wealth Protection — {clientName}</div>
+            <p className="text-xs tracking-widest uppercase mb-1" style={{ color: '#A8834A', fontFamily: 'Inter' }}>Strategic Objectives</p>
+            <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 300, color: '#F5F0E8', letterSpacing: 1 }}>
+              Needs Discovery
+              <span style={{ color: '#A8834A', marginLeft: 16 }}>—</span>
+              <span style={{ marginLeft: 16 }}>{isCouple ? `${clientName} & ${spouseName}` : clientName}</span>
+            </h1>
           </div>
-          <div style={{display:'flex',gap:16,alignItems:'center',paddingBottom:4}}>
-            {saveError && <span style={{fontSize:12,color:'#E53935',fontWeight:500}}>⚠ Save failed</span>}
-            {saving && !saveError && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
-            <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3}}>
-              {(['overview','portfolio'] as const).map(t=>(
-                <button key={t} onClick={()=>setActiveTab(t)}
-                  style={{padding:'6px 18px',borderRadius:4,border:'none',cursor:'pointer',fontSize:12,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:500,background:activeTab===t?'rgba(200,169,110,0.2)':'transparent',color:activeTab===t?'#c8a96e':'rgba(255,255,255,0.45)'}}>
-                  {t==='overview'?'Overview':'Portfolio'}
-                </button>
-              ))}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8 }}>
+            {saving && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter' }}>Saving…</span>}
+            {saved && !saving && <span style={{ fontSize: 11, color: '#A8834A', fontFamily: 'Inter' }}>✓ Saved</span>}
           </div>
         </div>
       </div>
-            {/* ── OVERVIEW ── */}
-      {activeTab==='overview' && (
-        <div style={{padding:'36px 48px',flex:1}}>
-       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:32}}>
 
-  {/* Life & Disability Cover */}
-  <div style={{background:'white',border:'0.5px solid var(--line)',padding:'24px 28px',position:'relative'}}>
-    <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#A8834A'}}/>
-    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'#A8834A',marginBottom:16}}>Life &amp; Disability Cover</div>
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
-      <div style={{borderRight:'1px solid var(--line)',paddingRight:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Need</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'var(--ink)'}}>{fmt(aDTPD)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>FV annuity · {coverTerm}yr</div>
+      {/* SECTION TABS */}
+      <div style={{ background: '#fff', borderBottom: '1px solid #E8E4DC', padding: '0 40px', display: 'flex', gap: 0 }}>
+        {['Wealth Protection', 'Wealth Accumulation', 'Retirement', 'Education Planning', 'Estate Planning'].map((s, i) => (
+          <button
+            key={s}
+            onClick={() => setActiveSection(i)}
+            style={{
+              padding: '14px 20px',
+              fontSize: 11,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              fontFamily: 'Inter',
+              fontWeight: 500,
+              color: activeSection === i ? '#1C1A17' : '#888',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeSection === i ? '2px solid #A8834A' : '2px solid transparent',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            } as React.CSSProperties}
+          >
+            {s}
+          </button>
+        ))}
       </div>
-      <div style={{borderRight:'1px solid var(--line)',padding:'0 20px'}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Have</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#A8834A'}}>{fmt(aLH)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>Active policies</div>
-      </div>
-      <div style={{paddingLeft:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Gap</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F'}}>{fmt(Math.max(0,aDTPD-aLH))}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</div>
-      </div>
-    </div>
-    <div style={{marginTop:16}}>
-      <div style={{height:3,background:'var(--line)',position:'relative'}}>
-        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aDTPD>0?Math.round(Math.min(aLH,aDTPD)/aDTPD*100):0}%`,background:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F'}}/>
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'var(--ink3)'}}>
-        <span>0%</span>
-        <span style={{color:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F',fontWeight:500}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</span>
-        <span>100%</span>
-      </div>
-    </div>
-  </div>
 
-  {/* Critical Illness Cover */}
-  <div style={{background:'white',border:'0.5px solid var(--line)',padding:'24px 28px',position:'relative'}}>
-    <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#2D6A4F'}}/>
-    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'#2D6A4F',marginBottom:16}}>Critical Illness Cover</div>
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
-      <div style={{borderRight:'1px solid var(--line)',paddingRight:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Need</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'var(--ink)'}}>{fmt(aCI)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>24-month income window</div>
-      </div>
-      <div style={{borderRight:'1px solid var(--line)',padding:'0 20px'}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Have</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#A8834A'}}>{fmt(aCH)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>Active policies</div>
-      </div>
-      <div style={{paddingLeft:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Gap</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F'}}>{fmt(Math.max(0,aCI-aCH))}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</div>
-      </div>
-    </div>
-    <div style={{marginTop:16}}>
-      <div style={{height:3,background:'var(--line)',position:'relative'}}>
-        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aCI>0?Math.round(Math.min(aCH,aCI)/aCI*100):0}%`,background:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F'}}/>
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'var(--ink3)'}}>
-        <span>0%</span>
-        <span style={{color:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F',fontWeight:500}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</span>
-        <span>100%</span>
-      </div>
-    </div>
-  </div>
+      {/* MAIN LAYOUT */}
+      <div style={{ display: 'grid', gridTemplateColumns: sidebarOpen ? '1fr 260px' : '1fr 20px', gap: 0, minHeight: 'calc(100vh - 140px)', transition: 'grid-template-columns 0.25s ease' }}>
 
-</div>
-
-          {isCouple && (
-            <div style={{display:'flex',gap:6,marginBottom:20}}>
-              {(['client','spouse'] as const).map(p=>(
-                <button key={p} onClick={()=>setOverviewPerson(p)}
-                  style={{padding:'7px 20px',border:`1px solid ${overviewPerson===p?'#c8a96e':'var(--line)'}`,background:overviewPerson===p?'#FDF6EC':'white',color:overviewPerson===p?'#A8834A':'var(--ink3)',cursor:'pointer',fontSize:12,fontWeight:overviewPerson===p?600:400}}>
-                  {p==='client'?clientName:spouseName}
-                </button>
-              ))}
+        {/* LEFT: CONTENT */}
+        <div style={{ padding: '32px 40px', borderRight: '1px solid #E8E4DC' }}>
+          {activeSection === 0 && (
+            <WealthProtectionSection
+              ff={ff} p={p} updateP={updateP}
+              children={children} isCouple={isCouple}
+              clientName={clientName} spouseName={spouseName}
+              annExpClient={annExpClient} annExpSpouse={annExpSpouse}
+              coverageTerm={coverageTerm} youngestAge={youngestAge}
+              dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
+              ciClient={ciClient} ciSpouse={ciSpouse}
+              editModal={editModal} setEditModal={setEditModal}
+              WP_TABS={WP_TABS} inflation={inflation}
+              defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
+              clientId={clientId ?? ''}
+            />
+          )}
+          {activeSection !== 0 && (
+            <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+              <p style={{ color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
+                {['','Wealth Accumulation','Retirement','Education Planning','Estate Planning'][activeSection]} — coming soon
+              </p>
             </div>
           )}
-
-          <GapSection title={`${aName} — Coverage Gap Analysis`}
-            dtpdNeed={aDTPD} ciNeed={aCI} lifeHave={aLH} ciHave={aCH}
-            annualPremium={premHave(overviewPerson)} />
-
-          {hasChartData ? (
-  <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-    <CoverageChart 
-      eyebrow="Life & Disability" 
-      title="Death / TPD Coverage Needs Analysis" 
-      needLabel="Required capital" 
-      haveLabel="Existing portfolio" 
-      data={chartData.map(d => ({age: d.age, need: d.dtpd, have: aLH}))} 
-      accentColor="#C4A464"
-      milestones={{
-        mortgageEnds: (() => {
-          const ages: number[] = []
-          for (let i = 1; i < chartData.length; i++) {
-            const drop = chartData[i-1].dtpd - chartData[i].dtpd
-            const pctDrop = drop / chartData[i-1].dtpd
-            if (pctDrop > 0.15 && pctDrop < 0.40) {
-              ages.push(chartData[i].age)
-            }
-          }
-          return ages
-        })(),
-        educationEnds: children.map((child: any) => {
-          const childAge = child.age || 0
-          const uniEntryAge = child.gender === 'Male' ? 21 : 19
-          const yearsToUni = Math.max(0, uniEntryAge - childAge)
-          return aAge + yearsToUni + 4
-        }),
-        coverageEnds: (() => {
-          for (let i = chartData.length - 1; i >= 0; i--) {
-            if (chartData[i].dtpd > 0) return chartData[i].age
-          }
-          return null
-        })(),
-        clientAge: aAge
-      }}
-    />
-    <CoverageChart 
-      eyebrow="Critical Illness" 
-      title="Critical Illness Coverage Needs Analysis" 
-      needLabel="Required capital" 
-      haveLabel="Existing portfolio" 
-      data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))} 
-      accentColor="#2D6A4F"
-      milestones={{
-        mortgageEnds: (() => {
-          const ages: number[] = []
-          for (let i = 1; i < chartData.length; i++) {
-            const drop = chartData[i-1].ci - chartData[i].ci
-            const pctDrop = drop / chartData[i-1].ci
-            if (pctDrop > 0.15 && pctDrop < 0.40) {
-              ages.push(chartData[i].age)
-            }
-          }
-          return ages
-        })(),
-        educationEnds: children.map((child: any) => {
-          const childAge = child.age || 0
-          const uniEntryAge = child.gender === 'Male' ? 21 : 19
-          const yearsToUni = Math.max(0, uniEntryAge - childAge)
-          return aAge + yearsToUni + 4
-        }),
-        coverageEnds: (() => {
-          for (let i = chartData.length - 1; i >= 0; i--) {
-            if (chartData[i].ci > 0) return chartData[i].age
-          }
-          return null
-        })(),
-        clientAge: aAge
-      }}
-    />
-  </div>
-) : (
-            <div style={{marginTop:20,padding:'24px',background:'white',border:'0.5px solid var(--line)',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
-              Complete the Financial Profile to generate coverage need charts.
-            </div>
-          )}
-
-          <div style={{marginTop:28,background:'white',border:'0.5px solid var(--line)',padding:26}}>
-            <div style={{fontSize:10,letterSpacing:'0.14em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12}}>Advisor Notes</div>
-            <textarea value={rmData.advisorNotes} onChange={e=>updateRm({...rmData,advisorNotes:e.target.value})}
-              placeholder="Record observations, client concerns, agreed priorities, follow-up actions…" rows={4}
-             style={{width:'100%',resize:'vertical',border:'1px solid var(--line)',outline:'none',background:'#FAFAF8',color:'var(--ink)',fontFamily:'DM Mono,monospace',fontSize:13,padding:'14px 16px',borderRadius:4,boxSizing:'border-box',lineHeight:1.7}} />
-          </div>
         </div>
+
+        {/* RIGHT: SIDEBAR — collapsible */}
+        <div style={{ position: 'relative', background: sidebarOpen ? '#fff' : 'transparent', borderLeft: sidebarOpen ? '1px solid #E8E4DC' : 'none' }}>
+          {/* Toggle button — always visible, fixed to left edge */}
+          <button
+            onClick={() => setSidebarOpen(v => !v)}
+            style={{ position: 'absolute', top: 32, left: -14, zIndex: 20,
+              width: 28, height: 28, borderRadius: '50%', background: '#fff', border: '1px solid #E8E4DC',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, color: '#A8834A', boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+              flexShrink: 0 }}
+            title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          >
+            {sidebarOpen ? '›' : '‹'}
+          </button>
+
+          {sidebarOpen && (
+            <div style={{ padding: '32px 24px', width: 260, overflowY: 'auto' }}>
+              <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
+                Coverage Summary
+              </p>
+
+              {/* Summary blocks */}
+              <SidebarSummary
+                isCouple={isCouple}
+                clientName={clientName} spouseName={spouseName}
+                dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
+                ciClient={ciClient} ciSpouse={ciSpouse}
+                existingLifeClient={existingLifeClient} existingLifeSpouse={existingLifeSpouse}
+                existingCIClient={existingCIClient} existingCISpouse={existingCISpouse}
+                lifeGapClient={lifeGapClient} lifeGapSpouse={lifeGapSpouse}
+                ciGapClient={ciGapClient} ciGapSpouse={ciGapSpouse}
+              />
+
+              {/* Existing cover inputs */}
+              <div style={{ marginTop: 24 }}>
+                <p className="text-xs tracking-widest uppercase mb-3" style={{ color: '#888', fontFamily: 'Inter', letterSpacing: '0.1em' }}>Existing Coverage</p>
+                <ExistingCoverInputs
+                  p={p} updateP={updateP} isCouple={isCouple}
+                  clientName={clientName} spouseName={spouseName}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* EDIT MODAL */}
+      {editModal.open && (
+        <EditSubItemsModal
+          category={editModal.category}
+          ff={ff} p={p} updateP={updateP}
+          onClose={() => setEditModal({ open: false, category: '' })}
+          isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+        />
       )}
+    </div>
+  )
+}
 
-      {/* ── PORTFOLIO ── */}
-      {activeTab==='portfolio' && (
-        <div style={{padding:'36px 48px',flex:1}}>
-          {/* Header row */}
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}} className="no-print">
-            <div>
-              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
-              <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{activePolicies.length} active {activePolicies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
-            </div>
-<button onClick={()=>{setShowShareModal(true);setShareLink('');setSharePassword('');setShareCopied(false)}}
-  style={{padding:'8px 18px',background:'#1C1A17',color:'#c8a96e',border:'1px solid #c8a96e',cursor:'pointer',fontSize:12}}>
-  Share
-</button>
-          </div>
+// ─── WEALTH PROTECTION SECTION ───────────────────────────────────────────────
 
-          {/* Person tabs */}
-          <div style={{display:'flex',gap:0,marginBottom:28,borderBottom:'1px solid var(--line)'}} className="no-print">
-            {sections.map(({key,label,isDependent,childKeys})=>{
-              const tabPolicies = isDependent&&childKeys
-                ? activePolicies.filter(p=>childKeys.includes(p.person))
-                : activePolicies.filter(p=>p.person===key)
-              const tabPrem = tabPolicies.reduce((s,p)=>s+annualPremSGD(p),0)
-              const isActive = portfolioPerson===key
-              return (
-                <button key={key} onClick={()=>setPortfolioPerson(key)}
-                  style={{padding:'10px 22px',border:'none',borderBottom:`2px solid ${isActive?'#c8a96e':'transparent'}`,background:'transparent',cursor:'pointer',fontSize:13,color:isActive?'#A8834A':'var(--ink3)',fontWeight:isActive?600:400,transition:'all 0.15s',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:2}}>
-                  <span>{label}</span>
-                  <span style={{fontSize:10,color:isActive?'#c8a96e':'var(--ink3)',fontFamily:'DM Mono,monospace',fontWeight:400}}>
-                    {tabPolicies.length} {tabPolicies.length===1?'policy':'policies'}{tabPrem>0?` · ${fmt(tabPrem)}`:''}
-                  </span>
+interface WPProps {
+  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  children: FamilyMember[]; isCouple: boolean
+  clientName: string; spouseName: string
+  annExpClient: number; annExpSpouse: number
+  coverageTerm: number; youngestAge: number | null
+  dtpdClient: CalcResult
+  dtpdSpouse: CalcResult
+  ciClient: CalcResult
+  ciSpouse: CalcResult
+  editModal: { open: boolean; category: string }
+  setEditModal: (v: { open: boolean; category: string }) => void
+  WP_TABS: string[]
+  inflation: number
+  defaultClientPct: number; defaultSpousePct: number
+  clientId: string
+}
+
+// Type helper for return shape
+type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number }
+
+
+function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId }: WPProps) {
+  const wpTab = p.wpSubTab ?? 0
+  const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
+  const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
+  const mortgages: MortgageProperty[] = (ff.properties ?? [])
+    .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+    .map((prop: any) => {
+      const startDate = prop.loanStartDate ?? ''
+      const initialTenure = prop.initialTenure ?? 25
+      const interestRate = prop.interestRate ?? 0
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      // PMT calc for monthly repayment if not stored
+      function pmtCalc(principal: number, annRate: number, years: number): number {
+        if (years <= 0 || principal <= 0) return 0
+        if (annRate === 0) return principal / (years * 12)
+        const r = annRate / 100 / 12; const n = years * 12
+        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      }
+      // Calculate remaining tenure from start date if not overridden
+      let remainingTenure = prop.remainingTenure ?? initialTenure
+      if (!prop.remainingTenure && startDate) {
+        const [mm, yyyy] = startDate.split('/')
+        if (mm && yyyy) {
+          const start = new Date(parseInt(yyyy), parseInt(mm)-1)
+          const now = new Date()
+          const elapsedYears = (now.getTime() - start.getTime()) / (1000*60*60*24*365.25)
+          remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+        }
+      }
+     const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      return {
+        id: prop.id,
+        label: prop.label || 'Property',
+        outstanding: outstanding,
+        interestRate: interestRate,
+        monthlyRepayment: monthlyRepayment,
+        tenure: initialTenure,
+        initialLoanAmount: initialLoan,
+        initialTenure: initialTenure,
+        loanStartDate: startDate,
+        remainingTenure: remainingTenure,
+      }
+    })
+
+  return (
+    <div>
+      {/* Section header + global controls */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 3, height: 24, background: '#A8834A', borderRadius: 2 }} />
+          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
+            Wealth Protection
+          </h2>
+        </div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Individual / Couple toggle */}
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Planning For</div>
+            <div style={{ display: 'flex', background: '#F5F0E8', borderRadius: 5, padding: 2 }}>
+              {(['individual', 'couple'] as const).map(t => (
+                <button key={t} onClick={() => updateP({ planType: t })}
+                  style={{ padding: '5px 14px', fontSize: 11, fontFamily: 'Inter', fontWeight: 500,
+                    background: p.planType === t ? '#1C1A17' : 'transparent',
+                    color: p.planType === t ? '#fff' : '#888',
+                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s' }}>
+                  {t === 'individual' ? clientName : 'Couple'}
                 </button>
+              ))}
+            </div>
+          </div>
+          {/* Simple / Detailed toggle */}
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Expense Data</div>
+            <div style={{ display: 'flex', background: '#F5F0E8', borderRadius: 5, padding: 2 }}>
+              {(['simple', 'detailed'] as const).map(t => (
+                <button key={t} onClick={() => updateP({ expenseMode: t })}
+                  style={{ padding: '5px 14px', fontSize: 11, fontFamily: 'Inter', fontWeight: 500,
+                    background: (p.expenseMode ?? ff.expense_mode ?? 'simple') === t ? '#1C1A17' : 'transparent',
+                    color: (p.expenseMode ?? ff.expense_mode ?? 'simple') === t ? '#fff' : '#888',
+                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s',
+                    textTransform: 'capitalize' }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Inflation */}
+          <div style={{ minWidth: 180 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 5 }}>Inflation Rate</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="range" min={0} max={8} step={0.5}
+                value={p.inflationRate ?? 3}
+                onChange={e => updateP({ inflationRate: parseFloat(e.target.value) })}
+                style={{ flex: 1, accentColor: '#A8834A' }} />
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17', minWidth: 36 }}>
+                {(p.inflationRate ?? 3).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* WP Sub-tabs */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 0, borderBottom: '1px solid #E8E4DC' }}>
+        {WP_TABS.map((t, i) => (
+          <button
+            key={t}
+            onClick={() => updateP({ wpSubTab: i })}
+            style={{
+              padding: '10px 16px', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
+              fontFamily: 'Inter', fontWeight: 500,
+              color: wpTab === i ? '#2D5A4E' : '#999',
+              background: 'none', border: 'none',
+              borderBottom: wpTab === i ? '2px solid #2D5A4E' : '2px solid transparent',
+              cursor: 'pointer', transition: 'all 0.15s',
+              whiteSpace: 'nowrap',
+            } as React.CSSProperties}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding: '28px 0' }}>
+        {wpTab === 0 && (
+          <FamilyDependencyTab
+            ff={ff} p={p} updateP={updateP}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            annExpClient={annExpClient} annExpSpouse={annExpSpouse}
+            coverageTerm={coverageTerm} youngestAge={youngestAge}
+            children={children} isDetailed={isDetailed}
+            cats={cats} editModal={editModal} setEditModal={setEditModal}
+            inflation={inflation} defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
+          />
+        )}
+        {wpTab === 1 && (
+          <MortgageDebtTab
+            ff={ff} p={p} updateP={updateP}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            mortgages={mortgages} clientId={clientId ?? ''}
+          />
+        )}
+        {wpTab === 2 && (
+          <EducationFundTab
+            p={p} updateP={updateP}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            children={children} inflation={inflation}
+          />
+        )}
+        {wpTab === 3 && (
+          <CriticalIllnessTab
+            ff={ff} p={p} updateP={updateP}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            mortgages={mortgages}
+            ciClient={ciClient} ciSpouse={ciSpouse}
+            children={children}
+          />
+        )}
+        {wpTab === 4 && (
+          <AssetOffsetTab
+            ff={ff} p={p}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
+            ciClient={ciClient} ciSpouse={ciSpouse}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── FAMILY DEPENDENCY TAB ───────────────────────────────────────────────────
+
+function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, children, isDetailed, cats, editModal, setEditModal, inflation, defaultClientPct, defaultSpousePct }: {
+  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+  annExpClient: number; annExpSpouse: number
+  coverageTerm: number; youngestAge: number | null
+  children: FamilyMember[]; isDetailed: boolean
+  cats: Record<string, boolean>
+  editModal: { open: boolean; category: string }
+  setEditModal: (v: { open: boolean; category: string }) => void
+  inflation: number; defaultClientPct: number; defaultSpousePct: number
+}) {
+  const annExpTotal = annExpClient + annExpSpouse
+
+  function toggleCat(cat: string) {
+    updateP({ expenseCategories: { ...cats, [cat]: !cats[cat] } })
+  }
+
+  return (
+    <div>
+      {/* Expense Categories */}
+      <SectionBlock title="Expense Categories" color="#A8834A">
+        <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+          Select which expense categories to include in the family dependency calculation.
+        </p>
+        {/* Column headers for couple mode */}
+        {isCouple && (
+          <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 110px 110px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
+            <div />
+            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
+            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
+            <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>
+            <div />
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {Object.entries(EXPENSE_CATEGORY_LABELS).map(([key, label]) => {
+            const simpleMap: Record<string, string[]> = {
+              financial: ['s_income_tax','s_insurance','s_regular_savings'],
+              household: ['s_housing','s_utilities','s_family_food'],
+              personal:  ['s_transport'],
+              children:  ['s_children'],
+              lifestyle: ['s_lifestyle','s_others'],
+            }
+            let clientAmt = 0, spouseAmt = 0
+            if (isDetailed) {
+              clientAmt = getDetailedCategoryTotal(ff, key, 'client', p.expenseSubItems ?? {})
+              spouseAmt = getDetailedCategoryTotal(ff, key, 'spouse', p.expenseSubItems ?? {})
+            } else {
+              clientAmt = (simpleMap[key] ?? []).reduce((s, k) => s + (ff[k] as number || 0), 0)
+              spouseAmt = (simpleMap[key] ?? []).map(k => k.replace('s_','s2_')).reduce((s, k) => s + (ff[k] as number || 0), 0)
+            }
+            const catTotal = clientAmt + spouseAmt
+            const clientPct = catTotal > 0 ? Math.round(clientAmt / catTotal * 100) : 0
+            const spousePct = catTotal > 0 ? Math.round(spouseAmt / catTotal * 100) : 0
+
+            return (
+              <div key={key}
+                style={{ display: 'grid',
+                  gridTemplateColumns: isCouple ? '24px 1fr 110px 110px 80px' : '24px 1fr 100px 80px',
+                  gap: 8, padding: '9px 12px', alignItems: 'center',
+                  background: cats[key] ? '#F5F0E8' : 'transparent',
+                  borderRadius: 4, cursor: 'pointer', transition: 'background 0.12s',
+                }}
+                onClick={() => toggleCat(key)}
+              >
+                {/* Checkbox */}
+                <div style={{ width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                  background: cats[key] ? '#A8834A' : 'transparent',
+                  border: `1.5px solid ${cats[key] ? '#A8834A' : '#ccc'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {cats[key] && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+                </div>
+                {/* Label */}
+                <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{label}</span>
+                {/* Client amount + % */}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(clientAmt)}</div>
+                  {isCouple && catTotal > 0 && <div style={{ fontSize: 10, color: '#A8834A', fontFamily: 'Inter' }}>{clientPct}%</div>}
+                </div>
+                {/* Spouse amount + % (couple only) */}
+                {isCouple && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(spouseAmt)}</div>
+                    {catTotal > 0 && <div style={{ fontSize: 10, color: '#2D5A4E', fontFamily: 'Inter' }}>{spousePct}%</div>}
+                  </div>
+                )}
+                {/* Edit button (detailed only) */}
+                <div style={{ textAlign: 'right' }}>
+                  {isDetailed && cats[key] && (
+                    <button onClick={e => { e.stopPropagation(); setEditModal({ open: true, category: key }) }}
+                      style={{ fontSize: 10, color: '#A8834A', background: 'none', border: '1px solid #A8834A',
+                        borderRadius: 3, padding: '2px 8px', cursor: 'pointer', fontFamily: 'Inter' }}>
+                      Edit
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Totals row */}
+        <div style={{ marginTop: 16, padding: '12px 16px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Selected Annual Expenses</span>
+          {isCouple ? (
+            <div style={{ display: 'flex', gap: 24 }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(annExpClient)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(annExpSpouse)}</div>
+              </div>
+            </div>
+          ) : (
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(annExpClient)}</span>
+          )}
+        </div>
+      </SectionBlock>
+
+      {/* Coverage Percentage */}
+      {isCouple && (
+        <SectionBlock title="Family Dependency Coverage" color="#A8834A">
+          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+            If this person passes away, what expenses need to be covered for the surviving family?
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {([
+              { who: 'client' as const, name: clientName, modeKey: 'fdModeClient' as const, pctKey: 'expenseCoverPctClient' as const, defaultPct: defaultClientPct },
+              { who: 'spouse' as const, name: spouseName, modeKey: 'fdModeSpouse' as const, pctKey: 'expenseCoverPctSpouse' as const, defaultPct: defaultSpousePct },
+            ]).map(({ who, name, modeKey, pctKey, defaultPct }) => {
+              const mode = p[modeKey] ?? 'combined'
+              const pctVal = p[pctKey] ?? defaultPct
+              return (
+                <div key={who} style={{ padding: '16px', background: '#F5F0E8', borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 12 }}>{name}</div>
+                  {/* Mode toggle */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    {([
+                      { key: 'own', label: 'Own Expenses Only' },
+                      { key: 'combined', label: 'Combined Expenses' },
+                    ] as const).map(opt => (
+                      <button key={opt.key} onClick={() => updateP({ [modeKey]: opt.key })}
+                        style={{ padding: '6px 14px', fontFamily: 'Inter', fontSize: 12,
+                          background: mode === opt.key ? '#1C1A17' : '#fff',
+                          color: mode === opt.key ? '#fff' : '#1C1A17',
+                          border: '1px solid #E8E4DC', borderRadius: 4, cursor: 'pointer' }}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Description + slider */}
+                  {mode === 'own' ? (
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>
+                      Covers <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(who === 'client' ? annExpClient : annExpSpouse)}/yr</span> — {name}'s own expenses only.
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 8 }}>
+                        % of combined household expenses (<span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(annExpClient + annExpSpouse)}/yr</span>) to cover:
+                      </div>
+                      <PersonSlider
+                        label={`${pctVal.toFixed(0)}% = ${fmt((annExpClient + annExpSpouse) * pctVal / 100)}/yr`}
+                        value={pctVal}
+                        onChange={v => updateP({ [pctKey]: v })}
+                        color="#A8834A"
+                      />
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>
+        </SectionBlock>
+      )}
 
-          {/* Active person's policies */}
-          {sections.map(({key,label,isDependent,childKeys})=>{
-            if (portfolioPerson!==key) return null
-            const policies = isDependent&&childKeys
-              ? activePolicies.filter(p=>childKeys.includes(p.person))
-              : activePolicies.filter(p=>p.person===key)
-            
-            const inactiveTabPols = isDependent&&childKeys
-              ? rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && childKeys.includes(p.person))
-              : rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && p.person===key)
-
-            const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
-            const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p),0)
-            const personAge = key==='client' ? clientAge : spouseAge
-
-            // Category buckets
-            const catBuckets = [
-{ code:'medical',    label:'Medical Insurance',                    accent:'#7A9CBF', hint:'Medical & hospitalisation coverage',  printBreak: 'before-p2' },
-{ code:'ltc',        label:'Long Term Disability Care Insurance',  accent:'#9B7BAA', hint:'LTC / disability income protection',  printBreak: '' },
-{ code:'general',    label:'General Insurance',                    accent:'#8A9A7E', hint:'Personal accident, travel, maid',      printBreak: '' },
-{ code:'life',       label:'Core Protection',                      accent:'#c8a96e', hint:'Life, WL, Term, UL, IUL, VUL',        printBreak: 'before-p3' },
-{ code:'endowment',  label:'Wealth Accumulation Portfolio',        accent:'#B8956A', hint:'Endowment, annuity, investments, ILP', printBreak: '' },
-            ]
-
-            return (
-              <div key={key}>
-                {/* Luxury charts — only for named persons (not dependents) */}
-                {!isDependent && policies.length > 0 && (
-                  <>
-                    <PersonPortfolioCharts
-                      personName={label}
-                      personAge={personAge}
-                      policies={policies}
-                    />
-                  <div style={{pageBreakAfter:'always',breakAfter:'page'}} />
-                  </>
-                )}
-
-                {/* Category-separated policy sections */}
-                {policies.length===0 ? (
-                  <div style={{background:'white',border:'0.5px dashed var(--line)',padding:'32px',textAlign:'center',fontSize:13,color:'var(--ink3)',marginTop: !isDependent ? 32 : 0}}>
-                    No active policies recorded for {label}
-                    <div style={{marginTop:12}}>
-                      <button onClick={()=>openNew(addKey)} className="no-print"
-                        style={{padding:'7px 18px',background:'var(--ink)',color:'white',border:'none',cursor:'pointer',fontSize:12}}>
-                        + Add First Policy
-                      </button>
+      {/* Coverage Duration */}
+      <SectionBlock title="Coverage Duration" color="#A8834A">
+        {youngestAge !== null ? (
+          <div>
+            <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+             Coverage term auto-calculated based on the child with the most years to graduation.
+            </p>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              {children.map(c => {
+                const age = c.age ?? getAge(c.date_of_birth)
+const ec = (p.educationChildren ?? []).find(e => e.childId === c.id)
+const defaultEntry = c.gender === 'Male' ? 21 : 19
+const entryAge = ec?.uniEntryAge ?? defaultEntry
+const duration = ec?.courseDuration ?? 4
+const gradAge = entryAge + duration
+const uniGrad = Math.max(0, gradAge - age)
+                return (
+                  <div key={c.id} style={{ padding: '10px 16px', background: '#F5F0E8', borderRadius: 6, borderLeft: '3px solid #A8834A' }}>
+                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+                      {c.name || c.relationship}
+                    </div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>
+                      Age {age} · Grad in {uniGrad} yrs
                     </div>
                   </div>
-                ) : (
-                  <div style={{marginTop: !isDependent ? 32 : 0}}>
-                    {/* Section header with Add Policy */}
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
-                      <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <div style={{width:3,height:18,background:isDependent?'#7B9E87':'#c8a96e'}}/>
-                        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,color:'var(--ink)'}}>{label}</div>
-                        {isDependent && <span style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',padding:'2px 7px',border:'1px solid var(--line)'}}>Dependent</span>}
-                        {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)',marginLeft:8}}>Annual premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(secPrem)}</strong></span>}
-                      </div>
-                      <button onClick={()=>openNew(addKey)} className="no-print"
-                        style={{padding:'7px 16px',background:isDependent?'#F5FAF6':'var(--ink)',color:isDependent?'#2D6A4F':'white',border:isDependent?'1px solid #7B9E87':'none',cursor:'pointer',fontSize:12}}>
-                        + Add Policy
-                      </button>
-                    </div>
-
-                    {/* One block per category that has policies */}
-                    {catBuckets.map(cat=>{
-                      const catPols = policies.filter(p=>p.categoryCode===cat.code)
-                      if (catPols.length===0) return null
-                      const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
-                      const isEssential = ['medical','ltc','general'].includes(cat.code)
-                      const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
-                      
-                      return (
- <div key={cat.code} style={{marginBottom:28}} className={cat.printBreak === 'page' ? 'print-break-before' : ''}>
-                          {/* Category header */}
-                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${cat.accent}22`}}>
-                            <div style={{display:'flex',alignItems:'center',gap:10}}>
-                              <div style={{width:2,height:14,background:cat.accent,flexShrink:0}}/>
-                              <span style={{fontSize:11,fontWeight:600,color:'var(--ink)',letterSpacing:'0.04em'}}>{cat.label}</span>
-                              <span style={{fontSize:10,color:'var(--ink3)',borderLeft:'1px solid var(--line)',paddingLeft:10}}>{cat.hint}</span>
-                              <span style={{fontSize:10,color:cat.accent,fontFamily:'DM Mono,monospace',marginLeft:4}}>
-                                {catPols.length} {catPols.length===1?'policy':'policies'}
-                              </span>
-                            </div>
-                            {catPrem>0 && (
-                              <span style={{fontSize:11,color:'var(--ink3)'}}>
-                                <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(catPrem)}</strong>/yr
-                              </span>
-                            )}
-                          </div>
-                          <PolicyTable
-                            policies={catPols}
-                            catShort={CAT_SHORT}
-                            catColors={CAT_COLORS}
-                            onEdit={openEdit}
-                            onDelete={delPolicy}
-                          />
-                          
-                          {/* Policy Remarks - Attached to table */}
-                          {catPols.some(p => p.remarks && p.remarks.trim() !== '') && (
-                            <div style={{
-                              padding: '16px 18px',
-                              background: '#FAFAF8',
-                              borderLeft: '1px solid var(--line)',
-                              borderRight: '1px solid var(--line)',
-                              borderBottom: '1px solid var(--line)',
-                              borderTop: '1px dashed var(--line)'
-                            }}>
-                              {catPols.filter(p => p.remarks && p.remarks.trim() !== '').map((p, idx) => (
-                                <div key={p.id} style={{
-                                  marginBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
-                                  paddingBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 0 : 12,
-                                  borderBottom: idx === catPols.filter(p => p.remarks && p.remarks.trim() !== '').length - 1 ? 'none' : '1px solid var(--line)',
-                                  fontSize: 12,
-                                  color: 'var(--ink2)',
-                                  lineHeight: 1.6
-                                }}>
-                                  <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                                    {p.companyName} {p.productName}
-                                  </strong>
-                                  {' '}{p.remarks}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                
-                {/* ── Inactive Policies Toggle ── */}
-                {inactiveTabPols.length > 0 && (
-                  <div style={{ marginTop: 40, borderTop: '1px dashed var(--line)', paddingTop: 24 }}>
-                    <button
-                      onClick={() => setShowInactive(!showInactive)}
-                      className="no-print"
-                      style={{
-                        padding: '8px 16px', background: showInactive ? '#F8F7F4' : 'white',
-                        border: '1px solid var(--line)', color: 'var(--ink3)',
-                        cursor: 'pointer', fontSize: 12, borderRadius: 4, transition: 'all 0.2s'
-                      }}
-                    >
-                      {showInactive ? 'Hide Inactive Policies' : `Show Inactive Policies (${inactiveTabPols.length})`}
-                    </button>
-
-                    {showInactive && (
-                      <div style={{ marginTop: 24, opacity: 0.8 }}>
-                        <div style={{ fontSize: 14, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16 }}>Inactive / Terminated Policies</div>
-                        {catBuckets.map(cat => {
-                          const catPols = inactiveTabPols.filter(p => p.categoryCode === cat.code)
-                          if (catPols.length === 0) return null
-                          return (
-                            <div key={`inactive-${cat.code}`} style={{ marginBottom: 28 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${cat.accent}22` }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                  <div style={{ width: 2, height: 14, background: cat.accent, flexShrink: 0 }} />
-                                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label} (Inactive)</span>
-                                </div>
-                              </div>
-                              <PolicyTable
-                                policies={catPols}
-                                catShort={CAT_SHORT}
-                                catColors={CAT_COLORS}
-                                onEdit={openEdit}
-                                onDelete={delPolicy}
-                              />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              </div>
-            )
-          })}
-        </div>
-      )}
-            {showModal && editingPolicy && (
-        <PolicyModal
-          policy={editingPolicy}
-          personLabel={sections.find(s=>s.key===modalPerson||s.childKeys?.includes(modalPerson))?.label||modalPerson}
-          allPeople={allPeople}
-          categories={refCategories}
-          policyTypes={refPolicyTypes}
-          companies={refCompanies}
-          products={refProducts}
-          onSave={savePolicy}
-          onClose={()=>{ setShowModal(false); setEditingPolicy(null) }}
-        />
-      )}
-{showShareModal && (
-  <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.7)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
-    <div style={{background:'white',width:'100%',maxWidth:520,boxShadow:'0 24px 64px rgba(0,0,0,0.3)'}}>
-      <div style={{padding:'18px 26px',borderBottom:'1px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,color:'var(--ink)'}}>Share Portfolio</div>
-        <button onClick={()=>{setShowShareModal(false);setShareLink('');setSharePassword('');setShareCopied(false)}}
-          style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--ink3)'}}>✕</button>
-      </div>
-      <div style={{padding:'20px 26px',display:'flex',flexDirection:'column',gap:16}}>
-        {!shareLink ? (
-          <>
-            <div>
-  <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Share For</div>
-  <div style={{display:'flex',gap:8,flexWrap:'wrap' as const}}>
-    {[{key:'client',label:clientName},...(isCouple?[{key:'spouse',label:spouseName}]:[]),...(children.length>0?[{key:'dependents',label:'Dependents'}]:[])].map(p=>(
-      <button key={p.key} onClick={()=>setSharePerson(p.key)}
-        style={{padding:'7px 16px',fontSize:12,border:`1px solid ${sharePerson===p.key?'#1C1A17':'var(--line)'}`,
-          background:sharePerson===p.key?'#1C1A17':'white',color:sharePerson===p.key?'white':'var(--ink)',cursor:'pointer'}}>
-        {p.label}
-      </button>
-    ))}
-  </div>
-</div>
-            <div>
-              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Link Expiry</div>
-              <div style={{display:'flex',gap:8}}>
-                {([['7d','7 Days'],['30d','30 Days'],['permanent','Permanent']] as const).map(([val,label])=>(
-                  <button key={val} onClick={()=>setShareExpiry(val)}
-                    style={{padding:'7px 16px',fontSize:12,border:`1px solid ${shareExpiry===val?'#1C1A17':'var(--line)'}`,
-                      background:shareExpiry===val?'#1C1A17':'white',color:shareExpiry===val?'white':'var(--ink)',cursor:'pointer'}}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+                )
+              })}
             </div>
-            <div>
-              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Password</div>
-              <input type="text" value={sharePassword} onChange={e=>setSharePassword(e.target.value)}
-                placeholder="e.g. 567A1980"
-                style={{width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none',boxSizing:'border-box' as const,fontFamily:'DM Mono,monospace'}}/>
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage Term:</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#A8834A', fontWeight: 600 }}>{coverageTerm} years</span>
             </div>
-            <div>
-              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Password Hint (shown to client)</div>
-              <textarea value={shareHint} onChange={e=>setShareHint(e.target.value)} rows={3}
-                style={{width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:12,outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const,fontFamily:'Inter,sans-serif',lineHeight:1.6}}/>
-            </div>
-            <button onClick={handleGenerateShare} disabled={!sharePassword.trim()||shareGenerating}
-              style={{padding:'10px',background:sharePassword.trim()?'#1C1A17':'#ccc',color:'white',border:'none',cursor:sharePassword.trim()?'pointer':'default',fontSize:13,fontWeight:500}}>
-              {shareGenerating?'Generating…':'Generate Link'}
-            </button>
-          </>
+          </div>
         ) : (
-          <>
-            <div style={{padding:'16px',background:'#F5F3EE',border:'1px solid #E0DDD6'}}>
-              <div style={{fontSize:10,color:'var(--ink3)',marginBottom:6,letterSpacing:'0.08em',textTransform:'uppercase'}}>Your shareable link</div>
-              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,color:'var(--ink)',marginBottom:6}}>
-                Portfolio Summary {new Date().getFullYear()} — {clientName}
-              </div>
-              <div style={{fontSize:10,color:'var(--ink3)',fontFamily:'DM Mono,monospace',wordBreak:'break-all' as const}}>{shareLink}</div>
+          <div>
+            <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+              Select coverage duration (no children detected).
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[5, 10, 15, 20, 25, 30].map(yr => (
+                <button
+                  key={yr}
+                  onClick={() => updateP({ coverageTermOverride: yr })}
+                  style={{
+                    padding: '8px 16px', fontFamily: 'DM Mono, monospace', fontSize: 13,
+                    background: (p.coverageTermOverride ?? 20) === yr ? '#1C1A17' : '#F5F0E8',
+                    color: (p.coverageTermOverride ?? 20) === yr ? '#F5F0E8' : '#1C1A17',
+                    border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.12s',
+                  }}
+                >
+                  {yr}yr
+                </button>
+              ))}
             </div>
-            <div style={{fontSize:12,color:'var(--ink3)',lineHeight:1.6,background:'#FFFBF5',padding:'12px',border:'1px solid #F0E8D8'}}>
-              Copy the button below and paste into WhatsApp. The client sees a tappable link with the document title.
+            <div style={{ marginTop: 12 }}>
+              <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage Term: </span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#A8834A', fontWeight: 600 }}>{coverageTerm} years</span>
             </div>
-            <button onClick={async()=>{
-              const year = new Date().getFullYear()
-              const text = `Portfolio Summary ${year} — ${clientName}\n${shareLink}`
-              await navigator.clipboard.writeText(text)
-              setShareCopied(true)
-              setTimeout(()=>setShareCopied(false),3000)
-            }}
-              style={{padding:'10px',background:'#1C1A17',color:'#c8a96e',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
-              {shareCopied?'✓ Copied to clipboard!':'Copy "Portfolio Summary ' + new Date().getFullYear() + ' — ' + clientName + '"'}
-            </button>
-            <div style={{fontSize:11,color:'var(--ink3)',textAlign:'center'}}>
-              {shareExpiry==='permanent'?'This link does not expire.':shareExpiry==='7d'?'Expires in 7 days.':'Expires in 30 days.'}
-            </div>
-            <button onClick={()=>{setShareLink('');setSharePassword('')}}
-              style={{padding:'8px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:12}}>
-              Generate Another Link
-            </button>
-          </>
+          </div>
         )}
-      </div>
-    </div>
-  </div>
-)}
-<style>{`
-  @media print {
-    .no-print { display: none !important; }
-    aside, nav { display: none !important; }
-    body { background: white !important; }
+      </SectionBlock>
 
-    @page {
-      size: A4 landscape;
-      margin: 1.2cm;
-    }
+      {/* Family Dependency Summary */}
+      <SectionBlock title="Family Dependency Need" color="#2D5A4E">
+        <NeedTable
+          isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+          clientData={dtpdFDOnly(annExpClient, p.expenseCoverPctClient ?? defaultClientPct, p.inflationRate ?? 3, coverageTerm)}
+          spouseData={dtpdFDOnly(annExpSpouse, p.expenseCoverPctSpouse ?? defaultSpousePct, p.inflationRate ?? 3, coverageTerm)}
+          label="D/TPD Family Dependency"
+        />
+      </SectionBlock>
 
-    * {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-
-    .print-break-before {
-      page-break-before: always !important;
-      break-before: page !important;
-    }
-  }
-`}</style>
+      {/* Advisor Notes */}
+      <SectionBlock title="Advisor Notes" color="#888">
+        <textarea
+          value={p.advisorNotes ?? ''}
+          onChange={e => updateP({ advisorNotes: e.target.value })}
+          placeholder="Document observations, client preferences, or planning considerations..."
+          rows={4}
+          style={{
+            width: '100%', resize: 'vertical', fontFamily: 'Inter', fontSize: 13,
+            color: '#1C1A17', background: '#F5F0E8', border: '1px solid #E8E4DC',
+            borderRadius: 4, padding: '10px 12px', outline: 'none',
+          }}
+        />
+      </SectionBlock>
     </div>
   )
 }
 
-// ─── Premium Coverage Chart (Apple/Private Banking Style) ─────────────────────
-function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
-  title: string; eyebrow: string; needLabel: string; haveLabel: string
-  data: {age: number; need: number; have: number}[]
-  accentColor: string
-  milestones?: {
-    mortgageEnds?: number[]  // Changed from mortgageEnd to mortgageEnds (array)
-    educationEnds?: number[]
-    coverageEnds?: number | null
-    clientAge?: number
-  }
+function dtpdFDOnly(annExp: number, coverPctRaw: number, inflationRaw: number, term: number): number {
+  const rate = inflationRaw / 100
+  const pct = coverPctRaw / 100
+  return fv(rate, term, annExp * pct)
+}
+
+// ─── MORTGAGE & DEBT TAB ─────────────────────────────────────────────────────
+
+function MortgageDebtTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, clientId }: {
+  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+  mortgages: MortgageProperty[]; clientId: string
 }) {
-  const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number; y: number} | null>(null)
-  const [mouseX, setMouseX] = useState<number | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  
-  const W = 600, H = 220, PL = 60, PR = 20, PT = 30, PB = 35
-  const iW = W - PL - PR
-  const iH = H - PT - PB
-  
-  if (!data.length) return null
-  
-  const maxV = Math.max(...data.map(d => Math.max(d.need, d.have)), 1)
-  const minA = data[0].age
-  const aR = data[data.length - 1].age - minA || 1
-  
-  const xP = (a: number) => ((a - minA) / aR) * iW
-  const yP = (v: number) => iH - Math.min(1, v / maxV) * iH
-  
-  const fmtAx = (n: number) => {
-    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
-    if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`
-    return `$${Math.round(n).toLocaleString()}`
-  }
-  
-  const ticks = [0, 0.25, 0.5, 0.75, 1]
-  
-  // Generate smooth curves
-  const needPath = data.map((d, i) => {
-    const x = PL + xP(d.age)
-    const y = PT + yP(d.need)
-    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-  }).join(' ')
-  
-  const havePath = data.map((d, i) => {
-    const x = PL + xP(d.age)
-    const y = PT + yP(d.have)
-    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-  }).join(' ')
-  
-     // Build accurate milestones from passed data
-  const chartMilestones: {age: number; label: string; type: string; color?: string}[] = []
+  type NonMortgageDebt = { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; owner: 'client' | 'spouse' | 'joint' }
 
-  if (milestones) {
-    // Mortgage paid off - handles MULTIPLE mortgages
-    if (milestones.mortgageEnds && milestones.mortgageEnds.length > 0) {
-      const sortedMortgageAges = [...milestones.mortgageEnds].sort((a, b) => a - b)
-      sortedMortgageAges.forEach((age, idx) => {
-        const mortgageNumber = sortedMortgageAges.length > 1 ? `Mortgage ${idx + 1}` : 'Mortgage'
-        chartMilestones.push({
-          age: age,
-          label: `${mortgageNumber} Repaid`,
-          type: 'mortgage',
-          color: '#C4A464'
-        })
-      })
+  const DEBT_TYPES = ['Personal Loan', 'Car Loan', 'Business Loan', 'Credit Line', 'Student Loan', 'Other']
+
+  function addDebt() {
+    const newDebt: NonMortgageDebt = {
+      id: Date.now().toString(),
+      debtType: 'Personal Loan',
+      label: '',
+      amount: 0,
+      interestRate: 3,
+      tenureLeft: 5,
+      owner: 'client',
     }
-    
-    // Education completed - handles ANY number of children
-    if (milestones.educationEnds && milestones.educationEnds.length > 0) {
-      // Filter valid ages first
-      const validEduAges = milestones.educationEnds.filter(age => age > (milestones.clientAge || 0))
-      
-      // Remove duplicates manually
-      const uniqueEduEnds: number[] = []
-      validEduAges.forEach(age => {
-        if (!uniqueEduEnds.includes(age)) {
-          uniqueEduEnds.push(age)
-        }
-      })
-      
-      // Sort and create milestones
-      uniqueEduEnds.sort((a, b) => a - b).forEach((age, idx) => {
-        const childNumber = uniqueEduEnds.length > 1 ? `Child ${idx + 1}` : 'Child'
-        chartMilestones.push({
-          age: age,
-          label: `${childNumber} Graduates`,
-          type: 'education',
-          color: '#7FAAA0'
-        })
-      })
-    }
-    
-    // Coverage ends
-    if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge || 0)) {
-      chartMilestones.push({
-        age: milestones.coverageEnds,
-        label: 'Coverage Ends',
-        type: 'coverage',
-        color: '#8B9DAF'
-      })
-    }
+    updateP({ nonMortgageDebts: [...(p.nonMortgageDebts ?? []), newDebt] })
   }
-  
-  // Build gap areas
-  const redGapPaths: string[] = []
-  const greenGapPaths: string[] = []
-  
-  let currentRedPath: string[] = []
-  let currentGreenPath: string[] = []
-  let inRedGap = false
-  let inGreenGap = false
-  
-  data.forEach((d) => {
-    const x = PL + xP(d.age)
-    const yNeed = PT + yP(d.need)
-    const yHave = PT + yP(d.have)
-    
-    if (d.need > d.have) {
-      if (!inRedGap) {
-        inRedGap = true
-        currentRedPath = [`M ${x} ${yNeed}`, `L ${x} ${yHave}`]
-      } else {
-        currentRedPath.push(`L ${x} ${yNeed}`)
-        currentRedPath.push(`L ${x} ${yHave}`)
-      }
-    } else {
-      if (inRedGap && currentRedPath.length > 0) {
-        redGapPaths.push(currentRedPath.join(' ') + ' Z')
-        inRedGap = false
-        currentRedPath = []
-      }
-    }
-    
-    if (d.have > d.need) {
-      if (!inGreenGap) {
-        inGreenGap = true
-        currentGreenPath = [`M ${x} ${yHave}`, `L ${x} ${yNeed}`]
-      } else {
-        currentGreenPath.push(`L ${x} ${yHave}`)
-        currentGreenPath.push(`L ${x} ${yNeed}`)
-      }
-    } else {
-      if (inGreenGap && currentGreenPath.length > 0) {
-        greenGapPaths.push(currentGreenPath.join(' ') + ' Z')
-        inGreenGap = false
-        currentGreenPath = []
-      }
-    }
-  })
-  
-  if (inRedGap && currentRedPath.length > 0) {
-    redGapPaths.push(currentRedPath.join(' ') + ' Z')
+
+  function updateDebt(id: string, changes: Partial<NonMortgageDebt>) {
+    const arr = (p.nonMortgageDebts ?? []).map(d => d.id === id ? { ...d, ...changes } : d)
+    updateP({ nonMortgageDebts: arr })
   }
-  if (inGreenGap && currentGreenPath.length > 0) {
-    greenGapPaths.push(currentGreenPath.join(' ') + ' Z')
+
+  function removeDebt(id: string) {
+    updateP({ nonMortgageDebts: (p.nonMortgageDebts ?? []).filter(d => d.id !== id) })
   }
-  
-  const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
-  
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const svg = e.currentTarget
-    const rect = svg.getBoundingClientRect()
-    const svgX = e.clientX - rect.left
-    const svgWidth = rect.width
-    
-    const scaleX = W / svgWidth
-    const mouseSvgX = svgX * scaleX
-    
-    if (mouseSvgX >= PL && mouseSvgX <= PL + iW) {
-      setMouseX(mouseSvgX)
-      
-      const relativeX = (mouseSvgX - PL) / iW
-      const targetAge = minA + relativeX * aR
-      const closestPoint = data.reduce((prev, curr) => {
-        return Math.abs(curr.age - targetAge) < Math.abs(prev.age - targetAge) ? curr : prev
-      })
-      
-      setHovered({
-        ...closestPoint,
-        x: PL + xP(closestPoint.age),
-        y: PT + yP(closestPoint.need)
-      })
-    } else {
-      setMouseX(null)
-      setHovered(null)
-    }
+
+  function calcDebtPMT(amount: number, annualRate: number, years: number): number {
+    if (years <= 0 || amount <= 0) return 0
+    if (annualRate === 0) return amount / (years * 12)
+    const r = annualRate / 100 / 12
+    const n = years * 12
+    return amount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
   }
-  
-  const handleMouseLeave = () => {
-    setMouseX(null)
-    setHovered(null)
-  }
-  
-  const gap = hovered ? hovered.need - hovered.have : 0
-  const coveragePct = hovered && hovered.need > 0 ? Math.min(100, (hovered.have / hovered.need) * 100) : 0
-  const isOverinsured = hovered && hovered.have > hovered.need
-  
-  const needColor = '#1C1A17'
-  const haveColor = accentColor
-  const underinsuredColor = 'rgba(231, 76, 60, 0.18)'
-  const overinsuredColor = 'rgba(39, 174, 96, 0.14)'
-  const underinsuredBorder = 'rgba(231, 76, 60, 0.35)'
-  const overinsuredBorder = 'rgba(39, 174, 96, 0.30)'
-  const gridColor = 'rgba(0, 0, 0, 0.04)'
-  const textColor = '#8B8B8B'
-  const milestoneColor = '#A8834A'
-  
-    const nearbyMilestone = hovered 
-    ? chartMilestones.find(m => Math.abs(m.age - hovered.age) <= 2)
-    : null
-  
+
+  const nonMortgageDebts = p.nonMortgageDebts ?? []
+  const financialsUrl = `/dashboard/financials?tab=properties`
+
   return (
-    <div ref={containerRef} style={{
-      background: '#FFFFFF',
-      border: '1px solid rgba(0, 0, 0, 0.06)',
-      borderRadius: 16,
-      padding: '24px 24px 20px 24px',
-      boxShadow: '0 2px 12px rgba(0, 0, 0, 0.02)',
-    }}>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{
-          fontSize: 10,
-          letterSpacing: '0.15em',
-          textTransform: 'uppercase',
-          color: accentColor,
-          marginBottom: 6,
-          fontWeight: 600
-        }}>{eyebrow}</div>
-        <div style={{
-          fontFamily: 'Cormorant Garamond, Georgia, serif',
-          fontSize: 18,
-          fontWeight: 400,
-          color: '#1C1A17',
-          letterSpacing: '-0.01em'
-        }}>{title}</div>
-      </div>
-      
-      <div style={{ display: 'flex', gap: 24, marginBottom: 16, alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 20, height: 2, background: needColor }} />
-          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{needLabel}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* ── MORTGAGE SECTION ── */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#A8834A' }}>Mortgage Loans</div>
+          <a
+            href={financialsUrl}
+            style={{ fontSize: 11, fontFamily: 'Inter', color: '#A8834A', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', border: '1px solid #A8834A', borderRadius: 4 }}
+          >
+            + Add in Financial Profile
+          </a>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 20, height: 2, background: haveColor, opacity: 0.7 }} />
-          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{haveLabel}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 14, height: 8, background: underinsuredColor, border: `1px solid ${underinsuredBorder}`, borderRadius: 2 }} />
-          <span style={{ fontSize: 10, color: '#E74C3C', fontWeight: 500 }}>Underinsured</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 14, height: 8, background: overinsuredColor, border: `1px solid ${overinsuredBorder}`, borderRadius: 2 }} />
-          <span style={{ fontSize: 10, color: '#27AE60', fontWeight: 500 }}>Overinsured</span>
-        </div>
-        {hovered && (
-          <div style={{
-            marginLeft: 'auto',
-            fontSize: 11,
-            color: '#1C1A17',
-            background: '#F8F7F4',
-            padding: '6px 14px',
-            borderRadius: 20,
-            fontWeight: 500
-          }}>
-            Age {hovered.age} • {gap > 0 ? `Gap ${fmt(hovered.need - hovered.have)}` : isOverinsured ? `+${fmt(hovered.have - hovered.need)} Surplus` : 'Fully Covered'}
+
+        {mortgages.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px', background: '#F5F0E8', borderRadius: 8, color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
+            No mortgages found. Add properties in Financial Profile → Properties.
           </div>
-        )}
-      </div>
-      
-      <div style={{ position: 'relative' }}>
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          style={{ display: 'block', overflow: 'visible' }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        >
-          {ticks.map(f => {
-            const y = PT + iH - f * iH
-            return (
-              <g key={f}>
-                <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke={gridColor} strokeWidth="1" />
-                <text x={PL - 8} y={y + 4} fontSize="10" fill={textColor} textAnchor="end" fontWeight={400}>
-                  {fmtAx(maxV * f)}
-                </text>
-              </g>
-            )
-          })}
-          
-          <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
-          <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
-          
-          {redGapPaths.map((path, idx) => (
-            <path key={`red-${idx}`} d={path} fill={underinsuredColor} stroke={underinsuredBorder} strokeWidth="0.8" />
-          ))}
-          
-          {greenGapPaths.map((path, idx) => (
-            <path key={`green-${idx}`} d={path} fill={overinsuredColor} stroke={overinsuredBorder} strokeWidth="0.8" />
-          ))}
-          
-          <path d={havePath} stroke={haveColor} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" strokeDasharray="4,3" />
-          <path d={needPath} stroke={needColor} strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round" />
-          
-                    {/* Milestone markers */}
-          {chartMilestones.map((m, idx) => {
-            const x = PL + xP(m.age)
-            const lineColor = m.color || milestoneColor
-            return (
-              <g key={`milestone-${idx}`}>
-                <line 
-                  x1={x} 
-                  y1={PT} 
-                  x2={x} 
-                  y2={PT + iH} 
-                  stroke={lineColor} 
-                  strokeWidth="0.6" 
-                  strokeDasharray={m.type === 'coverage' ? '4,4' : '2,4'} 
-                  opacity="0.5" 
-                />
-              </g>
-            )
-          })}
-          
-          {mouseX && (
-            <line x1={mouseX} y1={PT} x2={mouseX} y2={PT + iH} stroke="rgba(28, 26, 23, 0.15)" strokeWidth="1" strokeDasharray="4,3" />
-          )}
-          
-          {hovered && (
-            <>
-              <circle cx={hovered.x} cy={PT + yP(hovered.need)} r="4" fill="white" stroke={needColor} strokeWidth="2" />
-              <circle cx={hovered.x} cy={PT + yP(hovered.have)} r="4" fill="white" stroke={haveColor} strokeWidth="2" />
-            </>
-          )}
-          
-          {ageLabels.map(d => (
-            <text key={d.age} x={PL + xP(d.age)} y={PT + iH + 18} fontSize="10" fill={textColor} textAnchor="middle" fontWeight={400}>
-              {d.age}
-            </text>
-          ))}
-        </svg>
-        
-        {hovered && (
-          <div style={{
-            position: 'absolute',
-            left: `${((hovered.x - PL) / iW) * 100}%`,
-            top: '0',
-            transform: 'translateX(-50%)',
-            background: '#1C1A17',
-            color: 'white',
-            padding: '12px 16px',
-            borderRadius: 8,
-            fontSize: 12,
-            pointerEvents: 'none',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
-            zIndex: 10,
-            whiteSpace: 'nowrap',
-            marginTop: -60
-          }}>
-            <div style={{ marginBottom: 8, color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: '0.1em' }}>
-              AGE {hovered.age}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Coverage Need</span>
-                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{fmt(hovered.need)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Current Portfolio</span>
-                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace', color: accentColor }}>
-                  {fmt(hovered.have)}
-                </span>
-              </div>
-              
-                           {nearbyMilestone && (
-                <div style={{
-                  marginTop: 4,
-                  padding: '6px 0',
-                  borderTop: '1px solid rgba(255,255,255,0.1)',
-                  borderBottom: '1px solid rgba(255,255,255,0.1)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 14 }}>
-                      {nearbyMilestone.type === 'mortgage' ? '🏠' : 
-                       nearbyMilestone.type === 'education' ? '🎓' : '🏁'}
-                    </span>
-                    <span style={{ color: nearbyMilestone.color || milestoneColor, fontWeight: 500, letterSpacing: '0.05em' }}>
-                      {nearbyMilestone.label} at Age {nearbyMilestone.age}
-                    </span>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {mortgages.map((m, i) => {
+              const clientPct = (p.mortgageCoverPctsClient ?? [])[i] ?? 100
+              const spousePct = (p.mortgageCoverPctsSpouse ?? [])[i] ?? 100
+
+              function updateClientPct(val: number) {
+                const arr = [...(p.mortgageCoverPctsClient ?? mortgages.map(() => 100))]
+                arr[i] = val
+                updateP({ mortgageCoverPctsClient: arr })
+              }
+              function updateSpousePct(val: number) {
+                const arr = [...(p.mortgageCoverPctsSpouse ?? mortgages.map(() => 100))]
+                arr[i] = val
+                updateP({ mortgageCoverPctsSpouse: arr })
+              }
+
+              return (
+                <div key={m.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '18px 20px', borderLeft: '3px solid #A8834A' }}>
+                  {/* Title + outstanding */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{m.label}</div>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginTop: 2 }}>Mortgage Loan</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Outstanding</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 17, color: '#A8834A', fontWeight: 600 }}>{fmt(m.outstanding)}</div>
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              <div style={{ 
-                marginTop: 4, 
-                paddingTop: 6, 
-                borderTop: '1px solid rgba(255,255,255,0.15)',
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                gap: 24 
-              }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {gap > 0 ? 'Protection Gap' : isOverinsured ? 'Surplus' : 'Status'}
-                </span>
-                <span style={{ 
-                  fontWeight: 600, 
-                  fontFamily: 'DM Mono, monospace',
-                  color: gap > 0 ? '#E74C3C' : isOverinsured ? '#27AE60' : '#FFFFFF'
-                }}>
-                  {gap > 0 ? fmt(gap) : isOverinsured ? `+${fmt(-gap)}` : `${Math.round(coveragePct)}% Covered`}
-                </span>
-              </div>
-            </div>
-            <div style={{
-              position: 'absolute',
-              bottom: -6,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: 0,
-              height: 0,
-              borderLeft: '6px solid transparent',
-              borderRight: '6px solid transparent',
-              borderTop: '6px solid #1C1A17'
-            }} />
-          </div>
-        )}
-      </div>
-      
-      <div style={{
-        fontSize: 10,
-        color: 'rgba(0, 0, 0, 0.4)',
-        marginTop: 12,
-        fontStyle: 'italic',
-        letterSpacing: '0.02em'
-      }}>
-        Solid line = required • Dashed line = existing • 
-        <span style={{ color: '#E74C3C' }}> Red</span> = underinsured • 
-        <span style={{ color: '#27AE60' }}> Green</span> = overinsured
-      </div>
-    </div>
-  )
-}
 
-// ─── Gap Section ──────────────────────────────────────────────────────────────
-function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,annualPremium}:{title:string;dtpdNeed:number;ciNeed:number;lifeHave:number;ciHave:number;annualPremium:number}) {
-  const rows=[
-    {label:'Life / Death & TPD',need:dtpdNeed,have:lifeHave},
-    {label:'Critical Illness (Late Stage)',need:ciNeed,have:ciHave},
-  ]
-  return (
-    <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-      <div style={{padding:'14px 24px',borderBottom:'0.5px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <div style={{width:3,height:16,background:'#c8a96e'}}/>
-          <span style={{fontSize:13,fontWeight:500,color:'var(--ink)'}}>{title}</span>
-        </div>
-        {annualPremium>0&&<span style={{fontSize:12,color:'var(--ink3)'}}>Portfolio premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(annualPremium)}/yr</strong></span>}
-      </div>
-      {dtpdNeed===0&&ciNeed===0?(
-        <div style={{padding:'24px',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>Complete the Financial Profile to see gap analysis.</div>
-      ):(
-        <>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 130px 130px 130px 100px',padding:'9px 24px',background:'#FAFAF8',borderBottom:'0.5px solid var(--line)'}}>
-            {['COVERAGE AREA','NEED','HAVE','GAP','STATUS'].map(h=><div key={h} style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>)}
-          </div>
-          {rows.map((row,i)=>{const gap=row.need-row.have;const st=gapSt(row.need,row.have);return(
-            <div key={row.label} style={{display:'grid',gridTemplateColumns:'1fr 130px 130px 130px 100px',padding:'12px 24px',alignItems:'center',borderBottom:i<rows.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
-              <span style={{fontSize:13,color:'var(--ink)'}}>{row.label}</span>
-              <span style={{fontFamily:'DM Mono,monospace',fontSize:13}}>{fmt(row.need)}</span>
-              <span style={{fontFamily:'DM Mono,monospace',fontSize:13,color:row.have>0?'#2D6A4F':'var(--ink3)'}}>{row.have>0?fmt(row.have):'—'}</span>
-              <span style={{fontFamily:'DM Mono,monospace',fontSize:13,color:gap>0?'#9B1C1C':'#2D6A4F',fontWeight:gap>0?600:400}}>{gap>0?fmt(gap):'✓ Covered'}</span>
-              <span style={{fontSize:11,fontWeight:600,padding:'2px 9px',borderRadius:3,background:st.bg,color:st.color}}>{st.label}</span>
-            </div>
-          )})}
-          <div style={{padding:'14px 24px',borderTop:'0.5px solid var(--line)',background:'#FAFAF8',display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-            {[{l:'Life / D&TPD',n:dtpdNeed,h:lifeHave},{l:'Critical Illness',n:ciNeed,h:ciHave}].map(b=>{
-              const pct=b.n>0?Math.min(100,(b.h/b.n)*100):0
-              return(<div key={b.l}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
-                  <span style={{fontSize:10,color:'var(--ink3)',textTransform:'uppercase',letterSpacing:'0.07em'}}>{b.l}</span>
-                  <span style={{fontSize:10,color:'var(--ink3)'}}>{Math.round(pct)}% covered</span>
+                  {/* Read-only details */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Loan Amount</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(m.initialLoanAmount)}</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Monthly Repayment</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(m.monthlyRepayment)}</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Remaining Tenure</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{m.remainingTenure} yrs @ {m.interestRate}%</div>
+                    </div>
+                  </div>
+
+                  {/* Coverage sliders */}
+                  {isCouple ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                      <PersonSlider label={`${clientName} covers`} value={clientPct} onChange={updateClientPct} color="#A8834A" unit="%" />
+                      <PersonSlider label={`${spouseName} covers`} value={spousePct} onChange={updateSpousePct} color="#A8834A" unit="%" />
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>Coverage: <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>100% — {fmt(m.outstanding)}</span></div>
+                  )}
+
+                  {/* D/TPD vs CI breakdown */}
+                  {isCouple && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+                        {clientName} D/TPD: <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(m.outstanding * clientPct / 100)}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+                        {spouseName} D/TPD: <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(m.outstanding * spousePct / 100)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div style={{height:4,background:'#E5E3DF',borderRadius:2}}>
-                  <div style={{height:'100%',borderRadius:2,width:`${pct}%`,background:pct>=100?'#2D6A4F':pct>50?'#c8a96e':'#C0392B'}}/>
-                </div>
-              </div>)
+              )
             })}
           </div>
+        )}
+      </div>
+
+      {/* ── NON-MORTGAGE DEBTS SECTION ── */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#A8834A' }}>Non-Mortgage Debts</div>
+          <button
+            onClick={addDebt}
+            style={{ fontSize: 11, fontFamily: 'Inter', color: '#A8834A', background: 'transparent', border: '1px solid #A8834A', borderRadius: 4, padding: '5px 10px', cursor: 'pointer' }}
+          >
+            + Add Debt
+          </button>
+        </div>
+
+        {nonMortgageDebts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px', background: '#F5F0E8', borderRadius: 8, color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
+            No non-mortgage debts added.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {nonMortgageDebts.map(d => {
+              const monthlyPmt = calcDebtPMT(d.amount, d.interestRate, d.tenureLeft)
+              return (
+                <div key={d.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '18px 20px', borderLeft: '3px solid #6B7C93' }}>
+                  {/* Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, color: '#6B7C93', fontFamily: 'Inter', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{d.debtType || 'Debt'}</div>
+                    <button
+                      onClick={() => removeDebt(d.id)}
+                      style={{ fontSize: 11, color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  {/* Inputs row 1: Type + Label */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Type of Debt</label>
+                      <select
+                        value={d.debtType}
+                        onChange={e => updateDebt(d.id, { debtType: e.target.value })}
+                        style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
+                      >
+                        {DEBT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Description</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. DBS Personal Loan"
+                        value={d.label}
+                        onChange={e => updateDebt(d.id, { label: e.target.value })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Inputs row 2: Amount + Interest + Tenure */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={labelStyle}>Outstanding Amount</label>
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
+                        <input
+                          type="number" min={0} step={1000}
+                          value={d.amount || ''}
+                          onChange={e => updateDebt(d.id, { amount: parseInt(e.target.value) || 0 })}
+                          style={{ ...inputStyle, paddingLeft: 24 }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Interest Rate (%)</label>
+                      <input
+                        type="number" min={0} max={30} step={0.1}
+                        value={d.interestRate || ''}
+                        onChange={e => updateDebt(d.id, { interestRate: parseFloat(e.target.value) || 0 })}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Tenure Left (yrs)</label>
+                      <input
+                        type="number" min={1} max={30} step={1}
+                        value={d.tenureLeft || ''}
+                        onChange={e => updateDebt(d.id, { tenureLeft: parseInt(e.target.value) || 1 })}
+                        style={inputStyle}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Calculated monthly PMT + CI preview */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC', marginBottom: isCouple ? 14 : 0 }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Est. Monthly Repayment</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(monthlyPmt)}/mo</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>D/TPD Coverage</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#6B7C93' }}>{fmt(d.amount)}</div>
+                    </div>
+                  </div>
+
+                  {/* Owner selector */}
+                  <div style={{ marginTop: 12 }}>
+                    <label style={labelStyle}>Whose Debt</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {([
+                        { key: 'client', label: clientName },
+                        ...(isCouple ? [{ key: 'spouse', label: spouseName }, { key: 'joint', label: 'Joint' }] : []),
+                      ] as { key: 'client'|'spouse'|'joint'; label: string }[]).map(opt => (
+                        <button
+                          key={opt.key}
+                          onClick={() => updateDebt(d.id, { owner: opt.key })}
+                          style={{
+                            padding: '6px 14px', fontFamily: 'Inter', fontSize: 12,
+                            background: (d.owner ?? 'client') === opt.key ? '#1C1A17' : '#fff',
+                            color: (d.owner ?? 'client') === opt.key ? '#fff' : '#1C1A17',
+                            border: '1px solid #E8E4DC', borderRadius: 4, cursor: 'pointer',
+                          }}
+                        >{opt.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+    </div>
+  )
+}
+
+// ─── EDUCATION FUND TAB ───────────────────────────────────────────────────────
+
+function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, children, inflation }: {
+  p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+  children: FamilyMember[]; inflation: number
+}) {
+  type EduChild = {
+    childId: string; uniType?: string; courseDuration?: number
+    annualTuition?: number; annualLiving?: number
+    uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number
+  }
+
+  function updateChild(childId: string, changes: Partial<EduChild>) {
+    const arr: EduChild[] = [...(p.educationChildren ?? [])]
+    const idx = arr.findIndex(e => e.childId === childId)
+    if (idx >= 0) {
+      arr[idx] = { ...arr[idx], ...changes }
+    } else {
+      arr.push({ childId, ...changes })
+    }
+    updateP({ educationChildren: arr })
+  }
+
+  function calcChildFund(child: FamilyMember, ec: EduChild, who: 'client' | 'spouse' | 'total'): number {
+    const childAge = child.age ?? getAge(child.date_of_birth)
+    const defaultEntryAge = child.gender === 'Male' ? 21 : 19
+    const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+    const yearsToUni = Math.max(0, uniEntryAge - childAge)
+    const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+    const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+    const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+    const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+    const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+    const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
+    const total = fvTuition + fvLiving
+    if (who === 'total') return total
+    const pct = !isCouple ? 1 : (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
+    return total * pct
+  }
+
+  return (
+    <div>
+      {/* Toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '14px 16px', background: '#F5F0E8', borderRadius: 6 }}>
+        <Toggle value={p.provideEducationFund ?? false} onChange={v => updateP({ provideEducationFund: v })} />
+        <div>
+          <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 500, color: '#1C1A17' }}>Provide Education Fund</div>
+          <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Inflation-adjusted university cost projection per child</div>
+        </div>
+      </div>
+
+      {p.provideEducationFund && (
+        <>
+          {children.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: '#aaa', fontSize: 13 }}>
+              No children found. Add children in the Client Profile.
+            </div>
+          )}
+          {children.map(child => {
+            const ec = (p.educationChildren ?? []).find(e => e.childId === child.id) ?? { childId: child.id }
+            const childAge = child.age ?? getAge(child.date_of_birth)
+            const defaultEntryAge = child.gender === 'Male' ? 21 : 19
+            const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+            const yearsToUni = Math.max(0, uniEntryAge - childAge)
+            const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+            const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+            const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+            const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+            const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+            const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
+            const totalFund = fvTuition + fvLiving
+
+            return (
+              <div key={child.id} style={{ background: '#F5F0E8', borderRadius: 8, padding: '20px 24px', marginBottom: 16, borderLeft: '3px solid #2D5A4E' }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{child.name || child.relationship}</div>
+                    <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginTop: 2 }}>
+                      Age {childAge} · {child.gender || 'Gender not set'} · {yearsToUni > 0 ? `${yearsToUni} yrs to university` : 'University age'}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total Fund Needed</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 20, color: '#2D5A4E', fontWeight: 600 }}>{fmt(totalFund)}</div>
+                  </div>
+                </div>
+
+                {/* FV Breakdown strip */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 16, padding: '10px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>FV Tuition (5%)</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(fvTuition)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>FV Living ({(inflation * 100).toFixed(1)}%)</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{fmt(fvLiving)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Duration</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17' }}>{dur} yrs</div>
+                  </div>
+                </div>
+
+                {/* Uni type */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>University Type</label>
+                  <select
+                    value={ec.uniType ?? 'sg_local'}
+                    onChange={e => {
+                      const uni = e.target.value
+                      const info = UNI_COST_DEFAULTS[uni]
+                      updateChild(child.id, {
+                        uniType: uni,
+                        annualTuition: info.annual_tuition,
+                        annualLiving: info.annual_living,
+                        courseDuration: info.default_duration,
+                      })
+                    }}
+                    style={{ width: '100%', padding: '8px 10px', fontFamily: 'Inter', fontSize: 13, background: '#fff', border: '1px solid #E8E4DC', borderRadius: 4, color: '#1C1A17', outline: 'none' }}
+                  >
+                    {Object.entries(UNI_COST_DEFAULTS).map(([k, v]) => (
+                      <option key={k} value={k}>{v.label} — {fmt(v.annual_tuition + v.annual_living)}/yr</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Row: Uni Entry Age + Duration */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={labelStyle}>University Entry Age</label>
+                    <input
+                      type="number" min={15} max={25} step={1}
+                      value={uniEntryAge}
+                      onChange={e => updateChild(child.id, { uniEntryAge: parseInt(e.target.value) })}
+                      style={inputStyle}
+                    />
+                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>
+                      Default: {defaultEntryAge} ({child.gender === 'Male' ? 'Male — NS offset' : 'Female'})
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Course Duration (years)</label>
+                    <input
+                      type="number" min={1} max={6} step={1}
+                      value={dur}
+                      onChange={e => updateChild(child.id, { courseDuration: parseInt(e.target.value) })}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+
+                {/* Row: Annual Tuition + Annual Living */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: isCouple ? 16 : 0 }}>
+                  <div>
+                    <label style={labelStyle}>Annual Tuition (Today's $)</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
+                      <input
+                        type="number" min={0} step={500}
+                        value={baseTuition}
+                        onChange={e => updateChild(child.id, { annualTuition: parseInt(e.target.value) })}
+                        style={{ ...inputStyle, paddingLeft: 24 }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>Inflated at 5% p.a.</div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Annual Living (Today's $)</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
+                      <input
+                        type="number" min={0} step={500}
+                        value={baseLiving}
+                        onChange={e => updateChild(child.id, { annualLiving: parseInt(e.target.value) })}
+                        style={{ ...inputStyle, paddingLeft: 24 }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>Inflated at {(inflation * 100).toFixed(1)}% p.a.</div>
+                  </div>
+                </div>
+
+                {/* Coverage split */}
+                {isCouple && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <PersonSlider label={`${clientName} covers`} value={ec.coverPctClient ?? (isCouple ? 50 : 100)} onChange={v => updateChild(child.id, { coverPctClient: v })} color="#2D5A4E" unit="%" />
+                    <PersonSlider label={`${spouseName} covers`} value={ec.coverPctSpouse ?? 50} onChange={v => updateChild(child.id, { coverPctSpouse: v })} color="#2D5A4E" unit="%" />
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </>
       )}
     </div>
   )
 }
 
-// ─── Policy Table ─────────────────────────────────────────────────────────────
-function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
-  function _sub(p: Policy) {
-    const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
-    const total = cash + (p.premiumMedisave||0)
-    switch (p.frequency) {
-      case 'Semi-Annual': return total*2
-      case 'Quarterly':   return total*4
-      case 'Monthly':     return total*12
-      case 'Single':      return total
-      default:            return total
-    }
-  }
-  
-  // Helper to convert benefit to SGD for subtotal
-  function toSGDValue(val: number, p: Policy) {
-    return p.isUSD ? val * (p.fxRate || 1.35) : val
-  }
-  
-  const sub = policies.reduce((s,p)=>s+_sub(p),0)
+// ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
 
-  // Detect category — all policies in this table share the same category
-  const cat = policies[0]?.categoryCode || 'life'
-  const isEssential = ['medical','ltc','general'].includes(cat)
-  const isLife = cat === 'life'
-  const isEndowment = cat === 'endowment'
-
-  // ── Essential layout (Medical / LTC / General) ──────────────────────────────
-  if (isEssential) {
-    const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
-    // Grid: INSURER (1.2fr) | BRIEF DESC (1.5fr) | MEDISAVE (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-    const cols = hasMedisave
-      ? '1.2fr 1.5fr 100px 100px 90px 160px 40px'
-      : '1.2fr 1.5fr 100px 90px 160px 40px'
-    const headers = hasMedisave
-      ? ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
-      : ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
-    return (
-      <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-        <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-          {headers.map(h=>(
-            <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
-          ))}
-        </div>
-        {policies.map((p,i)=>{
-          return (
-          <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
-            {/* Insurer · Plan · PH / Policy No */}
-            <div>
-              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
-              </div>
-              {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
-                {p.policyholder&&<span>PH: {p.policyholder}</span>}
-                {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
-              </div>}
-              {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
-            </div>
-            {/* Brief description */}
-            <div style={{fontSize:11,color:'var(--ink3)',lineHeight:1.4,paddingRight:8}}>
-              {p.briefDescription||'—'}
-            </div>
-            {/* Medisave premium (only if any policy has it) */}
-            {hasMedisave && (
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:(p.premiumMedisave||0)>0?'var(--ink)':'var(--ink3)'}}>
-                {(p.premiumMedisave||0)>0 ? fmt(p.premiumMedisave) : '—'}
-              </div>
-            )}
-            {/* Premium (Cash) */}
-            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:(p.premiumCash||0)>0?'var(--ink)':'var(--ink3)'}}>
-              {(p.premiumCash||0)>0 ? fmt(p.premiumCash) : '—'}
-            </div>
-            {/* Frequency + Mode */}
-            <div style={{fontSize:10,color:'var(--ink3)'}}>
-              <div>{p.frequency||'—'}</div>
-              <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
-            </div>
-            {/* Dates */}
-            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
-            </div>
-            {/* Actions - Compact */}
-            <div style={{display:'flex',gap:3}} className="no-print">
-              <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
-              <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
-            </div>
-          </div>
-        )})}
-        {/* Subtotal */}
-        {hasMedisave ? (
-          <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-            <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
-            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
-            </div>
-            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
-            </div>
-            <div />
-            <div />
-            <div />
-          </div>
-        ) : (
-          <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-            <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
-            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
-            </div>
-            <div />
-            <div />
-            <div />
-          </div>
-        )}
-      </div>
-    )
-  }
-    // ── Life layout (Core Protection) ───────────────────────────────────────────
-  if (isLife) {
-    // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-    const cols = '1.2fr 90px 90px 90px 90px 100px 90px 160px 40px'
-    return (
-      <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-        <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-          {['INSURER · PLAN · PH / LA', 'DEATH', 'TPD', 'ADV CI', 'EARLY CI', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map(h=>(
-            <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
-          ))}
-        </div>
-        {policies.map((p,i)=>{
-          const deathBen = getMultipliedBenefit(p, 'death')
-          const tpdBen = getMultipliedBenefit(p, 'tpd')
-          const advCIBen = getMultipliedBenefit(p, 'advCI')
-          const earlyCIBen = getMultipliedBenefit(p, 'earlyCI')
-          return(
-            <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
-              <div>
-                <div style={{display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
-                  {p.isUSD && <span style={{fontSize:9,fontWeight:700,color:'#A8834A',background:'#FDF6EC',border:'1px solid #c8a96e',padding:'1px 5px',borderRadius:2,letterSpacing:'0.06em'}}>USD</span>}
-                </div>
-                {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
-                  {p.policyholder&&<span>PH: {p.policyholder}</span>}
-                  {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
-                </div>}
-                {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
-              </div>
-              {/* Death Benefit */}
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:deathBen>0?'var(--ink)':'var(--ink3)'}}>
-                {p.isUSD && deathBen>0 ? (
-                  <>
-                    <div>USD {Math.round(deathBen).toLocaleString()}</div>
-                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(deathBen*(p.fxRate||1.35))}</div>
-                  </>
-                ) : fmt(deathBen)}
-              </div>
-              {/* TPD Benefit */}
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:tpdBen>0?'var(--ink)':'var(--ink3)'}}>
-                {p.isUSD && tpdBen>0 ? (
-                  <>
-                    <div>USD {Math.round(tpdBen).toLocaleString()}</div>
-                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(tpdBen*(p.fxRate||1.35))}</div>
-                  </>
-                ) : fmt(tpdBen)}
-              </div>
-              {/* Adv CI Benefit */}
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:advCIBen>0?'var(--ink)':'var(--ink3)'}}>
-                {p.isUSD && advCIBen>0 ? (
-                  <>
-                    <div>USD {Math.round(advCIBen).toLocaleString()}</div>
-                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(advCIBen*(p.fxRate||1.35))}</div>
-                  </>
-                ) : fmt(advCIBen)}
-              </div>
-              {/* Early CI Benefit */}
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:earlyCIBen>0?'var(--ink)':'var(--ink3)'}}>
-                {p.isUSD && earlyCIBen>0 ? (
-                  <>
-                    <div>USD {Math.round(earlyCIBen).toLocaleString()}</div>
-                    <div style={{fontSize:9,color:'var(--ink3)'}}>≈ {fmt(earlyCIBen*(p.fxRate||1.35))}</div>
-                  </>
-                ) : fmt(earlyCIBen)}
-              </div>
-              {/* Premium */}
-              <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-                {fmt(p.premiumCash)}
-                {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
-              </div>
-              {/* Frequency + Mode */}
-              <div style={{fontSize:10,color:'var(--ink3)'}}>
-                <div>{p.frequency||'—'}</div>
-                <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
-              </div>
-              {/* Dates */}
-              <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-                <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
-                <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
-                <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
-              </div>
-              {/* Actions - Compact */}
-              <div style={{display:'flex',gap:3}} className="no-print">
-                <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
-                <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
-              </div>
-            </div>
-          )
-        })}
-        {/* Subtotal - with benefit totals */}
-        <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-          <div style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
-          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'death'),p),0))}
-          </div>
-          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'tpd'),p),0))}
-          </div>
-          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'advCI'),p),0))}
-          </div>
-          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-            {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'earlyCI'),p),0))}
-          </div>
-          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
-          <div/><div/><div/>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
-  // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-  const cols = '1.2fr 100px 100px 90px 160px 40px'
+function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children }: {
+  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+  mortgages: MortgageProperty[]
+  ciClient: CalcResult; ciSpouse: CalcResult
+  children: FamilyMember[]
+}) {
   return (
-    <div style={{background:'white',border:'0.5px solid var(--line)'}}>
-      <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-        {['INSURER · PLAN · PH / LA', 'DEATH BENEFIT', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map(h=>(
-          <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
-        ))}
-      </div>
-      {policies.map((p,i)=>{
-        const mainBen = p.baseDeath || p.baseAdvCI || p.monthlyBenefit || p.sumAssured
-        return(
-          <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
-            <div>
-              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
-                {p.isUSD && <span style={{fontSize:9,fontWeight:700,color:'#A8834A',background:'#FDF6EC',border:'1px solid #c8a96e',padding:'1px 5px',borderRadius:2,letterSpacing:'0.06em'}}>USD</span>}
-              </div>
-              {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
-                {p.policyholder&&<span>PH: {p.policyholder}</span>}
-                {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
-              </div>}
-              {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+    <div>
+      {/* CI Stage */}
+      <SectionBlock title="Critical Illness Stage" color="#A8834A">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          {([
+            { key: 'early_late', label: 'Early & Late Stage' },
+            { key: 'late_only', label: 'Late Stage Only' },
+          ] as const).map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => updateP({ ciStage: opt.key })}
+              style={{
+                padding: '8px 16px', fontFamily: 'Inter', fontSize: 12,
+                background: p.ciStage === opt.key ? '#1C1A17' : '#F5F0E8',
+                color: p.ciStage === opt.key ? '#fff' : '#1C1A17',
+                border: 'none', borderRadius: 4, cursor: 'pointer',
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+          {p.ciStage === 'early_late' ? 'Covers both early and late stage critical illnesses.' : 'Covers late stage critical illnesses only.'}
+        </p>
+      </SectionBlock>
+
+      {/* CI Window */}
+      <SectionBlock title="CI Coverage Window" color="#A8834A">
+        <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 12 }}>
+          How many years of expenses to cover during a critical illness event?
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <input
+            type="range" min={1} max={10} step={1}
+            value={p.ciYears ?? 5}
+            onChange={e => updateP({ ciYears: parseInt(e.target.value) })}
+            style={{ flex: 1, accentColor: '#A8834A' }}
+          />
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#A8834A', minWidth: 60 }}>
+            {p.ciYears ?? 5} years
+          </span>
+        </div>
+      </SectionBlock>
+
+      {/* CI Mortgage */}
+      {mortgages.length > 0 && (
+        <SectionBlock title="Mortgage During CI" color="#A8834A">
+          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 12 }}>
+            What % of monthly mortgage repayments to cover during CI event?
+          </p>
+          {isCouple ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              <PersonSlider label={clientName} value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+              <PersonSlider label={spouseName} value={p.ciMortgagePctSpouse ?? 100} onChange={v => updateP({ ciMortgagePctSpouse: v })} color="#A8834A" unit="%" />
             </div>
-            {/* Death Benefit */}
-            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-              {p.isUSD && mainBen
-                ? <>
-                    <div>USD {Math.round(mainBen).toLocaleString()}</div>
-                    <div style={{fontSize:10,color:'var(--ink3)'}}>≈ {fmt(mainBen*(p.fxRate||1.35))}</div>
-                  </>
-                : fmt(mainBen)
-              }
-            </div>
-            {/* Premium */}
-            <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-              {fmt(p.premiumCash)}
-              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
-            </div>
-            {/* Frequency + Mode */}
-            <div style={{fontSize:10,color:'var(--ink3)'}}>
-              <div>{p.frequency||'—'}</div>
-              <div style={{fontSize:9,marginTop:2}}>{p.premiumMode||'—'}</div>
-            </div>
-            {/* Dates */}
-            <div style={{fontSize:10,color:'var(--ink3)',lineHeight:1.4}}>
-              <div><span style={{color:'var(--ink2)'}}>Start Date:</span> {formatDate(p.inceptionDate)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Premium Term:</span> {formatDate(p.premiumMaturity)}</div>
-              <div><span style={{color:'var(--ink2)'}}>Coverage Term:</span> {formatDate(p.coverageMaturity)}</div>
-            </div>
-            {/* Actions - Compact */}
-            <div style={{display:'flex',gap:3}} className="no-print">
-              <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
-              <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
-            </div>
+          ) : (
+            <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+          )}
+        </SectionBlock>
+      )}
+
+      {/* Education always included in CI */}
+      {p.provideEducationFund && children.length > 0 && (
+        <SectionBlock title="Education Fund" color="#2D5A4E">
+          <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', lineHeight: 1.6 }}>
+            Education fund is automatically included for children who have not yet reached university age. If the client or spouse suffers a critical illness, the CI payout covers the education fund so it can be set aside immediately.
           </div>
-        )
-      })}
-      {/* Subtotal */}
-      <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-        <div style={{gridColumn:'1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
-        <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
-        <div/><div/><div/>
-      </div>
+        </SectionBlock>
+      )}
+
+      {/* CI Need Summary */}
+      <SectionBlock title="Critical Illness Need Summary" color="#2D5A4E">
+        <NeedTable
+          isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+          clientData={ciClient.gross} spouseData={ciSpouse.gross}
+          label="CI Cover Needed" breakdown={{
+            client: { fd: ciClient.fd, mort: ciClient.mort, edu: ciClient.edu },
+            spouse: { fd: ciSpouse.fd, mort: ciSpouse.mort, edu: ciSpouse.edu },
+          }}
+        />
+      </SectionBlock>
     </div>
   )
 }
 
-// ─── Policy Modal (cascading dropdowns) ──────────────────────────────────────
-function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,companies,products,onSave,onClose}:{
-  policy:Policy; personLabel:string
-  allPeople:{key:string;label:string}[]
-  categories:InsCategory[]; policyTypes:InsPolicyType[]
-  companies:InsCompany[]; products:InsProduct[]
-  onSave:(p:Policy)=>void; onClose:()=>void
+// ─── ASSET OFFSET TAB ────────────────────────────────────────────────────────
+
+function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse }: {
+  ff: FactFinding; p: ProtectionData
+  isCouple: boolean; clientName: string; spouseName: string
+  dtpdClient: CalcResult; dtpdSpouse: CalcResult
+  ciClient: CalcResult; ciSpouse: CalcResult
 }) {
-  const [form, setForm] = useState<Policy>({...policy})
-  const f=(k:keyof Policy,v:any)=>setForm(prev=>({...prev,[k]:v}))
-  const isNew = !policy.companyName && !policy.productName
-
-  // USD / FX state
-  const [fxLoading, setFxLoading] = useState(false)
-  const [fxFetched, setFxFetched] = useState(false)
-
-  // Auto-fetch live USD/SGD rate when USD is toggled on for the first time
-  async function fetchFxRate() {
-    setFxLoading(true)
-    try {
-      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=SGD')
-      const data = await res.json()
-      const rate = data?.rates?.SGD
-      if (rate) { f('fxRate', Math.round(rate * 10000) / 10000); setFxFetched(true) }
-    } catch { /* silent — user can type manually */ }
-    finally { setFxLoading(false) }
+  function AssetRow({ label, clientVal, spouseVal }: { label: string; clientVal: number; spouseVal: number }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #E8E4DC' }}>
+        <span style={{ flex: 1, fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{label}</span>
+        {isCouple ? (
+          <>
+            <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(clientVal)}</span>
+            <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(spouseVal)}</span>
+          </>
+        ) : (
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(clientVal)}</span>
+        )}
+      </div>
+    )
   }
 
-  function handleUSDToggle(val: boolean) {
-    f('isUSD', val)
-    if (val && !fxFetched && (!form.fxRate || form.fxRate === 1.35)) {
-      fetchFxRate()
-    }
-  }
+  const clientLiquid = (ff.a_savings ?? 0) + (ff.a_fixed_deposit ?? 0) + (ff.a_srs ?? 0) + (ff.a_shares ?? 0) + (ff.a_etf ?? 0) + (ff.a_unit_trust ?? 0) + (ff.a_bonds ?? 0) + (ff.a_alternatives ?? 0)
+  const spouseLiquid = (ff.a2_savings ?? 0) + (ff.a2_fixed_deposit ?? 0) + (ff.a2_srs ?? 0) + (ff.a2_shares ?? 0) + (ff.a2_etf ?? 0) + (ff.a2_unit_trust ?? 0) + (ff.a2_bonds ?? 0) + (ff.a2_alternatives ?? 0)
+  const clientCPF = (ff.a_cpf_oa ?? 0) + (ff.a_cpf_sa ?? 0) + (ff.a_cpf_ma ?? 0) + (ff.a_cpf_ra ?? 0)
+  const spouseCPF = (ff.a2_cpf_oa ?? 0) + (ff.a2_cpf_sa ?? 0) + (ff.a2_cpf_ma ?? 0) + (ff.a2_cpf_ra ?? 0)
 
-  // Derived: effective SGD values for USD policy preview
-  const fx = form.fxRate || 1.35
-  const fmtUSD = (n: number) => n ? 'USD ' + Math.round(n).toLocaleString() : '—'
-  const toSGDPreview = (n: number) => form.isUSD ? n * fx : n
-
-  // Find selected category record
-  const selCat    = categories.find(c=>c.code===form.categoryCode)
-  const filtTypes = selCat ? policyTypes.filter(pt=>pt.category_id===selCat.id) : []
-  const filtComps = selCat ? companies.filter(co=>co.category_id===selCat.id) : []
-  const selComp   = filtComps.find(co=>co.name===form.companyName)
-  // Products only for medical and ltc — others are manual
-  const hasProducts = ['medical','ltc'].includes(form.categoryCode)
-  const filtProds = selComp && hasProducts ? products.filter(pr=>pr.company_id===selComp.id) : []
-
-  // When category changes, reset downstream
-  const onCatChange=(code:string)=>{
-    setForm(prev=>({
-      ...prev,
-      categoryCode:code,
-      policyTypeCode:'',
-      companyName:'',
-      productName:'',
-      premiumMaturity: code === 'medical' ? 'Renewable' : (prev.premiumMaturity === 'Renewable' ? '' : prev.premiumMaturity),
-      coverageMaturity: code === 'medical' ? 'Renewable' : (prev.coverageMaturity === 'Renewable' ? '' : prev.coverageMaturity),
-      benefitTerm: '',
-      payoutTerm: ''
-    }));
-    setIsOtherBenefitTerm(false);
-    setIsOtherPayoutTerm(false);
-    setPremMatMode('preset');
-    setCovMatMode('preset');
-  }
-  const onCompChange=(name:string)=>{
-    setForm(prev=>({...prev,companyName:name,productName:''}))
-  }
-
-  const isMedical  = form.categoryCode==='medical'
-  const isLTC      = form.categoryCode==='ltc'
-  const isLife     = form.categoryCode==='life'
-  const isEndow    = form.categoryCode==='endowment'
-  const isGeneral  = form.categoryCode==='general'
-  const isRider    = form.policyTypeCode?.toLowerCase() === 'rider'
-
-  const ltcProductName = (form.productName || '').trim().toLowerCase();
-  const isStandardLTC = isLTC && ['careshield life', 'eldershield 300', 'eldershield 400'].includes(ltcProductName);
-
-  const riderDescOptions = [
-    "Coverage for Deductibles, subject to 5% Co-Insurance",
-    "Coverage for Deductibles, subject to 10% Co-Insurance",
-    "Coverage for Co-Insurance, Subject to Deductible and 5% Co-Insurance",
-    "Coverage for Deductibles and Co-Insurance.",
-    "Coverage for Outpatient Cancer Treatment and Services (Subject to Deductibles)"
-  ];
-
-  const [isOtherRiderDesc, setIsOtherRiderDesc] = useState(() => {
-    if (policy.categoryCode === 'medical' && policy.policyTypeCode?.toLowerCase() === 'rider') {
-      return !!policy.briefDescription && !riderDescOptions.includes(policy.briefDescription);
-    }
-    return false;
-  });
-
-  const [isOtherBenefitTerm, setIsOtherBenefitTerm] = useState(() => {
-    return !!policy.benefitTerm && !['2/6 ADLs', '3/6 ADLs'].includes(policy.benefitTerm);
-  });
-  const [isOtherPayoutTerm, setIsOtherPayoutTerm] = useState(() => {
-    return !!policy.payoutTerm && policy.payoutTerm !== 'Lifetime';
-  });
-
-  const [premMatMode, setPremMatMode] = useState<'preset'|'date'|'text'>(() => {
-    if (!policy.premiumMaturity) return 'preset';
-    if (['Lifetime', 'Renewable', 'Age 67'].includes(policy.premiumMaturity)) return 'preset';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(policy.premiumMaturity)) return 'date';
-    return 'text';
-  });
-
-  const [covMatMode, setCovMatMode] = useState<'preset'|'date'|'text'>(() => {
-    if (!policy.coverageMaturity) return 'preset';
-    if (['Lifetime', 'Renewable', 'Age 67'].includes(policy.coverageMaturity)) return 'preset';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(policy.coverageMaturity)) return 'date';
-    return 'text';
-  });
-
-  useEffect(() => {
-    if (form.categoryCode === 'ltc') {
-      let expectedDesc = form.briefDescription || '';
-      const prodName = (form.productName || '').trim().toLowerCase();
-
-      if (prodName === 'careshield life') {
-        expectedDesc = '$600+/mth Benefit for up to Lifetime for 3/6 ADLs';
-      } else if (prodName === 'eldershield 300') {
-        expectedDesc = '$300/mth Benefit for up to 60 months for 3/6 ADLs';
-      } else if (prodName === 'eldershield 400') {
-        expectedDesc = '$400/mth Benefit for up to 72 months for 3/6 ADLs';
-      } else {
-        const mb = form.monthlyBenefit ? form.monthlyBenefit.toLocaleString() : '0';
-        const pt = form.payoutTerm || '[Payout Term]';
-        const bt = form.benefitTerm || '[Benefit Term]';
-        expectedDesc = `$${mb}/mth Benefit for up to ${pt}, in event of disability of at least ${bt}.`;
+  // Property value per person — full value × coverage %, no outstanding subtraction
+  const properties = (ff.properties ?? []) as any[]
+  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+  function getPropPct(prop: any, who: 'client' | 'spouse'): number {
+    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
+    if (mortgageIdx === -1) {
+      const ot = prop.ownershipType ?? ''
+      if (ot === 'Spouse Only') return who === 'spouse' ? 1 : 0
+      if (ot === 'Joint Tenancy') return 0.5
+      if (ot === 'Tenancy-in-Common') {
+        const parts = (prop.ownershipSplit ?? '50/50').split('/')
+        return who === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
       }
-
-      if (form.briefDescription !== expectedDesc) {
-        f('briefDescription', expectedDesc);
-      }
+      return who === 'client' ? 1 : 0
     }
-  }, [form.categoryCode, form.productName, form.monthlyBenefit, form.benefitTerm, form.payoutTerm, form.briefDescription]);
+    const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
+    return (pcts[mortgageIdx] ?? 100) / 100
+  }
+  const clientPropEquity = properties.reduce((sum: number, prop: any) => {
+    return sum + (prop.propertyValue ?? prop.purchasePrice ?? 0) * getPropPct(prop, 'client')
+  }, 0)
+  const spousePropEquity = properties.reduce((sum: number, prop: any) => {
+    return sum + (prop.propertyValue ?? prop.purchasePrice ?? 0) * getPropPct(prop, 'spouse')
+  }, 0)
 
-  const s:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none'}
-  const inp:React.CSSProperties={width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none',boxSizing:'border-box'}
-  const lbl:React.CSSProperties={display:'block',fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:5}
-  const g2:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,alignItems:'flex-end'}
-  const g3:React.CSSProperties={display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14,alignItems:'flex-end'}
-  const g4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14,alignItems:'flex-end'}
-
-  const medPayModes   = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
-  const ltcPayModes   = ['Cash', 'Medisave', 'MS + Cash', 'MS + CC'];
-  const endowPayModes = ['Cash', 'Giro', 'Credit Card', 'CPF OA', 'CPF SA', 'CPF SRS'];
-  const currentPayModes = isMedical ? medPayModes : (isLTC ? ltcPayModes : (isEndow ? endowPayModes : PAY_MODES));
+  const colHeader = (name: string) => (
+    <span style={{ width: 120, textAlign: 'right', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter' }}>{name}</span>
+  )
 
   return (
-    <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.65)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
-      <div style={{background:'white',width:'100%',maxWidth:620,maxHeight:'92vh',overflowY:'auto',boxShadow:'0 24px 64px rgba(0,0,0,0.3)'}}>
-        <div style={{padding:'18px 26px',borderBottom:'1px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div>
-            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,color:'var(--ink)'}}>{isNew?'Add Policy':'Edit Policy'}</div>
-            <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{personLabel}</div>
+    <div>
+      <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>
+        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and property values (by ownership). CI offsets use liquid assets only.
+      </p>
+
+      <SectionBlock title="Asset Values" color="#2D5A4E">
+        {isCouple && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 0, marginBottom: 4 }}>
+            {colHeader(clientName)}
+            {colHeader(spouseName)}
           </div>
-          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--ink3)'}}>✕</button>
+        )}
+        <AssetRow label="Cash & Liquid Investments" clientVal={clientLiquid} spouseVal={spouseLiquid} />
+        <AssetRow label="CPF (OA + SA + MA + RA)" clientVal={clientCPF} spouseVal={spouseCPF} />
+        <AssetRow label="Property Value (by ownership)" clientVal={clientPropEquity} spouseVal={spousePropEquity} />
+        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#F5F0E8', borderRadius: '0 0 4px 4px' }}>
+          <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.06em' }}>D/TPD Offset (all assets)</span>
+          {isCouple ? (
+            <>
+              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientPropEquity)}</span>
+              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid + spouseCPF + spousePropEquity)}</span>
+            </>
+          ) : (
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientPropEquity)}</span>
+          )}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#E8F0ED' }}>
+          <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#2D5A4E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>CI Offset (liquid only)</span>
+          {isCouple ? (
+            <>
+              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
+              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid)}</span>
+            </>
+          ) : (
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
+          )}
+        </div>
+      </SectionBlock>
 
-        <div style={{padding:'20px 26px',display:'flex',flexDirection:'column',gap:16}}>
-
-          {/* ── Row 1: Category + Policy Type ── */}
-          <div style={g2}>
-            <div>
-              <label style={lbl}>Category</label>
-              <select value={form.categoryCode} onChange={e=>onCatChange(e.target.value)} style={s}>
-                {categories.map(c=><option key={c.id} value={c.code}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Policy Type</label>
-              <select value={form.policyTypeCode} onChange={e=>f('policyTypeCode',e.target.value)} style={s}>
-                <option value="">Select…</option>
-                {filtTypes.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* ── Row 2: Policyholder + Life Assured ── */}
-          <div style={g2}>
-            <div>
-              <label style={lbl}>Policyholder</label>
-              <select value={form.policyholder} onChange={e=>f('policyholder',e.target.value)} style={s}>
-                <option value="">Select…</option>
-                {allPeople.map(p=><option key={p.key} value={p.label}>{p.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Life Assured</label>
-              <select value={form.lifeAssured} onChange={e=>f('lifeAssured',e.target.value)} style={s}>
-                <option value="">Select…</option>
-                {allPeople.map(p=><option key={p.key} value={p.label}>{p.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* ── Row 3: Company + Policy No ── */}
-          <div style={g2}>
-            <div>
-              <label style={lbl}>Company</label>
-              <select value={form.companyName} onChange={e=>onCompChange(e.target.value)} style={s}>
-                <option value="">Select…</option>
-                {filtComps.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Policy No.</label>
-              <input type="text" value={form.policyNo} onChange={e=>f('policyNo',e.target.value)} placeholder="e.g. 26725497" style={inp}/>
-            </div>
-          </div>
-
-          {/* ── Row 4: Product Name ── */}
-          <div>
-            <label style={lbl}>Product Name</label>
-            {hasProducts && filtProds.length > 0 ? (
-              <select value={form.productName} onChange={e=>f('productName',e.target.value)} style={s}>
-                <option value="">Select…</option>
-                {filtProds.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
-                <option value="__other">Other (type manually)</option>
-              </select>
+      {/* Net Need Summary */}
+      <SectionBlock title="Net Need After Offset" color="#1C1A17">
+        {[
+          { label: 'D/TPD Net Need', clientNet: dtpdClient.net, spouseNet: dtpdSpouse.net },
+          { label: 'CI Net Need', clientNet: ciClient.net, spouseNet: ciSpouse.net },
+        ].map(row => (
+          <div key={row.label} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', marginBottom: 4, background: '#1C1A17', borderRadius: 6 }}>
+            <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{row.label}</span>
+            {isCouple ? (
+              <>
+                <div style={{ textAlign: 'right', minWidth: 130 }}>
+                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.clientNet)}</div>
+                </div>
+                <div style={{ textAlign: 'right', minWidth: 130 }}>
+                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.spouseNet)}</div>
+                </div>
+              </>
             ) : (
-              <input type="text" value={form.productName} onChange={e=>f('productName',e.target.value)} placeholder="e.g. MyWholeLife Plan" style={inp}/>
-            )}
-            {form.productName==='__other' && (
-              <input type="text" placeholder="Enter product name" onChange={e=>f('productName',e.target.value)} style={{...inp,marginTop:6}}/>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(row.clientNet)}</span>
             )}
           </div>
-                    {/* ── USD Policy Toggle (Life only) ── */}
-          {isLife && (
-            <div style={{background: form.isUSD ? '#FDF6EC' : '#FAFAF8', border: `1px solid ${form.isUSD ? '#c8a96e' : 'var(--line)'}`, borderRadius: 4, padding: '12px 16px'}}>
-              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-                <div style={{display:'flex', alignItems:'center', gap:10}}>
-                  {/* Toggle switch */}
-                  <div onClick={()=>handleUSDToggle(!form.isUSD)}
-                    style={{width:36,height:20,borderRadius:10,background:form.isUSD?'#c8a96e':'#D1CEC9',cursor:'pointer',position:'relative',transition:'background 0.2s',flexShrink:0}}>
-                    <div style={{position:'absolute',top:2,left:form.isUSD?18:2,width:16,height:16,borderRadius:'50%',background:'white',boxShadow:'0 1px 3px rgba(0,0,0,0.2)',transition:'left 0.2s'}}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:12,fontWeight:600,color: form.isUSD ? '#A8834A' : 'var(--ink3)'}}>USD Policy</div>
-                    <div style={{fontSize:10,color:'var(--ink3)',marginTop:1}}>Values entered in USD — converted to SGD for gap analysis</div>
-                  </div>
-                </div>
-                {/* FX rate field — only shown when USD is on */}
-                {form.isUSD && (
-                  <div style={{display:'flex', alignItems:'center', gap:8}}>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:4}}>USD / SGD Rate</div>
-                      <div style={{display:'flex',alignItems:'center',gap:6}}>
-                        <input
-                          type="number"
-                          step="0.0001"
-                          value={form.fxRate||''}
-                          onChange={e=>f('fxRate',+e.target.value)}
-                          style={{width:80,padding:'5px 8px',border:'1px solid var(--line)',background:'white',fontSize:13,fontFamily:'DM Mono,monospace',outline:'none',textAlign:'right'}}
-                        />
-                        <button type="button" onClick={fetchFxRate} disabled={fxLoading}
-                          style={{padding:'5px 10px',background:'#1C1A17',color:'white',border:'none',cursor:fxLoading?'wait':'pointer',fontSize:10,letterSpacing:'0.05em',opacity:fxLoading?0.6:1}}>
-                          {fxLoading ? '…' : '↻ Live'}
-                        </button>
-                      </div>
-                      {fxFetched && <div style={{fontSize:10,color:'#2D6A4F',marginTop:3}}>✓ Live rate fetched</div>}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+        ))}
+      </SectionBlock>
+    </div>
+  )
+}
 
-          {/* ── Brief description (Hidden for Life Insurance) ── */}
-          {!isLife && (
-            <div>
-              <label style={lbl}>Brief Description</label>
-              {isMedical && form.policyTypeCode?.toLowerCase() === 'main' ? (
-                <select value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} style={s}>
-                  <option value="">Select…</option>
-                  <option value="As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Private Hospitals (Subject to Deductible and 10% Co-Insurance)</option>
-                  <option value="As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward A (Subject to Deductible and 10% Co-Insurance)</option>
-                  <option value="As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward B (Subject to Deductible and 10% Co-Insurance)</option>
-                  <option value="As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)">As-Charged Up to Government Hospitals Ward C (Subject to Deductible and 10% Co-Insurance)</option>
-                </select>
-              ) : isMedical && isRider ? (
-                <>
-                  <select
-                    value={isOtherRiderDesc ? '__other' : form.briefDescription}
-                    onChange={e => {
-                      if (e.target.value === '__other') {
-                        setIsOtherRiderDesc(true);
-                        f('briefDescription', '');
-                      } else {
-                        setIsOtherRiderDesc(false);
-                        f('briefDescription', e.target.value);
-                      }
-                    }}
-                    style={s}
-                  >
-                    <option value="">Select…</option>
-                    {riderDescOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    <option value="__other">Others (Type Manually)</option>
-                  </select>
-                  {isOtherRiderDesc && (
-                    <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="Please type description manually..." style={{...inp, marginTop: 6}}/>
+// ─── SIDEBAR SUMMARY ─────────────────────────────────────────────────────────
+
+function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse, existingLifeClient, existingLifeSpouse, existingCIClient, existingCISpouse, lifeGapClient, lifeGapSpouse, ciGapClient, ciGapSpouse }: {
+  isCouple: boolean; clientName: string; spouseName: string
+  dtpdClient: CalcResult; dtpdSpouse: CalcResult
+  ciClient: CalcResult; ciSpouse: CalcResult
+  existingLifeClient: number; existingLifeSpouse: number
+  existingCIClient: number; existingCISpouse: number
+  lifeGapClient: number; lifeGapSpouse: number
+  ciGapClient: number; ciGapSpouse: number
+}) {
+  function PersonBlock({ name, dtpd, ci, existLife, existCI, lifeGap, ciGap }: {
+    name: string; dtpd: CalcResult; ci: CalcResult
+    existLife: number; existCI: number; lifeGap: number; ciGap: number
+  }) {
+    return (
+      <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
+        <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', fontFamily: 'Inter', marginBottom: 10 }}>{name}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <SidebarRow label="D/TPD Need" value={dtpd.net} />
+          <SidebarRow label="CI Need" value={ci.net} />
+          <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
+            <SidebarRow label="Existing D/TPD" value={existLife} color="#2D5A4E" />
+            <SidebarRow label="Existing CI" value={existCI} color="#2D5A4E" />
+          </div>
+          <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
+            <SidebarRow label="D/TPD Gap" value={lifeGap} color={lifeGap > 0 ? '#C0392B' : '#2D5A4E'} />
+            <SidebarRow label="CI Gap" value={ciGap} color={ciGap > 0 ? '#C0392B' : '#2D5A4E'} />
+          </div>
+          <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 6, marginTop: 2, display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+            <MiniBreakdown label="FD" value={dtpd.fd} />
+            <MiniBreakdown label="Mort" value={dtpd.mort} />
+            <MiniBreakdown label="Edu" value={dtpd.edu} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isCouple) {
+    return (
+      <>
+        <PersonBlock name={clientName} dtpd={dtpdClient} ci={ciClient} existLife={existingLifeClient} existCI={existingCIClient} lifeGap={lifeGapClient} ciGap={ciGapClient} />
+        <PersonBlock name={spouseName} dtpd={dtpdSpouse} ci={ciSpouse} existLife={existingLifeSpouse} existCI={existingCISpouse} lifeGap={lifeGapSpouse} ciGap={ciGapSpouse} />
+      </>
+    )
+  }
+
+  return <PersonBlock name={clientName} dtpd={dtpdClient} ci={ciClient} existLife={existingLifeClient} existCI={existingCIClient} lifeGap={lifeGapClient} ciGap={ciGapClient} />
+}
+
+function SidebarRow({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>{label}</span>
+      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: color ?? '#1C1A17' }}>{fmt(value)}</span>
+    </div>
+  )
+}
+
+function MiniBreakdown({ label, value }: { label: string; value: number }) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#1C1A17' }}>{fmt(value)}</div>
+    </div>
+  )
+}
+
+// ─── EXISTING COVER INPUTS ───────────────────────────────────────────────────
+
+function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
+  p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+}) {
+  function PersonCard({ name, dtpdKey, ciKey }: { name: string; dtpdKey: keyof ProtectionData; ciKey: keyof ProtectionData }) {
+    const dtpdVal = (p[dtpdKey] as number) ?? 0
+    const ciVal = (p[ciKey] as number) ?? 0
+    return (
+      <div style={{ background: '#F5F0E8', borderRadius: 6, padding: '12px 14px', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 10 }}>{name}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[
+            { label: 'D/TPD', val: dtpdVal },
+            { label: 'CI', val: ciVal },
+          ].map(({ label, val }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: val > 0 ? '#2D5A4E' : '#bbb' }}>
+                {val > 0 ? fmt(val) : '—'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <a
+        href="/dashboard/protection"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 12px', marginBottom: 12,
+          background: 'transparent', border: '1px solid #A8834A', borderRadius: 4, color: '#A8834A',
+          fontSize: 11, fontFamily: 'Inter', textDecoration: 'none', letterSpacing: '0.05em' }}
+      >
+        → Wealth Protection Portfolio
+      </a>
+      <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginBottom: 10, textAlign: 'center', fontStyle: 'italic' }}>
+        Values pulled from Wealth Protection Portfolio
+      </div>
+      <PersonCard name={clientName} dtpdKey="existingLifeCoverClient" ciKey="existingCICoverClient" />
+      {isCouple && (
+        <PersonCard name={spouseName} dtpdKey="existingLifeCoverSpouse" ciKey="existingCICoverSpouse" />
+      )}
+    </div>
+  )
+}
+
+// ─── EDIT SUB-ITEMS MODAL ────────────────────────────────────────────────────
+
+function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, clientName, spouseName }: {
+  category: string; ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void; onClose: () => void
+  isCouple: boolean; clientName: string; spouseName: string
+}) {
+  const subItems = p.expenseSubItems ?? {}
+  const keys = DETAILED_EXPENSE_MAP[category] ?? []
+
+  // Per-person toggles: subItems[key] = true/false (both), subItems[key+'_c'] = client only, subItems[key+'_s'] = spouse only
+  function isClientIncluded(key: string) { return subItems[key+'_c'] !== false }
+  function isSpouseIncluded(key: string) { return subItems[key+'_s'] !== false }
+  function toggleClient(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_c']: !isClientIncluded(key) } }) }
+  function toggleSpouse(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_s']: !isSpouseIncluded(key) } }) }
+  // Individual mode: single toggle
+  function toggleItem(key: string) {
+    const cur = subItems[key] !== false
+    updateP({ expenseSubItems: { ...subItems, [key]: !cur } })
+  }
+
+  // Selected totals
+  const selectedClientTotal = keys.filter(k => isCouple ? isClientIncluded(k) : subItems[k] !== false)
+    .reduce((s, k) => s + (ff[k] as number || 0), 0)
+  const selectedSpouseTotal = keys.filter(k => isSpouseIncluded(k))
+    .reduce((s, k) => s + (ff[k.replace('d_','d2_')] as number || 0), 0)
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 480, maxWidth: 580, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '82vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
+            {EXPENSE_CATEGORY_LABELS[category]}
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}>×</button>
+        </div>
+        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+          {isCouple ? 'Tick under each person to include that expense in their protection calculation.' : 'Select which line items to include in the protection calculation.'}
+        </p>
+
+        {/* Column headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
+          <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{clientName}</div>
+          {isCouple && <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{spouseName}</div>}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {keys.map(key => {
+            const clientVal = (ff[key] as number || 0)
+            const spouseKey = key.replace('d_', 'd2_')
+            const spouseVal = (ff[spouseKey] as number || 0)
+            const total = clientVal + spouseVal
+            const clientPct = total > 0 ? Math.round(clientVal / total * 100) : 0
+            const spousePct = total > 0 ? Math.round(spouseVal / total * 100) : 0
+            const clientOn = isCouple ? isClientIncluded(key) : subItems[key] !== false
+            const spouseOn = isSpouseIncluded(key)
+            const rowActive = isCouple ? (clientOn || spouseOn) : clientOn
+
+            return (
+              <div key={key}
+                style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px',
+                  gap: 8, padding: '10px 10px', borderRadius: 6,
+                  background: rowActive ? '#F5F0E8' : 'transparent', alignItems: 'center',
+                  borderBottom: '1px solid #F0EDE8' }}
+              >
+                {/* Item name + amounts */}
+                <div>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17', marginBottom: 2 }}>{DETAILED_EXPENSE_LABELS[key]}</div>
+                  {total > 0 && (
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'DM Mono, monospace' }}>
+                      {isCouple
+                        ? `${fmt(clientVal)} (${clientPct}%) · ${fmt(spouseVal)} (${spousePct}%)`
+                        : `${fmt(clientVal)}/yr`}
+                    </div>
                   )}
-                </>
-              ) : (
-                <input type="text" value={form.briefDescription} onChange={e=>f('briefDescription',e.target.value)} placeholder="e.g. As-Charged Coverage Up to Private Hospitals" style={inp} readOnly={isLTC} />
-              )}
-            </div>
-          )}
-
-          {/* ── Life / WL benefit fields ── */}
-          {isLife && (
-            <>
-              {form.isUSD && (
-                <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',background:'#FDF6EC',border:'1px solid #c8a96e',borderRadius:3}}>
-                  <span style={{fontSize:10,color:'#A8834A',fontWeight:600,letterSpacing:'0.08em'}}>USD POLICY</span>
-                  <span style={{fontSize:10,color:'var(--ink3)'}}>Enter all benefit amounts in USD · SGD equivalents shown at {fx.toFixed(4)} rate</span>
                 </div>
-              )}
-              <div style={g4}>
-                {([
-                  {fl:'Base Death',    key:'baseDeath'   as const},
-                  {fl:'Base TPD',      key:'baseTPD'     as const},
-                  {fl:'Base Adv CI',   key:'baseAdvCI'   as const},
-                  {fl:'Base Early CI', key:'baseEarlyCI' as const},
-                ]).map(({fl,key})=>(
-                  <div key={key}>
-                    <label style={lbl}>{fl} ({form.isUSD?'USD':'SGD'})</label>
-                    <input type="number" value={(form[key] as number)||''} onChange={e=>f(key,+e.target.value)} style={inp}/>
-                    {form.isUSD && (form[key] as number)>0 && (
-                      <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt(toSGDPreview(form[key] as number))} SGD</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div style={g4}>
-                <div><label style={lbl}>Multiplier</label><input type="number" value={form.multiplier||''} onChange={e=>f('multiplier',+e.target.value)} style={inp}/></div>
-                <div><label style={lbl}>Multiplier End (Age)</label><input type="number" value={form.multiplierEnd||''} onChange={e=>f('multiplierEnd',+e.target.value)} style={inp}/></div>
-                <div><label style={lbl}>Cover Step down (yrs)</label><input type="number" value={form.coverStep||''} onChange={e=>f('coverStep',+e.target.value)} placeholder="Leave empty if none" style={inp}/></div>
-                <div><label style={lbl}>Step Down (%)</label><input type="number" value={form.stepDownPct||''} onChange={e=>f('stepDownPct',+e.target.value)} style={inp}/></div>
-              </div>
-              {(form.multiplier || 0) > 1 && (
-                <div style={{padding:'16px',background:'#FAFAF8',border:'1px solid var(--line)',borderRadius:4,marginTop:4}}>
-                  <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,fontWeight:600}}>
-                    Coverage with Multiplier (x{form.multiplier}){form.isUSD?' — SGD Equivalent':''}
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14,marginBottom:form.multiplierEnd?16:0}}>
-                    {([
-                      {dl:'DEATH',    base:form.baseDeath||0},
-                      {dl:'TPD',      base:form.baseTPD||0},
-                      {dl:'ADV CI',   base:form.baseAdvCI||0},
-                      {dl:'EARLY CI', base:form.baseEarlyCI||0},
-                    ]).map(({dl,base})=>(
-                      <div key={dl}>
-                        <div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>{dl}</div>
-                        <div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(toSGDPreview(base*form.multiplier))}</div>
-                        {form.isUSD && <div style={{fontSize:9,color:'var(--ink3)',marginTop:1}}>{fmtUSD(base*form.multiplier)}</div>}
-                      </div>
-                    ))}
-                  </div>
-                  {form.multiplierEnd ? (
-                    <>
-                      <div style={{fontSize:10,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12,paddingTop:16,borderTop:'1px dashed var(--line)',fontWeight:600}}>
-                        Lifetime Coverage (After Age {form.multiplierEnd}){form.isUSD?' — SGD Equivalent':''}
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14}}>
-                        {(()=>{
-                          const stepYrs=form.coverStep||0; const stepPct=form.stepDownPct||0
-                          const getLifetime=(base:number)=>{
-                            if(!base)return 0
-                            if(stepYrs>0&&stepPct>0){
-                              const finalFactor=Math.max(0,1-stepYrs*(stepPct/100))
-                              return Math.max(base,(base*form.multiplier)*finalFactor)
-                            }
-                            return base
-                          }
-                          return ([
-                            {dl:'DEATH',    base:form.baseDeath||0},
-                            {dl:'TPD',      base:form.baseTPD||0},
-                            {dl:'ADV CI',   base:form.baseAdvCI||0},
-                            {dl:'EARLY CI', base:form.baseEarlyCI||0},
-                          ]).map(({dl,base})=>(
-                            <div key={dl}>
-                              <div style={{fontSize:9,color:'var(--ink3)',marginBottom:2}}>{dl}</div>
-                              <div style={{fontFamily:'DM Mono,monospace',fontSize:13,color:'var(--ink)',fontWeight:500}}>{fmt(toSGDPreview(getLifetime(base)))}</div>
-                              {form.isUSD && <div style={{fontSize:9,color:'var(--ink3)',marginTop:1}}>{fmtUSD(getLifetime(base))}</div>}
-                            </div>
-                          ))
-                        })()}
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              )}
-            </>
-          )}
 
-          {/* ── Endowment / Annuity / Investment benefit fields ── */}
-          {isEndow && (
-            <>
-              {/* Current Cash Value first — needed to compute % benefits below */}
-              <div>
-                <label style={lbl}>Current Cash Value ($)</label>
-                <input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/>
-              </div>
-              {/* Death / TPD with $/% toggle — % mode stores computed $ amount */}
-              {([
-                { label:'Death Benefit', modeKey:'endowDeathMode' as const, valKey:'baseDeath' as const },
-                { label:'TPD Benefit',   modeKey:'endowTPDMode'   as const, valKey:'baseTPD'   as const },
-              ]).map(({ label, modeKey, valKey }) => {
-                const mode    = (form[modeKey] as '%'|'$') || '$'
-                const cashVal = form.currentCashValue || 0
-                // In $ mode: valKey holds the dollar amount directly
-                // In % mode: valKey holds the computed dollar amount; we back-calculate % for display
-                const storedDollar = (form[valKey] as number) || 0
-                const displayPct   = mode==='%' && cashVal>0 ? Math.round((storedDollar/cashVal)*10000)/100 : 0
-                return (
-                  <div key={valKey}>
-                    <label style={lbl}>{label}</label>
-                    <div style={{display:'flex',gap:0}}>
-                      <div style={{display:'flex',border:'1px solid var(--line)',borderRight:'none',borderRadius:'3px 0 0 3px',overflow:'hidden',flexShrink:0}}>
-                        {(['$','%'] as const).map(m=>(
-                          <button key={m} type="button" onClick={()=>f(modeKey,m)}
-                            style={{padding:'8px 12px',border:'none',cursor:'pointer',fontSize:13,fontWeight:mode===m?600:400,background:mode===m?'#1C1A17':'var(--cream)',color:mode===m?'white':'var(--ink3)',transition:'all 0.1s'}}>
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                      {mode==='$' ? (
-                        <input type="number" value={storedDollar||''}
-                          onChange={e=>f(valKey,+e.target.value)}
-                          placeholder="e.g. 500000"
-                          style={{...inp,borderRadius:'0 3px 3px 0',flex:1}}/>
-                      ) : (
-                        <input type="number"
-                          value={displayPct||''}
-                          onChange={e=>{
-                            const pct = +e.target.value
-                            f(valKey, cashVal>0 ? Math.round((pct/100)*cashVal) : 0)
-                          }}
-                          placeholder="e.g. 105"
-                          style={{...inp,borderRadius:'0 3px 3px 0',flex:1}}/>
-                      )}
+                {/* Client checkbox */}
+                {isCouple ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                    onClick={() => toggleClient(key)}>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
+                      background: clientOn ? '#A8834A' : 'transparent',
+                      border: `2px solid ${clientOn ? '#A8834A' : '#ccc'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
                     </div>
-                    {mode==='%' && cashVal>0 && storedDollar>0 && (
-                      <div style={{fontSize:11,color:'var(--ink3)',marginTop:4,fontFamily:'DM Mono,monospace'}}>
-                        = {fmt(storedDollar)} <span style={{fontFamily:'Inter,sans-serif',fontSize:10}}>({displayPct}% of {fmt(cashVal)})</span>
-                      </div>
-                    )}
-                    {mode==='%' && cashVal===0 && (
-                      <div style={{fontSize:11,color:'#854F0B',marginTop:4}}>Enter Current Cash Value above to compute amount</div>
-                    )}
+                    {clientVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#A8834A' }}>{fmt(clientVal)}</div>}
                   </div>
-                )
-              })}
-            </>
-          )}
+                ) : (
+                  <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', margin: '0 auto',
+                    background: clientOn ? '#A8834A' : 'transparent',
+                    border: `2px solid ${clientOn ? '#A8834A' : '#ccc'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onClick={() => toggleItem(key)}>
+                    {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                  </div>
+                )}
 
-          {/* ── General sum assured ── */}
-          {isGeneral && (
-            <div><label style={lbl}>Sum Assured / Coverage Limit ($)</label><input type="number" value={form.sumAssured||''} onChange={e=>f('sumAssured',+e.target.value)} style={inp}/></div>
-          )}
-
-          {/* ── LTC / DI ── */}
-          {isLTC && !isStandardLTC && (
-            <div style={g3}>
-              <div><label style={lbl}>Monthly Benefit ($)</label><input type="number" value={form.monthlyBenefit||''} onChange={e=>f('monthlyBenefit',+e.target.value)} style={inp}/></div>
-              <div>
-                <label style={lbl}>Benefit Term</label>
-                <select value={isOtherBenefitTerm?'__other':(form.benefitTerm||'')} onChange={e=>{if(e.target.value==='__other'){setIsOtherBenefitTerm(true);f('benefitTerm','');}else{setIsOtherBenefitTerm(false);f('benefitTerm',e.target.value);}}} style={s}>
-                  <option value="">Select…</option>
-                  <option value="2/6 ADLs">2/6 ADLs</option>
-                  <option value="3/6 ADLs">3/6 ADLs</option>
-                  <option value="__other">Others (Type Manually)</option>
-                </select>
-                {isOtherBenefitTerm && <input type="text" value={form.benefitTerm||''} onChange={e=>f('benefitTerm',e.target.value)} placeholder="Type Benefit Term" style={{...inp,marginTop:6}}/>}
-              </div>
-              <div>
-                <label style={lbl}>Payout Term</label>
-                <select value={isOtherPayoutTerm?'__other':(form.payoutTerm||'')} onChange={e=>{if(e.target.value==='__other'){setIsOtherPayoutTerm(true);f('payoutTerm','');}else{setIsOtherPayoutTerm(false);f('payoutTerm',e.target.value);}}} style={s}>
-                  <option value="">Select…</option>
-                  <option value="Lifetime">Lifetime</option>
-                  <option value="__other">Others (Type Manually)</option>
-                </select>
-                {isOtherPayoutTerm && <input type="text" value={form.payoutTerm||''} onChange={e=>f('payoutTerm',e.target.value)} placeholder="Type Payout Term" style={{...inp,marginTop:6}}/>}
-              </div>
-            </div>
-          )}
-
-          {/* ── Premiums ── */}
-          <div style={((isMedical && !isRider) || isLTC) ? g3 : g2}>
-            <div>
-              <label style={lbl}>Premium — Cash ({form.isUSD && isLife ? 'USD' : 'SGD'})</label>
-              <input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/>
-              {form.isUSD && isLife && (form.premiumCash||0)>0 && (
-                <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt((form.premiumCash||0)*fx)} SGD</div>
-              )}
-            </div>
-            {((isMedical && !isRider) || isLTC) && <div><label style={lbl}>Premium — Medisave ($)</label><input type="number" value={form.premiumMedisave||''} onChange={e=>f('premiumMedisave',+e.target.value)} style={inp}/></div>}
-            <div>
-              <label style={lbl}>Payment Mode</label>
-              <select value={form.premiumMode} onChange={e=>f('premiumMode',e.target.value)} style={s}>
-                <option value="">Select…</option>
-                {currentPayModes.map(m=><option key={m}>{m}</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={g2}>
-            <div>
-              <label style={lbl}>Frequency</label>
-              <select value={form.frequency} onChange={e=>f('frequency',e.target.value)} style={s}>
-                {FREQ.map(f=><option key={f}>{f}</option>)}
-              </select>
-            </div>
-            {!isMedical && !isLTC && !isEndow && (
-              <div>
-                <label style={lbl}>Current Cash Value ({form.isUSD && isLife ? 'USD' : 'SGD'})</label>
-                <input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/>
-                {form.isUSD && isLife && (form.currentCashValue||0)>0 && (
-                  <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt((form.currentCashValue||0)*fx)} SGD</div>
+                {/* Spouse checkbox (couple only) */}
+                {isCouple && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                    onClick={() => toggleSpouse(key)}>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
+                      background: spouseOn ? '#2D5A4E' : 'transparent',
+                      border: `2px solid ${spouseOn ? '#2D5A4E' : '#ccc'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {spouseOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    {spouseVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#2D5A4E' }}>{fmt(spouseVal)}</div>}
+                  </div>
                 )}
               </div>
+            )
+          })}
+        </div>
+
+        {/* Selected totals */}
+        <div style={{ marginTop: 16, padding: '12px 14px', background: '#1C1A17', borderRadius: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
+            {isCouple ? (
+              <div style={{ display: 'flex', gap: 20 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedSpouseTotal)}/yr</div>
+                </div>
+              </div>
+            ) : (
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</span>
             )}
-          </div>
-
-          {/* ── Dates ── */}
-          <div style={g3}>
-            <div><label style={lbl}>Inception Date</label><input type="date" value={form.inceptionDate} onChange={e=>f('inceptionDate',e.target.value)} style={inp}/></div>
-            <div>
-              <label style={lbl}>Premium Maturity</label>
-              <select value={premMatMode==='preset'?(form.premiumMaturity||''):(premMatMode==='date'?'__date':'__other')} onChange={e=>{if(e.target.value==='__date'){setPremMatMode('date');f('premiumMaturity','');}else if(e.target.value==='__other'){setPremMatMode('text');f('premiumMaturity','');}else{setPremMatMode('preset');f('premiumMaturity',e.target.value);}}} style={s}>
-                <option value="">Select…</option>
-                <option value="Lifetime">Lifetime</option>
-                {(isMedical||form.premiumMaturity==='Renewable')&&<option value="Renewable">Renewable</option>}
-                {(isLTC||form.premiumMaturity==='Age 67')&&<option value="Age 67">Age 67</option>}
-                <option value="__date">Input Date</option>
-                <option value="__other">Type Manually</option>
-              </select>
-              {premMatMode==='date'&&<input type="date" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} style={{...inp,marginTop:6}}/>}
-              {premMatMode==='text'&&<input type="text" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} placeholder="Type manually" style={{...inp,marginTop:6}}/>}
-            </div>
-            <div>
-              <label style={lbl}>Coverage Maturity</label>
-              <select value={covMatMode==='preset'?(form.coverageMaturity||''):(covMatMode==='date'?'__date':'__other')} onChange={e=>{if(e.target.value==='__date'){setCovMatMode('date');f('coverageMaturity','');}else if(e.target.value==='__other'){setCovMatMode('text');f('coverageMaturity','');}else{setCovMatMode('preset');f('coverageMaturity',e.target.value);}}} style={s}>
-                <option value="">Select…</option>
-                <option value="Lifetime">Lifetime</option>
-                {(isMedical||form.coverageMaturity==='Renewable')&&<option value="Renewable">Renewable</option>}
-                {(isLTC||form.coverageMaturity==='Age 67')&&<option value="Age 67">Age 67</option>}
-                <option value="__date">Input Date</option>
-                <option value="__other">Type Manually</option>
-              </select>
-              {covMatMode==='date'&&<input type="date" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} style={{...inp,marginTop:6}}/>}
-              {covMatMode==='text'&&<input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp,marginTop:6}}/>}
-            </div>
-          </div>
-
-          {/* ── Status + Remarks ── */}
-          <div style={{display:'flex', flexDirection:'column', gap: 14}}>
-            <div>
-              <label style={lbl}>Status</label>
-              <select value={form.status} onChange={e=>f('status',e.target.value)} style={s}>
-                {STATUS_OPTS.map(st=><option key={st}>{st}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Remarks</label>
-              <textarea 
-                value={form.remarks} 
-                onChange={e=>f('remarks',e.target.value)} 
-                placeholder="e.g. In-Force, value as of 05/03/2026. Additional notes about the policy..."
-                rows={4}
-                style={{...inp, resize:'vertical', minHeight:'80px', fontFamily:'inherit'}}
-              />
-            </div>
           </div>
         </div>
 
-        <div style={{padding:'14px 26px',borderTop:'1px solid var(--line)',display:'flex',justifyContent:'flex-end',gap:10}}>
-          <button onClick={onClose} style={{padding:'9px 18px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:13}}>Cancel</button>
-          <button onClick={()=>onSave(form)} style={{padding:'9px 18px',background:'#1C1A17',color:'white',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
-            {isNew?'Add Policy':'Save Changes'}
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose}
+            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.06em' }}>
+            Done
           </button>
         </div>
       </div>
@@ -2457,332 +2448,110 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   )
 }
 
+// ─── SHARED UI PRIMITIVES ────────────────────────────────────────────────────
 
-// ─── Helpers (used by PersonPortfolioCharts) ─────────────────────────────────
-function _toSGD(val: number, p: Policy) {
-  return p.isUSD ? val * (p.fxRate || 1.35) : val
-}
-function _annualPrem(p: Policy) {
-  const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
-  const total = cash + (p.premiumMedisave||0)
-  switch (p.frequency) {
-    case 'Semi-Annual': return total*2
-    case 'Quarterly':   return total*4
-    case 'Monthly':     return total*12
-    case 'Single':      return total
-    default:            return total
-  }
-}
-function _payMonths(p: Policy): number[] {
-  const sm = p.inceptionDate ? new Date(p.inceptionDate).getMonth()+1 : 1
-  switch (p.frequency) {
-    case 'Monthly':     return [1,2,3,4,5,6,7,8,9,10,11,12]
-    case 'Quarterly':   return [0,1,2,3].map(i=>((sm-1+i*3)%12)+1)
-    case 'Semi-Annual': return [0,1].map(i=>((sm-1+i*6)%12)+1)
-    case 'Annual':      return [sm]
-    case 'Single':      return []
-    default:            return [sm]
-  }
-}
-function _coverAtAge(p: Policy, age: number, curAge: number) {
-  const mult     = p.multiplier > 1 ? p.multiplier : 1
-  const multEnd  = p.multiplierEnd || 999
-  const actMult  = age <= multEnd ? mult : 1
-  let stepFactor = 1
-  if (p.coverStep && p.stepDownPct && age > multEnd) {
-    // Each year after multiplier ends, reduce by stepDownPct% — but only for coverStep years
-    const yearsIntoStep = Math.min(age - multEnd, p.coverStep)
-    stepFactor = Math.max(0, 1 - yearsIntoStep * ((p.stepDownPct||0) / 100))
-  }
-  // Check maturity
-  if (p.coverageMaturity && !['Lifetime','Renewable'].includes(p.coverageMaturity)) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(p.coverageMaturity)) {
-      const matYear  = new Date(p.coverageMaturity).getFullYear()
-      const birthYear= new Date().getFullYear() - curAge
-      if (age > matYear - birthYear) return {d:0,t:0,ci:0}
-    } else if (p.coverageMaturity.startsWith('Age ')) {
-      if (age > parseInt(p.coverageMaturity.replace('Age ',''))) return {d:0,t:0,ci:0}
-    }
-  }
-  const d  = _toSGD((p.baseDeath  ||0)*actMult*stepFactor, p)
-  const t  = _toSGD((p.baseTPD    ||0)*actMult*stepFactor, p)
-  const ci = _toSGD(Math.max((p.baseAdvCI||0),(p.baseEarlyCI||0))*actMult*stepFactor, p)
-  return {d, t, ci}
-}
-function _fmtK(n: number) {
-  if (n===0) return '$0'
-  if (n>=1e6) return `$${(n/1e6).toFixed(2)}M`
-  if (n>=1e3) return `$${(n/1e3).toFixed(0)}K`
-  return `$${Math.round(n).toLocaleString()}`
-}
-
-// ─── PersonPortfolioCharts (Apple-Style Premium Design) ──────────────────────
-function PersonPortfolioCharts({ personName, personAge, policies }: {
-  personName: string; personAge: number; policies: Policy[]
-}) {
-  // ── Coverage timeline ──────────────────────────────────────────────────────
-  const timeline: {age:number;d:number;t:number;ci:number}[] = []
-  for (let age = personAge; age <= 100; age++) {
-    let d=0,t=0,ci=0
-    for (const p of policies) {
-      const c = _coverAtAge(p, age, personAge)
-      d+=c.d; t+=c.t; ci+=c.ci
-    }
-    timeline.push({age,d,t,ci})
-  }
-
-  // ── Premium schedule ───────────────────────────────────────────────────────
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const monthly = MONTHS.map((_,mi) => {
-    let total = 0
-    for (const p of policies) {
-      if (_payMonths(p).includes(mi+1)) {
-        const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
-        total += cash + (p.premiumMedisave||0)
-      }
-    }
-    return total
-  })
-  const maxMonthly = Math.max(...monthly, 1)
-
-  // ── Totals ─────────────────────────────────────────────────────────────────
-  const lifePols = policies.filter(p=>p.categoryCode==='life')
-  const totDeath = lifePols.reduce((s,p)=>s+_toSGD((p.baseDeath||0)*(p.multiplier>1?p.multiplier:1),p),0)
-  const totTPD   = lifePols.reduce((s,p)=>s+_toSGD((p.baseTPD||0)*(p.multiplier>1?p.multiplier:1),p),0)
-  const totAdvCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseAdvCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
-  const totEarCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseEarlyCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
-  const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
-  const roundedTotPrem = Math.round(totPrem)
-
-  // ── Timeline SVG ───────────────────────────────────────────────────────────
-  const W=560, H=170, PL=50, PR=12, PT=20, PB=18
-  const iW=W-PL-PR, iH=H-PT-PB
-  const maxV = Math.max(...timeline.map(r=>Math.max(r.d,r.t,r.ci)),1)
-  const bSlot = iW/timeline.length
-  const bW = Math.max(2, bSlot*0.7)
-  const xOf = (i:number) => PL + i*bSlot + bSlot/2
-  const yOf = (v:number) => PT + iH - Math.min(1,v/maxV)*iH
-  const ticks = [0,0.25,0.5,0.75,1]
-  const fmtAx = (n:number) => n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:''
-
-  // Premium brand colors
-  const COL_D  = '#C8A96E'
-  const COL_T  = '#8B9DAF'
-  const COL_CI = '#7FAAA0'
-  const COL_CARD_BG = '#FFFFFF'
-  const COL_BORDER = 'rgba(0,0,0,0.06)'
-
-  // Custom formatter for whole dollars only (no cents)
-  const fmtWhole = (n: number) => {
-    if (!n || n === 0) return '—'
-    return '$' + Math.round(n).toLocaleString()
-  }
-
+function SectionBlock({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
   return (
-    <div style={{marginBottom: 24}}>
-      
-      {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap: 12, marginBottom: 16}}>
-        {[
-          {label:'Death Benefit', value:totDeath, accent:COL_D},
-          {label:'TPD Benefit', value:totTPD, accent:COL_T},
-          {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
-          {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Total Annual Premium', value:roundedTotPrem, accent:'#A8834A', highlight: true},
-        ].map(kpi=>(
-          <div key={kpi.label} style={{
-            background: COL_CARD_BG,
-            border: `1px solid ${COL_BORDER}`,
-            borderRadius: 12,
-            padding: '18px 20px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-            transition: 'all 0.2s ease',
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
-            {kpi.highlight && (
-              <div style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: 3,
-                background: `linear-gradient(90deg, ${kpi.accent}, ${kpi.accent}cc)`
-              }} />
-            )}
-            <div style={{
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: '#8B8B8B',
-              marginBottom: 10,
-              fontWeight: 500
-            }}>{kpi.label}</div>
-            <div style={{
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              fontSize: kpi.highlight ? 26 : 24,
-              fontWeight: kpi.highlight ? 600 : 500,
-              color: kpi.highlight ? kpi.accent : '#1A1A1A',
-              letterSpacing: '-0.02em',
-              lineHeight: 1.2
-            }}>{fmtWhole(kpi.value)}</div>
-          </div>
-        ))}
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <div style={{ width: 3, height: 16, background: color, borderRadius: 2, flexShrink: 0 }} />
+        <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>{title}</span>
       </div>
-
-      {/* ── Charts Row ────────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 360px', gap: 12}}>
-
-        {/* Coverage Timeline Card */}
-        <div style={{
-          background: COL_CARD_BG,
-          border: `1px solid ${COL_BORDER}`,
-          borderRadius: 16,
-          padding: '22px 24px 12px 24px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-        }}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: 16}}>
-            <div>
-              <div style={{
-                fontSize: 11,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                color: '#8B8B8B',
-                marginBottom: 6,
-                fontWeight: 500
-              }}>Coverage Timeline</div>
-              <div style={{
-                fontFamily: 'system-ui, -apple-system, sans-serif',
-                fontSize: 18,
-                color: '#1A1A1A',
-                fontWeight: 500,
-                letterSpacing: '-0.01em'
-              }}>{personName} · Age {personAge} — 100</div>
-            </div>
-            <div style={{display:'flex', gap: 20, alignItems:'center'}}>
-              {[{c:COL_D, l:'Death'},{c:COL_T, l:'TPD'},{c:COL_CI, l:'CI'}].map(lg=>(
-                <div key={lg.l} style={{display:'flex', alignItems:'center', gap: 6}}>
-                  <div style={{
-                    width: 12,
-                    height: 12,
-                    background: lg.c,
-                    borderRadius: 3,
-                    flexShrink: 0
-                  }} />
-                  <span style={{fontSize: 11, color: '#666', fontWeight: 500}}>{lg.l}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{overflow:'visible', display:'block', marginBottom: '-8px'}}>
-            {/* Grid lines - softer */}
-            {ticks.map(f=>{
-              const y=PT+iH-f*iH
-              return <g key={f}>
-                <line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="#F0F0F0" strokeWidth="1" strokeDasharray="3,3"/>
-                <text x={PL-8} y={y+3.5} fontSize="9" fill="#AAA" textAnchor="end" fontWeight={400}>{fmtAx(maxV*f)}</text>
-              </g>
-            })}
-            
-            {/* Bars - with subtle rounding */}
-            {timeline.map((row,i)=>{
-              const cx = xOf(i)
-              const w3 = Math.max(2, bW/3 - 1)
-              return <g key={row.age}>
-                <rect x={cx-bW/2} y={yOf(row.d)} width={w3} height={Math.max(0,iH-(yOf(row.d)-PT))} fill={COL_D} rx="2" ry="2" opacity="0.85"/>
-                <rect x={cx-bW/2+w3+1} y={yOf(row.t)} width={w3} height={Math.max(0,iH-(yOf(row.t)-PT))} fill={COL_T} rx="2" ry="2" opacity="0.85"/>
-                <rect x={cx-bW/2+w3*2+2} y={yOf(row.ci)} width={w3} height={Math.max(0,iH-(yOf(row.ci)-PT))} fill={COL_CI} rx="2" ry="2" opacity="0.85"/>
-              </g>
-            })}
-            
-            {/* Baseline */}
-            <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="#E5E5E5" strokeWidth="1"/>
-            
-            {/* Age labels - cleaner */}
-            {timeline.filter(r=>(r.age%5===0||r.age===personAge)).map((r,i)=>(
-              <text key={r.age} x={xOf(timeline.indexOf(r))} y={PT+iH+14} fontSize="9" fill="#AAA" textAnchor="middle" fontWeight={400}>{r.age}</text>
-            ))}
-          </svg>
-          
-          <div style={{
-            fontSize: 10,
-            color: '#AAA',
-            marginTop: 2,
-            fontStyle: 'italic',
-            letterSpacing: '0.02em'
-          }}>
-            Excludes Accidental Death/TPD benefits and Endowment/Annuity sum assured
-          </div>
-        </div>
-
-        {/* Premium Schedule Card */}
-        <div style={{
-          background: COL_CARD_BG,
-          border: `1px solid ${COL_BORDER}`,
-          borderRadius: 16,
-          padding: '22px 24px 20px 24px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-        }}>
-          <div style={{marginBottom: 16}}>
-            <div style={{
-              fontSize: 11,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: '#8B8B8B',
-              marginBottom: 6,
-              fontWeight: 500
-            }}>Premium Schedule</div>
-          </div>
-          
-          <div style={{display:'flex', flexDirection:'column', gap: 6}}>
-            {MONTHS.map((mon,mi)=>{
-              const amt = monthly[mi]
-              const pct = maxMonthly > 0 ? (amt/maxMonthly)*100 : 0
-              return (
-                <div key={mon} style={{
-                  display:'grid',
-                  gridTemplateColumns:'32px 1fr 70px',
-                  alignItems:'center',
-                  gap: 10
-                }}>
-                  <div style={{
-                    fontSize: 11,
-                    color: amt > 0 ? '#444' : '#BBB',
-                    fontWeight: amt > 0 ? 500 : 400,
-                    letterSpacing: '0.02em'
-                  }}>{mon}</div>
-                  <div style={{
-                    background: '#F5F5F5',
-                    height: 8,
-                    borderRadius: 20,
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      height: '100%',
-                      borderRadius: 20,
-                      width: `${pct}%`,
-                      background: amt > 0 
-                        ? `linear-gradient(90deg, ${COL_D}, ${COL_D}dd)`
-                        : 'transparent',
-                      transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-                    }} />
-                  </div>
-                  <div style={{
-                    fontSize: 12,
-                    fontFamily: 'DM Mono, monospace',
-                    color: amt > 0 ? '#1A1A1A' : '#CCC',
-                    textAlign: 'right',
-                    fontWeight: amt > 0 ? 500 : 400
-                  }}>
-                    {amt > 0 ? `$${amt.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}` : '—'}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
+      {children}
     </div>
   )
+}
+
+function PersonSlider({ label, value, onChange, color, unit = '%' }: {
+  label: string; value: number; onChange: (v: number) => void; color: string; unit?: string
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter' }}>{label}</span>
+        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color }}>
+          {Math.round(value)}{unit}
+        </span>
+      </div>
+      <input
+        type="range" min={0} max={100} step={5}
+        value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        style={{ width: '100%', accentColor: color }}
+      />
+    </div>
+  )
+}
+
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div
+      onClick={() => onChange(!value)}
+      style={{
+        width: 40, height: 22, borderRadius: 11, cursor: 'pointer', transition: 'background 0.15s',
+        background: value ? '#A8834A' : '#ccc', position: 'relative', flexShrink: 0,
+      }}
+    >
+      <div style={{
+        position: 'absolute', top: 3, left: value ? 21 : 3, width: 16, height: 16,
+        borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+      }} />
+    </div>
+  )
+}
+
+function NeedTable({ isCouple, clientName, spouseName, clientData, spouseData, label, breakdown }: {
+  isCouple: boolean; clientName: string; spouseName: string
+  clientData: number; spouseData: number; label: string
+  breakdown?: { client: { fd: number; mort: number; edu: number }; spouse: { fd: number; mort: number; edu: number } }
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', padding: '12px 16px', background: '#1C1A17', borderRadius: 6, alignItems: 'center', marginBottom: breakdown ? 8 : 0 }}>
+        <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+        {isCouple ? (
+          <>
+            <div style={{ textAlign: 'right', minWidth: 120 }}>
+              <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(clientData)}</div>
+            </div>
+            <div style={{ textAlign: 'right', minWidth: 120 }}>
+              <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(spouseData)}</div>
+            </div>
+          </>
+        ) : (
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(clientData)}</span>
+        )}
+      </div>
+      {breakdown && (
+        <div style={{ display: 'flex', gap: 0, background: '#F5F0E8', borderRadius: '0 0 6px 6px', overflow: 'hidden' }}>
+          {(['fd', 'mort', 'edu'] as const).map(key => {
+            const labels = { fd: 'Family Dep.', mort: 'Mortgage', edu: 'Education' }
+            return (
+              <div key={key} style={{ flex: 1, padding: '8px 10px', borderRight: key !== 'edu' ? '1px solid #E8E4DC' : 'none' }}>
+                <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>{labels[key]}</div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(breakdown.client[key])}</div>
+                {isCouple && <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#888', marginTop: 2 }}>{fmt(breakdown.spouse[key])}</div>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── STYLE CONSTANTS ─────────────────────────────────────────────────────────
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase',
+  color: '#888', fontFamily: 'Inter', marginBottom: 6,
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', fontFamily: 'DM Mono, monospace', fontSize: 13,
+  color: '#1C1A17', background: '#fff', border: '1px solid #E8E4DC',
+  borderRadius: 4, outline: 'none',
 }
