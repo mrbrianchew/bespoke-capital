@@ -620,33 +620,77 @@ async function handleGenerateShare() {
             annualPremium={premHave(overviewPerson)} />
 
           {hasChartData ? (
-            <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-             <CoverageChart 
-  eyebrow="Critical Illness" 
-  title="Critical Illness Coverage Needs Analysis" 
-  needLabel="Required capital" 
-  haveLabel="Existing portfolio" 
-  data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))} 
-  accentColor="#2D6A4F"
-  milestones={{
-    mortgageEnd: ff.p1_ci_mort > 0 ? 60 : null,
-    educationEnds: children.map((child: any) => {
-      const childAge = child.age || 0
-      const uniEntryAge = child.gender === 'Male' ? 21 : 19
-      return aAge + (uniEntryAge - childAge) + 4
-    }),
-    coverageEnds: (() => {
-      for (let i = chartData.length - 1; i >= 0; i--) {
-        if (chartData[i].ci > 0) return chartData[i].age
-      }
-      return null
-    })(),
-    clientAge: aAge
-  }}
-/>
-             <CoverageChart eyebrow="Critical Illness" title="Critical Illness Coverage Needs Analysis" needLabel="Required capital" haveLabel="Existing portfolio" data={chartData.map(d=>({age:d.age,need:d.ci,have:aCH}))} accentColor="#2D6A4F" />
-            </div>
-          ) : (
+  <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+    <CoverageChart 
+      eyebrow="Life & Disability" 
+      title="Death / TPD Coverage Needs Analysis" 
+      needLabel="Required capital" 
+      haveLabel="Existing portfolio" 
+      data={chartData.map(d => ({age: d.age, need: d.dtpd, have: aLH}))} 
+      accentColor="#C4A464"
+      milestones={{
+        mortgageEnds: (() => {
+          const ages: number[] = []
+          for (let i = 1; i < chartData.length; i++) {
+            const drop = chartData[i-1].dtpd - chartData[i].dtpd
+            const pctDrop = drop / chartData[i-1].dtpd
+            if (pctDrop > 0.15 && pctDrop < 0.40) {
+              ages.push(chartData[i].age)
+            }
+          }
+          return ages
+        })(),
+        educationEnds: children.map((child: any) => {
+          const childAge = child.age || 0
+          const uniEntryAge = child.gender === 'Male' ? 21 : 19
+          const yearsToUni = Math.max(0, uniEntryAge - childAge)
+          return aAge + yearsToUni + 4
+        }),
+        coverageEnds: (() => {
+          for (let i = chartData.length - 1; i >= 0; i--) {
+            if (chartData[i].dtpd > 0) return chartData[i].age
+          }
+          return null
+        })(),
+        clientAge: aAge
+      }}
+    />
+    <CoverageChart 
+      eyebrow="Critical Illness" 
+      title="Critical Illness Coverage Needs Analysis" 
+      needLabel="Required capital" 
+      haveLabel="Existing portfolio" 
+      data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))} 
+      accentColor="#2D6A4F"
+      milestones={{
+        mortgageEnds: (() => {
+          const ages: number[] = []
+          for (let i = 1; i < chartData.length; i++) {
+            const drop = chartData[i-1].ci - chartData[i].ci
+            const pctDrop = drop / chartData[i-1].ci
+            if (pctDrop > 0.15 && pctDrop < 0.40) {
+              ages.push(chartData[i].age)
+            }
+          }
+          return ages
+        })(),
+        educationEnds: children.map((child: any) => {
+          const childAge = child.age || 0
+          const uniEntryAge = child.gender === 'Male' ? 21 : 19
+          const yearsToUni = Math.max(0, uniEntryAge - childAge)
+          return aAge + yearsToUni + 4
+        }),
+        coverageEnds: (() => {
+          for (let i = chartData.length - 1; i >= 0; i--) {
+            if (chartData[i].ci > 0) return chartData[i].age
+          }
+          return null
+        })(),
+        clientAge: aAge
+      }}
+    />
+  </div>
+) : (
             <div style={{marginTop:20,padding:'24px',background:'white',border:'0.5px solid var(--line)',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
               Complete the Financial Profile to generate coverage need charts.
             </div>
