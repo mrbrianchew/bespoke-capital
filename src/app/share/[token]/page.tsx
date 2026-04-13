@@ -447,11 +447,11 @@ setPolicies(filtered)
     const pageW=297
     async function addPage(ref: React.RefObject<HTMLDivElement>, isFirst: boolean) {
       if (!ref.current) return
-      const canvas = await html2canvas(ref.current,{scale:3,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:1200})
-      const imgData = canvas.toDataURL('image/jpeg',0.95)
-      const imgH = (canvas.height*pageW)/canvas.width
-      if (!isFirst) pdf.addPage()
-      pdf.addImage(imgData,'JPEG',0,0,pageW,Math.min(imgH,210))
+      const canvas = await html2canvas(ref.current,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:1200,height:ref.current.scrollHeight,windowHeight:ref.current.scrollHeight})
+const imgData = canvas.toDataURL('image/jpeg',0.95)
+const imgH = (canvas.height*pageW)/canvas.width
+if (!isFirst) pdf.addPage()
+pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
     }
     await addPage(page1Ref,true)
     await addPage(page2Ref,false)
