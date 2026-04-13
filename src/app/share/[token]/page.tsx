@@ -447,7 +447,7 @@ setPolicies(filtered)
     const pageW=297
     async function addPage(ref: React.RefObject<HTMLDivElement>, isFirst: boolean) {
       if (!ref.current) return
-      const canvas = await html2canvas(ref.current,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:1200,height:ref.current.scrollHeight,windowHeight:ref.current.scrollHeight})
+      const canvas = await html2canvas(ref.current,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:1100,width:1100,height:ref.current.scrollHeight,windowHeight:ref.current.scrollHeight})
 const imgData = canvas.toDataURL('image/jpeg',0.95)
 const imgH = (canvas.height*pageW)/canvas.width
 if (!isFirst) pdf.addPage()
@@ -511,12 +511,13 @@ pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
 
   const hero = (title: string): React.CSSProperties => ({
     background:'#1C1A17',padding:'16px 40px',
-    display:'flex',justifyContent:'space-between',alignItems:'center',minWidth:1100,
+    display:'flex',justifyContent:'space-between',alignItems:'center',
   })
   const pageBody: React.CSSProperties = {
-    minWidth:1100,background:'white',padding:'32px 40px',
-    fontFamily:'Inter,sans-serif',color:'#1C1A17',
-  }
+  background:'white',padding:'32px 40px',
+  fontFamily:'Inter,sans-serif',color:'#1C1A17',
+  width:'100%',boxSizing:'border-box' as const,
+}
 
   function CatSection({ cat }: { cat: typeof catBuckets[0] }) {
     const catPols = policies.filter(p=>p.categoryCode===cat.code)
@@ -561,7 +562,7 @@ pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
       </div>
 
       {/* PAGE 1 */}
-      <div ref={page1Ref}>
+      <div ref={page1Ref} style={{width:1100,overflow:'hidden'}}>
         <div style={hero('')}>
           <div>
             <div style={{fontSize:10,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:6}}>Bespoke Capital · Wealth Protection</div>
@@ -600,7 +601,7 @@ pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
       </div>
 
       {/* PAGE 2 — Medical, LTC, General */}
-      <div ref={page2Ref}>
+      <div ref={page2Ref} style={{width:1100,overflow:'hidden'}}>
         <div style={hero('')}>
           <div>
             <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
@@ -616,7 +617,7 @@ pdf.addImage(imgData,'JPEG',0,0,pageW,imgH)
       </div>
 
       {/* PAGE 3 — Core Protection & Wealth Accumulation */}
-      <div ref={page3Ref}>
+      <div ref={page3Ref} style={{width:1100,overflow:'hidden'}}>
         <div style={hero('')}>
           <div>
             <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
