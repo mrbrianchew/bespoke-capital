@@ -461,13 +461,6 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
   })
 }
     
-    // Apply coverage term taper
-    const ciFactor = a < age+coverTerm ? 1.0 : Math.max(0, 1-(a-(age+coverTerm))*0.04)
-    
-    return { age: a, dtpd, ci: Math.max(0, ci * ciFactor) }
-  })
-}
-
   const aAge    = overviewPerson==='client' ? clientAge  : spouseAge
   const aDTPD   = overviewPerson==='client' ? clientDTPD : spouseDTPD
   const aCI     = overviewPerson==='client' ? clientCI   : spouseCI
