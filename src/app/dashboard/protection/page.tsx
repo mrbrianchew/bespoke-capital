@@ -623,7 +623,7 @@ async function handleGenerateShare() {
             <div style={{fontSize:10,letterSpacing:'0.14em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12}}>Advisor Notes</div>
             <textarea value={rmData.advisorNotes} onChange={e=>updateRm({...rmData,advisorNotes:e.target.value})}
               placeholder="Record observations, client concerns, agreed priorities, follow-up actions…" rows={4}
-              style={{width:'100%',resize:'vertical',border:'none',outline:'none',background:'#1C1A17',color:'#c8a96e',fontFamily:'DM Mono,monospace',fontSize:13,padding:'14px 16px',borderRadius:4,boxSizing:'border-box',lineHeight:1.7}} />
+             style={{width:'100%',resize:'vertical',border:'1px solid var(--line)',outline:'none',background:'#FAFAF8',color:'var(--ink)',fontFamily:'DM Mono,monospace',fontSize:13,padding:'14px 16px',borderRadius:4,boxSizing:'border-box',lineHeight:1.7}} />
           </div>
         </div>
       )}
@@ -989,35 +989,35 @@ function CoverageChart({title,eyebrow,needLabel,haveLabel,data,accentColor}:{
   const gapBot=[...data].reverse().map(d=>`${(PL+xP(d.age)).toFixed(1)},${(PT+yP(Math.min(d.need,d.have))).toFixed(1)}`).join(' ')
   const ageLabels=data.filter((_,i,arr)=>i===0||i===arr.length-1||i%(Math.floor(arr.length/6))===0)
   return (
-    <div style={{background:'#161412',padding:'20px 22px'}}>
+   <div style={{background:'white',border:'0.5px solid var(--line)',padding:'20px 22px'}}>
       <div style={{marginBottom:14}}>
-        <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:`${accentColor}99`,marginBottom:4}}>{eyebrow}</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:17,fontWeight:300,color:'#F0EDE8'}}>{title}</div>
+        <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:accentColor,marginBottom:4}}>{eyebrow}</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:17,fontWeight:300,color:'var(--ink)'}}>{title}</div>
       </div>
       <div style={{display:'flex',gap:20,marginBottom:12}}>
         <div style={{display:'flex',alignItems:'center',gap:7}}>
           <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#00C9A7" strokeWidth="1.8"/></svg>
-          <span style={{fontSize:10,color:'rgba(255,255,255,0.35)'}}>{needLabel}</span>
+          <span style={{fontSize:10,color:'var(--ink3)'}}>{needLabel}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:7}}>
           <svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke={accentColor} strokeWidth="1.8" strokeDasharray="4,3"/></svg>
-          <span style={{fontSize:10,color:'rgba(255,255,255,0.35)'}}>{haveLabel}</span>
+          <span style={{fontSize:10,color:'var(--ink3)'}}>{haveLabel}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:7}}>
           <div style={{width:14,height:8,background:'rgba(224,128,128,0.25)'}}/>
-          <span style={{fontSize:10,color:'rgba(255,255,255,0.35)'}}>Gap</span>
+          <span style={{fontSize:10,color:'var(--ink3)'}}>Gap</span>
         </div>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:'block',overflow:'visible'}}>
-        {ticks.map(f=>{const y=PT+iH-f*iH;return(<g key={f}><line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" strokeDasharray="3,4"/><text x={PL-6} y={y+3.5} fontSize="9" fill="rgba(255,255,255,0.22)" textAnchor="end">{fmtAx(maxV*f)}</text></g>)})}
-        <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
-        <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
+        {ticks.map(f=>{const y=PT+iH-f*iH;return(<g key={f}><line x1={PL} y1={y} x2={PL+iW} y2={y} stroke="rgba(0,0,0,0.06)" strokeWidth="0.5" strokeDasharray="3,4"/><text x={PL-6} y={y+3.5} fontSize="9" fill="var(--ink3)" textAnchor="end">{fmtAx(maxV*f)}</text></g>)})}
+        <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(0,0,0,0.08)" strokeWidth="0.5"/>
+        <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(0,0,0,0.08)" strokeWidth="0.5"/>
         <polygon points={`${gapTop} ${gapBot}`} fill="rgba(224,128,128,0.14)"/>
         <path d={havePath} stroke={accentColor} strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5,3" opacity="0.8"/>
         <path d={needPath} stroke="#00C9A7" strokeWidth="1.8" fill="none" strokeLinejoin="round" strokeLinecap="round"/>
-        {ageLabels.map(d=>(<text key={d.age} x={(PL+xP(d.age)).toFixed(1)} y={PT+iH+16} fontSize="9" fill="rgba(255,255,255,0.2)" textAnchor="middle">{d.age}</text>))}
+        {ageLabels.map(d=>(<text key={d.age} x={(PL+xP(d.age)).toFixed(1)} y={PT+iH+16} fontSize="9" fill="var(--ink3)" textAnchor="middle">{d.age}</text>))}
       </svg>
-      <div style={{marginTop:6,fontSize:10,color:'rgba(255,255,255,0.14)',fontStyle:'italic'}}>
+      <div style={{marginTop:6,fontSize:10,color:'var(--ink3)',fontStyle:'italic'}}>
         Solid line = required · Dashed line = existing portfolio · Shaded area = protection gap
       </div>
     </div>
