@@ -431,46 +431,49 @@ const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
 function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
   const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
 
-  // Floor = FV annuity for a minimum 5-year window post-coverage
-  // Matches spreadsheet C125 = FV(inflation, 5, -annualExpenses, 0, 1)
-  // This is the estate/legacy floor the line never drops below
+  // Floor = FV annuity for minimum 5-year window, matching spreadsheet C125
   const floor = fvAnn(annExp, inflation, 5)
 
-  // Mortgage: amortized outstanding balance at each future age
-  // Matches spreadsheet M121 = PV(rate/12, totalMonths - elapsedMonths, -monthlyPayment)
-  // We approximate using annual PV: PV(rate, yearsRemaining, -annualPayment)
-  const mortRate   = Number(ff.mortgage_rate || ff.l_mortgage_rate || 0) / 100
-  const mortTenure = Number(ff.mortgage_tenure || ff.l_mortgage_tenure || 25)
-  const mortStart  = Number(ff.mortgage_start_age || age) // age when mortgage started
-  function mortBalance(atAge: number): number {
-    if (mort <= 0) return 0
-    const elapsed = atAge - mortStart
-    const remaining = mortTenure - elapsed
-    if (remaining <= 0) return 0
-    if (mortRate === 0) return mort * (remaining / mortTenure)
-    // PV of remaining payments
-    const annualPmt = mort * mortRate / (1 - Math.pow(1 + mortRate, -mortTenure))
-    return annualPmt * (1 - Math.pow(1 + mortRate, -remaining)) / mortRate
+  // Pull all mortgages from properties array — same source as objectives/page.tsx
+  const allMortgages = (ff.properties || []).flatMap((p: any) => p.mortgages || [])
+
+  // Compute declining mortgage balance at a future age using actual per-mortgage data
+  // Matches spreadsheet M121 = PV(rate/12, remainingMonths, -monthlyPayment)
+  function mortBalanceAtAge(atAge: number): number {
+    return allMortgages.reduce((total: number, m: any) => {
+      const outstanding  = Number(m.outstanding || 0)
+      const rate         = Number(m.interestRate || 0) / 100
+      const tenure       = Number(m.tenure || m.remainingTenure || 25)
+      if (outstanding <= 0) return total
+      const yearsElapsed = atAge - age
+      const yearsLeft    = Math.max(0, tenure - yearsElapsed)
+      if (yearsLeft <= 0) return total
+      if (rate === 0) return total + outstanding * (yearsLeft / tenure)
+      const monthlyRate  = rate / 12
+      const totalMonths  = tenure * 12
+      const monthlyPmt   = outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
+      const monthsLeft   = yearsLeft * 12
+      return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
+    }, 0)
   }
 
   return Array.from({length: 100 - age}, (_, i) => {
-    const a = age + i
+    const a     = age + i
     const yLeft = Math.max(0, (age + coverTerm) - a)
 
-    // Family dependency: FV annuity-due, recalculated each year (matches M119)
-    const ageFD = fvAnn(annExp, inflation, yLeft)
+    // Family dependency: FV annuity-due recalculated each year — matches M119
+    const ageFD   = fvAnn(annExp, inflation, yLeft)
 
-    // Mortgage: actual declining balance each year (matches M121)
-    const ageMort = mortBalance(a)
+    // Mortgage: actual amortized declining balance per year — matches M121
+    const ageMort = mortBalanceAtAge(a)
 
-    // Education: full amount throughout coverage term, zero after (matches M120 flat behaviour)
-    const ageEdu = yLeft > 0 ? edu : 0
+    // Education: flat full amount during coverage term, zero after — matches M120
+    const ageEdu  = yLeft > 0 ? edu : 0
 
-    // Sum components, apply floor (matches M115 = MAX(sum, C125))
-    const components = ageFD + ageMort + ageEdu - offset
-    const dtpd = Math.max(floor, components)
+    // Total with floor — matches M115 = MAX(SUM(M119:M124), C125)
+    const dtpd = Math.max(floor, ageFD + ageMort + ageEdu - offset)
 
-    // CI: flat at full need during coverage term, then fades
+    // CI: flat during coverage term then fades out
     const ciFactor = a < age + coverTerm
       ? 1.0
       : Math.max(0, 1 - (a - (age + coverTerm)) * 0.04)
