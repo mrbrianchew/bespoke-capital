@@ -1125,18 +1125,34 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   
   const ticks = [0, 0.25, 0.5, 0.75, 1]
   
-  // Generate smooth curves
-  const needPath = data.map((d, i) => {
-    const x = PL + xP(d.age)
-    const y = PT + yP(d.need)
-    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-  }).join(' ')
+// Generate smooth curves using bezier interpolation
+const generateSmoothLine = (values: number[], ages: number[]) => {
+  if (ages.length < 2) return ''
   
-  const havePath = data.map((d, i) => {
-    const x = PL + xP(d.age)
-    const y = PT + yP(d.have)
-    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-  }).join(' ')
+  let path = `M ${PL + xP(ages[0])} ${PT + yP(values[0])}`
+  
+  for (let i = 1; i < ages.length; i++) {
+    const x1 = PL + xP(ages[i - 1])
+    const y1 = PT + yP(values[i - 1])
+    const x2 = PL + xP(ages[i])
+    const y2 = PT + yP(values[i])
+    
+    // Control points for smooth cubic bezier
+    const cp1x = x1 + (x2 - x1) * 0.33
+    const cp2x = x1 + (x2 - x1) * 0.66
+    
+    path += ` C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`
+  }
+  
+  return path
+}
+
+const needValues = data.map(d => d.need)
+const haveValues = data.map(d => d.have)
+const ages = data.map(d => d.age)
+
+const needPath = generateSmoothLine(needValues, ages)
+const havePath = generateSmoothLine(haveValues, ages)
   
      // Build accurate milestones from passed data
   const chartMilestones: {age: number; label: string; type: string; color?: string}[] = []
@@ -1192,40 +1208,47 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     }
   }
   
- // Build smooth gap areas using area fill approach
+// Build smooth gap areas using area fill approach
 const generateSmoothAreaPath = (points: {x: number, y1: number, y2: number}[], reverse: boolean = false) => {
   if (points.length < 2) return ''
   
-  const first = points[0]
-  const last = points[points.length - 1]
+  // Filter to only include points where there's actual gap
+  const validPoints = points.filter(p => Math.abs(p.y1 - p.y2) > 0.5)
+  if (validPoints.length < 2) return ''
   
-  // Start at first point
+  const first = validPoints[0]
+  const last = validPoints[validPoints.length - 1]
+  
+  // Start at first point on the top line
   let path = `M ${first.x} ${reverse ? first.y2 : first.y1}`
   
-  // Draw top line (need or have curve)
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i]
-    if (i === 0) continue
-    const prev = points[i - 1]
+  // Draw smooth top curve
+  for (let i = 1; i < validPoints.length; i++) {
+    const prev = validPoints[i - 1]
+    const curr = validPoints[i]
     
-    // Use bezier curves for smooth interpolation
-    const cp1x = prev.x + (p.x - prev.x) / 3
-    const cp2x = prev.x + (2 * (p.x - prev.x)) / 3
-    path += ` C ${cp1x} ${reverse ? prev.y2 : prev.y1}, ${cp2x} ${p.y2 || p.y1}, ${p.x} ${reverse ? p.y2 : p.y1}`
+    const cp1x = prev.x + (curr.x - prev.x) * 0.33
+    const cp2x = prev.x + (curr.x - prev.x) * 0.66
+    const prevY = reverse ? prev.y2 : prev.y1
+    const currY = reverse ? curr.y2 : curr.y1
+    
+    path += ` C ${cp1x} ${prevY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
   }
   
-  // Draw down to bottom line and return
+  // Draw line down to bottom curve
   path += ` L ${last.x} ${reverse ? last.y1 : last.y2}`
   
-  // Draw bottom line back (reverse direction)
-  for (let i = points.length - 1; i >= 0; i--) {
-    const p = points[i]
-    if (i === points.length - 1) continue
-    const next = points[i + 1]
+  // Draw smooth bottom curve backwards
+  for (let i = validPoints.length - 2; i >= 0; i--) {
+    const curr = validPoints[i]
+    const next = validPoints[i + 1]
     
-    const cp1x = next.x - (next.x - p.x) / 3
-    const cp2x = next.x - (2 * (next.x - p.x)) / 3
-    path += ` C ${cp1x} ${reverse ? next.y1 : next.y2}, ${cp2x} ${p.y2 || p.y1}, ${p.x} ${reverse ? p.y1 : p.y2}`
+    const cp1x = next.x - (next.x - curr.x) * 0.33
+    const cp2x = next.x - (next.x - curr.x) * 0.66
+    const currY = reverse ? curr.y1 : curr.y2
+    const nextY = reverse ? next.y1 : next.y2
+    
+    path += ` C ${cp1x} ${nextY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
   }
   
   path += ' Z'
@@ -1251,8 +1274,8 @@ data.forEach((d) => {
 })
 
 // Generate smooth paths
-const redGapPath = generateSmoothAreaPath(redPoints.filter(p => Math.abs(p.y1 - p.y2) > 0.1), false)
-const greenGapPath = generateSmoothAreaPath(greenPoints.filter(p => Math.abs(p.y1 - p.y2) > 0.1), true)
+const redGapPath = generateSmoothAreaPath(redPoints, false)
+const greenGapPath = generateSmoothAreaPath(greenPoints, true)
   
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
   
