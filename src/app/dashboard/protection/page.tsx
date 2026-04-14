@@ -675,64 +675,73 @@ async function handleGenerateShare() {
 
           {hasChartData ? (
   <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-    <CoverageChart 
-      eyebrow="Life & Disability" 
-      title="Death / TPD Coverage Needs Analysis" 
-      needLabel="Required capital" 
-      haveLabel="Existing portfolio" 
-      data={chartData.map(d => ({age: d.age, need: d.dtpd, have: aLH}))} 
+    {(() => {
+  // Mortgage end age: read directly from mortgage data, not curve sniffing
+  // Use remainingTenure if available, otherwise tenure from properties
+  const mortgageEndAges: number[] = []
+  const allMortgages = (ff.properties || []).flatMap((p: any) => p.mortgages || [])
+  allMortgages.forEach((m: any) => {
+    const remaining = Number(m.remainingTenure || m.tenure || 0)
+    if (remaining > 0) mortgageEndAges.push(aAge + remaining)
+  })
+  // Fallback: if no mortgage objects but mort > 0, use coverTerm as proxy
+  if (mortgageEndAges.length === 0 && mort > 0) mortgageEndAges.push(aAge + coverTerm)
+
+  // Education end ages: sorted youngest-to-oldest child
+  // Child graduates = client age + years until child finishes uni
+  const eduEndAges = [...children]
+    .sort((a: any, b: any) => Number(b.age||0) - Number(a.age||0)) // oldest first = graduates first
+    .map((child: any) => {
+      const childAge = Number(child.age || 0)
+      const uniEntryAge = child.gender === 'Male' ? 21 : 19
+      return aAge + Math.max(0, uniEntryAge - childAge) + 4
+    })
+
+  const dtpdCoverageEnds = (() => {
+    for (let i = chartData.length - 1; i >= 0; i--) {
+      if (chartData[i].dtpd > 0) return chartData[i].age
+    }
+    return null
+  })()
+
+  const ciCoverageEnds = (() => {
+    for (let i = chartData.length - 1; i >= 0; i--) {
+      if (chartData[i].ci > 0) return chartData[i].age
+    }
+    return null
+  })()
+
+  return <>
+    <CoverageChart
+      eyebrow="Life & Disability"
+      title="Death / TPD Coverage Needs Analysis"
+      needLabel="Required capital"
+      haveLabel="Existing portfolio"
+      data={chartData.map(d => ({age: d.age, need: d.dtpd, have: aLH}))}
       accentColor="#C4A464"
       milestones={{
-       mortgageEnds: (() => {
-          const ages: number[] = []
-          for (let i = 1; i < chartData.length; i++) {
-            const drop = chartData[i-1].dtpd - chartData[i].dtpd
-            const pctDrop = drop / chartData[i-1].dtpd
-            if (pctDrop > 0.15 && pctDrop < 0.40) {
-              ages.push(chartData[i].age)
-            }
-          }
-          return ages
-        })(),
-       educationEnds: children.map((child: any) => {
-          const childAge = child.age || 0
-          const uniEntryAge = child.gender === 'Male' ? 21 : 19
-          const yearsToUni = Math.max(0, uniEntryAge - childAge)
-          return aAge + yearsToUni + 4
-        }),
-        coverageEnds: (() => {
-          for (let i = chartData.length - 1; i >= 0; i--) {
-            if (chartData[i].dtpd > 0) return chartData[i].age
-          }
-          return null
-        })(),
+        mortgageEnds: mortgageEndAges,
+        educationEnds: eduEndAges,
+        coverageEnds: dtpdCoverageEnds,
         clientAge: aAge
       }}
     />
-    <CoverageChart 
-      eyebrow="Critical Illness" 
-      title="Critical Illness Coverage Needs Analysis" 
-      needLabel="Required capital" 
-      haveLabel="Existing portfolio" 
-      data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))} 
+    <CoverageChart
+      eyebrow="Critical Illness"
+      title="Critical Illness Coverage Needs Analysis"
+      needLabel="Required capital"
+      haveLabel="Existing portfolio"
+      data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))}
       accentColor="#2D6A4F"
       milestones={{
-
-        educationEnds: children.map((child: any) => {
-          const childAge = child.age || 0
-          const uniEntryAge = child.gender === 'Male' ? 21 : 19
-          const yearsToUni = Math.max(0, uniEntryAge - childAge)
-          return aAge + yearsToUni + 4
-        }),
-        coverageEnds: (() => {
-          for (let i = chartData.length - 1; i >= 0; i--) {
-            if (chartData[i].ci > 0) return chartData[i].age
-          }
-          return null
-        })(),
+        mortgageEnds: mortgageEndAges,
+        educationEnds: eduEndAges,
+        coverageEnds: ciCoverageEnds,
         clientAge: aAge
       }}
     />
+  </>
+})()}
   </div>
 ) : (
             <div style={{marginTop:20,padding:'24px',background:'white',border:'0.5px solid var(--line)',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
