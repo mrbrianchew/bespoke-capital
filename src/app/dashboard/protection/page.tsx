@@ -680,24 +680,58 @@ async function handleGenerateShare() {
     {(() => {
   // Mortgage end age: read directly from mortgage data, not curve sniffing
   // Use remainingTenure if available, otherwise tenure from properties
+  // Mortgage end age: read from flat financials fields
+  // objectives/page.tsx uses l_mortgage_residing + tenure from properties
   const mortgageEndAges: number[] = []
-  const allMortgages = (ff.properties || []).flatMap((p: any) => p.mortgages || [])
-  allMortgages.forEach((m: any) => {
-    const remaining = Number(m.remainingTenure || m.tenure || 0)
-    if (remaining > 0) mortgageEndAges.push(aAge + remaining)
+  const mortProps = (ff.properties || []).filter((p: any) =>
+    Number(p.outstanding || 0) > 0 || Number(p.remainingTenure || 0) > 0
+  )
+  mortProps.forEach((p: any) => {
+    const remaining = Number(p.remainingTenure || p.tenure || 0)
+    if (remaining > 0) mortgageEndAges.push(Math.round(aAge + remaining))
   })
-  // Fallback: if no mortgage objects but mort > 0, use coverTerm as proxy
-  if (mortgageEndAges.length === 0 && mort > 0) mortgageEndAges.push(aAge + coverTerm)
+  // Fallback: use the objectives mortgage tenure fields directly
+  if (mortgageEndAges.length === 0 && mort > 0) {
+    const t1 = Number(ff.l_mortgage_tenure || ff.mortgage_tenure || 0)
+    const t2 = Number(ff.l2_mortgage_tenure || 0)
+    if (t1 > 0) mortgageEndAges.push(Math.round(aAge + t1))
+    if (t2 > 0) mortgageEndAges.push(Math.round(aAge + t2))
+    // Last resort: read from properties initialTenure and loanStartDate
+    if (mortgageEndAges.length === 0) {
+      ;(ff.properties || []).forEach((p: any) => {
+        const initialTenure = Number(p.initialTenure || 0)
+        const loanStart = p.loanStartDate // mm/yyyy
+        if (initialTenure > 0 && loanStart) {
+          const parts = loanStart.split('/')
+          if (parts.length === 2) {
+            const startYear = parseInt(parts[1])
+            const endYear = startYear + initialTenure
+            const currentYear = new Date().getFullYear()
+            const yearsLeft = Math.max(0, endYear - currentYear)
+            if (yearsLeft > 0) mortgageEndAges.push(Math.round(aAge + yearsLeft))
+          }
+        } else if (initialTenure > 0) {
+          mortgageEndAges.push(Math.round(aAge + initialTenure))
+        }
+      })
+    }
+  }
 
-  // Education end ages: sorted youngest-to-oldest child
-  // Child graduates = client age + years until child finishes uni
+  // Education: children have no gender field — use family_members table data via ffData
+  // Default: female enters uni at 19, male at 21 — but since no gender, use 21 for all (conservative)
+  // Sort by age descending so oldest child graduates first = Child 1
   const eduEndAges = [...children]
-    .sort((a: any, b: any) => Number(b.age||0) - Number(a.age||0)) // oldest first = graduates first
+    .sort((a: any, b: any) => Number(b.age||0) - Number(a.age||0))
     .map((child: any) => {
       const childAge = Number(child.age || 0)
-      const uniEntryAge = child.gender === 'Male' ? 21 : 19
+      // No gender stored in children array — check family_members data in ff
+      const fm = (ff.family_members || []).find((m: any) => m.name === child.name)
+      const gender = fm?.gender || child.gender || ''
+      const uniEntryAge = gender === 'Male' ? 21 : gender === 'Female' ? 19 : 21
       return aAge + Math.max(0, uniEntryAge - childAge) + 4
     })
+    console.log('MORT END AGES:', mortgageEndAges, 'ff.properties sample:', JSON.stringify((ff.properties||[]).map((p:any) => ({label:p.label, remainingTenure:p.remainingTenure, tenure:p.tenure, initialTenure:p.initialTenure, loanStartDate:p.loanStartDate, outstanding:p.outstanding}))))
+  console.log('ff mortgage flat fields:', ff.l_mortgage_tenure, ff.l2_mortgage_tenure, ff.mortgage_tenure)
 
   const dtpdCoverageEnds = (() => {
     for (let i = chartData.length - 1; i >= 0; i--) {
