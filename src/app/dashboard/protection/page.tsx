@@ -1130,11 +1130,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     if (points.length < 2) return ''
     let path = `M ${points[0].x} ${points[0].y}`
     for (let i = 1; i < points.length; i++) {
-      const prev = points[i - 1]
-      const curr = points[i]
-      const cp1x = prev.x + (curr.x - prev.x) * 0.33
-      const cp2x = prev.x + (curr.x - prev.x) * 0.66
-      path += ` C ${cp1x} ${prev.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+      path += ` L ${points[i].x} ${points[i].y}`
     }
     return path
   }
@@ -1187,25 +1183,15 @@ const buildGapPath = (type: 'under' | 'over'): string => {
     // Start at first point of top line
     let path = `M ${topPoints[0].x} ${topPoints[0].y}`
     
-    // Draw along top curve (left to right)
     for (let i = 1; i < topPoints.length; i++) {
-      const prev = topPoints[i - 1]
-      const curr = topPoints[i]
-      const cp1x = prev.x + (curr.x - prev.x) * 0.33
-      const cp2x = prev.x + (curr.x - prev.x) * 0.66
-      path += ` C ${cp1x} ${prev.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+      path += ` L ${topPoints[i].x} ${topPoints[i].y}`
     }
     
     // Draw line down to bottom curve at the right end
     path += ` L ${bottomPoints[bottomPoints.length - 1].x} ${bottomPoints[bottomPoints.length - 1].y}`
     
-    // Draw back along bottom curve (right to left)
     for (let i = bottomPoints.length - 2; i >= 0; i--) {
-      const curr = bottomPoints[i]
-      const next = bottomPoints[i + 1]
-      const cp1x = next.x - (next.x - curr.x) * 0.33
-      const cp2x = next.x - (next.x - curr.x) * 0.66
-      path += ` C ${cp1x} ${next.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+      path += ` L ${bottomPoints[i].x} ${bottomPoints[i].y}`
     }
     
     // IMPORTANT: Close back to start point along the bottom, then up to top start
