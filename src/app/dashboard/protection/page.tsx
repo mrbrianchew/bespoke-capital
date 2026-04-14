@@ -472,7 +472,7 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
       ciFactor = Math.min(ciFactor, Math.max(0, 1-(a-(age+coverTerm))*0.04))
     }
     
-    return { age: a, dtpd, ci: a >= age + coverTerm ? 0 : Math.max(0, ciNeedTotal * ciFactor) }
+    return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
   })
 }
     
