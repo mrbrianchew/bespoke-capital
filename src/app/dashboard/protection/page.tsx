@@ -671,24 +671,23 @@ async function handleGenerateShare() {
       data={chartData.map(d => ({age: d.age, need: d.dtpd, have: aLH}))} 
       accentColor="#C4A464"
       milestones={{
-        mortgageEnds: (() => {
-          const milestoneData = overviewPerson === 'client' ? ff.p1_milestones : ff.p2_milestones
-          if (milestoneData?.mortgages?.length > 0) {
-            return milestoneData.mortgages.map((m: any) => aAge + (m.remaining_tenure ?? 0))
+       mortgageEnds: (() => {
+          const ages: number[] = []
+          for (let i = 1; i < chartData.length; i++) {
+            const drop = chartData[i-1].dtpd - chartData[i].dtpd
+            const pctDrop = drop / chartData[i-1].dtpd
+            if (pctDrop > 0.15 && pctDrop < 0.40) {
+              ages.push(chartData[i].age)
+            }
           }
-          return []
+          return ages
         })(),
-       educationEnds: (() => {
-          const milestoneData = overviewPerson === 'client' ? ff.p1_milestones : ff.p2_milestones
-          if (milestoneData?.education?.length > 0) {
-            return milestoneData.education.map((e: any) => aAge + (e.years_to_entry ?? 0))
-          }
-          return children.map((child: any) => {
-            const childAge = child.age || 0
-            const uniEntryAge = child.gender === 'Male' ? 21 : 19
-            return aAge + Math.max(0, uniEntryAge - childAge)
-          })
-        })(),
+       educationEnds: children.map((child: any) => {
+          const childAge = child.age || 0
+          const uniEntryAge = child.gender === 'Male' ? 21 : 19
+          const yearsToUni = Math.max(0, uniEntryAge - childAge)
+          return aAge + yearsToUni + 4
+        }),
         coverageEnds: (() => {
           for (let i = chartData.length - 1; i >= 0; i--) {
             if (chartData[i].dtpd > 0) return chartData[i].age
@@ -706,17 +705,7 @@ async function handleGenerateShare() {
       data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))} 
       accentColor="#2D6A4F"
       milestones={{
-        mortgageEnds: (() => {
-          const ages: number[] = []
-          for (let i = 1; i < chartData.length; i++) {
-            const drop = chartData[i-1].ci - chartData[i].ci
-            const pctDrop = drop / chartData[i-1].ci
-            if (pctDrop > 0.15 && pctDrop < 0.40) {
-              ages.push(chartData[i].age)
-            }
-          }
-          return ages
-        })(),
+
         educationEnds: children.map((child: any) => {
           const childAge = child.age || 0
           const uniEntryAge = child.gender === 'Male' ? 21 : 19
