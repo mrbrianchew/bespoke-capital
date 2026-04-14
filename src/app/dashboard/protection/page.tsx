@@ -1154,7 +1154,7 @@ const buildGapPath = (type: 'under' | 'over'): string => {
   
   for (let i = 0; i < data.length; i++) {
     const d = data[i]
-    const isMatch = type === 'under' ? d.need > d.have : d.have > d.need
+    const isMatch = type === 'under' ? d.need > d.have : d.have > d.need && d.need > 0
     
     if (isMatch && segmentStart === -1) {
       segmentStart = i
