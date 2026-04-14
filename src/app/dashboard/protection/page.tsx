@@ -1147,76 +1147,78 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   const havePath = smoothCurve(havePoints)
   
   // Build the gap area paths - PROPERLY filling ONLY between the two lines
-  const buildGapPath = (type: 'under' | 'over'): string => {
-    // Find continuous segments where the condition holds
-    const segments: {start: number, end: number}[] = []
-    let segmentStart = -1
+const buildGapPath = (type: 'under' | 'over'): string => {
+  // Find continuous segments where the condition holds
+  const segments: {start: number, end: number}[] = []
+  let segmentStart = -1
+  
+  for (let i = 0; i < data.length; i++) {
+    const d = data[i]
+    const isMatch = type === 'under' ? d.need > d.have : d.have > d.need
     
-    for (let i = 0; i < data.length; i++) {
-      const d = data[i]
-      const isMatch = type === 'under' ? d.need > d.have : d.have > d.need
-      
-      if (isMatch && segmentStart === -1) {
-        segmentStart = i
-      } else if (!isMatch && segmentStart !== -1) {
-        segments.push({ start: segmentStart, end: i - 1 })
-        segmentStart = -1
-      }
+    if (isMatch && segmentStart === -1) {
+      segmentStart = i
+    } else if (!isMatch && segmentStart !== -1) {
+      segments.push({ start: segmentStart, end: i - 1 })
+      segmentStart = -1
     }
-    if (segmentStart !== -1) {
-      segments.push({ start: segmentStart, end: data.length - 1 })
-    }
-    
-    if (segments.length === 0) return ''
-    
-    // Build a single path combining all segments
-    let fullPath = ''
-    
-    segments.forEach((seg, idx) => {
-      if (seg.end - seg.start < 1) return
-      
-      const segData = data.slice(seg.start, seg.end + 1)
-      const segNeed = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
-      const segHave = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
-      
-      const first = segNeed[0]
-      const last = segNeed[segNeed.length - 1]
-      
-      // For underinsured (red): top = need line, bottom = have line
-      // For overinsured (green): top = have line, bottom = need line
-      const topPoints = type === 'under' ? segNeed : segHave
-      const bottomPoints = type === 'under' ? segHave : segNeed
-      
-      // Start at first point of top line
-      let path = `M ${topPoints[0].x} ${topPoints[0].y}`
-      
-      // Draw along top curve
-      for (let i = 1; i < topPoints.length; i++) {
-        const prev = topPoints[i - 1]
-        const curr = topPoints[i]
-        const cp1x = prev.x + (curr.x - prev.x) * 0.33
-        const cp2x = prev.x + (curr.x - prev.x) * 0.66
-        path += ` C ${cp1x} ${prev.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
-      }
-      
-      // Draw line down to bottom curve at the end
-      path += ` L ${bottomPoints[bottomPoints.length - 1].x} ${bottomPoints[bottomPoints.length - 1].y}`
-      
-      // Draw back along bottom curve (reverse direction)
-      for (let i = bottomPoints.length - 2; i >= 0; i--) {
-        const curr = bottomPoints[i]
-        const next = bottomPoints[i + 1]
-        const cp1x = next.x - (next.x - curr.x) * 0.33
-        const cp2x = next.x - (next.x - curr.x) * 0.66
-        path += ` C ${cp1x} ${next.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
-      }
-      
-      path += ' Z'
-      fullPath += path
-    })
-    
-    return fullPath
   }
+  if (segmentStart !== -1) {
+    segments.push({ start: segmentStart, end: data.length - 1 })
+  }
+  
+  if (segments.length === 0) return ''
+  
+  // Build a single path combining all segments
+  let fullPath = ''
+  
+  segments.forEach((seg) => {
+    if (seg.end - seg.start < 1) return
+    
+    const segData = data.slice(seg.start, seg.end + 1)
+    const segNeed = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
+    const segHave = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
+    
+    // For underinsured (red): top = need line, bottom = have line
+    // For overinsured (green): top = have line, bottom = need line
+    const topPoints = type === 'under' ? segNeed : segHave
+    const bottomPoints = type === 'under' ? segHave : segNeed
+    
+    // Start at first point of top line
+    let path = `M ${topPoints[0].x} ${topPoints[0].y}`
+    
+    // Draw along top curve (left to right)
+    for (let i = 1; i < topPoints.length; i++) {
+      const prev = topPoints[i - 1]
+      const curr = topPoints[i]
+      const cp1x = prev.x + (curr.x - prev.x) * 0.33
+      const cp2x = prev.x + (curr.x - prev.x) * 0.66
+      path += ` C ${cp1x} ${prev.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+    }
+    
+    // Draw line down to bottom curve at the right end
+    path += ` L ${bottomPoints[bottomPoints.length - 1].x} ${bottomPoints[bottomPoints.length - 1].y}`
+    
+    // Draw back along bottom curve (right to left)
+    for (let i = bottomPoints.length - 2; i >= 0; i--) {
+      const curr = bottomPoints[i]
+      const next = bottomPoints[i + 1]
+      const cp1x = next.x - (next.x - curr.x) * 0.33
+      const cp2x = next.x - (next.x - curr.x) * 0.66
+      path += ` C ${cp1x} ${next.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+    }
+    
+    // IMPORTANT: Close back to start point along the bottom, then up to top start
+    // This ensures the shape is properly closed without a straight diagonal line
+    path += ` L ${topPoints[0].x} ${bottomPoints[0].y}`
+    path += ` L ${topPoints[0].x} ${topPoints[0].y}`
+    path += ' Z'
+    
+    fullPath += path
+  })
+  
+  return fullPath
+}
   
   const underinsuredPath = buildGapPath('under')
   const overinsuredPath = buildGapPath('over')
