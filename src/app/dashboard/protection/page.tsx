@@ -429,49 +429,28 @@ const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
 
   // Chart data
 function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
-  // Use the Strategic Objectives need directly
-  const dtpdNeed = overviewPerson === 'client' ? clientDTPD : spouseDTPD
-  
-  // Build the DTPD array - flat until coverage term ends, then zero
-  const dtpdArray: number[] = []
-  for (let i = 0; i < 100-age; i++) {
-    const a = age+i
-    const yLeft = Math.max(0, (age+coverTerm)-a)
-    
-    // Need is constant during coverage term, then drops to zero
-    if (yLeft > 0) {
-      dtpdArray.push(Math.max(0, dtpdNeed - offset))
-    } else {
-      dtpdArray.push(0)
-    }
-  }
-  
-  // Find mortgage drop age from DTPD (for CI calculation)
-  let mortgageEndAge = 60 // default
-  for (let i = 1; i < dtpdArray.length; i++) {
-    const drop = dtpdArray[i-1] - dtpdArray[i]
-    const pctDrop = dtpdArray[i-1] > 0 ? drop / dtpdArray[i-1] : 0
-    if (pctDrop > 0.15 && pctDrop < 0.40) {
-      mortgageEndAge = age + i
-      break
-    }
-  }
-  
-  return Array.from({length:100-age}, (_,i) => {
-    const a = age+i
-    const dtpd = dtpdArray[i]
-    
-    // CI calculation - use Strategic Objectives CI need
-    const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
-    
-    let ciFactor = 1.0
-    if (a >= mortgageEndAge) {
-      ciFactor = 0.4
-    }
-    if (a >= age+coverTerm) {
-      ciFactor = Math.min(ciFactor, Math.max(0, 1-(a-(age+coverTerm))*0.04))
-    }
-    
+  const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
+
+  return Array.from({length: 100 - age}, (_, i) => {
+    const a = age + i
+    const yLeft = Math.max(0, (age + coverTerm) - a)
+
+    // D/TPD: recalculate PV annuity at each age from remaining years
+    // This mirrors the Strategic Objectives spreadsheet formula exactly
+    const ageFD   = pvAnn(annExp, inflation, yLeft)
+    const ageMort = mort * (yLeft / Math.max(1, coverTerm))
+    const ageEdu  = edu  * (yLeft / Math.max(1, coverTerm))
+    // Offset is a lump-sum deduction applied only at age 0; it grows slightly each year
+    // as assets are assumed to remain, so we keep it constant (conservative)
+    const dtpd = i === 0
+      ? Math.max(0, ageFD + ageMort + ageEdu - offset)
+      : Math.max(0, ageFD + ageMort + ageEdu - offset)
+
+    // CI: flat at full need during coverage term, then fades out after kids are grown
+    const ciFactor = a < age + coverTerm
+      ? 1.0
+      : Math.max(0, 1 - (a - (age + coverTerm)) * 0.04)
+
     return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
   })
 }
