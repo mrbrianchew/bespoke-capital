@@ -335,6 +335,8 @@ console.log('All merged keys:', Object.keys(merged))
 
   // ── Financial calculations ─────────────────────────────────────────────────
   const ff = ffData || {}
+  console.log('MORTGAGE DEBUG:', JSON.stringify((ff.properties||[]).map((p:any)=>({label:p.label,mortgages:p.mortgages}))))
+console.log('CHILDREN DEBUG:', JSON.stringify(children))
   const inflation = (Number(ff.inflation_rate) || 3) / 100
 
 // Income from Financial Profile - stored in person1.gross_monthly
