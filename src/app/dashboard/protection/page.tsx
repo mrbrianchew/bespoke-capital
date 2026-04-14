@@ -1094,7 +1094,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   data: {age: number; need: number; have: number}[]
   accentColor: string
   milestones?: {
-    mortgageEnds?: number[]  // Changed from mortgageEnd to mortgageEnds (array)
+    mortgageEnds?: number[]
     educationEnds?: number[]
     coverageEnds?: number | null
     clientAge?: number
@@ -1125,40 +1125,106 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   
   const ticks = [0, 0.25, 0.5, 0.75, 1]
   
-// Generate smooth curves using bezier interpolation
-const generateSmoothLine = (values: number[], ages: number[]) => {
-  if (ages.length < 2) return ''
-  
-  let path = `M ${PL + xP(ages[0])} ${PT + yP(values[0])}`
-  
-  for (let i = 1; i < ages.length; i++) {
-    const x1 = PL + xP(ages[i - 1])
-    const y1 = PT + yP(values[i - 1])
-    const x2 = PL + xP(ages[i])
-    const y2 = PT + yP(values[i])
-    
-    // Control points for smooth cubic bezier
-    const cp1x = x1 + (x2 - x1) * 0.33
-    const cp2x = x1 + (x2 - x1) * 0.66
-    
-    path += ` C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`
+  // Helper to generate smooth curve through points
+  const smoothCurve = (points: {x: number, y: number}[]) => {
+    if (points.length < 2) return ''
+    let path = `M ${points[0].x} ${points[0].y}`
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1]
+      const curr = points[i]
+      const cp1x = prev.x + (curr.x - prev.x) * 0.33
+      const cp2x = prev.x + (curr.x - prev.x) * 0.66
+      path += ` C ${cp1x} ${prev.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+    }
+    return path
   }
   
-  return path
-}
-
-const needValues = data.map(d => d.need)
-const haveValues = data.map(d => d.have)
-const ages = data.map(d => d.age)
-
-const needPath = generateSmoothLine(needValues, ages)
-const havePath = generateSmoothLine(haveValues, ages)
+  // Prepare point arrays
+  const needPoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
+  const havePoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
   
-     // Build accurate milestones from passed data
+  const needPath = smoothCurve(needPoints)
+  const havePath = smoothCurve(havePoints)
+  
+  // Build the gap area paths - PROPERLY filling ONLY between the two lines
+  const buildGapPath = (type: 'under' | 'over'): string => {
+    // Find continuous segments where the condition holds
+    const segments: {start: number, end: number}[] = []
+    let segmentStart = -1
+    
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i]
+      const isMatch = type === 'under' ? d.need > d.have : d.have > d.need
+      
+      if (isMatch && segmentStart === -1) {
+        segmentStart = i
+      } else if (!isMatch && segmentStart !== -1) {
+        segments.push({ start: segmentStart, end: i - 1 })
+        segmentStart = -1
+      }
+    }
+    if (segmentStart !== -1) {
+      segments.push({ start: segmentStart, end: data.length - 1 })
+    }
+    
+    if (segments.length === 0) return ''
+    
+    // Build a single path combining all segments
+    let fullPath = ''
+    
+    segments.forEach((seg, idx) => {
+      if (seg.end - seg.start < 1) return
+      
+      const segData = data.slice(seg.start, seg.end + 1)
+      const segNeed = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
+      const segHave = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
+      
+      const first = segNeed[0]
+      const last = segNeed[segNeed.length - 1]
+      
+      // For underinsured (red): top = need line, bottom = have line
+      // For overinsured (green): top = have line, bottom = need line
+      const topPoints = type === 'under' ? segNeed : segHave
+      const bottomPoints = type === 'under' ? segHave : segNeed
+      
+      // Start at first point of top line
+      let path = `M ${topPoints[0].x} ${topPoints[0].y}`
+      
+      // Draw along top curve
+      for (let i = 1; i < topPoints.length; i++) {
+        const prev = topPoints[i - 1]
+        const curr = topPoints[i]
+        const cp1x = prev.x + (curr.x - prev.x) * 0.33
+        const cp2x = prev.x + (curr.x - prev.x) * 0.66
+        path += ` C ${cp1x} ${prev.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+      }
+      
+      // Draw line down to bottom curve at the end
+      path += ` L ${bottomPoints[bottomPoints.length - 1].x} ${bottomPoints[bottomPoints.length - 1].y}`
+      
+      // Draw back along bottom curve (reverse direction)
+      for (let i = bottomPoints.length - 2; i >= 0; i--) {
+        const curr = bottomPoints[i]
+        const next = bottomPoints[i + 1]
+        const cp1x = next.x - (next.x - curr.x) * 0.33
+        const cp2x = next.x - (next.x - curr.x) * 0.66
+        path += ` C ${cp1x} ${next.y}, ${cp2x} ${curr.y}, ${curr.x} ${curr.y}`
+      }
+      
+      path += ' Z'
+      fullPath += path
+    })
+    
+    return fullPath
+  }
+  
+  const underinsuredPath = buildGapPath('under')
+  const overinsuredPath = buildGapPath('over')
+  
+  // Build accurate milestones from passed data
   const chartMilestones: {age: number; label: string; type: string; color?: string}[] = []
 
   if (milestones) {
-    // Mortgage paid off - handles MULTIPLE mortgages
     if (milestones.mortgageEnds && milestones.mortgageEnds.length > 0) {
       const sortedMortgageAges = [...milestones.mortgageEnds].sort((a, b) => a - b)
       sortedMortgageAges.forEach((age, idx) => {
@@ -1172,20 +1238,12 @@ const havePath = generateSmoothLine(haveValues, ages)
       })
     }
     
-    // Education completed - handles ANY number of children
     if (milestones.educationEnds && milestones.educationEnds.length > 0) {
-      // Filter valid ages first
       const validEduAges = milestones.educationEnds.filter(age => age > (milestones.clientAge || 0))
-      
-      // Remove duplicates manually
       const uniqueEduEnds: number[] = []
       validEduAges.forEach(age => {
-        if (!uniqueEduEnds.includes(age)) {
-          uniqueEduEnds.push(age)
-        }
+        if (!uniqueEduEnds.includes(age)) uniqueEduEnds.push(age)
       })
-      
-      // Sort and create milestones
       uniqueEduEnds.sort((a, b) => a - b).forEach((age, idx) => {
         const childNumber = uniqueEduEnds.length > 1 ? `Child ${idx + 1}` : 'Child'
         chartMilestones.push({
@@ -1197,7 +1255,6 @@ const havePath = generateSmoothLine(haveValues, ages)
       })
     }
     
-    // Coverage ends
     if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge || 0)) {
       chartMilestones.push({
         age: milestones.coverageEnds,
@@ -1207,98 +1264,6 @@ const havePath = generateSmoothLine(haveValues, ages)
       })
     }
   }
-  
-// Build smooth gap areas - ONE CONTINUOUS PATH per color
-const generateSmoothAreaPath = (allPoints: {x: number, y1: number, y2: number}[], isRed: boolean) => {
-  // We need to build a SINGLE continuous path that covers ALL red or ALL green areas
-  // without creating holes
-  
-  const threshold = 0.5
-  let fullPath = ''
-  let currentSegment: {x: number, y1: number, y2: number}[] = []
-  
-  // Helper to close and add a segment to the full path
-  const closeSegment = () => {
-    if (currentSegment.length < 2) {
-      currentSegment = []
-      return
-    }
-    
-    const first = currentSegment[0]
-    const last = currentSegment[currentSegment.length - 1]
-    
-    // Start at top line
-    let path = `M ${first.x} ${isRed ? first.y1 : first.y2}`
-    
-    // Top curve (need line for red, have line for green)
-    for (let i = 1; i < currentSegment.length; i++) {
-      const prev = currentSegment[i - 1]
-      const curr = currentSegment[i]
-      const cp1x = prev.x + (curr.x - prev.x) * 0.33
-      const cp2x = prev.x + (curr.x - prev.x) * 0.66
-      const prevY = isRed ? prev.y1 : prev.y2
-      const currY = isRed ? curr.y1 : curr.y2
-      path += ` C ${cp1x} ${prevY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
-    }
-    
-    // Down to bottom line
-    path += ` L ${last.x} ${isRed ? last.y2 : last.y1}`
-    
-    // Bottom curve backwards (have line for red, need line for green)
-    for (let i = currentSegment.length - 2; i >= 0; i--) {
-      const curr = currentSegment[i]
-      const next = currentSegment[i + 1]
-      const cp1x = next.x - (next.x - curr.x) * 0.33
-      const cp2x = next.x - (next.x - curr.x) * 0.66
-      const currY = isRed ? curr.y2 : curr.y1
-      const nextY = isRed ? next.y2 : next.y1
-      path += ` C ${cp1x} ${nextY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
-    }
-    
-    path += ' Z'
-    fullPath += path
-    currentSegment = []
-  }
-  
-  // Build segments - keep points where the condition is true
-  for (let i = 0; i < allPoints.length; i++) {
-    const p = allPoints[i]
-    const hasGap = isRed ? (p.y1 > p.y2 + threshold) : (p.y2 > p.y1 + threshold)
-    
-    if (hasGap) {
-      currentSegment.push(p)
-    } else {
-      closeSegment()
-    }
-  }
-  
-  // Close any remaining segment
-  closeSegment()
-  
-  return fullPath
-}
-
-// Collect points for red gaps (underinsured) and green gaps (overinsured)
-const redPoints: {x: number, y1: number, y2: number}[] = []
-const greenPoints: {x: number, y1: number, y2: number}[] = []
-
-data.forEach((d) => {
-  const x = PL + xP(d.age)
-  const yNeed = PT + yP(d.need)
-  const yHave = PT + yP(d.have)
-  
-  if (d.need > d.have) {
-    redPoints.push({ x, y1: yNeed, y2: yHave })
-    greenPoints.push({ x, y1: yHave, y2: yHave }) // zero height
-  } else {
-    greenPoints.push({ x, y1: yHave, y2: yNeed })
-    redPoints.push({ x, y1: yNeed, y2: yNeed }) // zero height
-  }
-})
-
-// Generate smooth paths
-const redGapPath = generateSmoothAreaPath(redPoints, true)
-const greenGapPath = generateSmoothAreaPath(greenPoints, false)
   
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
   
@@ -1343,14 +1308,14 @@ const greenGapPath = generateSmoothAreaPath(greenPoints, false)
   const needColor = '#1C1A17'
   const haveColor = accentColor
   const underinsuredColor = 'rgba(231, 76, 60, 0.12)'
-const overinsuredColor = 'rgba(39, 174, 96, 0.10)'
-const underinsuredBorder = 'rgba(231, 76, 60, 0.25)'
-const overinsuredBorder = 'rgba(39, 174, 96, 0.20)'
+  const overinsuredColor = 'rgba(39, 174, 96, 0.10)'
+  const underinsuredBorder = 'rgba(231, 76, 60, 0.25)'
+  const overinsuredBorder = 'rgba(39, 174, 96, 0.20)'
   const gridColor = 'rgba(0, 0, 0, 0.04)'
   const textColor = '#8B8B8B'
   const milestoneColor = '#A8834A'
   
-    const nearbyMilestone = hovered 
+  const nearbyMilestone = hovered 
     ? chartMilestones.find(m => Math.abs(m.age - hovered.age) <= 2)
     : null
   
@@ -1420,6 +1385,7 @@ const overinsuredBorder = 'rgba(39, 174, 96, 0.20)'
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
+          {/* Grid lines */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
             return (
@@ -1435,15 +1401,20 @@ const overinsuredBorder = 'rgba(39, 174, 96, 0.20)'
           <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
           <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
           
-         {redGapPath && (
-  <path d={redGapPath} fill={underinsuredColor} stroke={underinsuredBorder} strokeWidth="0.8" />
-)}
-
-{greenGapPath && (
-  <path d={greenGapPath} fill={overinsuredColor} stroke={overinsuredBorder} strokeWidth="0.8" />
-)}
+          {/* Gap areas - UNDERINSURED (red) */}
+          {underinsuredPath && (
+            <path d={underinsuredPath} fill={underinsuredColor} stroke={underinsuredBorder} strokeWidth="0.5" strokeLinejoin="round" />
+          )}
           
+          {/* Gap areas - OVERINSURED (green) */}
+          {overinsuredPath && (
+            <path d={overinsuredPath} fill={overinsuredColor} stroke={overinsuredBorder} strokeWidth="0.5" strokeLinejoin="round" />
+          )}
+          
+          {/* Existing portfolio line (dashed) */}
           <path d={havePath} stroke={haveColor} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" strokeDasharray="4,3" />
+          
+          {/* Required capital line (solid) */}
           <path d={needPath} stroke={needColor} strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round" />
           
           {mouseX && (
@@ -1496,7 +1467,7 @@ const overinsuredBorder = 'rgba(39, 174, 96, 0.20)'
                 </span>
               </div>
               
-                           {nearbyMilestone && (
+              {nearbyMilestone && (
                 <div style={{
                   marginTop: 4,
                   padding: '6px 0',
