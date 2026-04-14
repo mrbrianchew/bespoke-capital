@@ -1210,7 +1210,6 @@ const buildGapPath = (type: 'under' | 'over'): string => {
     
     // IMPORTANT: Close back to start point along the bottom, then up to top start
     // This ensures the shape is properly closed without a straight diagonal line
-    path += ` L ${topPoints[0].x} ${bottomPoints[0].y}`
     path += ` L ${topPoints[0].x} ${topPoints[0].y}`
     path += ' Z'
     
