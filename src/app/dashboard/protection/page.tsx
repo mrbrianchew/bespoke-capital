@@ -1208,51 +1208,74 @@ const havePath = generateSmoothLine(haveValues, ages)
     }
   }
   
-// Build smooth gap areas using area fill approach
-const generateSmoothAreaPath = (points: {x: number, y1: number, y2: number}[], reverse: boolean = false) => {
-  if (points.length < 2) return ''
+// Build smooth gap areas - ONE CONTINUOUS PATH per color
+const generateSmoothAreaPath = (allPoints: {x: number, y1: number, y2: number}[], isRed: boolean) => {
+  // We need to build a SINGLE continuous path that covers ALL red or ALL green areas
+  // without creating holes
   
-  // Filter to only include points where there's actual gap
-  const validPoints = points.filter(p => Math.abs(p.y1 - p.y2) > 0.5)
-  if (validPoints.length < 2) return ''
+  const threshold = 0.5
+  let fullPath = ''
+  let currentSegment: {x: number, y1: number, y2: number}[] = []
   
-  const first = validPoints[0]
-  const last = validPoints[validPoints.length - 1]
-  
-  // Start at first point on the top line
-  let path = `M ${first.x} ${reverse ? first.y2 : first.y1}`
-  
-  // Draw smooth top curve
-  for (let i = 1; i < validPoints.length; i++) {
-    const prev = validPoints[i - 1]
-    const curr = validPoints[i]
+  // Helper to close and add a segment to the full path
+  const closeSegment = () => {
+    if (currentSegment.length < 2) {
+      currentSegment = []
+      return
+    }
     
-    const cp1x = prev.x + (curr.x - prev.x) * 0.33
-    const cp2x = prev.x + (curr.x - prev.x) * 0.66
-    const prevY = reverse ? prev.y2 : prev.y1
-    const currY = reverse ? curr.y2 : curr.y1
+    const first = currentSegment[0]
+    const last = currentSegment[currentSegment.length - 1]
     
-    path += ` C ${cp1x} ${prevY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
+    // Start at top line
+    let path = `M ${first.x} ${isRed ? first.y1 : first.y2}`
+    
+    // Top curve (need line for red, have line for green)
+    for (let i = 1; i < currentSegment.length; i++) {
+      const prev = currentSegment[i - 1]
+      const curr = currentSegment[i]
+      const cp1x = prev.x + (curr.x - prev.x) * 0.33
+      const cp2x = prev.x + (curr.x - prev.x) * 0.66
+      const prevY = isRed ? prev.y1 : prev.y2
+      const currY = isRed ? curr.y1 : curr.y2
+      path += ` C ${cp1x} ${prevY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
+    }
+    
+    // Down to bottom line
+    path += ` L ${last.x} ${isRed ? last.y2 : last.y1}`
+    
+    // Bottom curve backwards (have line for red, need line for green)
+    for (let i = currentSegment.length - 2; i >= 0; i--) {
+      const curr = currentSegment[i]
+      const next = currentSegment[i + 1]
+      const cp1x = next.x - (next.x - curr.x) * 0.33
+      const cp2x = next.x - (next.x - curr.x) * 0.66
+      const currY = isRed ? curr.y2 : curr.y1
+      const nextY = isRed ? next.y2 : next.y1
+      path += ` C ${cp1x} ${nextY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
+    }
+    
+    path += ' Z'
+    fullPath += path
+    currentSegment = []
   }
   
-  // Draw line down to bottom curve
-  path += ` L ${last.x} ${reverse ? last.y1 : last.y2}`
-  
-  // Draw smooth bottom curve backwards
-  for (let i = validPoints.length - 2; i >= 0; i--) {
-    const curr = validPoints[i]
-    const next = validPoints[i + 1]
+  // Build segments - keep points where the condition is true
+  for (let i = 0; i < allPoints.length; i++) {
+    const p = allPoints[i]
+    const hasGap = isRed ? (p.y1 > p.y2 + threshold) : (p.y2 > p.y1 + threshold)
     
-    const cp1x = next.x - (next.x - curr.x) * 0.33
-    const cp2x = next.x - (next.x - curr.x) * 0.66
-    const currY = reverse ? curr.y1 : curr.y2
-    const nextY = reverse ? next.y1 : next.y2
-    
-    path += ` C ${cp1x} ${nextY}, ${cp2x} ${currY}, ${curr.x} ${currY}`
+    if (hasGap) {
+      currentSegment.push(p)
+    } else {
+      closeSegment()
+    }
   }
   
-  path += ' Z'
-  return path
+  // Close any remaining segment
+  closeSegment()
+  
+  return fullPath
 }
 
 // Collect points for red gaps (underinsured) and green gaps (overinsured)
@@ -1274,8 +1297,8 @@ data.forEach((d) => {
 })
 
 // Generate smooth paths
-const redGapPath = generateSmoothAreaPath(redPoints, false)
-const greenGapPath = generateSmoothAreaPath(greenPoints, true)
+const redGapPath = generateSmoothAreaPath(redPoints, true)
+const greenGapPath = generateSmoothAreaPath(greenPoints, false)
   
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
   
