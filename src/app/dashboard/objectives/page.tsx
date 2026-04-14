@@ -722,41 +722,15 @@ const coverageTerm = (() => {
   // Save calculated needs to database
 async function saveNeedsToDatabase() {
   if (!clientId) return
-
-  const clientAge = (() => {
-    const { data: c } = { data: null } // age loaded separately below
-    return 0
-  })()
-
-  // Build mortgage milestones: payoff age = client age + remaining tenure
-  const mortgageList = (ff.properties ?? []).filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
   
   const needs: any = {
     p1_dtpd_need: dtpdClient.net,
     p1_ci_need: ciClient.net,
-    p1_milestones: {
-      mortgages: mortgageList.map((m: any) => ({
-        label: m.label || 'Property',
-        remaining_tenure: m.remainingTenure ?? m.initialTenure ?? 25,
-      })),
-      education: (p.educationChildren ?? []).map(ec => {
-        const child = children.find(c => c.id === ec.childId)
-        const childAge = child?.age ?? getAge(child?.date_of_birth)
-        const defaultEntry = child?.gender === 'Male' ? 21 : 19
-        const entryAge = ec.uniEntryAge ?? defaultEntry
-        return {
-          childId: ec.childId,
-          name: child?.name ?? 'Child',
-          years_to_entry: Math.max(0, entryAge - childAge),
-        }
-      }),
-    },
   }
-
+  
   if (isCouple) {
     needs.p2_dtpd_need = dtpdSpouse.net
     needs.p2_ci_need = ciSpouse.net
-    needs.p2_milestones = needs.p1_milestones
   }
   
   // Get existing protection_needs data
