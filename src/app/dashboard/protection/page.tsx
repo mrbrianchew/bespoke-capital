@@ -431,22 +431,46 @@ const spouseCI   = isCouple ? Number(ff.p2_ci_need || 0) : 0
 function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
   const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
 
+  // Floor = FV annuity for a minimum 5-year window post-coverage
+  // Matches spreadsheet C125 = FV(inflation, 5, -annualExpenses, 0, 1)
+  // This is the estate/legacy floor the line never drops below
+  const floor = fvAnn(annExp, inflation, 5)
+
+  // Mortgage: amortized outstanding balance at each future age
+  // Matches spreadsheet M121 = PV(rate/12, totalMonths - elapsedMonths, -monthlyPayment)
+  // We approximate using annual PV: PV(rate, yearsRemaining, -annualPayment)
+  const mortRate   = Number(ff.mortgage_rate || ff.l_mortgage_rate || 0) / 100
+  const mortTenure = Number(ff.mortgage_tenure || ff.l_mortgage_tenure || 25)
+  const mortStart  = Number(ff.mortgage_start_age || age) // age when mortgage started
+  function mortBalance(atAge: number): number {
+    if (mort <= 0) return 0
+    const elapsed = atAge - mortStart
+    const remaining = mortTenure - elapsed
+    if (remaining <= 0) return 0
+    if (mortRate === 0) return mort * (remaining / mortTenure)
+    // PV of remaining payments
+    const annualPmt = mort * mortRate / (1 - Math.pow(1 + mortRate, -mortTenure))
+    return annualPmt * (1 - Math.pow(1 + mortRate, -remaining)) / mortRate
+  }
+
   return Array.from({length: 100 - age}, (_, i) => {
     const a = age + i
     const yLeft = Math.max(0, (age + coverTerm) - a)
 
-    // D/TPD: recalculate PV annuity at each age from remaining years
-    // This mirrors the Strategic Objectives spreadsheet formula exactly
-    const ageFD   = pvAnn(annExp, inflation, yLeft)
-    const ageMort = mort * (yLeft / Math.max(1, coverTerm))
-    const ageEdu  = edu  * (yLeft / Math.max(1, coverTerm))
-    // Offset is a lump-sum deduction applied only at age 0; it grows slightly each year
-    // as assets are assumed to remain, so we keep it constant (conservative)
-    const dtpd = i === 0
-      ? Math.max(0, ageFD + ageMort + ageEdu - offset)
-      : Math.max(0, ageFD + ageMort + ageEdu - offset)
+    // Family dependency: FV annuity-due, recalculated each year (matches M119)
+    const ageFD = fvAnn(annExp, inflation, yLeft)
 
-    // CI: flat at full need during coverage term, then fades out after kids are grown
+    // Mortgage: actual declining balance each year (matches M121)
+    const ageMort = mortBalance(a)
+
+    // Education: full amount throughout coverage term, zero after (matches M120 flat behaviour)
+    const ageEdu = yLeft > 0 ? edu : 0
+
+    // Sum components, apply floor (matches M115 = MAX(sum, C125))
+    const components = ageFD + ageMort + ageEdu - offset
+    const dtpd = Math.max(floor, components)
+
+    // CI: flat at full need during coverage term, then fades
     const ciFactor = a < age + coverTerm
       ? 1.0
       : Math.max(0, 1 - (a - (age + coverTerm)) * 0.04)
