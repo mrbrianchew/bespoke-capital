@@ -1192,59 +1192,67 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     }
   }
   
-  // Build gap areas
-  const redGapPaths: string[] = []
-  const greenGapPaths: string[] = []
+ // Build smooth gap areas using area fill approach
+const generateSmoothAreaPath = (points: {x: number, y1: number, y2: number}[], reverse: boolean = false) => {
+  if (points.length < 2) return ''
   
-  let currentRedPath: string[] = []
-  let currentGreenPath: string[] = []
-  let inRedGap = false
-  let inGreenGap = false
+  const first = points[0]
+  const last = points[points.length - 1]
   
-  data.forEach((d) => {
-    const x = PL + xP(d.age)
-    const yNeed = PT + yP(d.need)
-    const yHave = PT + yP(d.have)
+  // Start at first point
+  let path = `M ${first.x} ${reverse ? first.y2 : first.y1}`
+  
+  // Draw top line (need or have curve)
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]
+    if (i === 0) continue
+    const prev = points[i - 1]
     
-    if (d.need > d.have) {
-      if (!inRedGap) {
-        inRedGap = true
-        currentRedPath = [`M ${x} ${yNeed}`, `L ${x} ${yHave}`]
-      } else {
-        currentRedPath.push(`L ${x} ${yNeed}`)
-        currentRedPath.push(`L ${x} ${yHave}`)
-      }
-    } else {
-      if (inRedGap && currentRedPath.length > 0) {
-        redGapPaths.push(currentRedPath.join(' ') + ' Z')
-        inRedGap = false
-        currentRedPath = []
-      }
-    }
-    
-    if (d.have > d.need) {
-      if (!inGreenGap) {
-        inGreenGap = true
-        currentGreenPath = [`M ${x} ${yHave}`, `L ${x} ${yNeed}`]
-      } else {
-        currentGreenPath.push(`L ${x} ${yHave}`)
-        currentGreenPath.push(`L ${x} ${yNeed}`)
-      }
-    } else {
-      if (inGreenGap && currentGreenPath.length > 0) {
-        greenGapPaths.push(currentGreenPath.join(' ') + ' Z')
-        inGreenGap = false
-        currentGreenPath = []
-      }
-    }
-  })
+    // Use bezier curves for smooth interpolation
+    const cp1x = prev.x + (p.x - prev.x) / 3
+    const cp2x = prev.x + (2 * (p.x - prev.x)) / 3
+    path += ` C ${cp1x} ${reverse ? prev.y2 : prev.y1}, ${cp2x} ${p.y2 || p.y1}, ${p.x} ${reverse ? p.y2 : p.y1}`
+  }
   
-  if (inRedGap && currentRedPath.length > 0) {
-    redGapPaths.push(currentRedPath.join(' ') + ' Z')
+  // Draw down to bottom line and return
+  path += ` L ${last.x} ${reverse ? last.y1 : last.y2}`
+  
+  // Draw bottom line back (reverse direction)
+  for (let i = points.length - 1; i >= 0; i--) {
+    const p = points[i]
+    if (i === points.length - 1) continue
+    const next = points[i + 1]
+    
+    const cp1x = next.x - (next.x - p.x) / 3
+    const cp2x = next.x - (2 * (next.x - p.x)) / 3
+    path += ` C ${cp1x} ${reverse ? next.y1 : next.y2}, ${cp2x} ${p.y2 || p.y1}, ${p.x} ${reverse ? p.y1 : p.y2}`
   }
-  if (inGreenGap && currentGreenPath.length > 0) {
-    greenGapPaths.push(currentGreenPath.join(' ') + ' Z')
+  
+  path += ' Z'
+  return path
+}
+
+// Collect points for red gaps (underinsured) and green gaps (overinsured)
+const redPoints: {x: number, y1: number, y2: number}[] = []
+const greenPoints: {x: number, y1: number, y2: number}[] = []
+
+data.forEach((d) => {
+  const x = PL + xP(d.age)
+  const yNeed = PT + yP(d.need)
+  const yHave = PT + yP(d.have)
+  
+  if (d.need > d.have) {
+    redPoints.push({ x, y1: yNeed, y2: yHave })
+    greenPoints.push({ x, y1: yHave, y2: yHave }) // zero height
+  } else {
+    greenPoints.push({ x, y1: yHave, y2: yNeed })
+    redPoints.push({ x, y1: yNeed, y2: yNeed }) // zero height
   }
+})
+
+// Generate smooth paths
+const redGapPath = generateSmoothAreaPath(redPoints.filter(p => Math.abs(p.y1 - p.y2) > 0.1), false)
+const greenGapPath = generateSmoothAreaPath(greenPoints.filter(p => Math.abs(p.y1 - p.y2) > 0.1), true)
   
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
   
@@ -1288,10 +1296,10 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   
   const needColor = '#1C1A17'
   const haveColor = accentColor
-  const underinsuredColor = 'rgba(231, 76, 60, 0.18)'
-  const overinsuredColor = 'rgba(39, 174, 96, 0.14)'
-  const underinsuredBorder = 'rgba(231, 76, 60, 0.35)'
-  const overinsuredBorder = 'rgba(39, 174, 96, 0.30)'
+  const underinsuredColor = 'rgba(231, 76, 60, 0.12)'
+const overinsuredColor = 'rgba(39, 174, 96, 0.10)'
+const underinsuredBorder = 'rgba(231, 76, 60, 0.25)'
+const overinsuredBorder = 'rgba(39, 174, 96, 0.20)'
   const gridColor = 'rgba(0, 0, 0, 0.04)'
   const textColor = '#8B8B8B'
   const milestoneColor = '#A8834A'
@@ -1381,13 +1389,13 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
           <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
           <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
           
-          {redGapPaths.map((path, idx) => (
-            <path key={`red-${idx}`} d={path} fill={underinsuredColor} stroke={underinsuredBorder} strokeWidth="0.8" />
-          ))}
-          
-          {greenGapPaths.map((path, idx) => (
-            <path key={`green-${idx}`} d={path} fill={overinsuredColor} stroke={overinsuredBorder} strokeWidth="0.8" />
-          ))}
+         {redGapPath && (
+  <path d={redGapPath} fill={underinsuredColor} stroke={underinsuredBorder} strokeWidth="0.8" />
+)}
+
+{greenGapPath && (
+  <path d={greenGapPath} fill={overinsuredColor} stroke={overinsuredBorder} strokeWidth="0.8" />
+)}
           
           <path d={havePath} stroke={haveColor} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" strokeDasharray="4,3" />
           <path d={needPath} stroke={needColor} strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round" />
