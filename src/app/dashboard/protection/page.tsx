@@ -1447,29 +1447,57 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
           {/* Need line */}
           <path d={needPath} stroke={CHART_COLOR} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-          {/* Milestones */}
+                   {/* Milestone vertical lines through chart (no labels in chart area) */}
           {chartMilestones.map((m) => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
-            
             const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
-            const tierOffset = m.tier * 35
             
             return (
-              <g key={`ms-${m.age}-${m.type}`}>
-                {/* Dotted line through chart */}
-                <line x1={mx} y1={PT - 8 + tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.35" />
-                
-                {/* Dot at top */}
-                <circle cx={mx} cy={PT - 8 + tierOffset} r="2" fill={mc} opacity="0.45" />
-                
-                {/* Label */}
-                                <text x={mx + 6} y={PT - 16 + tierOffset} fontSize="7" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="500" letterSpacing="0.03em">
+              <g key={`msline-${m.age}-${m.type}`}>
+                {/* Dotted line through chart - starts at top of chart area */}
+                <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.3" />
+                {/* Small dot at top of line (where it meets chart) */}
+                <circle cx={mx} cy={PT} r="2" fill={mc} opacity="0.4" />
+              </g>
+            )
+          })}
+
+          {/* Milestone labels placed ABOVE the chart area */}
+          {chartMilestones.map((m) => {
+            const mx = PL + xP(m.age)
+            if (mx < PL || mx > PL+iW) return null
+            const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
+            const tierOffset = m.tier * 30 // Labels cascade down if close together
+            
+            return (
+              <g key={`mslabel-${m.age}-${m.type}`}>
+                <text 
+                  x={mx} 
+                  y={PT - 20 - tierOffset} 
+                  fontSize="7.5" 
+                  fill={mc} 
+                  textAnchor="middle" 
+                  fontFamily="Inter, sans-serif" 
+                  fontWeight="500" 
+                  letterSpacing="0.04em"
+                >
                   {m.label.toUpperCase()}
                 </text>
-                <text x={mx + 6} y={PT - 6 + tierOffset} fontSize="6.5" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="300" opacity="0.6">
+                <text 
+                  x={mx} 
+                  y={PT - 10 - tierOffset} 
+                  fontSize="6.5" 
+                  fill={mc} 
+                  textAnchor="middle" 
+                  fontFamily="Inter, sans-serif" 
+                  fontWeight="300" 
+                  opacity="0.6"
+                >
                   age {m.age}
                 </text>
+                {/* Tiny connecting line from label to chart top */}
+                <line x1={mx} y1={PT - 4 - tierOffset} x2={mx} y2={PT} stroke={mc} strokeWidth="0.5" opacity="0.3" />
               </g>
             )
           })}
