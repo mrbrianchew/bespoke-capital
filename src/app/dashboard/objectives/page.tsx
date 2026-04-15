@@ -1092,19 +1092,25 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
   const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
   const mortgages: MortgageProperty[] = (ff.properties ?? [])
     .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
-    .map((prop: any) => {
+        .map((prop: any) => {
       const startDate = prop.loanStartDate ?? ''
       const initialTenure = prop.initialTenure ?? 25
       const interestRate = prop.interestRate ?? 0
       const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
-      // PMT calc for monthly repayment if not stored
-      function pmtCalc(principal: number, annRate: number, years: number): number {
-        if (years <= 0 || principal <= 0) return 0
-        if (annRate === 0) return principal / (years * 12)
-        const r = annRate / 100 / 12; const n = years * 12
-        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+      const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+      
+      // Simple PMT calculation
+      let monthlyRepayment = prop.monthlyRepayment
+      if (!monthlyRepayment && initialLoan > 0 && initialTenure > 0) {
+        if (interestRate === 0) {
+          monthlyRepayment = initialLoan / (initialTenure * 12)
+        } else {
+          const r = interestRate / 100 / 12
+          const n = initialTenure * 12
+          monthlyRepayment = initialLoan * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+        }
       }
-      // Calculate remaining tenure from start date if not overridden
+      
       let remainingTenure = prop.remainingTenure ?? initialTenure
       if (!prop.remainingTenure && startDate) {
         const [mm, yyyy] = startDate.split('/')
@@ -1115,14 +1121,13 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
           remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
         }
       }
-     const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
-      const monthlyRepayment = prop.monthlyRepayment ?? pmtCalc(initialLoan, interestRate, initialTenure)
+      
       return {
         id: prop.id,
         label: prop.label || 'Property',
         outstanding: outstanding,
         interestRate: interestRate,
-        monthlyRepayment: monthlyRepayment,
+        monthlyRepayment: monthlyRepayment || 0,
         tenure: initialTenure,
         initialLoanAmount: initialLoan,
         initialTenure: initialTenure,
