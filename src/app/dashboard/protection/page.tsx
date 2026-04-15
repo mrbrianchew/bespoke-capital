@@ -1273,9 +1273,9 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
 
     // Calculate required top padding based on max tier
   const maxTier = chartMilestones.length > 0 ? Math.max(...chartMilestones.map(m => m.tier)) : 0
-  const labelHeight = 36 // Height per tier
-  const baseTopPadding = 48
-const dynamicTopPadding = chartMilestones.length > 0 ? baseTopPadding + (maxTier * labelHeight) : baseTopPadding
+  const labelHeight = 30 // Height per tier
+  const baseTopPadding = 16
+  const dynamicTopPadding = chartMilestones.length > 0 ? baseTopPadding + ((maxTier + 1) * labelHeight) : baseTopPadding
 
   // Chart dimensions with dynamic top padding
   const W = 900, H = 280 + dynamicTopPadding, PL = 80, PR = 40, PT = dynamicTopPadding, PB = 44
@@ -1457,50 +1457,64 @@ const dynamicTopPadding = chartMilestones.length > 0 ? baseTopPadding + (maxTier
               <g key={`msline-${m.age}-${m.type}`}>
                 {/* Dotted line through chart - starts at top of chart area */}
                 <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.3" />
-                {/* Small dot at top of line (where it meets chart) */}
-                <circle cx={mx} cy={PT} r="2" fill={mc} opacity="0.4" />
               </g>
             )
           })}
 
           {/* Milestone labels placed ABOVE the chart area */}
                     {chartMilestones.map((m) => {
-            const mx = PL + xP(m.age)
-            if (mx < PL || mx > PL+iW) return null
-            const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
-            const tierOffset = m.tier * 32
-            
-            return (
-              <g key={`mslabel-${m.age}-${m.type}`}>
-                <text 
-                  x={mx} 
-                 y={PT - 20 + tierOffset}
-                  fontSize="7.5" 
-                  fill={mc} 
-                  textAnchor="middle" 
-                  fontFamily="Inter, sans-serif" 
-                  fontWeight="500" 
-                  letterSpacing="0.04em"
-                >
-                  {m.label.toUpperCase()}
-                </text>
-                <text 
-                  x={mx} 
-                  y={PT - 10 + tierOffset}
-                  fontSize="6.5" 
-                  fill={mc} 
-                  textAnchor="middle" 
-                  fontFamily="Inter, sans-serif" 
-                  fontWeight="300" 
-                  opacity="0.6"
-                >
-                  age {m.age}
-                </text>
-                {/* Tiny connecting line from label to chart top */}
-                <line x1={mx} y1={PT - 6 + tierOffset} x2={mx} y2={PT} stroke={mc} strokeWidth="0.5" opacity="0.4" />
-              </g>
-            )
-          })}
+  const mx = PL + xP(m.age)
+  if (mx < PL || mx > PL+iW) return null
+  const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
+  // Stack labels from bottom of label zone upward
+  // tier 0 = closest to chart, higher tiers go further up
+  const maxT = Math.max(...chartMilestones.map(x => x.tier))
+  const slotHeight = labelHeight  // 28px per slot
+  // Bottom of label zone = PT - 8 (small gap above chart line)
+  // Each tier stacks upward from there
+  const slotBottom = PT - 8 - ((maxT - m.tier) * slotHeight)
+  const labelY = slotBottom - 10  // text baseline
+  const ageY   = slotBottom       // "age XX" baseline
+
+  return (
+    <g key={`mslabel-${m.age}-${m.type}`}>
+      {/* Label text */}
+      <text
+        x={mx}
+        y={labelY}
+        fontSize="7.5"
+        fill={mc}
+        textAnchor="middle"
+        fontFamily="Inter, sans-serif"
+        fontWeight="500"
+        letterSpacing="0.04em"
+      >
+        {m.label.toUpperCase()}
+      </text>
+      {/* Age sub-label */}
+      <text
+        x={mx}
+        y={ageY}
+        fontSize="6.5"
+        fill={mc}
+        textAnchor="middle"
+        fontFamily="Inter, sans-serif"
+        fontWeight="300"
+        opacity="0.6"
+      >
+        age {m.age}
+      </text>
+      {/* Connector line: from just below age label down to top of chart */}
+      <line
+        x1={mx} y1={ageY + 4}
+        x2={mx} y2={PT}
+        stroke={mc}
+        strokeWidth="0.5"
+        opacity="0.4"
+      />
+    </g>
+  )
+})}
 
           {/* Crosshair */}
           {mouseX && (
