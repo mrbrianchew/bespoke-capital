@@ -1247,22 +1247,10 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const needPoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
   const havePoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
 
-  // Clean, smooth monotone curve - no waviness
+    // Straight lines connecting points - clean and sharp
   const makeSmoothPath = (pts: {x:number, y:number}[]) => {
     if (pts.length < 2) return ''
-    let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`
-    
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i]
-      const p1 = pts[i + 1]
-      const dx = p1.x - p0.x
-      const cp1x = p0.x + dx * 0.25
-      const cp1y = p0.y
-      const cp2x = p1.x - dx * 0.25
-      const cp2y = p1.y
-      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`
-    }
-    return d
+    return pts.reduce((p, pt, i) => i === 0 ? `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}` : `${p} L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`, '')
   }
 
   const needPath = makeSmoothPath(needPoints)
