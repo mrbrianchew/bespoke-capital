@@ -1146,8 +1146,33 @@ setLoading(false)
     
     const { client_id, ...data } = ff
     
-    // Calculate and save annual surplus
+// Calculate and save annual surplus
+const p1 = ff.person1 || {}
+const p2 = ff.person2 || {}
+const isCoupleLocal = ff.mode === 'couple'
+
+// Calculate annual income
+const p1Gross = p1.gross_monthly || 0
+const p2Gross = isCoupleLocal ? (p2.gross_monthly || 0) : 0
+const p1Other = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
+const p2Other = isCoupleLocal ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
+const monthlyIncome = p1Gross + p2Gross + p1Other + p2Other
+const anTotal = monthlyIncome * 12
+
+// Calculate annual expenses
+const expMode = ff.expense_mode || 'simple'
+let annExpNoCpf = 0
+const nonCpfCats = EXP_CATEGORIES.filter(c => c.id !== 'cpf_oa')
+
+nonCpfCats.forEach(cat => {
+  if (expMode === 'simple') {
+    annExpNoCpf += (ff[cat.key] as number) || 0
+    if (isCoupleLocal) annExpNoCpf += (ff[cat.key2] as number) || 0
+  }
+})
+
 const annualSurplus = anTotal - annExpNoCpf
+console.log('💰 SAVING annual_surplus:', annualSurplus)
 data.annual_surplus = annualSurplus
     
     // ADDED: Check what properties we're saving
