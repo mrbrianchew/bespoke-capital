@@ -474,8 +474,16 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
     // Mortgage: actual amortized declining balance per year — matches M121
     const ageMort = mortBalanceAtAge(a)
 
-    // Education: flat full amount during coverage term, zero after — matches M120
-    const ageEdu  = yLeft > 0 ? edu : 0
+    // Education steps down when each child enters uni (not graduates)
+    // Remaining edu need = proportion of children not yet at uni
+    const childrenNotYetAtUni = children.filter((c: any) => {
+      const childAge = Number(c.age || 0)
+      const gender = c.gender || ''
+      const uniEntryAge = gender === 'Male' ? 21 : gender === 'Female' ? 19 : 21
+      return (a - aAge) < (uniEntryAge - childAge)
+    }).length
+    const eduFraction = children.length > 0 ? childrenNotYetAtUni / children.length : (yLeft > 0 ? 1 : 0)
+    const ageEdu = edu * eduFraction
 
     // Total with floor — matches M115 = MAX(SUM(M119:M124), C125)
     const dtpd = Math.max(floor, ageFD + ageMort + ageEdu - offset)
@@ -1272,19 +1280,16 @@ const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: 
 
         {/* Legend */}
         <div style={{ display: 'flex', gap: 24, alignItems: 'center', paddingTop: 4, flexWrap: 'wrap' as const, justifyContent: 'flex-end' }}>
-          {[
-            { line: CHARCOAL, dash: false, label: needLabel },
-            { line: GOLD,     dash: true,  label: haveLabel },
-          ].map(({line, dash, label}) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <svg width="24" height="12" style={{flexShrink:0}}>
-                <line x1="0" y1="6" x2="24" y2="6"
-                  stroke={line} strokeWidth={dash ? 1 : 1.5}
-                  strokeDasharray={dash ? '4,3' : undefined} opacity={dash ? 0.65 : 1} />
-              </svg>
-              <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace' }}>{label}</span>
-            </div>
-          ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="24" height="12" style={{flexShrink:0}}>
+              <line x1="0" y1="6" x2="24" y2="6" stroke={GOLD} strokeWidth="2" opacity="1" />
+            </svg>
+            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace' }}>{needLabel}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 24, height: 10, background: GOLD, opacity: 0.35, borderRadius: 1 }} />
+            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace' }}>{haveLabel}</span>
+          </div>
           <div style={{ width: 1, height: 16, background: '#DDD9D2' }} />
           {[
             { fill: UNDER_FILL, stroke: UNDER_STROKE, label: 'Shortfall', color: '#C0392B' },
@@ -1337,11 +1342,22 @@ const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: 
           {underPath && <path d={underPath} fill={UNDER_FILL} stroke={UNDER_STROKE} strokeWidth="0.5" />}
           {overPath  && <path d={overPath}  fill={OVER_FILL}  stroke={OVER_STROKE}  strokeWidth="0.5" />}
 
-          {/* Have line — dashed gold */}
-          <path d={havePath} stroke={GOLD} strokeWidth="1.5" fill="none" strokeDasharray="5,4" opacity="0.7" strokeLinecap="round" />
+          {/* Have — vertical bars */}
+          {data.map((d, i) => {
+            const bx = PL + xP(d.age)
+            const barH = Math.max(0, iH - yP(d.have))
+            const barW = Math.max(1, (iW / data.length) * 0.6)
+            return (
+              <rect key={`bar-${d.age}`}
+                x={bx - barW / 2} y={PT + yP(d.have)}
+                width={barW} height={barH}
+                fill={GOLD} opacity="0.35" rx="1"
+              />
+            )
+          })}
 
-          {/* Need line — solid charcoal */}
-          <path d={needPath} stroke={CHARCOAL} strokeWidth="2" fill="none" strokeLinecap="round" />
+          {/* Need line — gold */}
+          <path d={needPath} stroke={GOLD} strokeWidth="2.5" fill="none" strokeLinecap="round" />
 
           {/* Crosshair */}
           {mouseX && (
@@ -1351,10 +1367,7 @@ const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: 
 
           {/* Hover dots */}
           {hovered && (
-            <>
-              <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="3.5" fill={CHARCOAL} />
-              <circle cx={hovered.x} cy={PT+yP(hovered.have)} r="3" fill="white" stroke={GOLD} strokeWidth="1.5" />
-            </>
+            <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="3.5" fill={GOLD} stroke="white" strokeWidth="1.5" />
           )}
 
           {/* Age labels */}
