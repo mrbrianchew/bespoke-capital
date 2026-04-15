@@ -1304,10 +1304,10 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
     // Sort by age (earliest first)
     uniqueMilestones.sort((a, b) => a.age - b.age)
     
-    // Smart tier assignment: only cascade down if ages are close together
-        const MIN_AGE_GAP = 10 // If milestones are within 10 years, cascade them
-    
-        uniqueMilestones.forEach((m, index) => {
+        // Smart tier assignment: only cascade down if ages are close together
+    const MIN_AGE_GAP = 10 // If milestones are within 10 years, cascade them
+
+    uniqueMilestones.forEach((m, index) => {
       if (index === 0) {
         chartMilestones.push({ ...m, tier: 0 })
       } else {
@@ -1325,6 +1325,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
         }
       }
     })
+  } 
 
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
 
