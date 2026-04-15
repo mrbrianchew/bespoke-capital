@@ -1288,10 +1288,6 @@ const underPath = buildGapPath('under')
       const label = (validEdu.length > 1 ? `Child ${i+1} Enters University` : 'Child Enters University')
       chartMilestones.push({ age, label, type: 'education' })
     })
-    if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge||0)) {
-      chartMilestones.push({ age: milestones.coverageEnds, label: 'Coverage Ends', type: 'coverage' })
-    }
-  }
 
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
 
@@ -1393,28 +1389,32 @@ const underPath = buildGapPath('under')
           <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
           <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
 
-                    {/* Milestone verticals with rotated labels */}
+                    {/* Milestone verticals with labels above chart */}
           {chartMilestones.map(m => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
             const mc = m.type==='mortgage'?'#C4A464':m.type==='education'?'#7FAAA0':'#8B9DAF'
             return (
               <g key={`ms-${m.age}-${m.type}`}>
+                {/* Dotted vertical line through chart */}
                 <line x1={mx} y1={PT} x2={mx} y2={PT+iH} stroke={mc} strokeWidth="0.75" strokeDasharray="2,4" opacity="0.55" />
+                
+                {/* Dot at bottom of chart */}
                 <circle cx={mx} cy={PT+iH} r="3" fill={mc} opacity="0.75" />
-                {/* Vertical rotated label */}
+                
+                {/* Label positioned ABOVE the chart */}
                 <text 
-                  x={mx - 8} 
-                  y={PT + iH/2} 
-                  transform={`rotate(-90, ${mx - 8}, ${PT + iH/2})`}
+                  x={mx} 
+                  y={PT - 12} 
                   fontSize="9" 
                   fill={mc} 
-                  textAnchor="middle"
+                  textAnchor="start"
                   fontFamily="DM Mono, monospace"
                   fontWeight="500"
                   letterSpacing="0.05em"
+                  transform={`rotate(-45, ${mx}, ${PT - 12})`}
                 >
-                  {m.label}
+                  {m.label} · Age {m.age}
                 </text>
               </g>
             )
@@ -1459,19 +1459,7 @@ const underPath = buildGapPath('under')
               {d.age}
             </text>
           ))}
-
-          {/* Milestone age ticks below axis */}
-          {chartMilestones.map(m => {
-            const mx = PL + xP(m.age)
-            if (mx < PL || mx > PL+iW) return null
-            const mc = m.type==='mortgage'?'#C4A464':m.type==='education'?'#7FAAA0':'#8B9DAF'
-            return (
-              <text key={`lbl-${m.age}-${m.type}`} x={mx} y={PT+iH+30}
-                fontSize="8" fill={mc} textAnchor="middle" fontFamily="DM Mono, monospace" fontWeight="600">
-                {m.age}
-              </text>
-            )
-          })}
+          
         </svg>
 
         {/* Tooltip */}
