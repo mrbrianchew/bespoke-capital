@@ -1438,25 +1438,25 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
           {/* Need line - smooth monotone curve */}
           <path d={needPath} stroke={GOLD} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-          {/* Milestone verticals - left on top, right cascading down */}
-          {chartMilestones.map((m, idx) => {
+                   {/* Milestone verticals - cascading downward when needed */}
+          {chartMilestones.map((m) => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
             const mc = '#B8A88A'
-            const tierOffset = idx * 16 // Each milestone to the right is 16px lower
+            const tierOffset = m.tier * 20 // Tier 0 = top, Tier 1 = 20px DOWN, Tier 2 = 40px DOWN
             
             return (
               <g key={`ms-${m.age}-${m.type}`}>
                 {/* Dotted line from label down to chart bottom */}
-                <line x1={mx} y1={PT - 12 - tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
+                <line x1={mx} y1={PT - 12 + tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
                 
                 {/* Small dot at top of line */}
-                <circle cx={mx} cy={PT - 12 - tierOffset} r="2" fill={mc} opacity="0.6" />
+                <circle cx={mx} cy={PT - 12 + tierOffset} r="2" fill={mc} opacity="0.6" />
                 
                 {/* Horizontal label */}
                 <text 
                   x={mx + 6} 
-                  y={PT - 18 - tierOffset} 
+                  y={PT - 18 + tierOffset} 
                   fontSize="8" 
                   fill={mc} 
                   textAnchor="start"
@@ -1468,7 +1468,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
                 </text>
                 <text 
                   x={mx + 6} 
-                  y={PT - 8 - tierOffset} 
+                  y={PT - 8 + tierOffset} 
                   fontSize="7.5" 
                   fill={mc} 
                   textAnchor="start"
