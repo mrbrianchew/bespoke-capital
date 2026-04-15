@@ -993,8 +993,8 @@ useEffect(() => {
               spouseFD={ff.a2_fixed_deposit ?? 0}
               monthlyExpenses={(annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
               monthlySurplus={(() => {
-  const p1 = ff.person1 || {}
-  const p2 = ff.person2 || {}
+  const p1 = ff.person1 as any || {}
+  const p2 = ff.person2 as any || {}
   const p1Other = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
   const p2Other = isCouple ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
   const totalIncome = (p1.gross_monthly || 0) + (isCouple ? (p2.gross_monthly || 0) : 0) + p1Other + p2Other
@@ -1002,13 +1002,13 @@ useEffect(() => {
   const catKeys = ['s_financial', 's_cpf_oa', 's_mortgage', 's_household', 's_personal', 's_children', 's_lifestyle']
   let totalAnnualExp = 0
   catKeys.forEach(key => {
-    totalAnnualExp += (ff[key] as number) || 0
+    totalAnnualExp += (ff as any)[key] || 0
     if (isCouple) {
-      totalAnnualExp += (ff[('s2_' + key.slice(2))] as number) || 0
+      totalAnnualExp += (ff as any)[('s2_' + key.slice(2))] || 0
     }
   })
   
-  const cpfOaAnn = (ff.s_cpf_oa || 0) + (isCouple ? (ff.s2_cpf_oa || 0) : 0)
+  const cpfOaAnn = ((ff as any).s_cpf_oa || 0) + (isCouple ? ((ff as any).s2_cpf_oa || 0) : 0)
   const monthlyExpenses = (totalAnnualExp - cpfOaAnn) / 12
   
   return totalIncome - monthlyExpenses
