@@ -1523,7 +1523,7 @@ const underPath = buildGapPath('under')
       <div style={{ height:'0.5px', background:'#E8E5E0' }} />
     </div>
   )
-}
+}}
 
 // ─── Gap Section ──────────────────────────────────────────────────────────────
 function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,annualPremium}:{title:string;dtpdNeed:number;ciNeed:number;lifeHave:number;ciHave:number;annualPremium:number}) {
