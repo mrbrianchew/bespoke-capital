@@ -1223,7 +1223,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const W = 900, H = 320, PL = 80, PR = 40, PT = 70, PB = 44
+  const W = 900, H = 320, PL = 80, PR = 40, PT = 80, PB = 44
   const iW = W - PL - PR
   const iH = H - PT - PB
 
@@ -1247,16 +1247,18 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const needPoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
   const havePoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
 
-  // Smooth curve using cubic bezier
+  // Clean, smooth monotone curve - no waviness
   const makeSmoothPath = (pts: {x:number, y:number}[]) => {
     if (pts.length < 2) return ''
     let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`
+    
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[i]
       const p1 = pts[i + 1]
-      const cp1x = p0.x + (p1.x - p0.x) * 0.33
+      const dx = p1.x - p0.x
+      const cp1x = p0.x + dx * 0.25
       const cp1y = p0.y
-      const cp2x = p1.x - (p1.x - p0.x) * 0.33
+      const cp2x = p1.x - dx * 0.25
       const cp2y = p1.y
       d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`
     }
@@ -1287,7 +1289,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const underPath = buildGapPath('under')
   const overPath  = buildGapPath('over')
 
-  // Build milestones with staggered horizontal labels
+  // Build milestones - left on top, right below (cascading downward)
   const chartMilestones: {age: number; label: string; type: string; tier: number}[] = []
   if (milestones) {
     const rawMilestones: {age: number; label: string; type: string}[] = []
@@ -1303,24 +1305,13 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
       rawMilestones.push({ age, label, type: 'education' })
     })
     
-    // Sort by age
+    // Sort by age (left to right)
     rawMilestones.sort((a, b) => a.age - b.age)
     
-    // Assign tiers to prevent label overlap
-    const minAgeGap = 8 // Minimum age difference to be on same tier
-    const tiers: number[] = []
-    
-    rawMilestones.forEach((m) => {
-      let assignedTier = 0
-      for (let t = 0; t <= tiers.length; t++) {
-        const lastAgeOnTier = tiers[t]
-        if (lastAgeOnTier === undefined || m.age - lastAgeOnTier >= minAgeGap) {
-          assignedTier = t
-          tiers[t] = m.age
-          break
-        }
-      }
-      chartMilestones.push({ ...m, tier: assignedTier })
+    // Assign tiers: earlier milestones (left) get smaller tier numbers (higher up)
+    // Later milestones (right) get larger tier numbers (lower down)
+    rawMilestones.forEach((m, index) => {
+      chartMilestones.push({ ...m, tier: index })
     })
   }
 
@@ -1441,29 +1432,28 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
             )
           })}
 
-          {/* Need line - smooth curve */}
+          {/* Need line - smooth monotone curve */}
           <path d={needPath} stroke={GOLD} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-          {/* Milestone verticals with staggered horizontal labels */}
-          {chartMilestones.map(m => {
+          {/* Milestone verticals - left on top, right cascading down */}
+          {chartMilestones.map((m, idx) => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
             const mc = '#B8A88A'
-            const lineHeight = PT + iH
-            const labelYOffset = m.tier * 18 // Stagger labels vertically
+            const tierOffset = idx * 16 // Each milestone to the right is 16px lower
             
             return (
               <g key={`ms-${m.age}-${m.type}`}>
-                {/* Dotted line stops at label tier */}
-                <line x1={mx} y1={PT - 8 - labelYOffset} x2={mx} y2={lineHeight} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
+                {/* Dotted line from label down to chart bottom */}
+                <line x1={mx} y1={PT - 12 - tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
                 
                 {/* Small dot at top of line */}
-                <circle cx={mx} cy={PT - 8 - labelYOffset} r="2" fill={mc} opacity="0.6" />
+                <circle cx={mx} cy={PT - 12 - tierOffset} r="2" fill={mc} opacity="0.6" />
                 
-                {/* Horizontal label - no rotation */}
+                {/* Horizontal label */}
                 <text 
                   x={mx + 6} 
-                  y={PT - 14 - labelYOffset} 
+                  y={PT - 18 - tierOffset} 
                   fontSize="8" 
                   fill={mc} 
                   textAnchor="start"
@@ -1475,7 +1465,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
                 </text>
                 <text 
                   x={mx + 6} 
-                  y={PT - 4 - labelYOffset} 
+                  y={PT - 8 - tierOffset} 
                   fontSize="7.5" 
                   fill={mc} 
                   textAnchor="start"
