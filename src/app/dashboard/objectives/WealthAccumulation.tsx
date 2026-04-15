@@ -526,7 +526,7 @@ export default function WealthAccumulationSection({
   data, onChange, clientSavings, clientFD, spouseSavings, spouseFD,
   monthlyExpenses, monthlySurplus, isCouple,
   clientName = 'Client', spouseName = 'Spouse',
-  annualSurplus,   // ← ADD THIS LINE
+  annualSurplus = 0,   // ← ADD THIS LINE
 }: AccumulationProps) {
   const [modal, setModal] = useState<{open:boolean;editGoal?:WealthGoal}>({open:false})
 
@@ -548,7 +548,7 @@ export default function WealthAccumulationSection({
     const {lumpSumRequired:l,monthlyRequired:m}=calcGoal(g,data.inflationRate,data.returnRate)
     return {monthly:a.monthly+m,lumpSum:a.lumpSum+l}
   },{monthly:0,lumpSum:0})
-  const surplusGap = annualSurplus - (totals.monthly * 12)
+  const surplusGap = (annualSurplus || 0) - (totals.monthly * 12)
 
   return (
     <div>
