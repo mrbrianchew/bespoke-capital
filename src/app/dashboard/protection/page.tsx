@@ -497,8 +497,8 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
 
     // CI: flat during coverage term then fades out
     const ciFactor = a < age + coverTerm
-      ? 1.0
-      : Math.max(0, 1 - (a - (age + coverTerm)) * 0.04)
+  ? 1.0
+  : Math.max(0, 1 - (a - (age + coverTerm)) * 0.025)
 
     return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
   })
@@ -562,8 +562,8 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
     const dtpd = Math.max(floor, ageFD + ageMort + ageEdu - offset)
     
     const ciFactor = a < age + coverTerm
-      ? 1.0
-      : Math.max(0, 1 - (a - (age + coverTerm)) * 0.04)
+  ? 1.0
+  : Math.max(0, 1 - (a - (age + coverTerm)) * 0.025)
 
     return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
   })
@@ -1274,8 +1274,8 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
     // Calculate required top padding based on max tier
   const maxTier = chartMilestones.length > 0 ? Math.max(...chartMilestones.map(m => m.tier)) : 0
   const labelHeight = 36 // Height per tier
-  const baseTopPadding = 70  // Same base padding for both D/TPD and CI charts
-  const dynamicTopPadding = chartMilestones.length > 0 ? baseTopPadding + (maxTier * labelHeight) : baseTopPadding
+  const baseTopPadding = 48
+const dynamicTopPadding = chartMilestones.length > 0 ? baseTopPadding + (maxTier * labelHeight) : baseTopPadding
 
   // Chart dimensions with dynamic top padding
   const W = 900, H = 280 + dynamicTopPadding, PL = 80, PR = 40, PT = dynamicTopPadding, PB = 44
@@ -1434,7 +1434,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
           {data.map((d, i) => {
             const bx = PL + xP(d.age)
             const barH = Math.max(0, iH - yP(d.have))
-            const barW = Math.max(1.5, (iW / data.length) * 0.5)
+            const barW = Math.max(2, (iW / data.length) * 0.65)
             return (
               <rect key={`bar-${d.age}`}
                 x={bx - barW / 2} y={PT + yP(d.have)}
@@ -1468,13 +1468,13 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
             const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
-            const tierOffset = m.tier * 36 // Labels cascade down if close together
+            const tierOffset = m.tier * 32
             
             return (
               <g key={`mslabel-${m.age}-${m.type}`}>
                 <text 
                   x={mx} 
-                  y={PT - 24 + tierOffset} 
+                 y={PT - 20 + tierOffset}
                   fontSize="7.5" 
                   fill={mc} 
                   textAnchor="middle" 
@@ -1486,7 +1486,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
                 </text>
                 <text 
                   x={mx} 
-                  y={PT - 12 + tierOffset} 
+                  y={PT - 10 + tierOffset}
                   fontSize="6.5" 
                   fill={mc} 
                   textAnchor="middle" 
@@ -1497,7 +1497,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
                   age {m.age}
                 </text>
                 {/* Tiny connecting line from label to chart top */}
-                <line x1={mx} y1={PT - 4 + tierOffset} x2={mx} y2={PT} stroke={mc} strokeWidth="0.5" opacity="0.3" />
+                <line x1={mx} y1={PT - 6 + tierOffset} x2={mx} y2={PT} stroke={mc} strokeWidth="0.5" opacity="0.4" />
               </g>
             )
           })}
