@@ -1135,7 +1135,6 @@ async function handleGenerateShare() {
   )
 }
 
-// ─── Premium Coverage Chart (Apple/Private Banking Style) ─────────────────────
 function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
   title: string; eyebrow: string; needLabel: string; haveLabel: string
   data: {age: number; need: number; have: number}[]
@@ -1150,422 +1149,328 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number; y: number} | null>(null)
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  
-  const W = 600, H = 220, PL = 60, PR = 20, PT = 30, PB = 35
+
+  const W = 900, H = 280, PL = 72, PR = 24, PT = 40, PB = 44
   const iW = W - PL - PR
   const iH = H - PT - PB
-  
+
   if (!data.length) return null
-  
+
   const maxV = Math.max(...data.map(d => Math.max(d.need, d.have)), 1)
   const minA = data[0].age
   const aR = data[data.length - 1].age - minA || 1
-  
+
   const xP = (a: number) => ((a - minA) / aR) * iW
   const yP = (v: number) => iH - Math.min(1, v / maxV) * iH
-  
+
   const fmtAx = (n: number) => {
-    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
-    if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`
-    return `$${Math.round(n).toLocaleString()}`
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+    if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`
+    return `${Math.round(n)}`
   }
-  
+
   const ticks = [0, 0.25, 0.5, 0.75, 1]
-  
-  // Helper to generate smooth curve through points
-  const smoothCurve = (points: {x: number, y: number}[]) => {
-    if (points.length < 2) return ''
-    let path = `M ${points[0].x} ${points[0].y}`
-    for (let i = 1; i < points.length; i++) {
-      path += ` L ${points[i].x} ${points[i].y}`
-    }
-    return path
-  }
-  
-  // Prepare point arrays
+
   const needPoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
   const havePoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
-  
-  const needPath = smoothCurve(needPoints)
-  const havePath = smoothCurve(havePoints)
-  
-  // Build the gap area paths - PROPERLY filling ONLY between the two lines
-const buildGapPath = (type: 'under' | 'over'): string => {
-  // Find continuous segments where the condition holds
-  const segments: {start: number, end: number}[] = []
-  let segmentStart = -1
-  
-  for (let i = 0; i < data.length; i++) {
-    const d = data[i]
-    const isMatch = type === 'under' ? d.need > d.have && d.need > 0 : d.have > d.need
-    
-    if (isMatch && segmentStart === -1) {
-      segmentStart = i
-    } else if (!isMatch && segmentStart !== -1) {
-      segments.push({ start: segmentStart, end: i - 1 })
-      segmentStart = -1
-    }
-  }
-  if (segmentStart !== -1) {
-    segments.push({ start: segmentStart, end: data.length - 1 })
-  }
-  
-  if (segments.length === 0) return ''
-  
-  // Build a single path combining all segments
-  let fullPath = ''
-  
-  segments.forEach((seg) => {
-    if (seg.end - seg.start < 1) return
-    
-    const segData = data.slice(seg.start, seg.end + 1)
-    const segNeed = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
-    const segHave = segData.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
-    
-    // For underinsured (red): top = need line, bottom = have line
-    // For overinsured (green): top = have line, bottom = need line
-    const topPoints = type === 'under' ? segNeed : segHave
-    const bottomPoints = type === 'under' ? segHave : segNeed
-    
-    // Start at first point of top line
-    let path = `M ${topPoints[0].x} ${topPoints[0].y}`
-    
-    for (let i = 1; i < topPoints.length; i++) {
-      path += ` L ${topPoints[i].x} ${topPoints[i].y}`
-    }
-    
-    // Draw line down to bottom curve at the right end
-    path += ` L ${bottomPoints[bottomPoints.length - 1].x} ${bottomPoints[bottomPoints.length - 1].y}`
-    
-    for (let i = bottomPoints.length - 2; i >= 0; i--) {
-      path += ` L ${bottomPoints[i].x} ${bottomPoints[i].y}`
-    }
-    
-    // IMPORTANT: Close back to start point along the bottom, then up to top start
-    // This ensures the shape is properly closed without a straight diagonal line
-    path += ` L ${topPoints[0].x} ${topPoints[0].y}`
-    path += ' Z'
-    
-    fullPath += path
-  })
-  
-  return fullPath
-}
-  
-  const underinsuredPath = buildGapPath('under')
-  const overinsuredPath = buildGapPath('over')
-  
-  // Build accurate milestones from passed data
-  const chartMilestones: {age: number; label: string; type: string; color?: string}[] = []
 
+  const makePath = (pts: {x:number,y:number}[]) => {
+    if (pts.length < 2) return ''
+    return pts.reduce((p, pt, i) => i === 0 ? `M ${pt.x} ${pt.y}` : `${p} L ${pt.x} ${pt.y}`, '')
+  }
+
+  const needPath = makePath(needPoints)
+  const havePath = makePath(havePoints)
+
+  const buildGapPath = (type: 'under' | 'over'): string => {
+    const segments: {start: number, end: number}[] = []
+    let segStart = -1
+    for (let i = 0; i < data.length; i++) {
+      const match = type === 'under' ? data[i].need > data[i].have && data[i].need > 0 : data[i].have > data[i].need
+      if (match && segStart === -1) segStart = i
+      else if (!match && segStart !== -1) { segments.push({start: segStart, end: i-1}); segStart = -1 }
+    }
+    if (segStart !== -1) segments.push({start: segStart, end: data.length - 1})
+    if (!segments.length) return ''
+    return segments.map(seg => {
+      if (seg.end - seg.start < 1) return ''
+      const sd = data.slice(seg.start, seg.end + 1)
+      const top = type === 'under' ? sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.need)})) : sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.have)}))
+      const bot = type === 'under' ? sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.have)})) : sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.need)}))
+      return `M ${top[0].x} ${top[0].y} ${top.slice(1).map(p=>`L ${p.x} ${p.y}`).join(' ')} L ${bot[bot.length-1].x} ${bot[bot.length-1].y} ${[...bot].reverse().map(p=>`L ${p.x} ${p.y}`).join(' ')} Z`
+    }).join(' ')
+  }
+
+  const underPath = buildGapPath('under')
+  const overPath  = buildGapPath('over')
+
+  const chartMilestones: {age: number; label: string; type: string}[] = []
   if (milestones) {
-    if (milestones.mortgageEnds && milestones.mortgageEnds.length > 0) {
-      const sortedMortgageAges = [...milestones.mortgageEnds].sort((a, b) => a - b)
-      sortedMortgageAges.forEach((age, idx) => {
-        const mortgageNumber = sortedMortgageAges.length > 1 ? `Mortgage ${idx + 1}` : 'Mortgage'
-        chartMilestones.push({
-          age: age,
-          label: `${mortgageNumber} Repaid`,
-          type: 'mortgage',
-          color: '#C4A464'
-        })
-      })
-    }
-    
-    if (milestones.educationEnds && milestones.educationEnds.length > 0) {
-      const validEduAges = milestones.educationEnds.filter(age => age > (milestones.clientAge || 0))
-      const uniqueEduEnds: number[] = []
-      validEduAges.forEach(age => {
-        if (!uniqueEduEnds.includes(age)) uniqueEduEnds.push(age)
-      })
-      uniqueEduEnds.sort((a, b) => a - b).forEach((age, idx) => {
-        const childNumber = uniqueEduEnds.length > 1 ? `Child ${idx + 1}` : 'Child'
-        chartMilestones.push({
-          age: age,
-          label: `${childNumber} Graduates`,
-          type: 'education',
-          color: '#7FAAA0'
-        })
-      })
-    }
-    
-    if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge || 0)) {
-      chartMilestones.push({
-        age: milestones.coverageEnds,
-        label: 'Coverage Ends',
-        type: 'coverage',
-        color: '#8B9DAF'
-      })
+    ;(milestones.mortgageEnds || []).sort((a,b)=>a-b).forEach((age, i) => {
+      chartMilestones.push({ age, label: (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1}` : 'Mortgage') + ' Repaid', type: 'mortgage' })
+    })
+    const validEdu = [...new Set((milestones.educationEnds || []).filter(a => a > (milestones.clientAge||0)))].sort((a,b)=>a-b)
+    validEdu.forEach((age, i) => {
+      chartMilestones.push({ age, label: (validEdu.length > 1 ? `Child ${i+1}` : 'Child') + ' Graduates', type: 'education' })
+    })
+    if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge||0)) {
+      chartMilestones.push({ age: milestones.coverageEnds, label: 'Coverage Ends', type: 'coverage' })
     }
   }
-  
+
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
-  
+
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const svg = e.currentTarget
-    const rect = svg.getBoundingClientRect()
-    const svgX = e.clientX - rect.left
-    const svgWidth = rect.width
-    
-    const scaleX = W / svgWidth
-    const mouseSvgX = svgX * scaleX
-    
-    if (mouseSvgX >= PL && mouseSvgX <= PL + iW) {
-      setMouseX(mouseSvgX)
-      
-      const relativeX = (mouseSvgX - PL) / iW
-      const targetAge = minA + relativeX * aR
-      const closestPoint = data.reduce((prev, curr) => {
-        return Math.abs(curr.age - targetAge) < Math.abs(prev.age - targetAge) ? curr : prev
-      })
-      
-      setHovered({
-        ...closestPoint,
-        x: PL + xP(closestPoint.age),
-        y: PT + yP(closestPoint.need)
-      })
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    if (mx >= PL && mx <= PL + iW) {
+      setMouseX(mx)
+      const rel = (mx - PL) / iW
+      const targetAge = minA + rel * aR
+      const closest = data.reduce((p, c) => Math.abs(c.age - targetAge) < Math.abs(p.age - targetAge) ? c : p)
+      setHovered({ ...closest, x: PL + xP(closest.age), y: PT + yP(closest.need) })
     } else {
-      setMouseX(null)
-      setHovered(null)
+      setMouseX(null); setHovered(null)
     }
   }
-  
-  const handleMouseLeave = () => {
-    setMouseX(null)
-    setHovered(null)
-  }
-  
+
   const gap = hovered ? hovered.need - hovered.have : 0
-  const coveragePct = hovered && hovered.need > 0 ? Math.min(100, (hovered.have / hovered.need) * 100) : 0
-  const isOverinsured = hovered && hovered.have > hovered.need
-  
-  const needColor = '#1C1A17'
-  const haveColor = accentColor
-  const underinsuredColor = 'rgba(231, 76, 60, 0.12)'
-  const overinsuredColor = 'rgba(39, 174, 96, 0.10)'
-  const underinsuredBorder = 'rgba(231, 76, 60, 0.25)'
-  const overinsuredBorder = 'rgba(39, 174, 96, 0.20)'
-  const gridColor = 'rgba(0, 0, 0, 0.04)'
-  const textColor = '#8B8B8B'
-  const milestoneColor = '#A8834A'
-  
-  const nearbyMilestone = hovered 
-    ? chartMilestones.find(m => Math.abs(m.age - hovered.age) <= 2)
-    : null
-  
+  const isOver = hovered ? hovered.have > hovered.need : false
+  const nearbyMs = hovered ? chartMilestones.find(m => Math.abs(m.age - hovered.age) <= 2) : null
+
+  const CHARCOAL    = '#1C1A17'
+  const GOLD        = accentColor
+  const CREAM_LINE  = 'rgba(28,26,23,0.06)'
+  const UNDER_FILL  = 'rgba(192, 57, 43, 0.10)'
+  const UNDER_STROKE= 'rgba(192, 57, 43, 0.30)'
+  const OVER_FILL   = 'rgba(39, 174, 96, 0.10)'
+  const OVER_STROKE = 'rgba(39, 174, 96, 0.28)'
+  const AXIS_TEXT   = '#9A9690'
+
   return (
     <div ref={containerRef} style={{
-      background: '#FFFFFF',
-      border: '1px solid rgba(0, 0, 0, 0.06)',
-      borderRadius: 16,
-      padding: '24px 24px 20px 24px',
-      boxShadow: '0 2px 12px rgba(0, 0, 0, 0.02)',
+      background: '#FDFCFA',
+      border: '0.5px solid #DDD9D2',
+      borderRadius: 12,
+      overflow: 'hidden',
+      position: 'relative',
     }}>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{
-          fontSize: 10,
-          letterSpacing: '0.15em',
-          textTransform: 'uppercase',
-          color: accentColor,
-          marginBottom: 6,
-          fontWeight: 600
-        }}>{eyebrow}</div>
-        <div style={{
-          fontFamily: 'Cormorant Garamond, Georgia, serif',
-          fontSize: 18,
-          fontWeight: 400,
-          color: '#1C1A17',
-          letterSpacing: '-0.01em'
-        }}>{title}</div>
-      </div>
-      
-      <div style={{ display: 'flex', gap: 24, marginBottom: 16, alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 20, height: 2, background: needColor }} />
-          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{needLabel}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 20, height: 2, background: haveColor, opacity: 0.7 }} />
-          <span style={{ fontSize: 11, color: textColor, fontWeight: 500 }}>{haveLabel}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 14, height: 8, background: underinsuredColor, border: `1px solid ${underinsuredBorder}`, borderRadius: 2 }} />
-          <span style={{ fontSize: 10, color: '#E74C3C', fontWeight: 500 }}>Underinsured</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 14, height: 8, background: overinsuredColor, border: `1px solid ${overinsuredBorder}`, borderRadius: 2 }} />
-          <span style={{ fontSize: 10, color: '#27AE60', fontWeight: 500 }}>Overinsured</span>
-        </div>
-        {hovered && (
+      {/* Gold top rule */}
+      <div style={{ height: 1, background: `linear-gradient(90deg, ${GOLD}, ${GOLD}66, transparent)` }} />
+
+      {/* Header */}
+      <div style={{ padding: '22px 32px 0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
           <div style={{
-            marginLeft: 'auto',
-            fontSize: 11,
-            color: '#1C1A17',
-            background: '#F8F7F4',
-            padding: '6px 14px',
-            borderRadius: 20,
-            fontWeight: 500
-          }}>
-            Age {hovered.age} • {gap > 0 ? `Gap ${fmt(hovered.need - hovered.have)}` : isOverinsured ? `+${fmt(hovered.have - hovered.need)} Surplus` : 'Fully Covered'}
-          </div>
-        )}
+            fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase',
+            color: GOLD, marginBottom: 7, fontWeight: 600, fontFamily: 'DM Mono, monospace',
+          }}>{eyebrow}</div>
+          <div style={{
+            fontFamily: 'Cormorant Garamond, Georgia, serif',
+            fontSize: 22, fontWeight: 400, color: CHARCOAL, letterSpacing: '0.01em', lineHeight: 1.2,
+          }}>{title}</div>
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 24, alignItems: 'center', paddingTop: 4, flexWrap: 'wrap' as const, justifyContent: 'flex-end' }}>
+          {[
+            { line: CHARCOAL, dash: false, label: needLabel },
+            { line: GOLD,     dash: true,  label: haveLabel },
+          ].map(({line, dash, label}) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="24" height="12" style={{flexShrink:0}}>
+                <line x1="0" y1="6" x2="24" y2="6"
+                  stroke={line} strokeWidth={dash ? 1 : 1.5}
+                  strokeDasharray={dash ? '4,3' : undefined} opacity={dash ? 0.65 : 1} />
+              </svg>
+              <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace' }}>{label}</span>
+            </div>
+          ))}
+          <div style={{ width: 1, height: 16, background: '#DDD9D2' }} />
+          {[
+            { fill: UNDER_FILL, stroke: UNDER_STROKE, label: 'Shortfall', color: '#C0392B' },
+            { fill: OVER_FILL,  stroke: OVER_STROKE,  label: 'Surplus',   color: '#27AE60' },
+          ].map(({fill, stroke, label, color}) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <div style={{ width: 14, height: 8, background: fill, border: `1px solid ${stroke}`, borderRadius: 2 }} />
+              <span style={{ fontSize: 10, color, letterSpacing: '0.06em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>{label}</span>
+            </div>
+          ))}
+        </div>
       </div>
-      
-      <div style={{ position: 'relative' }}>
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          style={{ display: 'block', overflow: 'visible' }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        >
-          {/* Grid lines */}
+
+      {/* Chart SVG */}
+      <div style={{ padding: '4px 32px 0 32px', position: 'relative' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}
+          onMouseMove={handleMouseMove} onMouseLeave={() => { setMouseX(null); setHovered(null) }}>
+
+          {/* Grid */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
             return (
               <g key={f}>
-                <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke={gridColor} strokeWidth="1" />
-                <text x={PL - 8} y={y + 4} fontSize="10" fill={textColor} textAnchor="end" fontWeight={400}>
+                <line x1={PL} y1={y} x2={PL+iW} y2={y} stroke={CREAM_LINE} strokeWidth="0.5" />
+                <text x={PL-10} y={y+4} fontSize="9.5" fill={AXIS_TEXT} textAnchor="end" fontFamily="DM Mono, monospace">
                   {fmtAx(maxV * f)}
                 </text>
               </g>
             )
           })}
-          
-          <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
-          <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="rgba(0,0,0,0.08)" strokeWidth="1" />
-          
-          {/* Gap areas - UNDERINSURED (red) */}
-          {underinsuredPath && (
-            <path d={underinsuredPath} fill={underinsuredColor} stroke={underinsuredBorder} strokeWidth="0.5" strokeLinejoin="round" />
-          )}
-          
-          {/* Gap areas - OVERINSURED (green) */}
-          {overinsuredPath && (
-            <path d={overinsuredPath} fill={overinsuredColor} stroke={overinsuredBorder} strokeWidth="0.5" strokeLinejoin="round" />
-          )}
-          
-          {/* Existing portfolio line (dashed) */}
-          <path d={havePath} stroke={haveColor} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" strokeDasharray="4,3" />
-          
-          {/* Required capital line (solid) */}
-          <path d={needPath} stroke={needColor} strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round" />
-          
+
+          {/* Axes */}
+          <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
+          <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
+
+          {/* Milestone verticals */}
+          {chartMilestones.map(m => {
+            const mx = PL + xP(m.age)
+            if (mx < PL || mx > PL+iW) return null
+            const mc = m.type==='mortgage'?'#C4A464':m.type==='education'?'#7FAAA0':'#8B9DAF'
+            return (
+              <g key={`ms-${m.age}-${m.type}`}>
+                <line x1={mx} y1={PT} x2={mx} y2={PT+iH} stroke={mc} strokeWidth="0.75" strokeDasharray="2,4" opacity="0.55" />
+                <circle cx={mx} cy={PT+iH} r="3" fill={mc} opacity="0.75" />
+              </g>
+            )
+          })}
+
+          {/* Gap fills — red shortfall, green surplus */}
+          {underPath && <path d={underPath} fill={UNDER_FILL} stroke={UNDER_STROKE} strokeWidth="0.5" />}
+          {overPath  && <path d={overPath}  fill={OVER_FILL}  stroke={OVER_STROKE}  strokeWidth="0.5" />}
+
+          {/* Have line — dashed gold */}
+          <path d={havePath} stroke={GOLD} strokeWidth="1.5" fill="none" strokeDasharray="5,4" opacity="0.7" strokeLinecap="round" />
+
+          {/* Need line — solid charcoal */}
+          <path d={needPath} stroke={CHARCOAL} strokeWidth="2" fill="none" strokeLinecap="round" />
+
+          {/* Crosshair */}
           {mouseX && (
-            <line x1={mouseX} y1={PT} x2={mouseX} y2={PT + iH} stroke="rgba(28, 26, 23, 0.15)" strokeWidth="1" strokeDasharray="4,3" />
+            <line x1={mouseX} y1={PT} x2={mouseX} y2={PT+iH}
+              stroke={CHARCOAL} strokeWidth="0.5" strokeDasharray="3,3" opacity="0.2" />
           )}
-          
+
+          {/* Hover dots */}
           {hovered && (
             <>
-              <circle cx={hovered.x} cy={PT + yP(hovered.need)} r="4" fill="white" stroke={needColor} strokeWidth="2" />
-              <circle cx={hovered.x} cy={PT + yP(hovered.have)} r="4" fill="white" stroke={haveColor} strokeWidth="2" />
+              <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="3.5" fill={CHARCOAL} />
+              <circle cx={hovered.x} cy={PT+yP(hovered.have)} r="3" fill="white" stroke={GOLD} strokeWidth="1.5" />
             </>
           )}
-          
+
+          {/* Age labels */}
           {ageLabels.map(d => (
-            <text key={d.age} x={PL + xP(d.age)} y={PT + iH + 18} fontSize="10" fill={textColor} textAnchor="middle" fontWeight={400}>
+            <text key={d.age} x={PL+xP(d.age)} y={PT+iH+17} fontSize="9.5" fill={AXIS_TEXT}
+              textAnchor="middle" fontFamily="DM Mono, monospace">
               {d.age}
             </text>
           ))}
+
+          {/* Milestone age ticks below axis */}
+          {chartMilestones.map(m => {
+            const mx = PL + xP(m.age)
+            if (mx < PL || mx > PL+iW) return null
+            const mc = m.type==='mortgage'?'#C4A464':m.type==='education'?'#7FAAA0':'#8B9DAF'
+            return (
+              <text key={`lbl-${m.age}-${m.type}`} x={mx} y={PT+iH+30}
+                fontSize="8" fill={mc} textAnchor="middle" fontFamily="DM Mono, monospace" fontWeight="600">
+                {m.age}
+              </text>
+            )
+          })}
         </svg>
-        
+
+        {/* Tooltip */}
         {hovered && (
           <div style={{
             position: 'absolute',
             left: `${((hovered.x - PL) / iW) * 100}%`,
-            top: '0',
-            transform: 'translateX(-50%)',
-            background: '#1C1A17',
+            top: `${((PT + yP(hovered.need)) / H) * 100}%`,
+            transform: 'translate(-50%, -108%)',
+            background: CHARCOAL,
             color: 'white',
-            padding: '12px 16px',
+            padding: '14px 18px',
             borderRadius: 8,
-            fontSize: 12,
+            fontSize: 11,
             pointerEvents: 'none',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
+            boxShadow: '0 16px 48px rgba(0,0,0,0.28)',
             zIndex: 10,
-            whiteSpace: 'nowrap',
-            marginTop: -60
+            whiteSpace: 'nowrap' as const,
+            minWidth: 200,
           }}>
-            <div style={{ marginBottom: 8, color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: '0.1em' }}>
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:GOLD, borderRadius:'8px 8px 0 0' }} />
+            <div style={{ marginBottom: 10, color: GOLD, fontSize: 9, letterSpacing: '0.18em', fontFamily: 'DM Mono, monospace' }}>
               AGE {hovered.age}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Coverage Need</span>
-                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace' }}>{fmt(hovered.need)}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', gap:32 }}>
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'DM Mono,monospace', fontSize:10, letterSpacing:'0.08em' }}>NEED</span>
+                <span style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:17, fontWeight:500 }}>{fmt(hovered.need)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>Current Portfolio</span>
-                <span style={{ fontWeight: 600, fontFamily: 'DM Mono, monospace', color: accentColor }}>
-                  {fmt(hovered.have)}
-                </span>
+              <div style={{ display:'flex', justifyContent:'space-between', gap:32 }}>
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'DM Mono,monospace', fontSize:10, letterSpacing:'0.08em' }}>HAVE</span>
+                <span style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:17, fontWeight:500, color:GOLD }}>{fmt(hovered.have)}</span>
               </div>
-              
-              {nearbyMilestone && (
+              {nearbyMs && (
                 <div style={{
-                  marginTop: 4,
-                  padding: '6px 0',
-                  borderTop: '1px solid rgba(255,255,255,0.1)',
-                  borderBottom: '1px solid rgba(255,255,255,0.1)'
+                  marginTop: 2, paddingTop: 8,
+                  borderTop: '0.5px solid rgba(255,255,255,0.12)',
+                  fontSize: 10, fontFamily: 'DM Mono, monospace', letterSpacing: '0.07em',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  color: nearbyMs.type==='mortgage'?'#C4A464':nearbyMs.type==='education'?'#7FAAA0':'#8B9DAF',
+                  textTransform: 'uppercase' as const,
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 14 }}>
-                      {nearbyMilestone.type === 'mortgage' ? '🏠' : 
-                       nearbyMilestone.type === 'education' ? '🎓' : '🏁'}
-                    </span>
-                    <span style={{ color: nearbyMilestone.color || milestoneColor, fontWeight: 500, letterSpacing: '0.05em' }}>
-                      {nearbyMilestone.label} at Age {nearbyMilestone.age}
-                    </span>
-                  </div>
+                  <span style={{fontSize:13}}>{nearbyMs.type==='mortgage'?'🏠':nearbyMs.type==='education'?'🎓':'●'}</span>
+                  {nearbyMs.label} · Age {nearbyMs.age}
                 </div>
               )}
-              
-              <div style={{ 
-                marginTop: 4, 
-                paddingTop: 6, 
-                borderTop: '1px solid rgba(255,255,255,0.15)',
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                gap: 24 
+              <div style={{
+                marginTop: 2, paddingTop: 8,
+                borderTop: '0.5px solid rgba(255,255,255,0.12)',
+                display:'flex', justifyContent:'space-between', gap:32,
               }}>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {gap > 0 ? 'Protection Gap' : isOverinsured ? 'Surplus' : 'Status'}
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'DM Mono,monospace', fontSize:10, letterSpacing:'0.08em' }}>
+                  {gap > 0 ? 'SHORTFALL' : isOver ? 'SURPLUS' : 'STATUS'}
                 </span>
-                <span style={{ 
-                  fontWeight: 600, 
-                  fontFamily: 'DM Mono, monospace',
-                  color: gap > 0 ? '#E74C3C' : isOverinsured ? '#27AE60' : '#FFFFFF'
+                <span style={{
+                  fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:17, fontWeight:500,
+                  color: gap > 0 ? '#E87070' : isOver ? '#70C090' : 'white'
                 }}>
-                  {gap > 0 ? fmt(gap) : isOverinsured ? `+${fmt(-gap)}` : `${Math.round(coveragePct)}% Covered`}
+                  {gap > 0 ? fmt(gap) : isOver ? fmt(-gap) : '✓ Covered'}
                 </span>
               </div>
             </div>
             <div style={{
-              position: 'absolute',
-              bottom: -6,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: 0,
-              height: 0,
-              borderLeft: '6px solid transparent',
-              borderRight: '6px solid transparent',
-              borderTop: '6px solid #1C1A17'
+              position:'absolute', bottom:-5, left:'50%', transform:'translateX(-50%)',
+              width:0, height:0,
+              borderLeft:'5px solid transparent', borderRight:'5px solid transparent',
+              borderTop:`5px solid ${CHARCOAL}`
             }} />
           </div>
         )}
       </div>
-      
-      <div style={{
-        fontSize: 10,
-        color: 'rgba(0, 0, 0, 0.4)',
-        marginTop: 12,
-        fontStyle: 'italic',
-        letterSpacing: '0.02em'
-      }}>
-        Solid line = required • Dashed line = existing • 
-        <span style={{ color: '#E74C3C' }}> Red</span> = underinsured • 
-        <span style={{ color: '#27AE60' }}> Green</span> = overinsured
-      </div>
+
+      {/* Milestone legend strip */}
+      {chartMilestones.length > 0 && (
+        <div style={{
+          display: 'flex', gap: 24, padding: '10px 32px 14px',
+          borderTop: '0.5px solid #E8E5E0', marginTop: 6,
+        }}>
+          {chartMilestones.map(m => {
+            const mc = m.type==='mortgage'?'#C4A464':m.type==='education'?'#7FAAA0':'#8B9DAF'
+            return (
+              <div key={`leg-${m.age}-${m.type}`} style={{ display:'flex', alignItems:'center', gap:7 }}>
+                <div style={{ width:6, height:6, borderRadius:'50%', background:mc, flexShrink:0 }} />
+                <span style={{ fontSize:10, color:mc, fontFamily:'DM Mono,monospace', letterSpacing:'0.08em', textTransform:'uppercase' as const }}>
+                  {m.label} · Age {m.age}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ height:'0.5px', background:'#E8E5E0' }} />
     </div>
   )
 }
