@@ -1211,7 +1211,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     })
     const validEdu = [...new Set((milestones.educationEnds || []).filter(a => a > (milestones.clientAge||0)))].sort((a,b)=>a-b)
     validEdu.forEach((age, i) => {
-      chartMilestones.push({ age, label: (validEdu.length > 1 ? `Child ${i+1}` : 'Child') + ' Graduates', type: 'education' })
+      chartMilestones.push({ age, label: (validEdu.length > 1 ? `Child ${i+1}const validEdu = Array.from(new Set((milestones.educationEnds || []).filter(a => a > (milestones.clientAge||0)))).sort((a,b)=>a-b)` : 'Child') + ' Graduates', type: 'education' })
     })
     if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge||0)) {
       chartMilestones.push({ age: milestones.coverageEnds, label: 'Coverage Ends', type: 'coverage' })
