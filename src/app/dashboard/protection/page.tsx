@@ -637,40 +637,7 @@ async function handleGenerateShare() {
 }
 
   return (
-    <>
-      {error && (
-        <div style={{
-          position: 'fixed',
-          top: 24,
-          right: 24,
-          background: '#C0392B',
-          color: 'white',
-          padding: '14px 24px',
-          borderRadius: 6,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-          zIndex: 100,
-          fontSize: 13,
-          letterSpacing: '0.02em',
-          borderLeft: '4px solid #8B1A1A'
-        }}>
-          <span style={{ marginRight: 12 }}>⚠</span>
-          {error}
-          <button 
-            onClick={() => setError(null)}
-            style={{
-              marginLeft: 16,
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255,255,255,0.7)',
-              cursor: 'pointer',
-              fontSize: 16
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-      <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
+    <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
       {/* Hero */}
       <div style={{background:'#1C1A17',padding:'0 48px'}}>
         <div style={{paddingTop:32,paddingBottom:28,display:'flex',alignItems:'flex-end',justifyContent:'space-between'}}>
@@ -2850,9 +2817,8 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               )
             })}
            </div>
-        </div>
+              </div>
       </div>
     </div>
-    </>
   )
 }
