@@ -1277,7 +1277,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const underPath = buildGapPath('under')
   const overPath  = buildGapPath('over')
 
-  // Build milestones - left on top, right below (cascading downward)
+    // Build milestones - smart cascading only when needed
   const chartMilestones: {age: number; label: string; type: string; tier: number}[] = []
   if (milestones) {
     const rawMilestones: {age: number; label: string; type: string}[] = []
@@ -1293,12 +1293,28 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
       rawMilestones.push({ age, label, type: 'education' })
     })
     
-    // Sort by age (left to right)
+    // Sort by age (earliest first)
     rawMilestones.sort((a, b) => a.age - b.age)
     
-    // Assign tiers: index 0 = top, index 1 = middle, index 2 = bottom
+    // Smart tier assignment: only cascade down if ages are close together
+    const MIN_AGE_GAP = 6 // If milestones are within 6 years, cascade them
+    
     rawMilestones.forEach((m, index) => {
-      chartMilestones.push({ ...m, tier: index })
+      if (index === 0) {
+        chartMilestones.push({ ...m, tier: 0 })
+      } else {
+        const prevMilestone = rawMilestones[index - 1]
+        const ageGap = m.age - prevMilestone.age
+        
+        if (ageGap < MIN_AGE_GAP) {
+          // Close together - cascade down (increase tier)
+          const prevTier = chartMilestones[index - 1].tier
+          chartMilestones.push({ ...m, tier: prevTier + 1 })
+        } else {
+          // Far apart - stay on same tier (reset to 0)
+          chartMilestones.push({ ...m, tier: 0 })
+        }
+      }
     })
   }
 
