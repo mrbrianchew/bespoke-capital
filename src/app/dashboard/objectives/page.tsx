@@ -467,6 +467,9 @@ setP(prev => ({
  setLoading(false)
   }
 
+  // ─── END loadDataFromAuth ───────────────────────────────────────────────────
+  }
+
   // ─── ACCUMULATION SAVE ─────────────────────────────────────────────────────
 
  function scheduleAccSave(updated: AccumulationData) {
