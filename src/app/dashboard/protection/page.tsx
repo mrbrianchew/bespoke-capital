@@ -1278,40 +1278,48 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const overPath  = buildGapPath('over')
 
     // Build milestones - smart cascading only when needed
+    // Build milestones - smart cascading only when needed
   const chartMilestones: {age: number; label: string; type: string; tier: number}[] = []
   if (milestones) {
     const rawMilestones: {age: number; label: string; type: string}[] = []
     
+    // Mortgage milestones
     ;(milestones.mortgageEnds || []).sort((a,b)=>a-b).forEach((age, i) => {
-      const label = (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1}` : 'Mortgage') + ' repaid'
+      const label = (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1} repaid` : 'Mortgage repaid')
       rawMilestones.push({ age, label, type: 'mortgage' })
     })
     
+    // Education milestones
     const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
     validEdu.forEach((age, i) => {
-      const label = (validEdu.length > 1 ? `Child ${i+1}` : 'Child') + ' enters university'
+      const label = (validEdu.length > 1 ? `Child ${i+1} enters university` : 'Child enters university')
       rawMilestones.push({ age, label, type: 'education' })
     })
     
+    // Remove duplicates (same age and type)
+    const uniqueMilestones = rawMilestones.filter((m, index, self) => 
+      index === self.findIndex(t => t.age === m.age && t.type === m.type)
+    )
+    
     // Sort by age (earliest first)
-    rawMilestones.sort((a, b) => a.age - b.age)
+    uniqueMilestones.sort((a, b) => a.age - b.age)
     
     // Smart tier assignment: only cascade down if ages are close together
-    const MIN_AGE_GAP = 6 // If milestones are within 6 years, cascade them
+    const MIN_AGE_GAP = 8 // If milestones are within 8 years, cascade them
     
-    rawMilestones.forEach((m, index) => {
+    uniqueMilestones.forEach((m, index) => {
       if (index === 0) {
         chartMilestones.push({ ...m, tier: 0 })
       } else {
-        const prevMilestone = rawMilestones[index - 1]
+        const prevMilestone = uniqueMilestones[index - 1]
         const ageGap = m.age - prevMilestone.age
         
         if (ageGap < MIN_AGE_GAP) {
-          // Close together - cascade down (increase tier)
+          // Close together - cascade down
           const prevTier = chartMilestones[index - 1].tier
           chartMilestones.push({ ...m, tier: prevTier + 1 })
         } else {
-          // Far apart - stay on same tier (reset to 0)
+          // Far apart - stay on top tier
           chartMilestones.push({ ...m, tier: 0 })
         }
       }
@@ -1438,43 +1446,45 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
           {/* Need line - smooth monotone curve */}
           <path d={needPath} stroke={GOLD} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-                   {/* Milestone verticals - cascading downward when needed */}
+                    {/* Milestone verticals - cascading downward when needed */}
           {chartMilestones.map((m) => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
-            const mc = '#B8A88A'
-            const tierOffset = m.tier * 20 // Tier 0 = top, Tier 1 = 20px DOWN, Tier 2 = 40px DOWN
+            
+            // Color by type
+            const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
+            const tierOffset = m.tier * 22 // Tier 0 = top, Tier 1 = 22px down, Tier 2 = 44px down
             
             return (
               <g key={`ms-${m.age}-${m.type}`}>
                 {/* Dotted line from label down to chart bottom */}
-                <line x1={mx} y1={PT - 12 + tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
+                <line x1={mx} y1={PT - 12 + tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.4" />
                 
                 {/* Small dot at top of line */}
-                <circle cx={mx} cy={PT - 12 + tierOffset} r="2" fill={mc} opacity="0.6" />
+                <circle cx={mx} cy={PT - 12 + tierOffset} r="2" fill={mc} opacity="0.5" />
                 
-                {/* Horizontal label */}
+                {/* Label */}
                 <text 
                   x={mx + 6} 
                   y={PT - 18 + tierOffset} 
-                  fontSize="8" 
+                  fontSize="7.5" 
                   fill={mc} 
                   textAnchor="start"
                   fontFamily="Inter, sans-serif"
                   fontWeight="400"
-                  letterSpacing="0.04em"
+                  letterSpacing="0.05em"
                 >
                   {m.label.toUpperCase()}
                 </text>
                 <text 
                   x={mx + 6} 
-                  y={PT - 8 + tierOffset} 
-                  fontSize="7.5" 
+                  y={PT - 7 + tierOffset} 
+                  fontSize="7" 
                   fill={mc} 
                   textAnchor="start"
                   fontFamily="Inter, sans-serif"
                   fontWeight="300"
-                  opacity="0.7"
+                  opacity="0.65"
                 >
                   age {m.age}
                 </text>
