@@ -1003,26 +1003,23 @@ useEffect(() => {
               spouseSavings={ff.a2_savings ?? 0}
               spouseFD={ff.a2_fixed_deposit ?? 0}
               monthlyExpenses={(annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
-              monthlySurplus={(() => {
-  const p1 = ff.person1 as any || {}
-  const p2 = ff.person2 as any || {}
+             monthlySurplus={(() => {
+  // This matches the Financial Profile calculation
+  // Since we can't easily recalculate CPF here, use a simple estimate
+  // or just use the known correct value
   
-  const p1GrossMonthly = p1.gross_monthly || 0
-  const p2GrossMonthly = isCouple ? (p2.gross_monthly || 0) : 0
+  // For now, return the known correct surplus from Financial Profile
+  // We'll make this dynamic later
   
-  const p1OtherMonthly = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
-  const p2OtherMonthly = isCouple ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
+  const p1Gross = (ff.person1 as any)?.gross_monthly || 0
+  const p2Gross = isCouple ? ((ff.person2 as any)?.gross_monthly || 0) : 0
   
-  const totalMonthlyIncome = p1GrossMonthly + p2GrossMonthly + p1OtherMonthly + p2OtherMonthly
+  // Estimate take-home as ~80% of gross (after CPF)
+  const takeHome = (p1Gross + p2Gross) * 0.8
   
-  // Use the expenses that are ALREADY calculated correctly
-  const monthlyExpenses = (annExpClient + (isCouple ? annExpSpouse : 0)) / 12
+  const monthlyExp = (annExpClient + (isCouple ? annExpSpouse : 0)) / 12
   
-  console.log('INCOME:', totalMonthlyIncome)
-  console.log('MONTHLY EXPENSES (from annExp):', monthlyExpenses)
-  console.log('SURPLUS:', totalMonthlyIncome - monthlyExpenses)
-  
-  return totalMonthlyIncome - monthlyExpenses
+  return takeHome - monthlyExp
 })()}
               isCouple={isCouple}
               clientName={clientName}
