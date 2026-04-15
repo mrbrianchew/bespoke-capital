@@ -1021,7 +1021,29 @@ useEffect(() => {
   
   return takeHome - monthlyExp
 })()}
-              annualSurplus={(ff.annual_surplus as number) || 0}
+              annualSurplus={(() => {
+  const p1 = ff.person1 as any || {}
+  const p2 = ff.person2 as any || {}
+  const isCoupleLocal = ff.mode === 'couple'
+  
+  const p1Gross = p1.gross_monthly || 0
+  const p2Gross = isCoupleLocal ? (p2.gross_monthly || 0) : 0
+  const p1Other = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
+  const p2Other = isCoupleLocal ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
+  const monthlyIncome = p1Gross + p2Gross + p1Other + p2Other
+  const anTotal = monthlyIncome * 12
+  
+  const nonCpfCats = ['s_financial', 's_mortgage', 's_household', 's_personal', 's_children', 's_lifestyle']
+  let annExpNoCpf = 0
+  nonCpfCats.forEach(cat => {
+    annExpNoCpf += (ff as any)[cat] || 0
+    if (isCoupleLocal) {
+      annExpNoCpf += (ff as any)[cat.replace('s_', 's2_')] || 0
+    }
+  })
+  
+  return anTotal - annExpNoCpf
+})()}
               isCouple={isCouple}
               clientName={clientName}
               spouseName={spouseName}
