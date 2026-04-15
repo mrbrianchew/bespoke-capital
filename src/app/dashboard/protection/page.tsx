@@ -1223,7 +1223,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const W = 900, H = 320, PL = 80, PR = 40, PT = 80, PB = 44
+  const W = 900, H = 360, PL = 80, PR = 40, PT = 100, PB = 44
   const iW = W - PL - PR
   const iH = H - PT - PB
 
@@ -1305,9 +1305,9 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
     uniqueMilestones.sort((a, b) => a.age - b.age)
     
     // Smart tier assignment: only cascade down if ages are close together
-    const MIN_AGE_GAP = 8 // If milestones are within 8 years, cascade them
+        const MIN_AGE_GAP = 10 // If milestones are within 10 years, cascade them
     
-    uniqueMilestones.forEach((m, index) => {
+        uniqueMilestones.forEach((m, index) => {
       if (index === 0) {
         chartMilestones.push({ ...m, tier: 0 })
       } else {
@@ -1315,16 +1315,16 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
         const ageGap = m.age - prevMilestone.age
         
         if (ageGap < MIN_AGE_GAP) {
-          // Close together - cascade down
+          // Close together - cascade down (max tier 2)
           const prevTier = chartMilestones[index - 1].tier
-          chartMilestones.push({ ...m, tier: prevTier + 1 })
+          const newTier = Math.min(prevTier + 1, 2) // Never go beyond tier 2
+          chartMilestones.push({ ...m, tier: newTier })
         } else {
-          // Far apart - stay on top tier
+          // Far apart - reset to top tier
           chartMilestones.push({ ...m, tier: 0 })
         }
       }
     })
-  }
 
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
 
@@ -1453,7 +1453,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
             
             // Color by type
             const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
-            const tierOffset = m.tier * 22 // Tier 0 = top, Tier 1 = 22px down, Tier 2 = 44px down
+            const tierOffset = m.tier * 24 // Tier 0 = top, Tier 1 = 24px down, Tier 2 = 48px down
             
             return (
               <g key={`ms-${m.age}-${m.type}`}>
