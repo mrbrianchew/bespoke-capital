@@ -51,7 +51,7 @@ export interface AccumulationProps {
   spouseFD: number
   monthlyExpenses: number
   monthlySurplus: number
-  annualSurplus: number   // ← ADD THIS LINE
+  annualSurplus?: number   // ← ADD THIS LINE
   isCouple: boolean
   clientName?: string
   spouseName?: string
