@@ -147,9 +147,7 @@ function calcGoal(goal: WealthGoal, inflationRate: number, returnRate: number) {
 
 function fmtSGD(n: number) {
   if (!n || isNaN(n)) return 'SGD 0'
-  if (n >= 1_000_000) return `SGD ${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000)     return `SGD ${(n / 1_000).toFixed(0)}K`
-  return `SGD ${n.toFixed(0)}`
+  return `SGD ${Math.round(n).toLocaleString('en-SG')}`
 }
 function newId() { return 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2,5) }
 
