@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
-import WealthAccumulationSection, { AccumulationData } from './WealthAccumulation'
+import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 
 // Module-level fallback so sub-components can access defaults before hook loads
 let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
