@@ -2848,6 +2848,5 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
         </div>
       </div>
         </div>
-    </>
   )
 }
