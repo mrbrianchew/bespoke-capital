@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
+import WealthAccumulationSection, { AccumulationData } from './WealthAccumulation'
 
 // Module-level fallback so sub-components can access defaults before hook loads
 let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
@@ -340,6 +341,14 @@ export default function ObjectivesPage() {
   })
   const [children, setChildren] = useState<FamilyMember[]>([])
   const [activeSection, setActiveSection] = useState(0)
+  const [acc, setAcc] = useState<AccumulationData>({
+    inflationRate: 3,
+    returnRate: 5,
+    emergencyTargetMonths: 6,
+    goals: [],
+    advisorNotes: '',
+  })
+  const accSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [loading, setLoading] = useState(true)
   const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -388,12 +397,22 @@ export default function ObjectivesPage() {
     .from('fact_finding')
     .select('*')
     .eq('client_id', id)
-  .in('section', ['financials', 'protection_needs', 'protection_portfolio'])
+  .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation'])
     
   if (ffRows && ffRows.length > 0) {
     const merged: FactFinding = { client_id: id }
     for (const row of ffRows) Object.assign(merged, row.data || {})
-    
+
+   // Load accumulation data
+    const accRow = ffRows.find((r: any) => r.section === 'accumulation')
+    if (accRow?.data?.acc) {
+      setAcc((prev: AccumulationData) => ({ ...prev, ...accRow.data.acc }))
+    }
+
+    // Load protection settings from the protection_needs section row
+    const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
+    const protData = protRow?.data?.protection
+    if (protData) { 
     // Load protection settings from the protection_needs section row
     const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
     const protData = protRow?.data?.protection
@@ -447,7 +466,21 @@ setP(prev => ({
     }
     setLoading(false)
   }
+// ─── ACCUMULATION SAVE ─────────────────────────────────────────────────────
 
+  const scheduleAccSave = useCallback((updated: AccumulationData) => {
+    if (accSaveTimer.current) clearTimeout(accSaveTimer.current)
+    accSaveTimer.current = setTimeout(async () => {
+      if (!clientId) return
+      await supabase
+        .from('fact_finding')
+        .upsert(
+          { client_id: clientId, section: 'accumulation', data: { acc: updated }, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+    }, 800)
+  }, [clientId, supabase])
+    
   // ─── AUTO-SAVE ─────────────────────────────────────────────────────────────
 
   const scheduleSave = useCallback((updated: ProtectionData) => {
@@ -945,10 +978,26 @@ useEffect(() => {
               clientId={clientId ?? ''}
             />
           )}
-          {activeSection !== 0 && (
+         {activeSection === 1 && (
+            <WealthAccumulationSection
+              data={acc}
+              onChange={(updated) => {
+                setAcc(updated)
+                scheduleAccSave(updated)
+              }}
+              clientSavings={ff.a_savings ?? 0}
+              clientFD={ff.a_fixed_deposit ?? 0}
+              spouseSavings={ff.a2_savings ?? 0}
+              spouseFD={ff.a2_fixed_deposit ?? 0}
+              monthlyExpenses={(annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
+              monthlySurplus={((ff.annual_income ?? 0) + (isCouple ? (ff.annual_income_2 ?? 0) : 0)) / 12 - (annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
+              isCouple={isCouple}
+            />
+          )}
+          {activeSection > 1 && (
             <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
               <p style={{ color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
-                {['','Wealth Accumulation','Retirement','Education Planning','Estate Planning'][activeSection]} — coming soon
+                {['','','Retirement','Education Planning','Estate Planning'][activeSection]} — coming soon
               </p>
             </div>
           )}
