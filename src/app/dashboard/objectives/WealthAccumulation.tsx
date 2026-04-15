@@ -51,6 +51,7 @@ export interface AccumulationProps {
   spouseFD: number
   monthlyExpenses: number
   monthlySurplus: number
+  annualSurplus: number   // ← ADD THIS LINE
   isCouple: boolean
   clientName?: string
   spouseName?: string
@@ -525,6 +526,7 @@ export default function WealthAccumulationSection({
   data, onChange, clientSavings, clientFD, spouseSavings, spouseFD,
   monthlyExpenses, monthlySurplus, isCouple,
   clientName = 'Client', spouseName = 'Spouse',
+  annualSurplus,   // ← ADD THIS LINE
 }: AccumulationProps) {
   const [modal, setModal] = useState<{open:boolean;editGoal?:WealthGoal}>({open:false})
 
@@ -546,7 +548,7 @@ export default function WealthAccumulationSection({
     const {lumpSumRequired:l,monthlyRequired:m}=calcGoal(g,data.inflationRate,data.returnRate)
     return {monthly:a.monthly+m,lumpSum:a.lumpSum+l}
   },{monthly:0,lumpSum:0})
-  const surplusGap = monthlySurplus - totals.monthly
+  const surplusGap = annualSurplus - (totals.monthly * 12)
 
   return (
     <div>
@@ -659,11 +661,11 @@ export default function WealthAccumulationSection({
             </p>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:0, marginBottom:24 }}>
               {[
-                { label:'Total Lump Sum',    value:fmtSGD(totals.lumpSum),         sub:'Invest today' },
-                { label:'Monthly Savings',   value:fmtSGD(totals.monthly),         sub:'Per month required' },
-                { label:'Monthly Surplus',   value:fmtSGD(monthlySurplus),         sub:'Available from profile' },
-                { label:surplusGap>=0?'Surplus Remaining':'Monthly Shortfall', value:fmtSGD(Math.abs(surplusGap)), sub:surplusGap>=0?'After goals funded':'Goals exceed surplus', alert:surplusGap<0 },
-              ].map((kpi,i) => (
+  { label:'Total Lump Sum',    value:fmtSGD(totals.lumpSum),         sub:'Invest today' },
+  { label:'Monthly Savings',   value:fmtSGD(totals.monthly),         sub:'Per month required' },
+  { label:'Annual Surplus',    value:fmtSGD(annualSurplus),          sub:'Available from profile' },
+  { label:surplusGap>=0?'Surplus Remaining':'Annual Shortfall', value:fmtSGD(Math.abs(surplusGap)), sub:surplusGap>=0?'After goals funded':'Goals exceed surplus', alert:surplusGap<0 },
+].map((kpi,i) => (
                 <div key={i} style={{ paddingRight:i<3?24:0, borderRight:i<3?'1px solid rgba(255,255,255,0.12)':'none', paddingLeft:i>0?24:0 }}>
                   <div style={{ fontFamily:'Inter', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase', color:'rgba(255,255,255,0.5)', marginBottom:8 }}>{kpi.label}</div>
                   <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:22, fontWeight:600, color:(kpi as any).alert?'#f0a0a0':i===0?'var(--gold)':'white', marginBottom:4 }}>{kpi.value}</div>
