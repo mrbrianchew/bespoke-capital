@@ -1021,6 +1021,7 @@ useEffect(() => {
   
   return takeHome - monthlyExp
 })()}
+              annualSurplus={ff.annual_surplus || 0}
               isCouple={isCouple}
               clientName={clientName}
               spouseName={spouseName}
