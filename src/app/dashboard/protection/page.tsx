@@ -620,9 +620,13 @@ async function handleGenerateShare() {
     if (shareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
     if (shareExpiry==='30d') expiresAt = new Date(Date.now()+30*24*3600*1000).toISOString()
     const { error } = await supabase.from('client_shares').insert({
-  client_id: clientId, token, expires_at: expiresAt,
-  password_hash: hashHex, password_hint: shareHint, person: sharePerson,
-})
+      client_id: clientId, 
+      token, 
+      expires_at: expiresAt,
+      password_hash: hashHex, 
+      password_hint: shareHint, 
+      person: sharePerson,
+    })
     if (error) throw error
     setShareLink(`${window.location.origin}/share/${token}`)
   } catch(e) {
@@ -631,7 +635,8 @@ async function handleGenerateShare() {
     setShareGenerating(false)
   }
 }
-    return (
+
+  return (
     <>
       {error && (
         <div style={{
