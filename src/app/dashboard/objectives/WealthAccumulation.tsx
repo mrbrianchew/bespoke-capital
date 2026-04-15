@@ -176,7 +176,7 @@ function RateSlider({ label, value, onChange, min=0, max=20, step=0.5 }: { label
   )
 }
 
-function PillSelect<T extends string>({ options, value, onChange }: { options:{value:T;label:string}[]; value:T; onChange:(v:T)=>void }) {
+function PillSelect<T extends string | number>({ options, value, onChange }: { options:{value:T;label:string}[]; value:T; onChange:(v:T)=>void }) {
   return (
     <div style={{ display:'flex', background:'white', border:'1px solid var(--line)', borderRadius:8, overflow:'hidden' }}>
       {options.map(opt => (
@@ -219,11 +219,13 @@ function PropertyPanel({ goal, onUpdate }: { goal: WealthGoal; onUpdate: (c: Par
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
         <div>
           <div style={{ fontFamily:'Inter', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--ink3)', marginBottom:6 }}>Which Property</div>
-          <PillSelect<1|2|3|4|5>
-            options={([1,2,3,4,5] as const).map(n => ({ value:n, label:ORDINALS[n] }))}
-            value={propNum as 1|2|3|4|5}
-            onChange={v => onUpdate({ propertyNumber:v })}
-          />
+          <div style={{ display:'flex', background:'white', border:'1px solid var(--line)', borderRadius:8, overflow:'hidden' }}>
+  {([1,2,3,4,5] as const).map(n => (
+    <button key={n} onClick={() => onUpdate({ propertyNumber:n })} style={{ flex:1, padding:'9px 0', border:'none', cursor:'pointer', fontFamily:'Inter', fontSize:11, fontWeight:500, background:propNum===n?'var(--ink)':'white', color:propNum===n?'white':'var(--ink3)', transition:'all 0.15s' }}>
+      {ORDINALS[n]}
+    </button>
+  ))}
+</div>
         </div>
         <div>
           <div style={{ fontFamily:'Inter', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--ink3)', marginBottom:6 }}>Residency Status</div>
