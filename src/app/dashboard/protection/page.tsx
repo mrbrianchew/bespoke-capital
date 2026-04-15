@@ -1200,7 +1200,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     }).join(' ')
   }
 
-[...new Set((milestones.educationEnds  const overPath  = buildGapPath('over')
+const overPath  = buildGapPath('over')
 
   const chartMilestones: {age: number; label: string; type: string}[] = []
   if (milestones) {
