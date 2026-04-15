@@ -248,12 +248,12 @@ function PropertyPanel({ goal, onUpdate }: { goal: WealthGoal; onUpdate: (c: Par
             {' — Loan: '}<span style={{ color:'var(--ink)', fontWeight:600 }}>{fmtSGD(loanAmt)}</span>
           </div>
         </div>
-        <input type="range" min={5} max={100} step={1} value={dpPct}
+        <input type="range" min={0} max={100} step={1} value={dpPct}
           onChange={e => onUpdate({ downpaymentPct: parseInt(e.target.value) })}
           style={{ width:'100%', accentColor:'var(--gold)', height:2, cursor:'pointer' }}
         />
         <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
-  {[5,10,20,25,30,50,75,100].map(p => (
+  {[0,10,20,25,30,50,75,100].map(p => (
     <span key={p} style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>{p}%</span>
   ))}
 </div>
