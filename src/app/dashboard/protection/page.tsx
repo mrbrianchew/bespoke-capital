@@ -1251,7 +1251,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
     
     uniqueMilestones.sort((a, b) => a.age - b.age)
     
-        const MIN_AGE_GAP = variant === 'ci' ? 6 : 15
+        const MIN_AGE_GAP = 8  // Same gap threshold for both charts
     
     uniqueMilestones.forEach((m, index) => {
       if (index === 0) {
@@ -1262,19 +1262,19 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
         
         if (ageGap < MIN_AGE_GAP) {
           const prevTier = chartMilestones[index - 1].tier
-          const newTier = Math.min(prevTier + 1, variant === 'ci' ? 3 : 2)
+          const newTier = prevTier + 1  // Cascade down by 1 tier
           chartMilestones.push({ ...m, tier: newTier })
         } else {
-          chartMilestones.push({ ...m, tier: 0 })
+          chartMilestones.push({ ...m, tier: 0 })  // Reset to top tier
         }
       }
     })
   }
 
-  // Calculate required top padding based on max tier
+    // Calculate required top padding based on max tier
   const maxTier = chartMilestones.length > 0 ? Math.max(...chartMilestones.map(m => m.tier)) : 0
-  const labelHeight = 32 // Height per tier
-  const baseTopPadding = variant === 'ci' ? 50 : 40
+  const labelHeight = 36 // Height per tier
+  const baseTopPadding = 70  // Same base padding for both D/TPD and CI charts
   const dynamicTopPadding = chartMilestones.length > 0 ? baseTopPadding + (maxTier * labelHeight) : baseTopPadding
 
   // Chart dimensions with dynamic top padding
@@ -1464,17 +1464,17 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
           })}
 
           {/* Milestone labels placed ABOVE the chart area */}
-          {chartMilestones.map((m) => {
+                    {chartMilestones.map((m) => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
             const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
-            const tierOffset = m.tier * 30 // Labels cascade down if close together
+            const tierOffset = m.tier * 36 // Labels cascade down if close together
             
             return (
               <g key={`mslabel-${m.age}-${m.type}`}>
                 <text 
                   x={mx} 
-                  y={PT - 20 - tierOffset} 
+                  y={PT - 24 + tierOffset} 
                   fontSize="7.5" 
                   fill={mc} 
                   textAnchor="middle" 
@@ -1486,7 +1486,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
                 </text>
                 <text 
                   x={mx} 
-                  y={PT - 10 - tierOffset} 
+                  y={PT - 12 + tierOffset} 
                   fontSize="6.5" 
                   fill={mc} 
                   textAnchor="middle" 
@@ -1497,7 +1497,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
                   age {m.age}
                 </text>
                 {/* Tiny connecting line from label to chart top */}
-                <line x1={mx} y1={PT - 4 - tierOffset} x2={mx} y2={PT} stroke={mc} strokeWidth="0.5" opacity="0.3" />
+                <line x1={mx} y1={PT - 4 + tierOffset} x2={mx} y2={PT} stroke={mc} strokeWidth="0.5" opacity="0.3" />
               </g>
             )
           })}
