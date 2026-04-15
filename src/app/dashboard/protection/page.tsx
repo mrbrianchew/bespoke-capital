@@ -1296,8 +1296,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
     // Sort by age (left to right)
     rawMilestones.sort((a, b) => a.age - b.age)
     
-    // Assign tiers: earlier milestones (left) get smaller tier numbers (higher up)
-    // Later milestones (right) get larger tier numbers (lower down)
+    // Assign tiers: index 0 = top, index 1 = middle, index 2 = bottom
     rawMilestones.forEach((m, index) => {
       chartMilestones.push({ ...m, tier: index })
     })
