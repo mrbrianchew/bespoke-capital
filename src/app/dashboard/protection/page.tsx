@@ -1208,7 +1208,7 @@ async function handleGenerateShare() {
   )
 }
 
-function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
+const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
   title: string; eyebrow: string; needLabel: string; haveLabel: string
   data: {age: number; need: number; have: number}[]
   accentColor: string
@@ -1218,12 +1218,13 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     coverageEnds?: number | null
     clientAge?: number
   }
-}) {
+}) => {
   const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number; y: number} | null>(null)
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const W = 900, H = 320, PL = 72, PR = 24, PT = 70, PB = 44
+  // Refined proportions - more breathing room
+  const W = 860, H = 300, PL = 80, PR = 40, PT = 60, PB = 36
   const iW = W - PL - PR
   const iH = H - PT - PB
 
@@ -1249,11 +1250,18 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
 
   const makePath = (pts: {x:number,y:number}[]) => {
     if (pts.length < 2) return ''
-    return pts.reduce((p, pt, i) => i === 0 ? `M ${pt.x} ${pt.y}` : `${p} L ${pt.x} ${pt.y}`, '')
+    let d = `M ${pts[0].x} ${pts[0].y}`
+    for (let i = 1; i < pts.length; i++) {
+      const cp1x = pts[i-1].x + (pts[i].x - pts[i-1].x) * 0.5
+      const cp1y = pts[i-1].y
+      const cp2x = pts[i].x - (pts[i].x - pts[i-1].x) * 0.5
+      const cp2y = pts[i].y
+      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${pts[i].x} ${pts[i].y}`
+    }
+    return d
   }
 
   const needPath = makePath(needPoints)
-  const havePath = makePath(havePoints)
 
   const buildGapPath = (type: 'under' | 'over'): string => {
     const segments: {start: number, end: number}[] = []
@@ -1274,20 +1282,21 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     }).join(' ')
   }
 
-const underPath = buildGapPath('under')
+  const underPath = buildGapPath('under')
   const overPath  = buildGapPath('over')
 
-   const chartMilestones: {age: number; label: string; type: string}[] = []
+  const chartMilestones: {age: number; label: string; type: string}[] = []
   if (milestones) {
     ;(milestones.mortgageEnds || []).sort((a,b)=>a-b).forEach((age, i) => {
-      const label = (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1} Fully Paid` : 'Mortgage Fully Paid')
+      const label = (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1}` : 'Mortgage') + ' repaid'
       chartMilestones.push({ age, label, type: 'mortgage' })
     })
     const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
     validEdu.forEach((age, i) => {
-      const label = (validEdu.length > 1 ? `Child ${i+1} Enters University` : 'Child Enters University')
+      const label = (validEdu.length > 1 ? `Child ${i+1}` : 'Child') + ' enters university'
       chartMilestones.push({ age, label, type: 'education' })
     })
+  }
 
   const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
 
@@ -1307,235 +1316,231 @@ const underPath = buildGapPath('under')
 
   const gap = hovered ? hovered.need - hovered.have : 0
   const isOver = hovered ? hovered.have > hovered.need : false
-  const nearbyMs = hovered ? chartMilestones.find(m => Math.abs(m.age - hovered.age) <= 2) : null
 
-  const CHARCOAL    = '#1C1A17'
+  // Luxury color palette
+  const CHARCOAL    = '#1A1817'
   const GOLD        = accentColor
-  const CREAM_LINE  = 'rgba(28,26,23,0.06)'
-  const UNDER_FILL  = 'rgba(192, 57, 43, 0.10)'
-  const UNDER_STROKE= 'rgba(192, 57, 43, 0.30)'
-  const OVER_FILL   = 'rgba(39, 174, 96, 0.10)'
-  const OVER_STROKE = 'rgba(39, 174, 96, 0.28)'
-  const AXIS_TEXT   = '#9A9690'
+  const CREAM_BG    = '#FDFCFA'
+  const GRID_LINE   = 'rgba(28, 26, 23, 0.04)'
+  const AXIS_LINE   = 'rgba(28, 26, 23, 0.08)'
+  const UNDER_FILL  = 'rgba(192, 57, 43, 0.06)'
+  const UNDER_STROKE= 'rgba(192, 57, 43, 0.20)'
+  const OVER_FILL   = 'rgba(39, 174, 96, 0.06)'
+  const OVER_STROKE = 'rgba(39, 174, 96, 0.20)'
+  const AXIS_TEXT   = '#8A8782'
+  const BAR_OPACITY = 0.28
 
   return (
-        <div ref={containerRef} style={{
-      background: '#FDFCFA',
-      border: '0.5px solid #DDD9D2',
-      borderRadius: 12,
+    <div ref={containerRef} style={{
+      background: CREAM_BG,
+      border: 'none',
+      borderRadius: 0,
       overflow: 'visible',
       position: 'relative',
     }}>
-      {/* Gold top rule */}
-      <div style={{ height: 1, background: `linear-gradient(90deg, ${GOLD}, ${GOLD}66, transparent)` }} />
-
+      
       {/* Header */}
-      <div style={{ padding: '22px 32px 0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ padding: '24px 32px 0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
           <div style={{
-            fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase',
-            color: GOLD, marginBottom: 7, fontWeight: 600, fontFamily: 'DM Mono, monospace',
+            fontSize: 9,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            color: GOLD,
+            marginBottom: 8,
+            fontWeight: 500,
+            fontFamily: 'Inter, sans-serif',
           }}>{eyebrow}</div>
           <div style={{
             fontFamily: 'Cormorant Garamond, Georgia, serif',
-            fontSize: 22, fontWeight: 400, color: CHARCOAL, letterSpacing: '0.01em', lineHeight: 1.2,
+            fontSize: 22,
+            fontWeight: 400,
+            color: CHARCOAL,
+            letterSpacing: '-0.01em',
+            lineHeight: 1.2,
           }}>{title}</div>
         </div>
 
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: 24, alignItems: 'center', paddingTop: 4, flexWrap: 'wrap' as const, justifyContent: 'flex-end' }}>
+        {/* Legend - minimal */}
+        <div style={{ display: 'flex', gap: 32, alignItems: 'center', paddingBottom: 2 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="24" height="12" style={{flexShrink:0}}>
-              <line x1="0" y1="6" x2="24" y2="6" stroke={GOLD} strokeWidth="2" opacity="1" />
-            </svg>
-            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace' }}>{needLabel}</span>
+            <div style={{ width: 20, height: 1.5, background: GOLD }} />
+            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>{needLabel}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 24, height: 10, background: GOLD, opacity: 0.35, borderRadius: 1 }} />
-            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace' }}>{haveLabel}</span>
+            <div style={{ width: 20, height: 8, background: GOLD, opacity: BAR_OPACITY }} />
+            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>{haveLabel}</span>
           </div>
-          <div style={{ width: 1, height: 16, background: '#DDD9D2' }} />
-          {[
-            { fill: UNDER_FILL, stroke: UNDER_STROKE, label: 'Shortfall', color: '#C0392B' },
-            { fill: OVER_FILL,  stroke: OVER_STROKE,  label: 'Surplus',   color: '#27AE60' },
-          ].map(({fill, stroke, label, color}) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <div style={{ width: 14, height: 8, background: fill, border: `1px solid ${stroke}`, borderRadius: 2 }} />
-              <span style={{ fontSize: 10, color, letterSpacing: '0.06em', textTransform: 'uppercase' as const, fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>{label}</span>
-            </div>
-          ))}
         </div>
       </div>
 
       {/* Chart SVG */}
-            <div style={{ padding: '4px 32px 0 32px', position: 'relative', overflow: 'visible' }}>
+      <div style={{ padding: '8px 32px 0 32px', position: 'relative', overflow: 'visible' }}>
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}
           onMouseMove={handleMouseMove} onMouseLeave={() => { setMouseX(null); setHovered(null) }}>
 
-          {/* Grid */}
+          {/* Subtle grid lines */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
+            if (f === 0) return null
             return (
               <g key={f}>
-                <line x1={PL} y1={y} x2={PL+iW} y2={y} stroke={CREAM_LINE} strokeWidth="0.5" />
-                <text x={PL-10} y={y+4} fontSize="9.5" fill={AXIS_TEXT} textAnchor="end" fontFamily="DM Mono, monospace">
+                <line x1={PL} y1={y} x2={PL+iW} y2={y} stroke={GRID_LINE} strokeWidth="0.5" />
+                <text x={PL-12} y={y+3.5} fontSize="9" fill={AXIS_TEXT} textAnchor="end" fontFamily="Inter, sans-serif" fontWeight={300}>
                   {fmtAx(maxV * f)}
                 </text>
               </g>
             )
           })}
 
-          {/* Axes */}
-          <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
-          <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
+          {/* Axes - clean, minimal */}
+          <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
+          <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
 
-                    {/* Milestone verticals with labels above chart */}
+          {/* Gap fills - subtle shading */}
+          {underPath && <path d={underPath} fill={UNDER_FILL} stroke={UNDER_STROKE} strokeWidth="0.5" />}
+          {overPath  && <path d={overPath}  fill={OVER_FILL}  stroke={OVER_STROKE}  strokeWidth="0.5" />}
+
+          {/* Have - vertical bars with subtle rounding */}
+          {data.map((d, i) => {
+            const bx = PL + xP(d.age)
+            const barH = Math.max(0, iH - yP(d.have))
+            const barW = Math.max(1.5, (iW / data.length) * 0.5)
+            return (
+              <rect key={`bar-${d.age}`}
+                x={bx - barW / 2} y={PT + yP(d.have)}
+                width={barW} height={barH}
+                fill={GOLD} opacity={BAR_OPACITY} rx="1.5"
+              />
+            )
+          })}
+
+          {/* Need line - smooth curve, gold */}
+          <path d={needPath} stroke={GOLD} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+          {/* Milestone verticals - understated */}
           {chartMilestones.map(m => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
-            const mc = m.type==='mortgage'?'#C4A464':m.type==='education'?'#7FAAA0':'#8B9DAF'
+            const mc = m.type==='mortgage'?'#B8A88A':m.type==='education'?'#9AB0A8':'#9AA8B5'
             return (
               <g key={`ms-${m.age}-${m.type}`}>
-                {/* Dotted vertical line through chart */}
-                <line x1={mx} y1={PT} x2={mx} y2={PT+iH} stroke={mc} strokeWidth="0.75" strokeDasharray="2,4" opacity="0.55" />
+                <line x1={mx} y1={PT-8} x2={mx} y2={PT+iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
                 
-                {/* Dot at bottom of chart */}
-                <circle cx={mx} cy={PT+iH} r="3" fill={mc} opacity="0.75" />
+                {/* Small dot at top of milestone line */}
+                <circle cx={mx} cy={PT-8} r="2" fill={mc} opacity="0.6" />
                 
-                {/* Label positioned ABOVE the chart */}
+                {/* Elegant label above chart */}
                 <text 
                   x={mx} 
-                  y={PT - 20} 
+                  y={PT - 18} 
                   fontSize="8" 
                   fill={mc} 
                   textAnchor="end"
-                  fontFamily="DM Mono, monospace"
-                  fontWeight="500"
-                  letterSpacing="0.03em"
-                  transform={`rotate(-35, ${mx}, ${PT - 20})`}
+                  fontFamily="Inter, sans-serif"
+                  fontWeight="400"
+                  letterSpacing="0.06em"
+                  textTransform="uppercase"
+                  transform={`rotate(-30, ${mx}, ${PT - 18})`}
                 >
                   {m.label}
                 </text>
                 <text 
-                  x={mx - 3} 
-                  y={PT - 8} 
-                  fontSize="7" 
+                  x={mx - 2} 
+                  y={PT - 7} 
+                  fontSize="7.5" 
                   fill={mc} 
                   textAnchor="end"
-                  fontFamily="DM Mono, monospace"
-                  opacity="0.8"
-                  transform={`rotate(-35, ${mx - 3}, ${PT - 8})`}
+                  fontFamily="Inter, sans-serif"
+                  fontWeight="300"
+                  opacity="0.7"
+                  transform={`rotate(-30, ${mx - 2}, ${PT - 7})`}
                 >
-                  Age {m.age}
+                  age {m.age}
                 </text>
               </g>
             )
           })}
 
-          {/* Gap fills — red shortfall, green surplus */}
-          {underPath && <path d={underPath} fill={UNDER_FILL} stroke={UNDER_STROKE} strokeWidth="0.5" />}
-          {overPath  && <path d={overPath}  fill={OVER_FILL}  stroke={OVER_STROKE}  strokeWidth="0.5" />}
-
-          {/* Have — vertical bars */}
-          {data.map((d, i) => {
-            const bx = PL + xP(d.age)
-            const barH = Math.max(0, iH - yP(d.have))
-            const barW = Math.max(1, (iW / data.length) * 0.6)
-            return (
-              <rect key={`bar-${d.age}`}
-                x={bx - barW / 2} y={PT + yP(d.have)}
-                width={barW} height={barH}
-                fill={GOLD} opacity="0.35" rx="1"
-              />
-            )
-          })}
-
-          {/* Need line — gold */}
-          <path d={needPath} stroke={GOLD} strokeWidth="2.5" fill="none" strokeLinecap="round" />
-
-          {/* Crosshair */}
+          {/* Crosshair - minimal */}
           {mouseX && (
             <line x1={mouseX} y1={PT} x2={mouseX} y2={PT+iH}
-              stroke={CHARCOAL} strokeWidth="0.5" strokeDasharray="3,3" opacity="0.2" />
+              stroke={CHARCOAL} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.15" />
           )}
 
-          {/* Hover dots */}
+          {/* Hover dot on need line */}
           {hovered && (
-            <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="3.5" fill={GOLD} stroke="white" strokeWidth="1.5" />
+            <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="2.5" fill={GOLD} stroke={CREAM_BG} strokeWidth="1.5" />
           )}
 
-          {/* Age labels */}
+          {/* Age labels - clean */}
           {ageLabels.map(d => (
-            <text key={d.age} x={PL+xP(d.age)} y={PT+iH+17} fontSize="9.5" fill={AXIS_TEXT}
-              textAnchor="middle" fontFamily="DM Mono, monospace">
+            <text key={d.age} x={PL+xP(d.age)} y={PT+iH+16} fontSize="9" fill={AXIS_TEXT}
+              textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight={300}>
               {d.age}
             </text>
           ))}
-          
         </svg>
 
-        {/* Tooltip */}
+        {/* Tooltip - refined luxury styling */}
         {hovered && (
           <div style={{
             position: 'absolute',
             left: `${((hovered.x - PL) / iW) * 100}%`,
             top: `${((PT + yP(hovered.need)) / H) * 100}%`,
-            transform: 'translate(-50%, -108%)',
+            transform: 'translate(-50%, -110%)',
             background: CHARCOAL,
-            color: 'white',
+            color: CREAM_BG,
             padding: '14px 18px',
-            borderRadius: 8,
+            borderRadius: 4,
             fontSize: 11,
             pointerEvents: 'none',
-            boxShadow: '0 16px 48px rgba(0,0,0,0.28)',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
             zIndex: 10,
             whiteSpace: 'nowrap' as const,
-            minWidth: 200,
+            minWidth: 180,
+            backdropFilter: 'blur(4px)',
           }}>
-            <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:GOLD, borderRadius:'8px 8px 0 0' }} />
-            <div style={{ marginBottom: 10, color: GOLD, fontSize: 9, letterSpacing: '0.18em', fontFamily: 'DM Mono, monospace' }}>
-              AGE {hovered.age}
+            <div style={{ marginBottom: 10, color: GOLD, fontSize: 9, letterSpacing: '0.18em', fontFamily: 'Inter, sans-serif', fontWeight: 400, textTransform: 'uppercase' }}>
+              Age {hovered.age}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', gap:32 }}>
-                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'DM Mono,monospace', fontSize:10, letterSpacing:'0.08em' }}>NEED</span>
-                <span style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:17, fontWeight:500 }}>{fmt(hovered.need)}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', gap: 24 }}>
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Need</span>
+                <span style={{ fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400, color: CREAM_BG }}>{fmt(hovered.need)}</span>
               </div>
-              <div style={{ display:'flex', justifyContent:'space-between', gap:32 }}>
-                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'DM Mono,monospace', fontSize:10, letterSpacing:'0.08em' }}>HAVE</span>
-                <span style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:17, fontWeight:500, color:GOLD }}>{fmt(hovered.have)}</span>
+              <div style={{ display:'flex', justifyContent:'space-between', gap: 24 }}>
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Have</span>
+                <span style={{ fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400, color: GOLD }}>{fmt(hovered.have)}</span>
               </div>
-              
               <div style={{
                 marginTop: 2, paddingTop: 8,
-                borderTop: '0.5px solid rgba(255,255,255,0.12)',
-                display:'flex', justifyContent:'space-between', gap:32,
+                borderTop: '0.5px solid rgba(255,255,255,0.08)',
+                display:'flex', justifyContent:'space-between', gap: 24,
               }}>
-                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'DM Mono,monospace', fontSize:10, letterSpacing:'0.08em' }}>
-                  {gap > 0 ? 'SHORTFALL' : isOver ? 'SURPLUS' : 'STATUS'}
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  {gap > 0 ? 'Shortfall' : isOver ? 'Surplus' : 'Status'}
                 </span>
                 <span style={{
-                  fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:17, fontWeight:500,
-                  color: gap > 0 ? '#E87070' : isOver ? '#70C090' : 'white'
+                  fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400,
+                  color: gap > 0 ? '#E8A0A0' : isOver ? '#A0D0B8' : CREAM_BG
                 }}>
-                  {gap > 0 ? fmt(gap) : isOver ? fmt(-gap) : '✓ Covered'}
+                  {gap > 0 ? fmt(gap) : isOver ? fmt(-gap) : 'Covered'}
                 </span>
               </div>
             </div>
             <div style={{
-              position:'absolute', bottom:-5, left:'50%', transform:'translateX(-50%)',
+              position:'absolute', bottom:-4, left:'50%', transform:'translateX(-50%)',
               width:0, height:0,
-              borderLeft:'5px solid transparent', borderRight:'5px solid transparent',
-              borderTop:`5px solid ${CHARCOAL}`
+              borderLeft:'4px solid transparent', borderRight:'4px solid transparent',
+              borderTop:`4px solid ${CHARCOAL}`
             }} />
           </div>
         )}
       </div>
-
-      <div style={{ height:'0.5px', background:'#E8E5E0' }} />
     </div>
   )
-}}
+})
 
 // ─── Gap Section ──────────────────────────────────────────────────────────────
 function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,annualPremium}:{title:string;dtpdNeed:number;ciNeed:number;lifeHave:number;ciHave:number;annualPremium:number}) {
