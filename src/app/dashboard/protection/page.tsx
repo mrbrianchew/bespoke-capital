@@ -1277,14 +1277,16 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
 const underPath = buildGapPath('under')
   const overPath  = buildGapPath('over')
 
-  const chartMilestones: {age: number; label: string; type: string}[] = []
+   const chartMilestones: {age: number; label: string; type: string}[] = []
   if (milestones) {
     ;(milestones.mortgageEnds || []).sort((a,b)=>a-b).forEach((age, i) => {
-      chartMilestones.push({ age, label: (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1}` : 'Mortgage') + ' Repaid', type: 'mortgage' })
+      const label = (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1} Fully Paid` : 'Mortgage Fully Paid')
+      chartMilestones.push({ age, label, type: 'mortgage' })
     })
-const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
+    const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
     validEdu.forEach((age, i) => {
-      chartMilestones.push({ age, label: (validEdu.length > 1 ? `Child ${i+1}` : 'Child') + ' Graduates', type: 'education' })
+      const label = (validEdu.length > 1 ? `Child ${i+1} Enters University` : 'Child Enters University')
+      chartMilestones.push({ age, label, type: 'education' })
     })
     if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge||0)) {
       chartMilestones.push({ age: milestones.coverageEnds, label: 'Coverage Ends', type: 'coverage' })
@@ -1391,7 +1393,7 @@ const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: 
           <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
           <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke="rgba(28,26,23,0.10)" strokeWidth="0.5" />
 
-          {/* Milestone verticals */}
+                    {/* Milestone verticals with rotated labels */}
           {chartMilestones.map(m => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
@@ -1400,6 +1402,20 @@ const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: 
               <g key={`ms-${m.age}-${m.type}`}>
                 <line x1={mx} y1={PT} x2={mx} y2={PT+iH} stroke={mc} strokeWidth="0.75" strokeDasharray="2,4" opacity="0.55" />
                 <circle cx={mx} cy={PT+iH} r="3" fill={mc} opacity="0.75" />
+                {/* Vertical rotated label */}
+                <text 
+                  x={mx - 8} 
+                  y={PT + iH/2} 
+                  transform={`rotate(-90, ${mx - 8}, ${PT + iH/2})`}
+                  fontSize="9" 
+                  fill={mc} 
+                  textAnchor="middle"
+                  fontFamily="DM Mono, monospace"
+                  fontWeight="500"
+                  letterSpacing="0.05em"
+                >
+                  {m.label}
+                </text>
               </g>
             )
           })}
@@ -1489,19 +1505,7 @@ const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: 
                 <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'DM Mono,monospace', fontSize:10, letterSpacing:'0.08em' }}>HAVE</span>
                 <span style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:17, fontWeight:500, color:GOLD }}>{fmt(hovered.have)}</span>
               </div>
-              {nearbyMs && (
-                <div style={{
-                  marginTop: 2, paddingTop: 8,
-                  borderTop: '0.5px solid rgba(255,255,255,0.12)',
-                  fontSize: 10, fontFamily: 'DM Mono, monospace', letterSpacing: '0.07em',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  color: nearbyMs.type==='mortgage'?'#C4A464':nearbyMs.type==='education'?'#7FAAA0':'#8B9DAF',
-                  textTransform: 'uppercase' as const,
-                }}>
-                  <span style={{fontSize:13}}>{nearbyMs.type==='mortgage'?'🏠':nearbyMs.type==='education'?'🎓':'●'}</span>
-                  {nearbyMs.label} · Age {nearbyMs.age}
-                </div>
-              )}
+              
               <div style={{
                 marginTop: 2, paddingTop: 8,
                 borderTop: '0.5px solid rgba(255,255,255,0.12)',
@@ -1527,26 +1531,6 @@ const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: 
           </div>
         )}
       </div>
-
-      {/* Milestone legend strip */}
-      {chartMilestones.length > 0 && (
-        <div style={{
-          display: 'flex', gap: 24, padding: '10px 32px 14px',
-          borderTop: '0.5px solid #E8E5E0', marginTop: 6,
-        }}>
-          {chartMilestones.map(m => {
-            const mc = m.type==='mortgage'?'#C4A464':m.type==='education'?'#7FAAA0':'#8B9DAF'
-            return (
-              <div key={`leg-${m.age}-${m.type}`} style={{ display:'flex', alignItems:'center', gap:7 }}>
-                <div style={{ width:6, height:6, borderRadius:'50%', background:mc, flexShrink:0 }} />
-                <span style={{ fontSize:10, color:mc, fontFamily:'DM Mono,monospace', letterSpacing:'0.08em', textTransform:'uppercase' as const }}>
-                  {m.label} · Age {m.age}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
 
       <div style={{ height:'0.5px', background:'#E8E5E0' }} />
     </div>
