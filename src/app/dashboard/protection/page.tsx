@@ -513,6 +513,8 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
   const aOffset = overviewPerson==='client' ? p1CPF+p1Prop : p2CPF+p2Prop
   const aName   = overviewPerson==='client' ? clientName : spouseName
 
+    const hasChartData = aDTPD > 0 || aCI > 0 || aExp > 0
+
   const chartData = useMemo(() => {
   if (!hasChartData) return []
   
@@ -567,7 +569,6 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
   })
 }, [overviewPerson, clientAge, spouseAge, finalP1Exp, finalP2Exp, p1CPF, p1Prop, p2CPF, p2Prop, 
     clientCI, spouseCI, inflation, coverTerm, ff.properties, children, edu, hasChartData])
-  const hasChartData = aDTPD > 0 || aCI > 0 || aExp > 0
 
   // People list for dropdowns
   const allPeople = [
