@@ -1004,17 +1004,22 @@ useEffect(() => {
   
   const totalMonthlyIncome = p1GrossMonthly + p2GrossMonthly + p1OtherMonthly + p2OtherMonthly
   
+  console.log('INCOME:', { p1GrossMonthly, p2GrossMonthly, p1OtherMonthly, p2OtherMonthly, totalMonthlyIncome })
+  
   const catKeys = ['s_financial', 's_cpf_oa', 's_mortgage', 's_household', 's_personal', 's_children', 's_lifestyle']
   let totalAnnualExp = 0
   catKeys.forEach(key => {
-    totalAnnualExp += (ff as any)[key] || 0
-    if (isCouple) {
-      totalAnnualExp += (ff as any)[('s2_' + key.slice(2))] || 0
-    }
+    const val1 = (ff as any)[key] || 0
+    const val2 = isCouple ? ((ff as any)[('s2_' + key.slice(2))] || 0) : 0
+    console.log(`EXP ${key}:`, val1, val2)
+    totalAnnualExp += val1 + val2
   })
   
   const cpfOaAnn = ((ff as any).s_cpf_oa || 0) + (isCouple ? ((ff as any).s2_cpf_oa || 0) : 0)
   const cashMonthlyExp = (totalAnnualExp - cpfOaAnn) / 12
+  
+  console.log('EXPENSES:', { totalAnnualExp, cpfOaAnn, cashMonthlyExp })
+  console.log('SURPLUS:', totalMonthlyIncome - cashMonthlyExp)
   
   return totalMonthlyIncome - cashMonthlyExp
 })()}
