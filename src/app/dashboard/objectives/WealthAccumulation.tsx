@@ -501,7 +501,7 @@ function GoalCard({ goal, inflationRate, returnRate, onEdit, onDelete, onLumpSum
             <span style={{ color:'var(--gold)', fontWeight:600 }}>{goal.lumpSumPct}% lump sum</span>{' · '}<span>{100-goal.lumpSumPct}% monthly</span>
           </div>
         </div>
-        <input type="range" min={0} max={100} step={5} value={goal.lumpSumPct} onChange={e=>onLumpSum(parseInt(e.target.value))} style={{ width:'100%', accentColor:'var(--gold)', height:2, cursor:'pointer' }} />
+        <input type="range" min={0} max={100} step={1} value={goal.lumpSumPct} onChange={e=>onLumpSum(parseInt(e.target.value))} style={{ width:'100%', accentColor:'var(--gold)', height:2, cursor:'pointer' }} />
         <div style={{ display:'flex', justifyContent:'space-between', marginTop:3 }}>
           <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>100% Monthly</span>
           <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>100% Lump Sum</span>
