@@ -7,7 +7,6 @@ interface InsCategory   { id: number; code: string; name: string; sort_order: nu
 interface InsPolicyType { id: number; category_id: number; code: string; name: string }
 interface InsCompany    { id: number; category_id: number; name: string }
 interface InsProduct    { id: number; category_id: number; company_id: number; name: string }
-
 // ─── Policy record ────────────────────────────────────────────────────────────
 interface Policy {
   id: string
@@ -1201,17 +1200,16 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
     }).join(' ')
   }
 
-  const underPath = buildGapPath('under')
-  const overPath  = buildGapPath('over')
+[...new Set((milestones.educationEnds  const overPath  = buildGapPath('over')
 
   const chartMilestones: {age: number; label: string; type: string}[] = []
   if (milestones) {
     ;(milestones.mortgageEnds || []).sort((a,b)=>a-b).forEach((age, i) => {
       chartMilestones.push({ age, label: (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1}` : 'Mortgage') + ' Repaid', type: 'mortgage' })
     })
-    const validEdu = [...new Set((milestones.educationEnds || []).filter(a => a > (milestones.clientAge||0)))].sort((a,b)=>a-b)
+const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
     validEdu.forEach((age, i) => {
-      chartMilestones.push({ age, label: (validEdu.length > 1 ? `Child ${i+1}const validEdu = Array.from(new Set((milestones.educationEnds || []).filter(a => a > (milestones.clientAge||0)))).sort((a,b)=>a-b)` : 'Child') + ' Graduates', type: 'education' })
+      chartMilestones.push({ age, label: (validEdu.length > 1 ? `Child ${i+1}` : 'Child') + ' Graduates', type: 'education' })
     })
     if (milestones.coverageEnds && milestones.coverageEnds > (milestones.clientAge||0)) {
       chartMilestones.push({ age: milestones.coverageEnds, label: 'Coverage Ends', type: 'coverage' })
