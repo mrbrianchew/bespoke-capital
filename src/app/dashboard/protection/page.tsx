@@ -1223,7 +1223,7 @@ const DTPDChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accen
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const W = 900, H = 360, PL = 80, PR = 40, PT = 100, PB = 44
+  const W = 900, H = 300, PL = 80, PR = 40, PT = 60, PB = 44
   const iW = W - PL - PR
   const iH = H - PT - PB
 
@@ -1588,8 +1588,8 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Taller chart with more top padding for CI milestones
-  const W = 900, H = 480, PL = 80, PR = 40, PT = 160, PB = 44
+  // Chart dimensions - graph area only
+  const W = 900, H = 280, PL = 80, PR = 40, PT = 40, PB = 44
   const iW = W - PL - PR
   const iH = H - PT - PB
 
@@ -1703,7 +1703,7 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
   const isOver = hovered ? hovered.have > hovered.need : false
 
   const CHARCOAL    = '#1A1817'
-  const GOLD        = '#C4A464'
+  const CI_GREEN    = '#2D6A4F'
   const CREAM_BG    = '#FDFCFA'
   const GRID_LINE   = 'rgba(28, 26, 23, 0.04)'
   const AXIS_LINE   = 'rgba(28, 26, 23, 0.08)'
@@ -1714,6 +1714,9 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
   const AXIS_TEXT   = '#8A8782'
   const BAR_OPACITY = 0.28
 
+  // Calculate total height needed for milestones
+  const milestoneAreaHeight = 120
+
   return (
     <div ref={containerRef} style={{
       background: CREAM_BG,
@@ -1723,13 +1726,14 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
       position: 'relative',
     }}>
       
+      {/* Header */}
       <div style={{ padding: '24px 32px 0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
           <div style={{
             fontSize: 9,
             letterSpacing: '0.2em',
             textTransform: 'uppercase',
-            color: '#2D6A4F',
+            color: CI_GREEN,
             marginBottom: 8,
             fontWeight: 500,
             fontFamily: 'Inter, sans-serif',
@@ -1744,22 +1748,82 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
           }}>{title}</div>
         </div>
 
+        {/* Legend */}
         <div style={{ display: 'flex', gap: 32, alignItems: 'center', paddingBottom: 2 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 20, height: 1.5, background: '#2D6A4F' }} />
+            <div style={{ width: 20, height: 1.5, background: CI_GREEN }} />
             <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>{needLabel}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 20, height: 8, background: '#2D6A4F', opacity: BAR_OPACITY }} />
+            <div style={{ width: 20, height: 8, background: CI_GREEN, opacity: BAR_OPACITY }} />
             <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>{haveLabel}</span>
           </div>
         </div>
       </div>
 
-      <div style={{ padding: '8px 32px 0 32px', position: 'relative', overflow: 'visible' }}>
+      {/* Milestone labels area - COMPLETELY SEPARATE from chart */}
+      <div style={{ 
+        padding: '0 32px', 
+        marginTop: 16,
+        marginBottom: 8,
+        position: 'relative',
+        height: milestoneAreaHeight,
+      }}>
+        {chartMilestones.map((m) => {
+          const relativeX = ((m.age - minA) / aR) * 100
+          if (relativeX < 0 || relativeX > 100) return null
+          
+          const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
+          const topOffset = m.tier * 30
+          
+          return (
+            <div key={`ms-${m.age}-${m.type}`} style={{
+              position: 'absolute',
+              left: `${relativeX}%`,
+              top: topOffset,
+              transform: 'translateX(-50%)',
+              whiteSpace: 'nowrap',
+            }}>
+              <div style={{
+                fontSize: 8,
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 400,
+                letterSpacing: '0.05em',
+                color: mc,
+                textTransform: 'uppercase',
+                lineHeight: 1.4,
+              }}>
+                {m.label.toUpperCase()}
+              </div>
+              <div style={{
+                fontSize: 7,
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 300,
+                color: mc,
+                opacity: 0.7,
+                lineHeight: 1.4,
+              }}>
+                age {m.age}
+              </div>
+              {/* Small vertical tick connecting label to chart */}
+              <div style={{
+                width: 1,
+                height: 8,
+                background: mc,
+                margin: '4px auto 0',
+                opacity: 0.4,
+              }} />
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Chart SVG */}
+      <div style={{ padding: '0 32px', position: 'relative', overflow: 'visible' }}>
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}
           onMouseMove={handleMouseMove} onMouseLeave={() => { setMouseX(null); setHovered(null) }}>
 
+          {/* Grid lines */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
             if (f === 0) return null
@@ -1773,12 +1837,15 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
             )
           })}
 
+          {/* Axes */}
           <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
           <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
 
+          {/* Gap fills */}
           {underPath && <path d={underPath} fill={UNDER_FILL} stroke={UNDER_STROKE} strokeWidth="0.5" />}
           {overPath  && <path d={overPath}  fill={OVER_FILL}  stroke={OVER_STROKE}  strokeWidth="0.5" />}
 
+          {/* Have - vertical bars */}
           {data.map((d, i) => {
             const bx = PL + xP(d.age)
             const barH = Math.max(0, iH - yP(d.have))
@@ -1787,43 +1854,40 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
               <rect key={`bar-${d.age}`}
                 x={bx - barW / 2} y={PT + yP(d.have)}
                 width={barW} height={barH}
-                fill="#2D6A4F" opacity={BAR_OPACITY} rx="1.5"
+                fill={CI_GREEN} opacity={BAR_OPACITY} rx="1.5"
               />
             )
           })}
 
-          <path d={needPath} stroke="#2D6A4F" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Need line */}
+          <path d={needPath} stroke={CI_GREEN} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
+          {/* Milestone vertical lines through chart */}
           {chartMilestones.map((m) => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
-            
             const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
-            const tierOffset = m.tier * 36
             
             return (
-              <g key={`ms-${m.age}-${m.type}`}>
-                <line x1={mx} y1={PT - 12 + tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.4" />
-                <circle cx={mx} cy={PT - 12 + tierOffset} r="2" fill={mc} opacity="0.5" />
-                <text x={mx + 6} y={PT - 18 + tierOffset} fontSize="7.5" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="400" letterSpacing="0.05em">
-                  {m.label.toUpperCase()}
-                </text>
-                <text x={mx + 6} y={PT - 7 + tierOffset} fontSize="7" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="300" opacity="0.65">
-                  age {m.age}
-                </text>
+              <g key={`msline-${m.age}-${m.type}`}>
+                <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.3" />
+                <circle cx={mx} cy={PT} r="2" fill={mc} opacity="0.4" />
               </g>
             )
           })}
 
+          {/* Crosshair */}
           {mouseX && (
             <line x1={mouseX} y1={PT} x2={mouseX} y2={PT+iH}
               stroke={CHARCOAL} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.15" />
           )}
 
+          {/* Hover dot */}
           {hovered && (
-            <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="2.5" fill="#2D6A4F" stroke={CREAM_BG} strokeWidth="1.5" />
+            <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="2.5" fill={CI_GREEN} stroke={CREAM_BG} strokeWidth="1.5" />
           )}
 
+          {/* Age labels */}
           {ageLabels.map(d => (
             <text key={d.age} x={PL+xP(d.age)} y={PT+iH+16} fontSize="9" fill={AXIS_TEXT}
               textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight={300}>
@@ -1832,6 +1896,7 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
           ))}
         </svg>
 
+        {/* Tooltip */}
         {hovered && (
           <div style={{
             position: 'absolute',
@@ -1849,7 +1914,7 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
             whiteSpace: 'nowrap' as const,
             minWidth: 180,
           }}>
-            <div style={{ marginBottom: 10, color: '#2D6A4F', fontSize: 9, letterSpacing: '0.18em', fontFamily: 'Inter, sans-serif', fontWeight: 400, textTransform: 'uppercase' }}>
+            <div style={{ marginBottom: 10, color: CI_GREEN, fontSize: 9, letterSpacing: '0.18em', fontFamily: 'Inter, sans-serif', fontWeight: 400, textTransform: 'uppercase' }}>
               Age {hovered.age}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1859,7 +1924,7 @@ const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentC
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', gap: 24 }}>
                 <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Have</span>
-                <span style={{ fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400, color: '#2D6A4F' }}>{fmt(hovered.have)}</span>
+                <span style={{ fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400, color: CI_GREEN }}>{fmt(hovered.have)}</span>
               </div>
               <div style={{
                 marginTop: 2, paddingTop: 8,
