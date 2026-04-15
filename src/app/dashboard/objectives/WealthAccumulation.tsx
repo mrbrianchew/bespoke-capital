@@ -254,15 +254,7 @@ function PropertyPanel({ goal, onUpdate }: { goal: WealthGoal; onUpdate: (c: Par
         />
         <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
   <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>0%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>10%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>20%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>30%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>40%</span>
   <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>50%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>60%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>70%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>80%</span>
-  <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>90%</span>
   <span style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)' }}>100%</span>
 </div>
       </div>
