@@ -108,6 +108,7 @@ interface FactFinding {
   advisor_notes?: string
   retirement_age?: number
   retirement_age2?: number
+    annual_surplus?: number
 }
 
 interface Client { id: string; name: string; age?: number; citizenship?: string; dob?: string }
