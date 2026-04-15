@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
