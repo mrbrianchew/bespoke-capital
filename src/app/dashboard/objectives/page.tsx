@@ -464,9 +464,10 @@ setP(prev => ({
       const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
       setChildren(kids)
     }
-    setLoading(false)
+ setLoading(false)
   }
-// ─── ACCUMULATION SAVE ─────────────────────────────────────────────────────
+
+  // ─── ACCUMULATION SAVE ─────────────────────────────────────────────────────
 
   const scheduleAccSave = useCallback((updated: AccumulationData) => {
     if (accSaveTimer.current) clearTimeout(accSaveTimer.current)
