@@ -462,7 +462,6 @@ setP(prev => ({
     }
  setLoading(false)
   }
-  }
 
   // ─── ACCUMULATION SAVE ─────────────────────────────────────────────────────
 
