@@ -990,7 +990,7 @@ useEffect(() => {
               spouseSavings={ff.a2_savings ?? 0}
               spouseFD={ff.a2_fixed_deposit ?? 0}
               monthlyExpenses={(annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
-              monthlySurplus={((ff.annual_income ?? 0) + (isCouple ? (ff.annual_income_2 ?? 0) : 0)) / 12 - (annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
+              monthlySurplus={((Number(ff.annual_income) || 0) + (isCouple ? (Number(ff.annual_income_2) || 0) : 0)) / 12 - (annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
               isCouple={isCouple}
             />
           )}
