@@ -1223,8 +1223,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Refined proportions - more breathing room
-  const W = 860, H = 300, PL = 80, PR = 40, PT = 60, PB = 36
+  const W = 900, H = 320, PL = 80, PR = 40, PT = 70, PB = 44
   const iW = W - PL - PR
   const iH = H - PT - PB
 
@@ -1248,20 +1247,23 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const needPoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
   const havePoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.have) }))
 
-  const makePath = (pts: {x:number,y:number}[]) => {
+  // Smooth curve using cubic bezier
+  const makeSmoothPath = (pts: {x:number, y:number}[]) => {
     if (pts.length < 2) return ''
-    let d = `M ${pts[0].x} ${pts[0].y}`
-    for (let i = 1; i < pts.length; i++) {
-      const cp1x = pts[i-1].x + (pts[i].x - pts[i-1].x) * 0.5
-      const cp1y = pts[i-1].y
-      const cp2x = pts[i].x - (pts[i].x - pts[i-1].x) * 0.5
-      const cp2y = pts[i].y
-      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${pts[i].x} ${pts[i].y}`
+    let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i]
+      const p1 = pts[i + 1]
+      const cp1x = p0.x + (p1.x - p0.x) * 0.33
+      const cp1y = p0.y
+      const cp2x = p1.x - (p1.x - p0.x) * 0.33
+      const cp2y = p1.y
+      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`
     }
     return d
   }
 
-  const needPath = makePath(needPoints)
+  const needPath = makeSmoothPath(needPoints)
 
   const buildGapPath = (type: 'under' | 'over'): string => {
     const segments: {start: number, end: number}[] = []
@@ -1278,23 +1280,47 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
       const sd = data.slice(seg.start, seg.end + 1)
       const top = type === 'under' ? sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.need)})) : sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.have)}))
       const bot = type === 'under' ? sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.have)})) : sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.need)}))
-      return `M ${top[0].x} ${top[0].y} ${top.slice(1).map(p=>`L ${p.x} ${p.y}`).join(' ')} L ${bot[bot.length-1].x} ${bot[bot.length-1].y} ${[...bot].reverse().map(p=>`L ${p.x} ${p.y}`).join(' ')} Z`
+      return `M ${top[0].x.toFixed(1)} ${top[0].y.toFixed(1)} ${top.slice(1).map(p=>`L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')} L ${bot[bot.length-1].x.toFixed(1)} ${bot[bot.length-1].y.toFixed(1)} ${[...bot].reverse().map(p=>`L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')} Z`
     }).join(' ')
   }
 
   const underPath = buildGapPath('under')
   const overPath  = buildGapPath('over')
 
-  const chartMilestones: {age: number; label: string; type: string}[] = []
+  // Build milestones with staggered horizontal labels
+  const chartMilestones: {age: number; label: string; type: string; tier: number}[] = []
   if (milestones) {
+    const rawMilestones: {age: number; label: string; type: string}[] = []
+    
     ;(milestones.mortgageEnds || []).sort((a,b)=>a-b).forEach((age, i) => {
       const label = (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1}` : 'Mortgage') + ' repaid'
-      chartMilestones.push({ age, label, type: 'mortgage' })
+      rawMilestones.push({ age, label, type: 'mortgage' })
     })
+    
     const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
     validEdu.forEach((age, i) => {
       const label = (validEdu.length > 1 ? `Child ${i+1}` : 'Child') + ' enters university'
-      chartMilestones.push({ age, label, type: 'education' })
+      rawMilestones.push({ age, label, type: 'education' })
+    })
+    
+    // Sort by age
+    rawMilestones.sort((a, b) => a.age - b.age)
+    
+    // Assign tiers to prevent label overlap
+    const minAgeGap = 8 // Minimum age difference to be on same tier
+    const tiers: number[] = []
+    
+    rawMilestones.forEach((m) => {
+      let assignedTier = 0
+      for (let t = 0; t <= tiers.length; t++) {
+        const lastAgeOnTier = tiers[t]
+        if (lastAgeOnTier === undefined || m.age - lastAgeOnTier >= minAgeGap) {
+          assignedTier = t
+          tiers[t] = m.age
+          break
+        }
+      }
+      chartMilestones.push({ ...m, tier: assignedTier })
     })
   }
 
@@ -1317,9 +1343,9 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
   const gap = hovered ? hovered.need - hovered.have : 0
   const isOver = hovered ? hovered.have > hovered.need : false
 
-  // Luxury color palette
+  // Unified gold color for both charts
   const CHARCOAL    = '#1A1817'
-  const GOLD        = accentColor
+  const GOLD        = '#C4A464'
   const CREAM_BG    = '#FDFCFA'
   const GRID_LINE   = 'rgba(28, 26, 23, 0.04)'
   const AXIS_LINE   = 'rgba(28, 26, 23, 0.08)'
@@ -1361,7 +1387,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
           }}>{title}</div>
         </div>
 
-        {/* Legend - minimal */}
+        {/* Legend */}
         <div style={{ display: 'flex', gap: 32, alignItems: 'center', paddingBottom: 2 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 20, height: 1.5, background: GOLD }} />
@@ -1379,7 +1405,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}
           onMouseMove={handleMouseMove} onMouseLeave={() => { setMouseX(null); setHovered(null) }}>
 
-          {/* Subtle grid lines */}
+          {/* Grid lines */}
           {ticks.map(f => {
             const y = PT + iH - f * iH
             if (f === 0) return null
@@ -1393,15 +1419,15 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
             )
           })}
 
-          {/* Axes - clean, minimal */}
+          {/* Axes */}
           <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
           <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
 
-          {/* Gap fills - subtle shading */}
+          {/* Gap fills */}
           {underPath && <path d={underPath} fill={UNDER_FILL} stroke={UNDER_STROKE} strokeWidth="0.5" />}
           {overPath  && <path d={overPath}  fill={OVER_FILL}  stroke={OVER_STROKE}  strokeWidth="0.5" />}
 
-          {/* Have - vertical bars with subtle rounding */}
+          {/* Have - vertical bars */}
           {data.map((d, i) => {
             const bx = PL + xP(d.age)
             const barH = Math.max(0, iH - yP(d.have))
@@ -1415,45 +1441,47 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
             )
           })}
 
-          {/* Need line - smooth curve, gold */}
+          {/* Need line - smooth curve */}
           <path d={needPath} stroke={GOLD} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-          {/* Milestone verticals - understated */}
+          {/* Milestone verticals with staggered horizontal labels */}
           {chartMilestones.map(m => {
             const mx = PL + xP(m.age)
             if (mx < PL || mx > PL+iW) return null
-            const mc = m.type==='mortgage'?'#B8A88A':m.type==='education'?'#9AB0A8':'#9AA8B5'
+            const mc = '#B8A88A'
+            const lineHeight = PT + iH
+            const labelYOffset = m.tier * 18 // Stagger labels vertically
+            
             return (
               <g key={`ms-${m.age}-${m.type}`}>
-                <line x1={mx} y1={PT-8} x2={mx} y2={PT+iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
+                {/* Dotted line stops at label tier */}
+                <line x1={mx} y1={PT - 8 - labelYOffset} x2={mx} y2={lineHeight} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.45" />
                 
-                {/* Small dot at top of milestone line */}
-                <circle cx={mx} cy={PT-8} r="2" fill={mc} opacity="0.6" />
+                {/* Small dot at top of line */}
+                <circle cx={mx} cy={PT - 8 - labelYOffset} r="2" fill={mc} opacity="0.6" />
                 
-                {/* Elegant label above chart */}
-                                <text 
-                  x={mx} 
-                  y={PT - 18} 
+                {/* Horizontal label - no rotation */}
+                <text 
+                  x={mx + 6} 
+                  y={PT - 14 - labelYOffset} 
                   fontSize="8" 
                   fill={mc} 
-                  textAnchor="end"
+                  textAnchor="start"
                   fontFamily="Inter, sans-serif"
                   fontWeight="400"
-                  letterSpacing="0.06em"
-                  transform={`rotate(-30, ${mx}, ${PT - 18})`}
+                  letterSpacing="0.04em"
                 >
                   {m.label.toUpperCase()}
                 </text>
                 <text 
-                  x={mx - 2} 
-                  y={PT - 7} 
+                  x={mx + 6} 
+                  y={PT - 4 - labelYOffset} 
                   fontSize="7.5" 
                   fill={mc} 
-                  textAnchor="end"
+                  textAnchor="start"
                   fontFamily="Inter, sans-serif"
                   fontWeight="300"
                   opacity="0.7"
-                  transform={`rotate(-30, ${mx - 2}, ${PT - 7})`}
                 >
                   age {m.age}
                 </text>
@@ -1461,18 +1489,18 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
             )
           })}
 
-          {/* Crosshair - minimal */}
+          {/* Crosshair */}
           {mouseX && (
             <line x1={mouseX} y1={PT} x2={mouseX} y2={PT+iH}
               stroke={CHARCOAL} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.15" />
           )}
 
-          {/* Hover dot on need line */}
+          {/* Hover dot */}
           {hovered && (
             <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="2.5" fill={GOLD} stroke={CREAM_BG} strokeWidth="1.5" />
           )}
 
-          {/* Age labels - clean */}
+          {/* Age labels */}
           {ageLabels.map(d => (
             <text key={d.age} x={PL+xP(d.age)} y={PT+iH+16} fontSize="9" fill={AXIS_TEXT}
               textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight={300}>
@@ -1481,7 +1509,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
           ))}
         </svg>
 
-        {/* Tooltip - refined luxury styling */}
+        {/* Tooltip */}
         {hovered && (
           <div style={{
             position: 'absolute',
@@ -1498,7 +1526,6 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
             zIndex: 10,
             whiteSpace: 'nowrap' as const,
             minWidth: 180,
-            backdropFilter: 'blur(4px)',
           }}>
             <div style={{ marginBottom: 10, color: GOLD, fontSize: 9, letterSpacing: '0.18em', fontFamily: 'Inter, sans-serif', fontWeight: 400, textTransform: 'uppercase' }}>
               Age {hovered.age}
