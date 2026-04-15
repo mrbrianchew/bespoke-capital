@@ -400,8 +400,19 @@ export default function ObjectivesPage() {
   .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation'])
     
   if (ffRows && ffRows.length > 0) {
-    const merged: FactFinding = { client_id: id }
-    for (const row of ffRows) Object.assign(merged, row.data || {})
+  const merged: FactFinding = { client_id: id }
+  
+  // Log each row to see what data we have
+  console.log('=== LOADING DATA ===')
+  for (const row of ffRows) {
+    console.log(`Section: ${row.section}`, row.data)
+    Object.assign(merged, row.data || {})
+  }
+  
+  console.log('=== MERGED DATA ===', merged)
+  console.log('s_financial:', merged.s_financial)
+  console.log('s_mortgage:', merged.s_mortgage)
+  console.log('s_household:', merged.s_household)
 
    // Load accumulation data
     const accRow = ffRows.find((r: any) => r.section === 'accumulation')
