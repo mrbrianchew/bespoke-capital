@@ -676,7 +676,7 @@ async function handleGenerateShare() {
             annualPremium={premHave(overviewPerson)} />
 
           {hasChartData ? (
-  <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+ <div style={{marginTop:24,display:'flex',flexDirection:'column',gap:24}}>
     {(() => {
   // Mortgage end age: read directly from mortgage data, not curve sniffing
   // Use remainingTenure if available, otherwise tenure from properties
