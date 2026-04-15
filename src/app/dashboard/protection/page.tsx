@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
@@ -127,6 +127,7 @@ function getMultipliedBenefit(p: Policy, benefitType: 'death' | 'tpd' | 'advCI' 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProtectionPage() {
   const supabase = createClient()
+  const [error, setError] = useState<string | null>(null)
 
   // Client / family
   const [clientId,   setClientId]   = useState<string | null>(null)
@@ -180,19 +181,21 @@ const [shareCopied, setShareCopied] = useState(false)
     setShowInactive(false)
   }, [portfolioPerson])
 
-  async function loadAll(id: string) {
-    // Reference tables
-    const [
-      { data: cats },
-      { data: ptypes },
-      { data: comps },
-      { data: prods },
-    ] = await Promise.all([
-      supabase.from('ins_categories').select('*').order('sort_order'),
-      supabase.from('ins_policy_types').select('*').order('sort_order'),
-      supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
-      supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
-    ])
+    async function loadAll(id: string) {
+    try {
+      setError(null)
+      // Reference tables
+      const [
+        { data: cats },
+        { data: ptypes },
+        { data: comps },
+        { data: prods },
+      ] = await Promise.all([
+        supabase.from('ins_categories').select('*').order('sort_order'),
+        supabase.from('ins_policy_types').select('*').order('sort_order'),
+        supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
+        supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
+      ])
     if (cats)   setRefCategories(cats)
     if (ptypes) setRefPolicyTypes(ptypes)
     if (comps)  setRefCompanies(comps)
@@ -287,9 +290,13 @@ console.log('All merged keys:', Object.keys(merged))
       }
 
       const rm = merged.risk_management
-      if (rm) setRmData({ ...EMPTY_RM, ...rm })
+            if (rm) setRmData({ ...EMPTY_RM, ...rm })
     }
+  } catch (err) {
+    console.error('Load error:', err)
+    setError('Unable to load client data. Please refresh the page.')
   }
+}
 
   async function saveData(data: RiskMgmtData) {
     const id = clientIdRef.current
@@ -506,7 +513,60 @@ function buildChart(age: number, annExp: number, offset: number, ciNeed: number)
   const aOffset = overviewPerson==='client' ? p1CPF+p1Prop : p2CPF+p2Prop
   const aName   = overviewPerson==='client' ? clientName : spouseName
 
-  const chartData = buildChart(aAge, aExp, aOffset, aCI)
+  const chartData = useMemo(() => {
+  if (!hasChartData) return []
+  
+  const age = overviewPerson === 'client' ? clientAge : spouseAge
+  const annExp = overviewPerson === 'client' ? finalP1Exp : finalP2Exp
+  const offset = overviewPerson === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
+  const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
+
+  const floor = fvAnn(annExp, inflation, 5)
+  const allMortgages = (ff.properties || []).flatMap((p: any) => p.mortgages || [])
+
+  function mortBalanceAtAge(atAge: number): number {
+    return allMortgages.reduce((total: number, m: any) => {
+      const outstanding  = Number(m.outstanding || 0)
+      const rate         = Number(m.interestRate || 0) / 100
+      const tenure       = Number(m.tenure || m.remainingTenure || 25)
+      if (outstanding <= 0) return total
+      const yearsElapsed = atAge - age
+      const yearsLeft    = Math.max(0, tenure - yearsElapsed)
+      if (yearsLeft <= 0) return total
+      if (rate === 0) return total + outstanding * (yearsLeft / tenure)
+      const monthlyRate  = rate / 12
+      const totalMonths  = tenure * 12
+      const monthlyPmt   = outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
+      const monthsLeft   = yearsLeft * 12
+      return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
+    }, 0)
+  }
+
+  return Array.from({length: 100 - age}, (_, i) => {
+    const a = age + i
+    const yLeft = Math.max(0, (age + coverTerm) - a)
+    const ageFD = fvAnn(annExp, inflation, yLeft)
+    const ageMort = mortBalanceAtAge(a)
+    
+    const childrenNotYetAtUni = children.filter((c: any) => {
+      const childAge = Number(c.age || 0)
+      const gender = c.gender || ''
+      const uniEntryAge = gender === 'Male' ? 21 : gender === 'Female' ? 19 : 21
+      return (a - age) < (uniEntryAge - childAge)
+    }).length
+    
+    const eduFraction = children.length > 0 ? childrenNotYetAtUni / children.length : (yLeft > 0 ? 1 : 0)
+    const ageEdu = edu * eduFraction
+    const dtpd = Math.max(floor, ageFD + ageMort + ageEdu - offset)
+    
+    const ciFactor = a < age + coverTerm
+      ? 1.0
+      : Math.max(0, 1 - (a - (age + coverTerm)) * 0.04)
+
+    return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
+  })
+}, [overviewPerson, clientAge, spouseAge, finalP1Exp, finalP2Exp, p1CPF, p1Prop, p2CPF, p2Prop, 
+    clientCI, spouseCI, inflation, coverTerm, ff.properties, children, edu, hasChartData])
   const hasChartData = aDTPD > 0 || aCI > 0 || aExp > 0
 
   // People list for dropdowns
@@ -571,8 +631,41 @@ async function handleGenerateShare() {
     setShareGenerating(false)
   }
 }
-  return (
-    <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
+    return (
+    <>
+      {error && (
+        <div style={{
+          position: 'fixed',
+          top: 24,
+          right: 24,
+          background: '#C0392B',
+          color: 'white',
+          padding: '14px 24px',
+          borderRadius: 6,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+          zIndex: 100,
+          fontSize: 13,
+          letterSpacing: '0.02em',
+          borderLeft: '4px solid #8B1A1A'
+        }}>
+          <span style={{ marginRight: 12 }}>⚠</span>
+          {error}
+          <button 
+            onClick={() => setError(null)}
+            style={{
+              marginLeft: 16,
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255,255,255,0.7)',
+              cursor: 'pointer',
+              fontSize: 16
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
       {/* Hero */}
       <div style={{background:'#1C1A17',padding:'0 48px'}}>
         <div style={{paddingTop:32,paddingBottom:28,display:'flex',alignItems:'flex-end',justifyContent:'space-between'}}>
@@ -2754,6 +2847,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           </div>
         </div>
       </div>
-    </div>
+        </div>
+    </>
   )
 }
