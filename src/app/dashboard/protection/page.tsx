@@ -820,8 +820,8 @@ async function handleGenerateShare() {
     return null
   })()
 
-  return <>
-    <CoverageChart
+    return <>
+    <DTPDChart
       eyebrow="Life & Disability"
       title="Death / TPD Coverage Needs Analysis"
       needLabel="Required capital"
@@ -835,7 +835,7 @@ async function handleGenerateShare() {
         clientAge: aAge
       }}
     />
-    <CoverageChart
+    <CIChart
       eyebrow="Critical Illness"
       title="Critical Illness Coverage Needs Analysis"
       needLabel="Required capital"
@@ -1208,7 +1208,7 @@ async function handleGenerateShare() {
   )
 }
 
-const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
+const DTPDChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
   title: string; eyebrow: string; needLabel: string; haveLabel: string
   data: {age: number; need: number; have: number}[]
   accentColor: string
@@ -1542,6 +1542,324 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
               <div style={{ display:'flex', justifyContent:'space-between', gap: 24 }}>
                 <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Have</span>
                 <span style={{ fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400, color: GOLD }}>{fmt(hovered.have)}</span>
+              </div>
+              <div style={{
+                marginTop: 2, paddingTop: 8,
+                borderTop: '0.5px solid rgba(255,255,255,0.08)',
+                display:'flex', justifyContent:'space-between', gap: 24,
+              }}>
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  {gap > 0 ? 'Shortfall' : isOver ? 'Surplus' : 'Status'}
+                </span>
+                <span style={{
+                  fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400,
+                  color: gap > 0 ? '#E8A0A0' : isOver ? '#A0D0B8' : CREAM_BG
+                }}>
+                  {gap > 0 ? fmt(gap) : isOver ? fmt(-gap) : 'Covered'}
+                </span>
+              </div>
+            </div>
+            <div style={{
+              position:'absolute', bottom:-4, left:'50%', transform:'translateX(-50%)',
+              width:0, height:0,
+              borderLeft:'4px solid transparent', borderRight:'4px solid transparent',
+              borderTop:`4px solid ${CHARCOAL}`
+            }} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+
+// ─── CI Chart (optimized for Critical Illness with more milestones) ──────────
+const CIChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, accentColor, milestones}: {
+  title: string; eyebrow: string; needLabel: string; haveLabel: string
+  data: {age: number; need: number; have: number}[]
+  accentColor: string
+  milestones?: {
+    mortgageEnds?: number[]
+    educationEnds?: number[]
+    coverageEnds?: number | null
+    clientAge?: number
+  }
+}) => {
+  const [hovered, setHovered] = useState<{age: number; need: number; have: number; x: number; y: number} | null>(null)
+  const [mouseX, setMouseX] = useState<number | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Taller chart with more top padding for CI milestones
+  const W = 900, H = 480, PL = 80, PR = 40, PT = 160, PB = 44
+  const iW = W - PL - PR
+  const iH = H - PT - PB
+
+  if (!data.length) return null
+
+  const maxV = Math.max(...data.map(d => Math.max(d.need, d.have)), 1)
+  const minA = data[0].age
+  const aR = data[data.length - 1].age - minA || 1
+
+  const xP = (a: number) => ((a - minA) / aR) * iW
+  const yP = (v: number) => iH - Math.min(1, v / maxV) * iH
+
+  const fmtAx = (n: number) => {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+    if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`
+    return `${Math.round(n)}`
+  }
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+
+  const needPoints = data.map(d => ({ x: PL + xP(d.age), y: PT + yP(d.need) }))
+
+  const makeSmoothPath = (pts: {x:number, y:number}[]) => {
+    if (pts.length < 2) return ''
+    return pts.reduce((p, pt, i) => i === 0 ? `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}` : `${p} L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`, '')
+  }
+
+  const needPath = makeSmoothPath(needPoints)
+
+  const buildGapPath = (type: 'under' | 'over'): string => {
+    const segments: {start: number, end: number}[] = []
+    let segStart = -1
+    for (let i = 0; i < data.length; i++) {
+      const match = type === 'under' ? data[i].need > data[i].have && data[i].need > 0 : data[i].have > data[i].need
+      if (match && segStart === -1) segStart = i
+      else if (!match && segStart !== -1) { segments.push({start: segStart, end: i-1}); segStart = -1 }
+    }
+    if (segStart !== -1) segments.push({start: segStart, end: data.length - 1})
+    if (!segments.length) return ''
+    return segments.map(seg => {
+      if (seg.end - seg.start < 1) return ''
+      const sd = data.slice(seg.start, seg.end + 1)
+      const top = type === 'under' ? sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.need)})) : sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.have)}))
+      const bot = type === 'under' ? sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.have)})) : sd.map(d=>({x:PL+xP(d.age),y:PT+yP(d.need)}))
+      return `M ${top[0].x.toFixed(1)} ${top[0].y.toFixed(1)} ${top.slice(1).map(p=>`L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')} L ${bot[bot.length-1].x.toFixed(1)} ${bot[bot.length-1].y.toFixed(1)} ${[...bot].reverse().map(p=>`L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')} Z`
+    }).join(' ')
+  }
+
+  const underPath = buildGapPath('under')
+  const overPath  = buildGapPath('over')
+
+  // Build milestones for CI chart
+  const chartMilestones: {age: number; label: string; type: string; tier: number}[] = []
+  if (milestones) {
+    const rawMilestones: {age: number; label: string; type: string}[] = []
+    
+    ;(milestones.mortgageEnds || []).sort((a,b)=>a-b).forEach((age, i) => {
+      const label = (milestones.mortgageEnds!.length > 1 ? `Mortgage ${i+1} repaid` : 'Mortgage repaid')
+      rawMilestones.push({ age, label, type: 'mortgage' })
+    })
+    
+    const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
+    validEdu.forEach((age, i) => {
+      const label = (validEdu.length > 1 ? `Child ${i+1} enters university` : 'Child enters university')
+      rawMilestones.push({ age, label, type: 'education' })
+    })
+    
+    const uniqueMilestones = rawMilestones.filter((m, index, self) => 
+      index === self.findIndex(t => t.age === m.age && t.type === m.type)
+    )
+    
+    uniqueMilestones.sort((a, b) => a.age - b.age)
+    
+    const MIN_AGE_GAP = 8
+    
+    uniqueMilestones.forEach((m, index) => {
+      if (index === 0) {
+        chartMilestones.push({ ...m, tier: 0 })
+      } else {
+        const prevMilestone = uniqueMilestones[index - 1]
+        const ageGap = m.age - prevMilestone.age
+        
+        if (ageGap < MIN_AGE_GAP) {
+          const prevTier = chartMilestones[index - 1].tier
+          const newTier = Math.min(prevTier + 1, 3)
+          chartMilestones.push({ ...m, tier: newTier })
+        } else {
+          chartMilestones.push({ ...m, tier: 0 })
+        }
+      }
+    })
+  }
+
+  const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    if (mx >= PL && mx <= PL + iW) {
+      setMouseX(mx)
+      const rel = (mx - PL) / iW
+      const targetAge = minA + rel * aR
+      const closest = data.reduce((p, c) => Math.abs(c.age - targetAge) < Math.abs(p.age - targetAge) ? c : p)
+      setHovered({ ...closest, x: PL + xP(closest.age), y: PT + yP(closest.need) })
+    } else {
+      setMouseX(null); setHovered(null)
+    }
+  }
+
+  const gap = hovered ? hovered.need - hovered.have : 0
+  const isOver = hovered ? hovered.have > hovered.need : false
+
+  const CHARCOAL    = '#1A1817'
+  const GOLD        = '#C4A464'
+  const CREAM_BG    = '#FDFCFA'
+  const GRID_LINE   = 'rgba(28, 26, 23, 0.04)'
+  const AXIS_LINE   = 'rgba(28, 26, 23, 0.08)'
+  const UNDER_FILL  = 'rgba(192, 57, 43, 0.06)'
+  const UNDER_STROKE= 'rgba(192, 57, 43, 0.20)'
+  const OVER_FILL   = 'rgba(39, 174, 96, 0.06)'
+  const OVER_STROKE = 'rgba(39, 174, 96, 0.20)'
+  const AXIS_TEXT   = '#8A8782'
+  const BAR_OPACITY = 0.28
+
+  return (
+    <div ref={containerRef} style={{
+      background: CREAM_BG,
+      border: 'none',
+      borderRadius: 0,
+      overflow: 'visible',
+      position: 'relative',
+    }}>
+      
+      <div style={{ padding: '24px 32px 0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div>
+          <div style={{
+            fontSize: 9,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            color: '#2D6A4F',
+            marginBottom: 8,
+            fontWeight: 500,
+            fontFamily: 'Inter, sans-serif',
+          }}>{eyebrow}</div>
+          <div style={{
+            fontFamily: 'Cormorant Garamond, Georgia, serif',
+            fontSize: 22,
+            fontWeight: 400,
+            color: CHARCOAL,
+            letterSpacing: '-0.01em',
+            lineHeight: 1.2,
+          }}>{title}</div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 32, alignItems: 'center', paddingBottom: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 20, height: 1.5, background: '#2D6A4F' }} />
+            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>{needLabel}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 20, height: 8, background: '#2D6A4F', opacity: BAR_OPACITY }} />
+            <span style={{ fontSize: 10, color: AXIS_TEXT, letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif', fontWeight: 400 }}>{haveLabel}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: '8px 32px 0 32px', position: 'relative', overflow: 'visible' }}>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}
+          onMouseMove={handleMouseMove} onMouseLeave={() => { setMouseX(null); setHovered(null) }}>
+
+          {ticks.map(f => {
+            const y = PT + iH - f * iH
+            if (f === 0) return null
+            return (
+              <g key={f}>
+                <line x1={PL} y1={y} x2={PL+iW} y2={y} stroke={GRID_LINE} strokeWidth="0.5" />
+                <text x={PL-12} y={y+3.5} fontSize="9" fill={AXIS_TEXT} textAnchor="end" fontFamily="Inter, sans-serif" fontWeight={300}>
+                  {fmtAx(maxV * f)}
+                </text>
+              </g>
+            )
+          })}
+
+          <line x1={PL} y1={PT} x2={PL} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
+          <line x1={PL} y1={PT+iH} x2={PL+iW} y2={PT+iH} stroke={AXIS_LINE} strokeWidth="0.5" />
+
+          {underPath && <path d={underPath} fill={UNDER_FILL} stroke={UNDER_STROKE} strokeWidth="0.5" />}
+          {overPath  && <path d={overPath}  fill={OVER_FILL}  stroke={OVER_STROKE}  strokeWidth="0.5" />}
+
+          {data.map((d, i) => {
+            const bx = PL + xP(d.age)
+            const barH = Math.max(0, iH - yP(d.have))
+            const barW = Math.max(1.5, (iW / data.length) * 0.5)
+            return (
+              <rect key={`bar-${d.age}`}
+                x={bx - barW / 2} y={PT + yP(d.have)}
+                width={barW} height={barH}
+                fill="#2D6A4F" opacity={BAR_OPACITY} rx="1.5"
+              />
+            )
+          })}
+
+          <path d={needPath} stroke="#2D6A4F" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+          {chartMilestones.map((m) => {
+            const mx = PL + xP(m.age)
+            if (mx < PL || mx > PL+iW) return null
+            
+            const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
+            const tierOffset = m.tier * 36
+            
+            return (
+              <g key={`ms-${m.age}-${m.type}`}>
+                <line x1={mx} y1={PT - 12 + tierOffset} x2={mx} y2={PT + iH} stroke={mc} strokeWidth="0.5" strokeDasharray="3,4" opacity="0.4" />
+                <circle cx={mx} cy={PT - 12 + tierOffset} r="2" fill={mc} opacity="0.5" />
+                <text x={mx + 6} y={PT - 18 + tierOffset} fontSize="7.5" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="400" letterSpacing="0.05em">
+                  {m.label.toUpperCase()}
+                </text>
+                <text x={mx + 6} y={PT - 7 + tierOffset} fontSize="7" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="300" opacity="0.65">
+                  age {m.age}
+                </text>
+              </g>
+            )
+          })}
+
+          {mouseX && (
+            <line x1={mouseX} y1={PT} x2={mouseX} y2={PT+iH}
+              stroke={CHARCOAL} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.15" />
+          )}
+
+          {hovered && (
+            <circle cx={hovered.x} cy={PT+yP(hovered.need)} r="2.5" fill="#2D6A4F" stroke={CREAM_BG} strokeWidth="1.5" />
+          )}
+
+          {ageLabels.map(d => (
+            <text key={d.age} x={PL+xP(d.age)} y={PT+iH+16} fontSize="9" fill={AXIS_TEXT}
+              textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight={300}>
+              {d.age}
+            </text>
+          ))}
+        </svg>
+
+        {hovered && (
+          <div style={{
+            position: 'absolute',
+            left: `${((hovered.x - PL) / iW) * 100}%`,
+            top: `${((PT + yP(hovered.need)) / H) * 100}%`,
+            transform: 'translate(-50%, -110%)',
+            background: CHARCOAL,
+            color: CREAM_BG,
+            padding: '14px 18px',
+            borderRadius: 4,
+            fontSize: 11,
+            pointerEvents: 'none',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
+            zIndex: 10,
+            whiteSpace: 'nowrap' as const,
+            minWidth: 180,
+          }}>
+            <div style={{ marginBottom: 10, color: '#2D6A4F', fontSize: 9, letterSpacing: '0.18em', fontFamily: 'Inter, sans-serif', fontWeight: 400, textTransform: 'uppercase' }}>
+              Age {hovered.age}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', gap: 24 }}>
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Need</span>
+                <span style={{ fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400, color: CREAM_BG }}>{fmt(hovered.need)}</span>
+              </div>
+              <div style={{ display:'flex', justifyContent:'space-between', gap: 24 }}>
+                <span style={{ color:'rgba(255,255,255,0.5)', fontFamily:'Inter, sans-serif', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Have</span>
+                <span style={{ fontFamily:'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 400, color: '#2D6A4F' }}>{fmt(hovered.have)}</span>
               </div>
               <div style={{
                 marginTop: 2, paddingTop: 8,
