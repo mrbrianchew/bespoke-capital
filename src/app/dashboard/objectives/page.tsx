@@ -412,10 +412,6 @@ export default function ObjectivesPage() {
     // Load protection settings from the protection_needs section row
     const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
     const protData = protRow?.data?.protection
-    if (protData) { 
-    // Load protection settings from the protection_needs section row
-    const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
-    const protData = protRow?.data?.protection
     if (protData) {
       setP(prev => ({ ...prev, ...protData }))
     }
