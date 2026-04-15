@@ -1223,7 +1223,7 @@ function CoverageChart({title, eyebrow, needLabel, haveLabel, data, accentColor,
   const [mouseX, setMouseX] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const W = 900, H = 280, PL = 72, PR = 24, PT = 40, PB = 44
+  const W = 900, H = 320, PL = 72, PR = 24, PT = 70, PB = 44
   const iW = W - PL - PR
   const iH = H - PT - PB
 
@@ -1319,11 +1319,11 @@ const underPath = buildGapPath('under')
   const AXIS_TEXT   = '#9A9690'
 
   return (
-    <div ref={containerRef} style={{
+        <div ref={containerRef} style={{
       background: '#FDFCFA',
       border: '0.5px solid #DDD9D2',
       borderRadius: 12,
-      overflow: 'hidden',
+      overflow: 'visible',
       position: 'relative',
     }}>
       {/* Gold top rule */}
@@ -1368,7 +1368,7 @@ const underPath = buildGapPath('under')
       </div>
 
       {/* Chart SVG */}
-      <div style={{ padding: '4px 32px 0 32px', position: 'relative' }}>
+            <div style={{ padding: '4px 32px 0 32px', position: 'relative', overflow: 'visible' }}>
         <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible' }}
           onMouseMove={handleMouseMove} onMouseLeave={() => { setMouseX(null); setHovered(null) }}>
 
@@ -1405,16 +1405,28 @@ const underPath = buildGapPath('under')
                 {/* Label positioned ABOVE the chart */}
                 <text 
                   x={mx} 
-                  y={PT - 12} 
-                  fontSize="9" 
+                  y={PT - 20} 
+                  fontSize="8" 
                   fill={mc} 
-                  textAnchor="start"
+                  textAnchor="end"
                   fontFamily="DM Mono, monospace"
                   fontWeight="500"
-                  letterSpacing="0.05em"
-                  transform={`rotate(-45, ${mx}, ${PT - 12})`}
+                  letterSpacing="0.03em"
+                  transform={`rotate(-35, ${mx}, ${PT - 20})`}
                 >
-                  {m.label} · Age {m.age}
+                  {m.label}
+                </text>
+                <text 
+                  x={mx - 3} 
+                  y={PT - 8} 
+                  fontSize="7" 
+                  fill={mc} 
+                  textAnchor="end"
+                  fontFamily="DM Mono, monospace"
+                  opacity="0.8"
+                  transform={`rotate(-35, ${mx - 3}, ${PT - 8})`}
+                >
+                  Age {m.age}
                 </text>
               </g>
             )
