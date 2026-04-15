@@ -1240,8 +1240,8 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
     })
     
     const validEdu = Array.from(new Set((milestones.educationEnds || []).filter((a: number) => a > (milestones.clientAge||0)))).sort((a: number,b: number)=>a-b)
-    validEdu.forEach((age, i) => {
-      const label = (validEdu.length > 1 ? `Child ${i+1} enters university` : 'Child enters university')
+       validEdu.forEach((age, i) => {
+      const label = (validEdu.length > 1 ? `Child ${i+1} uni` : 'Child uni')
       rawMilestones.push({ age, label, type: 'education' })
     })
     
@@ -1251,7 +1251,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
     
     uniqueMilestones.sort((a, b) => a.age - b.age)
     
-    const MIN_AGE_GAP = variant === 'ci' ? 8 : 12
+        const MIN_AGE_GAP = variant === 'ci' ? 6 : 15
     
     uniqueMilestones.forEach((m, index) => {
       if (index === 0) {
@@ -1453,7 +1453,7 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
             if (mx < PL || mx > PL+iW) return null
             
             const mc = m.type === 'mortgage' ? '#B8A88A' : '#9AB0A8'
-            const tierOffset = m.tier * 28
+            const tierOffset = m.tier * 35
             
             return (
               <g key={`ms-${m.age}-${m.type}`}>
@@ -1464,10 +1464,10 @@ const FlexibleCoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel,
                 <circle cx={mx} cy={PT - 8 + tierOffset} r="2" fill={mc} opacity="0.45" />
                 
                 {/* Label */}
-                <text x={mx + 6} y={PT - 14 + tierOffset} fontSize="7.5" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="400" letterSpacing="0.05em">
+                                <text x={mx + 6} y={PT - 16 + tierOffset} fontSize="7" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="500" letterSpacing="0.03em">
                   {m.label.toUpperCase()}
                 </text>
-                <text x={mx + 6} y={PT - 4 + tierOffset} fontSize="7" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="300" opacity="0.65">
+                <text x={mx + 6} y={PT - 6 + tierOffset} fontSize="6.5" fill={mc} textAnchor="start" fontFamily="Inter, sans-serif" fontWeight="300" opacity="0.6">
                   age {m.age}
                 </text>
               </g>
