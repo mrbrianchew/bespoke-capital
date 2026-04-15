@@ -1145,6 +1145,10 @@ setLoading(false)
     
     const { client_id, ...data } = ff
     
+    // Calculate and save annual surplus
+const annualSurplus = anTotal - annExpNoCpf
+data.annual_surplus = annualSurplus
+    
     // ADDED: Check what properties we're saving
     console.log('Saving properties:', data.properties)
     
@@ -1202,6 +1206,7 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
       if (!client) return
       setSaving(true)
       const { client_id, ...data } = next
+      data.annual_surplus = anTotal - annExpNoCpf
       const { data: existing } = await supabase
         .from('fact_finding')
         .select('id')
