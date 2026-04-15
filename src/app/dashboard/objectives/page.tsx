@@ -2604,3 +2604,4 @@ const inputStyle: React.CSSProperties = {
   color: '#1C1A17', background: '#fff', border: '1px solid #E8E4DC',
   borderRadius: 4, outline: 'none',
 }
+}
