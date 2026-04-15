@@ -995,10 +995,18 @@ useEffect(() => {
               monthlySurplus={(() => {
   const p1 = ff.person1 as any || {}
   const p2 = ff.person2 as any || {}
-  const p1Other = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
-  const p2Other = isCouple ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
-  const totalIncome = (p1.gross_monthly || 0) + (isCouple ? (p2.gross_monthly || 0) : 0) + p1Other + p2Other
   
+  // Monthly income from gross salary
+  const p1GrossMonthly = p1.gross_monthly || 0
+  const p2GrossMonthly = isCouple ? (p2.gross_monthly || 0) : 0
+  
+  // Monthly other income (other_incomes are stored as monthly amounts)
+  const p1OtherMonthly = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
+  const p2OtherMonthly = isCouple ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
+  
+  const totalMonthlyIncome = p1GrossMonthly + p2GrossMonthly + p1OtherMonthly + p2OtherMonthly
+  
+  // Expense categories are ANNUAL - convert to monthly
   const catKeys = ['s_financial', 's_cpf_oa', 's_mortgage', 's_household', 's_personal', 's_children', 's_lifestyle']
   let totalAnnualExp = 0
   catKeys.forEach(key => {
@@ -1007,6 +1015,14 @@ useEffect(() => {
       totalAnnualExp += (ff as any)[('s2_' + key.slice(2))] || 0
     }
   })
+  
+  // CPF OA is not cash outflow - subtract it
+  const cpfOaAnn = ((ff as any).s_cpf_oa || 0) + (isCouple ? ((ff as any).s2_cpf_oa || 0) : 0)
+  const cashAnnualExp = totalAnnualExp - cpfOaAnn
+  const cashMonthlyExp = cashAnnualExp / 12
+  
+  return totalMonthlyIncome - cashMonthlyExp
+})()}
   
   const cpfOaAnn = ((ff as any).s_cpf_oa || 0) + (isCouple ? ((ff as any).s2_cpf_oa || 0) : 0)
   const monthlyExpenses = (totalAnnualExp - cpfOaAnn) / 12
