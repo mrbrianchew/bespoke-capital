@@ -211,7 +211,11 @@ function PropertyPanel({ goal, onUpdate }: { goal: WealthGoal; onUpdate: (c: Par
         <div style={{ position:'relative' }}>
           <span style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', fontFamily:'Inter', fontSize:12, color:'var(--ink3)' }}>SGD</span>
           <input type="number" style={{ ...inp, paddingLeft:48 }} value={price||''} placeholder="0"
-            onChange={e => onUpdate({ purchasePrice: parseFloat(e.target.value)||0, targetAmount: totalCashNeeded({ ...goal, purchasePrice: parseFloat(e.target.value)||0 }) })} />
+  onChange={e => {
+    const newPrice = parseFloat(e.target.value) || 0
+    const cashNeeded = totalCashNeeded({ ...goal, purchasePrice: newPrice })
+    onUpdate({ purchasePrice: newPrice, targetAmount: cashNeeded })
+  }} />
         </div>
       </div>
 
