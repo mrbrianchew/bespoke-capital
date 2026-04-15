@@ -469,7 +469,7 @@ setP(prev => ({
 
   // ─── ACCUMULATION SAVE ─────────────────────────────────────────────────────
 
-  const scheduleAccSave = useCallback((updated: AccumulationData) => {
+ function scheduleAccSave(updated: AccumulationData) {
     if (accSaveTimer.current) clearTimeout(accSaveTimer.current)
     accSaveTimer.current = setTimeout(async () => {
       if (!clientId) return
@@ -480,7 +480,7 @@ setP(prev => ({
           { onConflict: 'client_id,section' }
         )
     }, 800)
-  }, [clientId, supabase])
+  }
     
   // ─── AUTO-SAVE ─────────────────────────────────────────────────────────────
 
