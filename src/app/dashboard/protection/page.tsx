@@ -1431,7 +1431,7 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
                 <circle cx={mx} cy={PT-8} r="2" fill={mc} opacity="0.6" />
                 
                 {/* Elegant label above chart */}
-                <text 
+                                <text 
                   x={mx} 
                   y={PT - 18} 
                   fontSize="8" 
@@ -1440,10 +1440,9 @@ const CoverageChart = React.memo(({title, eyebrow, needLabel, haveLabel, data, a
                   fontFamily="Inter, sans-serif"
                   fontWeight="400"
                   letterSpacing="0.06em"
-                  textTransform="uppercase"
                   transform={`rotate(-30, ${mx}, ${PT - 18})`}
                 >
-                  {m.label}
+                  {m.label.toUpperCase()}
                 </text>
                 <text 
                   x={mx - 2} 
