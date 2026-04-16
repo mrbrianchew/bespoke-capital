@@ -414,10 +414,12 @@ function PillSelect<T extends string>({ options, value, onChange }: {
 
 // ─── EXPENSE PICKER ───────────────────────────────────────────────────────────
 
-function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
+function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, coupleMode, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
   ff: Record<string, unknown>; expenseMode: 'simple' | 'detailed'
   selectedKeys: Record<string, boolean>; onChange: (keys: Record<string, boolean>) => void
-  showSpouse: boolean; clientName: string; spouseName: string
+  showSpouse: boolean
+  coupleMode?: CoupleIncomeMode
+  clientName: string; spouseName: string
   clientTotalSelected: number; spouseTotalSelected: number
   setEditModal: (v: { open: boolean; category: string }) => void
 }) {
@@ -558,7 +560,7 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
         })}
       </div>
 
-      {/* Totals row */}
+            {/* Totals row */}
       <div style={{ marginTop: 16, padding: '12px 16px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Selected Annual Expenses</span>
         {showSpouse ? (
@@ -573,6 +575,11 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
               <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(spouseTotalSelected)}/yr</div>
               <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(spouseTotalSelected / 12)}/mo</div>
             </div>
+          </div>
+        ) : coupleMode === 'combined' ? (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected + spouseTotalSelected)}/yr</div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt((clientTotalSelected + spouseTotalSelected) / 12)}/mo</div>
           </div>
         ) : (
           <div style={{ textAlign: 'right' }}>
@@ -1347,12 +1354,13 @@ export default function RetirementSection({
           )}
 
           {/* ── EXPENSE-BASED ── */}
-                    {mode === 'expense_based' && (
+          {mode === 'expense_based' && (
             <ExpensePicker
               ff={factFinding} expenseMode={expenseMode}
               selectedKeys={es.selectedExpenseKeys}
               onChange={keys => updExp({ selectedExpenseKeys: keys })}
-              showSpouse={isCouple}
+              showSpouse={isCouple && coupleMode === 'separate'}
+              coupleMode={coupleMode}
               clientName={clientName} spouseName={spouseName}
               clientTotalSelected={clientExpAnnual} spouseTotalSelected={spouseExpAnnual}
               setEditModal={setEditModal}
