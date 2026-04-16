@@ -414,7 +414,7 @@ function PillSelect<T extends string>({ options, value, onChange }: {
 
 // ─── EXPENSE PICKER ───────────────────────────────────────────────────────────
 
-ffunction ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
+function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
   ff: Record<string, unknown>; expenseMode: 'simple' | 'detailed'
   selectedKeys: Record<string, boolean>; onChange: (keys: Record<string, boolean>) => void
   showSpouse: boolean
@@ -579,9 +579,12 @@ ffunction ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, c
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected)}/yr</div>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(clientTotalSelected / 12)}/mo</div>
-          </div>
+           </div>
         )}
       </div>
+    </div>
+  )
+}
 
 // ─── EXPECTATION COMPARISON ───────────────────────────────────────────────────
 
