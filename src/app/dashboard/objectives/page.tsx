@@ -1022,21 +1022,21 @@ useEffect(() => {
   return takeHome - monthlyExp
 })()}
                             annualSurplus={(() => {
+  // Use the pre-calculated annual take-home from Financial Profile
+  // This already includes bonus and subtracts CPF
   const p1 = ff.person1 as any || {}
   const p2 = ff.person2 as any || {}
   
-  const p1Gross = p1.gross_monthly || 0
-  const p2Gross = isCouple ? (p2.gross_monthly || 0) : 0
-  const p1Other = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
-  const p2Other = isCouple ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
+  // Annual take-home is calculated in Financial Profile and saved
+  const p1AnnualTakeHome = p1.annualTakeHome || ((p1.gross_monthly || 0) * 12)
+  const p2AnnualTakeHome = isCouple ? (p2.annualTakeHome || ((p2.gross_monthly || 0) * 12)) : 0
   
-  const totalMonthlyIncome = p1Gross + p2Gross + p1Other + p2Other
-  const annualIncome = totalMonthlyIncome * 12
+  const totalAnnualTakeHome = p1AnnualTakeHome + p2AnnualTakeHome
   
-  // Use the expenses that ARE loading correctly
+  // Use the expenses that are loading correctly
   const totalAnnualExpenses = annExpClient + (isCouple ? annExpSpouse : 0)
   
-  return annualIncome - totalAnnualExpenses
+  return totalAnnualTakeHome - totalAnnualExpenses
 })()}
               isCouple={isCouple}
               clientName={clientName}
