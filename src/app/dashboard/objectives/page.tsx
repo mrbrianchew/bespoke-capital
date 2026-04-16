@@ -462,13 +462,12 @@ setP(prev => ({
     // Load client name and DOB
 const { data: clientData } = await supabase
   .from('clients')
-  .select('name, date_of_birth')
+  .select('name, dob')
   .eq('id', id)
   .single()
 if (clientData) {
   setClientName(clientData.name || 'Client')
-  setClientDOB(clientData.date_of_birth)
-  console.log('🔵 Client data from DB:', clientData)
+  setClientDOB(clientData.dob)   // ← Change to .dob
 }
     // Load family members - spouse name + children
    const { data: familyData } = await supabase
@@ -478,12 +477,9 @@ if (clientData) {
     if (familyData) {
   const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
   if (spouse) {
-    setSpouseName(spouse.name || 'Spouse')
-    setSpouseDOB(spouse.date_of_birth)
-    console.log('🟢 Spouse data from DB:', spouse)
-  } else {
-    console.log('🟡 No spouse found in family_members')
-  }
+  setSpouseName(spouse.name || 'Spouse')
+  setSpouseDOB(spouse.dob)   // ← CORRECT column name
+}
   const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
   setChildren(kids)
 }
