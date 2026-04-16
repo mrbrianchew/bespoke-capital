@@ -1071,8 +1071,20 @@ useEffect(() => {
     isCouple={isCouple}
     clientName={clientName}
     spouseName={spouseName}
-    clientAge={(() => { const p1 = ff.person1 as any || {} if (p1.date_of_birth) { return getAge(p1.date_of_birth)} return p1.age ?? 35})()}
-    spouseAge={(() => { const p2 = ff.person2 as any || {} if (p2.date_of_birth) { return getAge(p2.date_of_birth)} return p2.age ?? 33})()}
+clientAge={(() => {
+  const p1 = ff.person1 as any || {}
+  if (p1.date_of_birth) {
+    return getAge(p1.date_of_birth)
+  }
+  return p1.age ?? 35
+})()}
+spouseAge={(() => {
+  const p2 = ff.person2 as any || {}
+  if (p2.date_of_birth) {
+    return getAge(p2.date_of_birth)
+  }
+  return p2.age ?? 33
+})()}
     clientCPF_OA={ff.a_cpf_oa as number ?? 0}
     clientCPF_SA={ff.a_cpf_sa as number ?? 0}
     clientCPF_RA={ff.a_cpf_ra as number ?? 0}
