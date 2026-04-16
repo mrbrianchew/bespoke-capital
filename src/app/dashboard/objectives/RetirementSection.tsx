@@ -353,12 +353,12 @@ export const DEFAULT_RETIREMENT_DATA: RetirementData = {
   client: {
     retirementAge: 65, lifeExpectancy: 85,
     desiredMonthlyIncome: 0, desiredAnnualHolidays: 0,
-    includeCPF: true, cpfRaPlan: 'frs', cpfRaBalanceOverride: 0, cpfLifeOverride: 0,
+    includeCPF: false, cpfRaPlan: 'frs', cpfRaBalanceOverride: 0, cpfLifeOverride: 0,
   },
   spouse: {
     retirementAge: 65, lifeExpectancy: 85,
     desiredMonthlyIncome: 0, desiredAnnualHolidays: 0,
-    includeCPF: true, cpfRaPlan: 'frs', cpfRaBalanceOverride: 0, cpfLifeOverride: 0,
+    includeCPF: false, cpfRaPlan: 'frs', cpfRaBalanceOverride: 0, cpfLifeOverride: 0,
   },
   passiveIncome: [],
   advisorNotes: '',
@@ -667,22 +667,23 @@ function PersonPanel({ person, onChange, name, color, currentAge, cpfOA, cpfSA, 
     { key: 'override' as CPFPlanType, label: 'Override', payout: person.cpfLifeOverride, balance: 0 },
   ]
 
-  const AgeButtons = ({ current, options, onSet }: { current: number; options: number[]; onSet: (v: number) => void }) => (
-    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
-      {options.map(age => (
-        <button key={age} onClick={() => onSet(age)}
-          style={{ padding: '5px 9px', fontFamily: 'DM Mono, monospace', fontSize: 11, border: 'none', borderRadius: 5, cursor: 'pointer', transition: 'all 0.12s',
-            background: current === age ? 'var(--ink)' : 'var(--cream)',
-            color: current === age ? 'white' : 'var(--ink3)',
-            outline: current === age ? 'none' : '1px solid var(--line)',
-          }}>
-          {age}
-        </button>
-      ))}
-      <input type="number" value={current} onChange={e => onSet(parseInt(e.target.value) || current)}
-        style={{ ...inp, width: 58, padding: '5px 8px', fontSize: 12, textAlign: 'center' }} />
+  const AgeSlider = ({ label, value, onChange, min, max }: { label: string; value: number; onChange: (v: number) => void; min: number; max: number }) => (
+  <div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+      <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{label}</span>
+      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: color, fontWeight: 600 }}>{value}</span>
     </div>
-  )
+    <input 
+      type="range" 
+      min={min} 
+      max={max} 
+      step={1} 
+      value={value}
+      onChange={e => onChange(parseInt(e.target.value))}
+      style={{ width: '100%', accentColor: color }}
+    />
+  </div>
+)
 
   return (
     <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
@@ -695,116 +696,16 @@ function PersonPanel({ person, onChange, name, color, currentAge, cpfOA, cpfSA, 
       <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
 
         {/* Retirement & life expectancy */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
-          <div>
-            <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 7 }}>Retirement Age</div>
-            <AgeButtons current={person.retirementAge} options={[55, 60, 62, 65, 67]} onSet={v => onChange({ retirementAge: v })} />
-          </div>
-          <div>
-            <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 7 }}>Life Expectancy</div>
-            <AgeButtons current={person.lifeExpectancy} options={[80, 85, 90, 95]} onSet={v => onChange({ lifeExpectancy: v })} />
-          </div>
-        </div>
-
-        {/* CPF LIFE */}
-        <div style={{ background: 'var(--cream)', borderRadius: 10, padding: '14px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink3)' }}>CPF LIFE</span>
-              <a href="https://www.cpf.gov.sg/member/retirement-income/monthly-payouts/cpf-life" target="_blank" rel="noopener noreferrer"
-                style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--gold)', textDecoration: 'none', padding: '2px 7px', border: '1px solid var(--gold)', borderRadius: 4 }}>
-                CPF Estimator ↗
-              </a>
-              <span style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)' }}>Data: {CPF_LIFE_2025.dataYear}</span>
-            </div>
-            {/* Include toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Include</span>
-              <div onClick={() => onChange({ includeCPF: !person.includeCPF })}
-                style={{ width: 34, height: 19, borderRadius: 10, cursor: 'pointer', transition: 'background 0.15s', background: person.includeCPF ? 'var(--gold)' : '#ccc', position: 'relative', flexShrink: 0 }}>
-                <div style={{ position: 'absolute', top: 2, left: person.includeCPF ? 17 : 2, width: 15, height: 15, borderRadius: '50%', background: '#fff', transition: 'left 0.15s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-              </div>
-            </div>
-          </div>
-
-          {person.includeCPF && (
-            <>
-              {/* CPF balance display */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 12, padding: '10px', background: 'white', borderRadius: 8, border: '1px solid var(--line)' }}>
-                {[
-                  { label: 'OA', val: cpfOA },
-                  { label: cpfSA > 0 ? 'SA' : 'RA', val: cpfSA > 0 ? cpfSA : cpfRA },
-                  { label: 'Proj. RA', val: projectedRA },
-                ].map((item, i) => (
-                  <div key={i} style={{ textAlign: 'center' }}>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink3)', marginBottom: 3 }}>{item.label}</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink)' }}>{fmt(item.val)}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Estimated from balance */}
-              <div style={{ marginBottom: 12, padding: '7px 12px', background: '#EEF6F1', borderRadius: 6, border: '1px solid #d0e8da', display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--emerald)' }}>Estimated from RA balance</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 600, color: 'var(--emerald)' }}>{fmt(estimatedPayout)}/mo</span>
-              </div>
-
-              {/* Plan selector */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5, marginBottom: 12 }}>
-                {CPF_PLANS.map(plan => (
-                  <button key={plan.key} onClick={() => onChange({ cpfRaPlan: plan.key })}
-                    style={{ padding: '7px 4px', border: 'none', borderRadius: 7, cursor: 'pointer', textAlign: 'center', transition: 'all 0.12s',
-                      background: person.cpfRaPlan === plan.key ? 'var(--ink)' : 'white',
-                      color: person.cpfRaPlan === plan.key ? 'white' : 'var(--ink3)',
-                      outline: person.cpfRaPlan === plan.key ? 'none' : '1px solid var(--line)',
-                    }}>
-                    <div style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600 }}>{plan.label}</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, marginTop: 1, color: person.cpfRaPlan === plan.key ? 'rgba(255,255,255,0.65)' : 'var(--ink3)' }}>
-                      {plan.key !== 'override' ? `${fmt(plan.payout)}/mo` : '—'}
-                    </div>
-                    {plan.balance > 0 && (
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, marginTop: 1, color: person.cpfRaPlan === plan.key ? 'rgba(255,255,255,0.4)' : 'var(--ink3)' }}>
-                        {fmt(plan.balance)}
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {/* Override / RA balance input */}
-              {person.cpfRaPlan === 'override' ? (
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 5 }}>Monthly Payout Override (SGD)</div>
-                  <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>$</span>
-                    <input type="number" min={0} value={person.cpfLifeOverride || ''}
-                      onChange={e => onChange({ cpfLifeOverride: parseFloat(e.target.value) || 0 })}
-                      placeholder="Enter from CPF estimator" style={{ ...inp, paddingLeft: 28 }} />
-                  </div>
-                  <p style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 4 }}>
-                    Get the exact amount from the <a href="https://www.cpf.gov.sg/payoutestimator" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)' }}>CPF LIFE Estimator ↗</a>
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 5 }}>Override RA Balance (optional)</div>
-                  <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>$</span>
-                    <input type="number" min={0} value={person.cpfRaBalanceOverride || ''}
-                      onChange={e => onChange({ cpfRaBalanceOverride: parseFloat(e.target.value) || 0 })}
-                      placeholder={`Auto-projected: ${fmt(projectedRA)}`} style={{ ...inp, paddingLeft: 28 }} />
-                  </div>
-                </div>
-              )}
-
-              {/* Final payout callout */}
-              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 13px', background: 'var(--gold-l)', border: '1px solid #e8d9be', borderRadius: 8 }}>
-                <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--gold-tag)', fontWeight: 600 }}>CPF LIFE Payout Used</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 700, color: 'var(--gold-tag)' }}>{fmt(displayedPayout)}/mo</span>
-              </div>
-            </>
-          )}
-        </div>
+       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
+  <div>
+    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 7 }}>Retirement Age</div>
+    <AgeSlider label="Age" value={person.retirementAge} onChange={v => onChange({ retirementAge: v })} min={50} max={75} />
+  </div>
+  <div>
+    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 7 }}>Life Expectancy</div>
+    <AgeSlider label="Age" value={person.lifeExpectancy} onChange={v => onChange({ lifeExpectancy: v })} min={75} max={100} />
+  </div>
+</div>
 
       </div>
     </div>
@@ -816,17 +717,16 @@ function PersonPanel({ person, onChange, name, color, currentAge, cpfOA, cpfSA, 
 function KPIStrip({ result, name }: { result: RetirementCalcResult; name: string }) {
   const hasGap = result.savingsGap > 0
   const kpis = [
-    { label: 'Monthly Need at Retirement', value: fmtSGD(result.monthlyNeedAtRetirement), sub: 'Inflation-adjusted FV', hi: false, alert: false },
-    { label: 'Corpus Needed', value: fmtSGD(result.corpusNeeded), sub: `${Math.round(result.retirementYears)}y retirement`, hi: true, alert: false },
-    { label: 'Savings Gap', value: hasGap ? fmtSGD(result.savingsGap) : '✓ On Track', sub: hasGap ? 'Additional corpus required' : `Surplus ${fmtSGD(result.existingAssetsFV - result.corpusNeeded)}`, hi: false, alert: hasGap },
-    { label: 'Monthly Savings Required', value: result.monthlySavingsRequired > 0 ? fmtSGD(result.monthlySavingsRequired) : '—', sub: `Over ${Math.round(result.yearsToRetirement)}y pre-retirement`, hi: false, alert: false },
+    { label: 'Monthly Need at Retirement', value: fmtSGD(result.monthlyNeedAtRetirement), sub: 'Inflation-adjusted', hi: false, alert: false },
+    { label: 'Financial Independence Capital', value: fmtSGD(result.corpusNeeded), sub: `${Math.round(result.retirementYears)}y retirement`, hi: true, alert: false },
+    { label: 'Annual Needs (incl. Holidays)', value: fmtSGD(result.totalAnnualNeedAtRetirement), sub: 'At retirement age', hi: false, alert: false },
   ]
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
       {kpis.map((kpi, i) => (
-        <div key={i} style={{ padding: '14px 16px', borderRight: i < 3 ? '1px solid var(--line)' : 'none', background: kpi.alert ? '#FEF3F2' : kpi.hi ? 'var(--gold-l)' : 'white' }}>
+        <div key={i} style={{ padding: '14px 16px', borderRight: i < 2 ? '1px solid var(--line)' : 'none', background: kpi.hi ? 'var(--gold-l)' : 'white' }}>
           <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>{kpi.label}</div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, fontWeight: 600, marginBottom: 2, color: kpi.alert ? 'var(--rouge)' : kpi.hi ? 'var(--gold-tag)' : 'var(--ink)' }}>{kpi.value}</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, fontWeight: 600, marginBottom: 2, color: kpi.hi ? 'var(--gold-tag)' : 'var(--ink)' }}>{kpi.value}</div>
           <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{kpi.sub}</div>
         </div>
       ))}
@@ -1219,6 +1119,130 @@ function EditExpenseItemsModal({ category, ff, expenseMode, selectedKeys, onChan
   )
 }
 
+// ─── INVESTMENT MIX CALCULATOR ────────────────────────────────────────────────
+
+function InvestmentMixCalculator({ corpusNeeded, yearsToRetirement, preReturnRate }: {
+  corpusNeeded: number
+  yearsToRetirement: number
+  preReturnRate: number
+}) {
+  const [mixPct, setMixPct] = useState(50) // 0 = all monthly, 100 = all lump sum
+  
+  const r = preReturnRate / 100
+  const months = Math.max(1, yearsToRetirement * 12)
+  const rMo = r / 12
+  
+  // Calculate required lump sum for the selected portion
+  const lumpSumPortion = corpusNeeded * (mixPct / 100)
+  const lumpSumToday = lumpSumPortion / Math.pow(1 + r, yearsToRetirement)
+  
+  // Calculate required monthly for the remaining portion
+  const monthlyPortion = corpusNeeded * ((100 - mixPct) / 100)
+  let monthlyRequired = 0
+  if (monthlyPortion > 0 && months > 0) {
+    if (rMo === 0) {
+      monthlyRequired = monthlyPortion / months
+    } else {
+      monthlyRequired = monthlyPortion * rMo / (Math.pow(1 + rMo, months) - 1)
+    }
+  }
+  
+  return (
+    <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, padding: '24px', marginTop: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+        <div style={{ width: 3, height: 16, background: 'var(--gold)', borderRadius: 2 }} />
+        <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>
+          Investment Mix to Achieve Financial Independence
+        </span>
+      </div>
+      
+      <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 20, lineHeight: 1.6 }}>
+        Adjust the slider to see how much you need as a lump sum today versus regular monthly investments.
+      </p>
+      
+      {/* Slider */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Lump Sum Today</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--gold)' }}>{mixPct}%</span>
+          <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Monthly Investment</span>
+        </div>
+        <input 
+          type="range" 
+          min={0} 
+          max={100} 
+          step={5} 
+          value={mixPct}
+          onChange={e => setMixPct(parseInt(e.target.value))}
+          style={{ width: '100%', accentColor: 'var(--gold)' }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+          <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{100 - mixPct}%</span>
+          <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}></span>
+        </div>
+      </div>
+      
+      {/* Results */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ background: 'var(--gold-l)', border: '1px solid #e8d9be', borderRadius: 8, padding: '16px' }}>
+          <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 8 }}>
+            Lump Sum Investment Today
+          </div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, fontWeight: 600, color: 'var(--gold-tag)' }}>
+            {fmtSGD(lumpSumToday)}
+          </div>
+          <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+            Grows to {fmtSGD(lumpSumPortion)} at retirement
+          </div>
+        </div>
+        
+        <div style={{ background: 'var(--emerald-l)', border: '1px solid #d0e8da', borderRadius: 8, padding: '16px' }}>
+          <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--emerald)', marginBottom: 8 }}>
+            Regular Monthly Investment
+          </div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, fontWeight: 600, color: 'var(--emerald)' }}>
+            {fmtSGD(monthlyRequired)}/mo
+          </div>
+          <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+            For {Math.round(yearsToRetirement)} years until retirement
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── EXPECTATION DIFFERENCE ──────────────────────────────────────────────────
+
+function ExpectationDifference({ currentAnnual, desiredAnnual }: {
+  currentAnnual: number
+  desiredAnnual: number
+}) {
+  if (!currentAnnual || !desiredAnnual) return null
+  
+  const difference = desiredAnnual - currentAnnual
+  const pctDiff = Math.round((difference / currentAnnual) * 100)
+  const isHigher = difference > 0
+  
+  return (
+    <div style={{ 
+      background: isHigher ? '#FDF8F0' : '#EFF7F3', 
+      border: `1px solid ${isHigher ? '#e8d9be' : '#d0e8da'}`, 
+      borderRadius: 8, 
+      padding: '12px 16px',
+      marginTop: 16
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 16 }}>{isHigher ? '↑' : '↓'}</span>
+        <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink)' }}>
+          Desired retirement income is <strong>{fmtSGD(Math.abs(difference))}/yr</strong> ({pctDiff > 0 ? '+' : ''}{pctDiff}%) 
+          {isHigher ? ' above' : ' below'} current expenses
+        </span>
+      </div>
+    </div>
+  )
+}
+
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 
 export default function RetirementSection({
@@ -1446,14 +1470,59 @@ export default function RetirementSection({
         {isCouple && <PersonPanel person={data.spouse} onChange={updSpouse} name={spouseName} color="#6B5B8B" currentAge={spouseAge} cpfOA={spouseCPF_OA} cpfSA={spouseCPF_SA} cpfRA={spouseCPF_RA} />}
       </div>
 
-      {/* ── KPI RESULTS ── */}
-      <SubLabel color="var(--gold)">Results — {clientName}</SubLabel>
-      <KPIStrip result={clientResult} name={clientName} />
-
-      {isCouple && (
+            {/* ── KPI RESULTS ── */}
+      {isCouple ? (
         <>
-          <SubLabel color="#6B5B8B">Results — {spouseName}</SubLabel>
-          <KPIStrip result={spouseResult} name={spouseName} />
+          <SubLabel color="var(--gold)">Results — {clientName} & {spouseName}</SubLabel>
+          <KPIStrip 
+            result={{
+              monthlyNeedAtRetirement: clientResult.monthlyNeedAtRetirement + spouseResult.monthlyNeedAtRetirement,
+              corpusNeeded: clientResult.corpusNeeded + spouseResult.corpusNeeded,
+              totalAnnualNeedAtRetirement: clientResult.totalAnnualNeedAtRetirement + spouseResult.totalAnnualNeedAtRetirement,
+              retirementYears: Math.max(clientResult.retirementYears, spouseResult.retirementYears),
+              yearsToRetirement: Math.max(clientResult.yearsToRetirement, spouseResult.yearsToRetirement),
+              annualHolidaysAtRetirement: 0,
+              cpfLifeMonthly: 0,
+              cpfLifeAnnual: 0,
+              passiveAnnual: 0,
+              netAnnualGap: 0,
+              existingAssetsFV: 0,
+              savingsGap: 0,
+              monthlySavingsRequired: 0,
+            }} 
+            name={`${clientName} & ${spouseName}`} 
+          />
+          
+          <InvestmentMixCalculator 
+            corpusNeeded={clientResult.corpusNeeded + spouseResult.corpusNeeded}
+            yearsToRetirement={Math.max(clientResult.yearsToRetirement, spouseResult.yearsToRetirement)}
+            preReturnRate={data.preReturnRate}
+          />
+          
+          {mode === 'expense_based' && (
+            <ExpectationDifference 
+              currentAnnual={combinedExpAnnual}
+              desiredAnnual={clientResult.totalAnnualNeedAtRetirement + spouseResult.totalAnnualNeedAtRetirement}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <SubLabel color="var(--gold)">Results — {clientName}</SubLabel>
+          <KPIStrip result={clientResult} name={clientName} />
+          
+          <InvestmentMixCalculator 
+            corpusNeeded={clientResult.corpusNeeded}
+            yearsToRetirement={clientResult.yearsToRetirement}
+            preReturnRate={data.preReturnRate}
+          />
+          
+          {mode === 'expense_based' && (
+            <ExpectationDifference 
+              currentAnnual={clientExpAnnual}
+              desiredAnnual={clientResult.totalAnnualNeedAtRetirement}
+            />
+          )}
         </>
       )}
 
