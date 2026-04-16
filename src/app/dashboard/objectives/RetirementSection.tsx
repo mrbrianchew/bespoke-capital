@@ -205,6 +205,282 @@ export interface RetirementCalcResult {
   retirementYears: number
 }
 
+interface PhasedRetirementResult {
+  // Client (first to retire)
+  clientRetirementAge: number
+  yearsToClientRetirement: number
+  
+  // Spouse (second to retire, if applicable)
+  spouseRetirementAge: number
+  yearsToSpouseRetirement: number
+  gapYears: number  // Years between client and spouse retirement
+  
+  // Monthly needs (inflated to client's retirement date)
+  monthlyNeedAtClientRetirement: number
+  spouseMonthlyIncome: number  // Flat (no inflation growth)
+  gapMonthlyShortfall: number  // Expenses - spouse income (min 0)
+  gapMonthlySurplus: number    // Spouse income - expenses (min 0)
+  
+  // Corpus calculations
+  gapFundNeeded: number        // PV of gap shortfalls
+  fullRetirementCorpusAtSpouseRetirement: number  // Corpus needed when both retired
+  fullRetirementCorpusPV: number  // PV of above at client's retirement
+  totalCorpusNeeded: number    // gapFundNeeded + fullRetirementCorpusPV
+  
+  // Legacy fields for compatibility
+  corpusNeeded: number
+  yearsToRetirement: number
+  retirementYears: number
+}
+
+function calcPhasedRetirement(
+  clientAge: number,
+  clientRetirementAge: number,
+  clientLifeExpectancy: number,
+  spouseAge: number | undefined,
+  spouseRetirementAge: number | undefined,
+  spouseLifeExpectancy: number | undefined,
+  spouseMonthlyIncome: number,
+  combinedMonthlyNeed: number,
+  inflationRate: number,
+  postReturnRate: number,
+): PhasedRetirementResult {
+  const g = inflationRate / 100
+  const r = postReturnRate / 100
+  
+  const yearsToClientRetirement = Math.max(0.5, clientRetirementAge - clientAge)
+  
+  // Default for single person
+  if (!spouseAge || !spouseRetirementAge || !spouseLifeExpectancy) {
+    const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
+    const retirementYears = clientLifeExpectancy - clientRetirementAge
+    const totalAnnualNeed = monthlyNeedAtRetirement * 12
+    
+    let corpusNeeded = 0
+    if (Math.abs(r - g) < 0.0001) {
+      corpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
+    } else {
+      corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+    }
+    
+    return {
+      clientRetirementAge,
+      yearsToClientRetirement,
+      spouseRetirementAge: 0,
+      yearsToSpouseRetirement: 0,
+      gapYears: 0,
+      monthlyNeedAtClientRetirement: monthlyNeedAtRetirement,
+      spouseMonthlyIncome: 0,
+      gapMonthlyShortfall: 0,
+      gapMonthlySurplus: 0,
+      gapFundNeeded: 0,
+      fullRetirementCorpusAtSpouseRetirement: corpusNeeded,
+      fullRetirementCorpusPV: corpusNeeded,
+      totalCorpusNeeded: corpusNeeded,
+      corpusNeeded,
+      yearsToRetirement: yearsToClientRetirement,
+      retirementYears,
+    }
+  }
+  
+  // Couple calculation
+  const yearsToSpouseRetirement = Math.max(0.5, spouseRetirementAge - spouseAge)
+  const gapYears = Math.max(0, yearsToSpouseRetirement - yearsToClientRetirement)
+  
+  // Inflate expenses to client's retirement date
+  const monthlyNeedAtClientRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
+  
+  // Spouse income stays flat (conservative - 0% real growth)
+  const spouseMonthlyIncomeAtRetirement = spouseMonthlyIncome
+  
+  // Gap calculations
+  const gapMonthlyShortfall = Math.max(0, monthlyNeedAtClientRetirement - spouseMonthlyIncomeAtRetirement)
+  const gapMonthlySurplus = Math.max(0, spouseMonthlyIncomeAtRetirement - monthlyNeedAtClientRetirement)
+  
+  // Calculate PV of gap years (if any)
+  let gapFundNeeded = 0
+  if (gapYears > 0 && gapMonthlyShortfall > 0) {
+    const annualShortfall = gapMonthlyShortfall * 12
+    for (let year = 0; year < gapYears; year++) {
+      const inflatedShortfall = annualShortfall * Math.pow(1 + g, year)
+      gapFundNeeded += inflatedShortfall / Math.pow(1 + r, year)
+    }
+  }
+  
+  // If there's a surplus during gap years, it gets added to the portfolio
+  let gapSurplusFV = 0
+  if (gapYears > 0 && gapMonthlySurplus > 0) {
+    const annualSurplus = gapMonthlySurplus * 12
+    for (let year = 0; year < gapYears; year++) {
+      const inflatedSurplus = annualSurplus * Math.pow(1 + g, year)
+      const yearsRemaining = gapYears - year - 1
+      gapSurplusFV += inflatedSurplus * Math.pow(1 + r, yearsRemaining)
+    }
+  }
+  
+  // Calculate corpus needed at spouse's retirement date
+  const monthlyNeedAtSpouseRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToSpouseRetirement)
+  const retirementYears = spouseLifeExpectancy - spouseRetirementAge
+  const totalAnnualNeedAtSpouseRetirement = monthlyNeedAtSpouseRetirement * 12
+  
+  let fullRetirementCorpusAtSpouseRetirement = 0
+  if (Math.abs(r - g) < 0.0001) {
+    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * retirementYears / (1 + r)
+  } else {
+    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * 
+      (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+  }
+  
+  // Discount back to client's retirement date
+  const fullRetirementCorpusPV = fullRetirementCorpusAtSpouseRetirement / Math.pow(1 + r, gapYears)
+  
+  // Total corpus needed at client's retirement
+  const totalCorpusNeeded = gapFundNeeded + fullRetirementCorpusPV - gapSurplusFV
+  
+  return {
+    clientRetirementAge,
+    yearsToClientRetirement,
+    spouseRetirementAge,
+    yearsToSpouseRetirement,
+    gapYears,
+    monthlyNeedAtClientRetirement,
+    spouseMonthlyIncome: spouseMonthlyIncomeAtRetirement,
+    gapMonthlyShortfall,
+    gapMonthlySurplus,
+    gapFundNeeded,
+    fullRetirementCorpusAtSpouseRetirement,
+    fullRetirementCorpusPV,
+    totalCorpusNeeded: Math.max(0, totalCorpusNeeded),
+    corpusNeeded: Math.max(0, totalCorpusNeeded),
+    yearsToRetirement: yearsToClientRetirement,
+    retirementYears,
+  }
+}
+
+function calcPhasedRetirement(
+  clientAge: number,
+  clientRetirementAge: number,
+  clientLifeExpectancy: number,
+  spouseAge: number | undefined,
+  spouseRetirementAge: number | undefined,
+  spouseLifeExpectancy: number | undefined,
+  spouseMonthlyIncome: number,
+  combinedMonthlyNeed: number,
+  inflationRate: number,
+  postReturnRate: number,
+): PhasedRetirementResult {
+  const g = inflationRate / 100
+  const r = postReturnRate / 100
+  
+  const yearsToClientRetirement = Math.max(0.5, clientRetirementAge - clientAge)
+  
+  // Default for single person
+  if (!spouseAge || !spouseRetirementAge || !spouseLifeExpectancy) {
+    const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
+    const retirementYears = clientLifeExpectancy - clientRetirementAge
+    const totalAnnualNeed = monthlyNeedAtRetirement * 12
+    
+    let corpusNeeded = 0
+    if (Math.abs(r - g) < 0.0001) {
+      corpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
+    } else {
+      corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+    }
+    
+    return {
+      clientRetirementAge,
+      yearsToClientRetirement,
+      spouseRetirementAge: 0,
+      yearsToSpouseRetirement: 0,
+      gapYears: 0,
+      monthlyNeedAtClientRetirement: monthlyNeedAtRetirement,
+      spouseMonthlyIncome: 0,
+      gapMonthlyShortfall: 0,
+      gapMonthlySurplus: 0,
+      gapFundNeeded: 0,
+      fullRetirementCorpusAtSpouseRetirement: corpusNeeded,
+      fullRetirementCorpusPV: corpusNeeded,
+      totalCorpusNeeded: corpusNeeded,
+      corpusNeeded,
+      yearsToRetirement: yearsToClientRetirement,
+      retirementYears,
+    }
+  }
+  
+  // Couple calculation
+  const yearsToSpouseRetirement = Math.max(0.5, spouseRetirementAge - spouseAge)
+  const gapYears = Math.max(0, yearsToSpouseRetirement - yearsToClientRetirement)
+  
+  // Inflate expenses to client's retirement date
+  const monthlyNeedAtClientRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
+  
+  // Spouse income stays flat (conservative - 0% real growth)
+  const spouseMonthlyIncomeAtRetirement = spouseMonthlyIncome
+  
+  // Gap calculations
+  const gapMonthlyShortfall = Math.max(0, monthlyNeedAtClientRetirement - spouseMonthlyIncomeAtRetirement)
+  const gapMonthlySurplus = Math.max(0, spouseMonthlyIncomeAtRetirement - monthlyNeedAtClientRetirement)
+  
+  // Calculate PV of gap years (if any)
+  let gapFundNeeded = 0
+  if (gapYears > 0 && gapMonthlyShortfall > 0) {
+    const annualShortfall = gapMonthlyShortfall * 12
+    for (let year = 0; year < gapYears; year++) {
+      const inflatedShortfall = annualShortfall * Math.pow(1 + g, year)
+      gapFundNeeded += inflatedShortfall / Math.pow(1 + r, year)
+    }
+  }
+  
+  // If there's a surplus during gap years, it gets added to the portfolio
+  let gapSurplusFV = 0
+  if (gapYears > 0 && gapMonthlySurplus > 0) {
+    const annualSurplus = gapMonthlySurplus * 12
+    for (let year = 0; year < gapYears; year++) {
+      const inflatedSurplus = annualSurplus * Math.pow(1 + g, year)
+      const yearsRemaining = gapYears - year - 1
+      gapSurplusFV += inflatedSurplus * Math.pow(1 + r, yearsRemaining)
+    }
+  }
+  
+  // Calculate corpus needed at spouse's retirement date
+  const monthlyNeedAtSpouseRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToSpouseRetirement)
+  const retirementYears = spouseLifeExpectancy - spouseRetirementAge
+  const totalAnnualNeedAtSpouseRetirement = monthlyNeedAtSpouseRetirement * 12
+  
+  let fullRetirementCorpusAtSpouseRetirement = 0
+  if (Math.abs(r - g) < 0.0001) {
+    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * retirementYears / (1 + r)
+  } else {
+    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * 
+      (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+  }
+  
+  // Discount back to client's retirement date
+  const fullRetirementCorpusPV = fullRetirementCorpusAtSpouseRetirement / Math.pow(1 + r, gapYears)
+  
+  // Total corpus needed at client's retirement
+  const totalCorpusNeeded = gapFundNeeded + fullRetirementCorpusPV - gapSurplusFV
+  
+  return {
+    clientRetirementAge,
+    yearsToClientRetirement,
+    spouseRetirementAge,
+    yearsToSpouseRetirement,
+    gapYears,
+    monthlyNeedAtClientRetirement,
+    spouseMonthlyIncome: spouseMonthlyIncomeAtRetirement,
+    gapMonthlyShortfall,
+    gapMonthlySurplus,
+    gapFundNeeded,
+    fullRetirementCorpusAtSpouseRetirement,
+    fullRetirementCorpusPV,
+    totalCorpusNeeded: Math.max(0, totalCorpusNeeded),
+    corpusNeeded: Math.max(0, totalCorpusNeeded),
+    yearsToRetirement: yearsToClientRetirement,
+    retirementYears,
+  }
+}
+
 function calcRetirement(
   person: RetirementPersonData,
   currentAge: number,
@@ -1243,6 +1519,47 @@ function ExpectationDifference({ currentAnnual, desiredAnnual }: {
   )
 }
 
+// ─── GAP EXPLANATION ─────────────────────────────────────────────────────────
+
+function GapExplanation({ phasedResult, clientName, spouseName }: { 
+  phasedResult: PhasedRetirementResult
+  clientName: string
+  spouseName: string 
+}) {
+  if (phasedResult.gapYears === 0) return null
+  
+  return (
+    <div style={{ 
+      background: 'var(--cream)', 
+      border: '1px solid var(--line)', 
+      borderRadius: 8, 
+      padding: '16px', 
+      marginTop: 16 
+    }}>
+      <div style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
+        📅 Gap Period: {phasedResult.gapYears} {phasedResult.gapYears === 1 ? 'year' : 'years'}
+      </div>
+      <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', lineHeight: 1.6, margin: 0 }}>
+        {clientName} retires first at age {phasedResult.clientRetirementAge}. 
+        {spouseName} continues working for {phasedResult.gapYears} more {phasedResult.gapYears === 1 ? 'year' : 'years'} until age {phasedResult.spouseRetirementAge}.
+      </p>
+      {phasedResult.gapMonthlyShortfall > 0 ? (
+        <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--rouge)', marginTop: 8, marginBottom: 0 }}>
+          ⚠️ Monthly shortfall during gap: {fmtSGD(phasedResult.gapMonthlyShortfall)}/mo
+          <br />
+          <span style={{ fontSize: 11 }}>Additional corpus needed for gap: {fmtSGD(phasedResult.gapFundNeeded)}</span>
+        </p>
+      ) : phasedResult.gapMonthlySurplus > 0 ? (
+        <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--emerald)', marginTop: 8, marginBottom: 0 }}>
+          ✓ Monthly surplus during gap: {fmtSGD(phasedResult.gapMonthlySurplus)}/mo
+          <br />
+          <span style={{ fontSize: 11 }}>This surplus reduces the required corpus</span>
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 
 export default function RetirementSection({
@@ -1297,8 +1614,60 @@ export default function RetirementSection({
     }
   }
 
-  const clientResult = calcRetirement(data.client, clientAge, data.inflationRate, data.postReturnRate, data.preReturnRate, data.passiveIncome, 'client', clientLiquid, clientMonthly, clientHolidays)
-  const spouseResult = calcRetirement(data.spouse, spouseAge, data.inflationRate, data.postReturnRate, data.preReturnRate, data.passiveIncome, 'spouse', spouseLiquid, spouseMonthly, spouseHolidays)
+    // Get spouse monthly income from fact finding (conservative - no growth assumed)
+  const spouseGrossMonthly = (factFinding?.person2 as any)?.gross_monthly || 0
+  const spouseTakeHome = spouseGrossMonthly * 0.8  // Approximate after CPF
+  
+  // Combined monthly need in today's dollars
+  const combinedMonthlyNeedToday = (clientExpAnnual + (isCouple ? spouseExpAnnual : 0)) / 12
+  
+  // Use phased retirement calculation
+  const phasedResult = calcPhasedRetirement(
+    clientAge,
+    data.client.retirementAge,
+    data.client.lifeExpectancy,
+    isCouple ? spouseAge : undefined,
+    isCouple ? data.spouse.retirementAge : undefined,
+    isCouple ? data.spouse.lifeExpectancy : undefined,
+    isCouple ? spouseTakeHome : 0,
+    combinedMonthlyNeedToday,
+    data.inflationRate,
+    data.postReturnRate,
+  )
+  
+  // For backward compatibility with existing components
+  const clientResult: RetirementCalcResult = {
+    monthlyNeedAtRetirement: phasedResult.monthlyNeedAtClientRetirement,
+    annualHolidaysAtRetirement: clientHolidays * Math.pow(1 + data.inflationRate / 100, phasedResult.yearsToClientRetirement),
+    totalAnnualNeedAtRetirement: phasedResult.monthlyNeedAtClientRetirement * 12 + 
+      (clientHolidays * Math.pow(1 + data.inflationRate / 100, phasedResult.yearsToClientRetirement)),
+    cpfLifeMonthly: 0,
+    cpfLifeAnnual: 0,
+    passiveAnnual: 0,
+    netAnnualGap: phasedResult.monthlyNeedAtClientRetirement * 12,
+    corpusNeeded: phasedResult.totalCorpusNeeded,
+    existingAssetsFV: clientLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement),
+    savingsGap: Math.max(0, phasedResult.totalCorpusNeeded - clientLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement)),
+    monthlySavingsRequired: 0,
+    yearsToRetirement: phasedResult.yearsToClientRetirement,
+    retirementYears: phasedResult.retirementYears,
+  }
+  
+  const spouseResult: RetirementCalcResult = {
+    monthlyNeedAtRetirement: 0,
+    annualHolidaysAtRetirement: 0,
+    totalAnnualNeedAtRetirement: 0,
+    cpfLifeMonthly: 0,
+    cpfLifeAnnual: 0,
+    passiveAnnual: 0,
+    netAnnualGap: 0,
+    corpusNeeded: 0,
+    existingAssetsFV: 0,
+    savingsGap: 0,
+    monthlySavingsRequired: 0,
+    yearsToRetirement: phasedResult.yearsToSpouseRetirement,
+    retirementYears: 0,
+  }
 
   // Expectation comparison (only meaningful in direct mode when we also have expense data)
   const clientWishAnnual = data.client.desiredMonthlyIncome * 12 + data.client.desiredAnnualHolidays
@@ -1476,8 +1845,8 @@ export default function RetirementSection({
           <SubLabel color="var(--gold)">Results — {clientName} & {spouseName}</SubLabel>
           <KPIStrip 
             result={{
-              monthlyNeedAtRetirement: clientResult.monthlyNeedAtRetirement + spouseResult.monthlyNeedAtRetirement,
-              corpusNeeded: clientResult.corpusNeeded + spouseResult.corpusNeeded,
+              monthlyNeedAtRetirement: phasedResult.monthlyNeedAtClientRetirement,
+              corpusNeeded: phasedResult.totalCorpusNeeded,
               totalAnnualNeedAtRetirement: clientResult.totalAnnualNeedAtRetirement + spouseResult.totalAnnualNeedAtRetirement,
               retirementYears: Math.max(clientResult.retirementYears, spouseResult.retirementYears),
               yearsToRetirement: Math.max(clientResult.yearsToRetirement, spouseResult.yearsToRetirement),
@@ -1493,9 +1862,16 @@ export default function RetirementSection({
             name={`${clientName} & ${spouseName}`} 
           />
           
+                    {/* Gap Explanation */}
+          <GapExplanation 
+            phasedResult={phasedResult}
+            clientName={clientName}
+            spouseName={spouseName}
+          />
+          
           <InvestmentMixCalculator 
-            corpusNeeded={clientResult.corpusNeeded + spouseResult.corpusNeeded}
-            yearsToRetirement={Math.max(clientResult.yearsToRetirement, spouseResult.yearsToRetirement)}
+            corpusNeeded={phasedResult.totalCorpusNeeded}
+            yearsToRetirement={phasedResult.yearsToClientRetirement}
             preReturnRate={data.preReturnRate}
           />
           
@@ -1511,9 +1887,9 @@ export default function RetirementSection({
           <SubLabel color="var(--gold)">Results — {clientName}</SubLabel>
           <KPIStrip result={clientResult} name={clientName} />
           
-          <InvestmentMixCalculator 
-            corpusNeeded={clientResult.corpusNeeded}
-            yearsToRetirement={clientResult.yearsToRetirement}
+            <InvestmentMixCalculator 
+            corpusNeeded={phasedResult.totalCorpusNeeded}
+            yearsToRetirement={phasedResult.yearsToClientRetirement}
             preReturnRate={data.preReturnRate}
           />
           
@@ -1526,65 +1902,16 @@ export default function RetirementSection({
         </>
       )}
 
-      {/* ── TIMELINE CHARTS ── */}
+            {/* ── TIMELINE CHARTS ── */}
       <SubLabel>Retirement Timeline</SubLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
-        <RetirementChart result={clientResult} personName={clientName} currentAge={clientAge} color="var(--gold)" />
-        {isCouple && <RetirementChart result={spouseResult} personName={spouseName} currentAge={spouseAge} color="#6B5B8B" />}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
+        <RetirementChart result={clientResult} personName={isCouple ? `${clientName} & ${spouseName}` : clientName} currentAge={clientAge} color="var(--gold)" />
       </div>
-
+      
       {/* ── PASSIVE INCOME ── */}
       <SubLabel color="var(--emerald)">Passive Income at Retirement</SubLabel>
       <PassiveIncomeSection items={data.passiveIncome} onChange={items => upd({ passiveIncome: items })} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
 
-      {/* ── COMBINED SUMMARY (couple only) ── */}
-      {isCouple && (
-        <>
-          <SubLabel color="var(--ink)">Combined Retirement Summary</SubLabel>
-          <div style={{ background: 'var(--ink)', borderRadius: 16, padding: '28px 32px' }}>
-            <p style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 20 }}>
-              {clientName} & {spouseName} · {data.inflationRate}% inflation · {data.postReturnRate}% post-ret. return
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0, marginBottom: 24 }}>
-              {[
-                { label: 'Total Corpus Needed', value: fmtSGD(clientResult.corpusNeeded + spouseResult.corpusNeeded), sub: 'At respective retirement ages', col: 'var(--gold)' },
-                { label: 'Total Savings Gap', value: fmtSGD(clientResult.savingsGap + spouseResult.savingsGap), sub: 'Additional corpus required', col: (clientResult.savingsGap + spouseResult.savingsGap) > 0 ? '#f0a0a0' : '#86efac' },
-                { label: 'Combined Monthly Savings', value: fmtSGD(clientResult.monthlySavingsRequired + spouseResult.monthlySavingsRequired), sub: 'To close the gap', col: 'white' },
-              ].map((kpi, i) => (
-                <div key={i} style={{ paddingRight: i < 2 ? 24 : 0, borderRight: i < 2 ? '1px solid rgba(255,255,255,0.1)' : 'none', paddingLeft: i > 0 ? 24 : 0 }}>
-                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>{kpi.label}</div>
-                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: kpi.col, marginBottom: 4 }}>{kpi.value}</div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>{kpi.sub}</div>
-                </div>
-              ))}
-            </div>
-            {/* Per-person row */}
-            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 20 }}>
-              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 12 }}>Per Person</div>
-              {[
-                { name: clientName, result: clientResult, col: 'var(--gold)' },
-                { name: spouseName, result: spouseResult, col: '#C4A6E8' },
-              ].map(({ name, result: r, col }) => (
-                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'rgba(255,255,255,0.7)', minWidth: 100 }}>{name}</span>
-                  <div style={{ display: 'flex', gap: 28 }}>
-                    {[
-                      { lbl: 'Corpus', val: fmtSGD(r.corpusNeeded), c: col },
-                      { lbl: 'Gap', val: fmtSGD(r.savingsGap), c: r.savingsGap > 0 ? '#f0a0a0' : '#86efac' },
-                      { lbl: 'Monthly Savings', val: `${fmtSGD(r.monthlySavingsRequired)}/mo`, c: 'rgba(255,255,255,0.7)' },
-                    ].map(({ lbl, val, c }) => (
-                      <div key={lbl} style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Inter' }}>{lbl}</div>
-                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: c }}>{val}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
 
       {/* ── ADVISOR NOTES ── */}
       <SubLabel>Advisor Notes</SubLabel>
