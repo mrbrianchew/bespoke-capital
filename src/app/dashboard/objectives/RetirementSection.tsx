@@ -356,56 +356,6 @@ function calcPhasedRetirement(
     retirementYears,
   }
 }
-
-function calcPhasedRetirement(
-  clientAge: number,
-  clientRetirementAge: number,
-  clientLifeExpectancy: number,
-  spouseAge: number | undefined,
-  spouseRetirementAge: number | undefined,
-  spouseLifeExpectancy: number | undefined,
-  spouseMonthlyIncome: number,
-  combinedMonthlyNeed: number,
-  inflationRate: number,
-  postReturnRate: number,
-): PhasedRetirementResult {
-  const g = inflationRate / 100
-  const r = postReturnRate / 100
-  
-  const yearsToClientRetirement = Math.max(0.5, clientRetirementAge - clientAge)
-  
-  // Default for single person
-  if (!spouseAge || !spouseRetirementAge || !spouseLifeExpectancy) {
-    const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
-    const retirementYears = clientLifeExpectancy - clientRetirementAge
-    const totalAnnualNeed = monthlyNeedAtRetirement * 12
-    
-    let corpusNeeded = 0
-    if (Math.abs(r - g) < 0.0001) {
-      corpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
-    } else {
-      corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
-    }
-    
-    return {
-      clientRetirementAge,
-      yearsToClientRetirement,
-      spouseRetirementAge: 0,
-      yearsToSpouseRetirement: 0,
-      gapYears: 0,
-      monthlyNeedAtClientRetirement: monthlyNeedAtRetirement,
-      spouseMonthlyIncome: 0,
-      gapMonthlyShortfall: 0,
-      gapMonthlySurplus: 0,
-      gapFundNeeded: 0,
-      fullRetirementCorpusAtSpouseRetirement: corpusNeeded,
-      fullRetirementCorpusPV: corpusNeeded,
-      totalCorpusNeeded: corpusNeeded,
-      corpusNeeded,
-      yearsToRetirement: yearsToClientRetirement,
-      retirementYears,
-    }
-  }
   
   // Couple calculation
   const yearsToSpouseRetirement = Math.max(0.5, spouseRetirementAge - spouseAge)
