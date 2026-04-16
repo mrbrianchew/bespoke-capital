@@ -321,10 +321,11 @@ function readExpenseValue(ff: Record<string, unknown>, item: ExpenseItem, expens
 function sumSelectedExpenses(ff: Record<string, unknown>, selectedKeys: Record<string, boolean>, expenseMode: 'simple' | 'detailed', who: 'client' | 'spouse'): number {
   let total = 0
   for (const group of RETIREMENT_EXPENSE_GROUPS) {
+    // Check if category is selected
+    if (selectedKeys[group.id] === false) continue
+    
     for (const item of group.items) {
-      if (selectedKeys[item.key] !== false) {
-        total += readExpenseValue(ff, item, expenseMode, who)
-      }
+      total += readExpenseValue(ff, item, expenseMode, who)
     }
   }
   return total
@@ -337,12 +338,18 @@ export const DEFAULT_RETIREMENT_DATA: RetirementData = {
   postReturnRate: 4,
   preReturnRate: 5,
   expenseSelections: {
-    mode: 'expense_based',
-    coupleIncomeMode: 'combined',
-    selectedExpenseKeys: {},
-    combinedDesiredMonthly: 0,
-    combinedDesiredHolidays: 0,
+  mode: 'expense_based',
+  coupleIncomeMode: 'combined',
+  selectedExpenseKeys: {
+    financial: true,
+    household: true,
+    personal: true,
+    children: true,
+    lifestyle: true,
   },
+  combinedDesiredMonthly: 0,
+  combinedDesiredHolidays: 0,
+},
   client: {
     retirementAge: 65, lifeExpectancy: 85,
     desiredMonthlyIncome: 0, desiredAnnualHolidays: 0,
@@ -413,73 +420,143 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
   showSpouse: boolean; clientName: string; spouseName: string
   clientTotalSelected: number; spouseTotalSelected: number
 }) {
-  function isOn(key: string) { return selectedKeys[key] !== false }
-  function toggle(key: string) { onChange({ ...selectedKeys, [key]: !isOn(key) }) }
+  const cats = selectedKeys
+  
+  function toggleCat(cat: string) {
+    // Toggle all items in this category
+    const newKeys = { ...selectedKeys }
+    const group = RETIREMENT_EXPENSE_GROUPS.find(g => g.id === cat)
+    if (group) {
+      const newValue = !cats[cat]
+      group.items.forEach(item => {
+        newKeys[item.key] = newValue
+      })
+      newKeys[cat] = newValue
+    }
+    onChange(newKeys)
+  }
+
+  // Calculate category totals
+  const getCategoryTotal = (groupId: string, who: 'client' | 'spouse') => {
+    const group = RETIREMENT_EXPENSE_GROUPS.find(g => g.id === groupId)
+    if (!group) return 0
+    return group.items.reduce((sum, item) => {
+      return sum + readExpenseValue(ff, item, expenseMode, who)
+    }, 0)
+  }
 
   return (
     <div>
       <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.6 }}>
-        Select the expenses your client wishes to maintain in retirement. Values are pulled from the Financial Profile (annual).
+        Select which expense categories to include in retirement planning.
       </p>
 
-      {RETIREMENT_EXPENSE_GROUPS.map(group => {
-        const groupItems = group.items.filter(item => {
-          const cv = readExpenseValue(ff, item, expenseMode, 'client')
-          const sv = showSpouse ? readExpenseValue(ff, item, expenseMode, 'spouse') : 0
-          return (cv + sv) > 0
-        })
-        if (groupItems.length === 0) return null
+      {/* Column headers for couple mode */}
+      {showSpouse && (
+        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 110px 110px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
+          <div />
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>
+          <div />
+        </div>
+      )}
 
-        const groupTotal = groupItems.reduce((s, item) => {
-          if (!isOn(item.key)) return s
-          return s + readExpenseValue(ff, item, expenseMode, 'client') + (showSpouse ? readExpenseValue(ff, item, expenseMode, 'spouse') : 0)
-        }, 0)
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {RETIREMENT_EXPENSE_GROUPS.map(group => {
+          const clientAmt = getCategoryTotal(group.id, 'client')
+          const spouseAmt = showSpouse ? getCategoryTotal(group.id, 'spouse') : 0
+          const catTotal = clientAmt + spouseAmt
+          const clientPct = catTotal > 0 ? Math.round(clientAmt / catTotal * 100) : 0
+          const spousePct = catTotal > 0 ? Math.round(spouseAmt / catTotal * 100) : 0
+          const isSelected = cats[group.id] !== false
 
-        return (
-          <div key={group.id} style={{ marginBottom: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <div style={{ width: 3, height: 14, background: group.color, borderRadius: 2 }} />
-              <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink)' }}>{group.label}</span>
-              <div style={{ flex: 1, height: 1, background: 'var(--line)' }} />
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: group.color }}>{fmt(groupTotal)}/yr</span>
-            </div>
-
-            {showSpouse && (
-              <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 110px 110px', gap: 8, padding: '0 8px 4px', alignItems: 'center' }}>
-                <div />
-                <div style={{ fontSize: 9, color: 'var(--ink3)', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Expense</div>
-                <div style={{ fontSize: 9, color: 'var(--ink3)', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
-                <div style={{ fontSize: 9, color: 'var(--ink3)', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>
+          return (
+            <div key={group.id}
+              style={{ 
+                display: 'grid',
+                gridTemplateColumns: showSpouse ? '24px 1fr 110px 110px 80px' : '24px 1fr 100px 80px',
+                gap: 8, 
+                padding: '9px 12px', 
+                alignItems: 'center',
+                background: isSelected ? '#F5F0E8' : 'transparent',
+                borderRadius: 4, 
+                cursor: 'pointer', 
+                transition: 'background 0.12s',
+              }}
+              onClick={() => toggleCat(group.id)}
+            >
+              {/* Checkbox */}
+              <div style={{ 
+                width: 16, 
+                height: 16, 
+                borderRadius: 3, 
+                flexShrink: 0,
+                background: isSelected ? group.color : 'transparent',
+                border: `1.5px solid ${isSelected ? group.color : '#ccc'}`,
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center' 
+              }}>
+                {isSelected && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
               </div>
-            )}
+              
+              {/* Label */}
+              <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{group.label}</span>
+              
+              {/* Client amount + % */}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(clientAmt)}</div>
+                {showSpouse && catTotal > 0 && (
+                  <div style={{ fontSize: 10, color: group.color, fontFamily: 'Inter' }}>{clientPct}%</div>
+                )}
+              </div>
+              
+              {/* Spouse amount + % */}
+              {showSpouse && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(spouseAmt)}</div>
+                  {catTotal > 0 && (
+                    <div style={{ fontSize: 10, color: '#2D5A4E', fontFamily: 'Inter' }}>{spousePct}%</div>
+                  )}
+                </div>
+              )}
+              
+              {/* Edit button - placeholder for future modal */}
+              <div style={{ textAlign: 'right' }}>
+                {/* Can add Edit modal later if needed */}
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {groupItems.map(item => {
-                const clientVal = readExpenseValue(ff, item, expenseMode, 'client')
-                const spouseVal = showSpouse ? readExpenseValue(ff, item, expenseMode, 'spouse') : 0
-                const on = isOn(item.key)
-                return (
-                  <div key={item.key} onClick={() => toggle(item.key)}
-                    style={{ display: 'grid', gridTemplateColumns: showSpouse ? '20px 1fr 110px 110px' : '20px 1fr 110px', gap: 8, padding: '8px', borderRadius: 6, cursor: 'pointer', transition: 'background 0.12s', alignItems: 'center', background: on ? '#FAF8F4' : 'transparent' }}>
-                    <div style={{ width: 16, height: 16, borderRadius: 3, flexShrink: 0, background: on ? group.color : 'transparent', border: `1.5px solid ${on ? group.color : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {on && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-                    </div>
-                    <span style={{ fontFamily: 'Inter', fontSize: 12, color: on ? 'var(--ink)' : 'var(--ink3)' }}>{item.label}</span>
-                    <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: on ? 'var(--ink)' : 'var(--ink3)' }}>
-                      {clientVal > 0 ? fmt(clientVal) : '—'}
-                    </div>
-                    {showSpouse && (
-                      <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: on ? 'var(--ink)' : 'var(--ink3)' }}>
-                        {spouseVal > 0 ? fmt(spouseVal) : '—'}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+      {/* Totals row */}
+      <div style={{ marginTop: 16, padding: '12px 16px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Selected Annual Expenses</span>
+        {showSpouse ? (
+          <div style={{ display: 'flex', gap: 24 }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected)}/yr</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(clientTotalSelected / 12)}/mo</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(spouseTotalSelected)}/yr</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(spouseTotalSelected / 12)}/mo</div>
             </div>
           </div>
-        )
-      })}
+        ) : (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected)}/yr</div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(clientTotalSelected / 12)}/mo</div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
       {/* Totals */}
       <div style={{ background: 'var(--ink)', borderRadius: 10, padding: '16px 20px' }}>
