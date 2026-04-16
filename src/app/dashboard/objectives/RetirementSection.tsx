@@ -580,7 +580,6 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
           )}
         </div>
       </div>
-    </div>
   )
 }
 
