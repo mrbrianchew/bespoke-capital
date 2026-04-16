@@ -558,29 +558,6 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
   )
 }
 
-      {/* Totals */}
-      <div style={{ background: 'var(--ink)', borderRadius: 10, padding: '16px 20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>Selected Annual Expenses</span>
-          {showSpouse ? (
-            <div style={{ display: 'flex', gap: 24 }}>
-              {[{ label: clientName, val: clientTotalSelected }, { label: spouseName, val: spouseTotalSelected }].map(({ label, val }) => (
-                <div key={label} style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Inter', marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(val)}/yr</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--gold)' }}>{fmt(val / 12)}/mo</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected)}/yr</div>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(clientTotalSelected / 12)}/mo</div>
-            </div>
-          )}
-        </div>
-      </div>
-
 // ─── EXPECTATION COMPARISON ───────────────────────────────────────────────────
 
 function ExpectationComparison({ currentAnnual, wishAnnual, personName, color }: {
