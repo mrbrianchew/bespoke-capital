@@ -414,11 +414,12 @@ function PillSelect<T extends string>({ options, value, onChange }: {
 
 // ─── EXPENSE PICKER ───────────────────────────────────────────────────────────
 
-function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected }: {
+function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
   ff: Record<string, unknown>; expenseMode: 'simple' | 'detailed'
   selectedKeys: Record<string, boolean>; onChange: (keys: Record<string, boolean>) => void
   showSpouse: boolean; clientName: string; spouseName: string
   clientTotalSelected: number; spouseTotalSelected: number
+  setEditModal: (v: { open: boolean; category: string }) => void
 }) {
   const cats = selectedKeys
   
@@ -522,9 +523,28 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
                 </div>
               )}
               
-              {/* Edit button - placeholder for future modal */}
+                            {/* Edit button */}
               <div style={{ textAlign: 'right' }}>
-                {/* Can add Edit modal later if needed */}
+                {expenseMode === 'detailed' && (
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation()
+                      setEditModal({ open: true, category: group.id })
+                    }}
+                    style={{ 
+                      fontSize: 10, 
+                      color: group.color, 
+                      background: 'none', 
+                      border: `1px solid ${group.color}`,
+                      borderRadius: 3, 
+                      padding: '2px 8px', 
+                      cursor: 'pointer', 
+                      fontFamily: 'Inter' 
+                    }}
+                  >
+                    Edit
+                  </button>
+                )}
               </div>
             </div>
           )
@@ -1009,6 +1029,94 @@ function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseNam
     </div>
   )
 }
+// ─── EDIT EXPENSE ITEMS MODAL ─────────────────────────────────────────────────
+
+function EditExpenseItemsModal({ category, ff, expenseMode, selectedKeys, onChange, onClose, isCouple, clientName, spouseName }: {
+  category: string
+  ff: Record<string, unknown>
+  expenseMode: 'simple' | 'detailed'
+  selectedKeys: Record<string, boolean>
+  onChange: (keys: Record<string, boolean>) => void
+  onClose: () => void
+  isCouple: boolean
+  clientName: string
+  spouseName: string
+}) {
+  const group = RETIREMENT_EXPENSE_GROUPS.find(g => g.id === category)
+  if (!group) return null
+
+  function toggleItem(key: string) {
+    const newKeys = { ...selectedKeys }
+    newKeys[key] = !selectedKeys[key]
+    onChange(newKeys)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 500, maxWidth: 600, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '80vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
+            {group.label} — Select Items
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}>×</button>
+        </div>
+        
+        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
+          Select which specific expenses to include in retirement planning.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {group.items.map(item => {
+            const clientVal = readExpenseValue(ff, item, expenseMode, 'client')
+            const spouseVal = isCouple ? readExpenseValue(ff, item, expenseMode, 'spouse') : 0
+            const isSelected = selectedKeys[item.key] !== false
+
+            return (
+              <div key={item.key}
+                style={{ 
+                  display: 'grid',
+                  gridTemplateColumns: isCouple ? '24px 1fr 110px 110px' : '24px 1fr 110px',
+                  gap: 8, 
+                  padding: '10px 12px', 
+                  alignItems: 'center',
+                  background: isSelected ? '#F5F0E8' : 'transparent',
+                  borderRadius: 4, 
+                  cursor: 'pointer'
+                }}
+                onClick={() => toggleItem(item.key)}
+              >
+                <div style={{ 
+                  width: 16, height: 16, borderRadius: 3,
+                  background: isSelected ? group.color : 'transparent',
+                  border: `1.5px solid ${isSelected ? group.color : '#ccc'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  {isSelected && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+                </div>
+                <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{item.label}</span>
+                <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>
+                  {clientVal > 0 ? fmt(clientVal) : '—'}
+                </div>
+                {isCouple && (
+                  <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>
+                    {spouseVal > 0 ? fmt(spouseVal) : '—'}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose}
+            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13 }}>
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 
@@ -1026,7 +1134,8 @@ export default function RetirementSection({
   function updClient(c: Partial<RetirementPersonData>) { upd({ client: { ...data.client, ...c } }) }
   function updSpouse(c: Partial<RetirementPersonData>) { upd({ spouse: { ...data.spouse, ...c } }) }
   function updExp(c: Partial<RetirementExpenseSelections>) { upd({ expenseSelections: { ...data.expenseSelections, ...c } }) }
-
+  
+  const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
   const es = data.expenseSelections
   const mode = es.mode
   const coupleMode = es.coupleIncomeMode
@@ -1138,7 +1247,7 @@ export default function RetirementSection({
           )}
 
           {/* ── EXPENSE-BASED ── */}
-          {mode === 'expense_based' && (
+                    {mode === 'expense_based' && (
             <ExpensePicker
               ff={factFinding} expenseMode={expenseMode}
               selectedKeys={es.selectedExpenseKeys}
@@ -1146,6 +1255,7 @@ export default function RetirementSection({
               showSpouse={isCouple && coupleMode === 'separate'}
               clientName={clientName} spouseName={spouseName}
               clientTotalSelected={clientExpAnnual} spouseTotalSelected={spouseExpAnnual}
+              setEditModal={setEditModal}
             />
           )}
 
@@ -1325,6 +1435,20 @@ export default function RetirementSection({
         placeholder="Document key assumptions, client preferences, or discussion points from this session…"
         style={{ width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 10, padding: '14px 16px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', resize: 'vertical', lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
       />
+         {/* EDIT MODAL */}
+      {editModal.open && (
+        <EditExpenseItemsModal
+          category={editModal.category}
+          ff={factFinding}
+          expenseMode={expenseMode}
+          selectedKeys={es.selectedExpenseKeys}
+          onChange={keys => updExp({ selectedExpenseKeys: keys })}
+          onClose={() => setEditModal({ open: false, category: '' })}
+          isCouple={isCouple}
+          clientName={clientName}
+          spouseName={spouseName}
+        />
+      )}
     </div>
   )
 }
