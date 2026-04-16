@@ -125,46 +125,64 @@ interface ExpenseGroup {
 
 const RETIREMENT_EXPENSE_GROUPS: ExpenseGroup[] = [
   {
-    id: 'housing',
-    label: 'Housing & Home',
-    color: '#A8834A',
+    id: 'financial',
+    label: 'Financial Obligations',
+    color: '#E08080',
     items: [
-      { key: 's_housing',         label: 'Housing / Rental',              simpleKey: 's_housing',       detailedKey: 'd_rental_expense' },
-      { key: 'd_conservancy',     label: 'Conservancy & S&CC',            detailedKey: 'd_conservancy' },
-      { key: 'd_utilities',       label: 'Utilities (Water, Gas, Elec)',  simpleKey: 's_utilities',     detailedKey: 'd_utilities' },
-      { key: 'd_maid',            label: 'Domestic Helper / Maid',        detailedKey: 'd_maid' },
-      { key: 'd_other_household', label: 'Other Household',               detailedKey: 'd_other_household' },
+      { key: 'd_mortgage_cpf',       label: 'Mortgage Loan (CPF OA)',       simpleKey: 's_cpf_oa',   detailedKey: 'd_mortgage_cpf' },
+      { key: 'd_mortgage_cash',      label: 'Mortgage Loan (Cash)',         simpleKey: 's_mortgage', detailedKey: 'd_mortgage_cash' },
+      { key: 'd_vehicle_repay',      label: 'Motor Vehicle Repayment',      detailedKey: 'd_vehicle_repay' },
+      { key: 'd_personal_loan_repay',label: 'Personal Loan Repayment',      detailedKey: 'd_personal_loan_repay' },
+      { key: 'd_rental_expense',     label: 'Rental Expenses',              detailedKey: 'd_rental_expense' },
+      { key: 'd_income_tax',         label: 'Income Tax',                   simpleKey: 's_financial', detailedKey: 'd_income_tax' },
+      { key: 'd_insurance',          label: 'Insurance Payments',           simpleKey: 's_financial', detailedKey: 'd_insurance' },
+      { key: 'd_regular_savings',    label: 'Regular Savings / Investments',simpleKey: 's_financial', detailedKey: 'd_regular_savings' },
+    ],
+  },
+  {
+    id: 'household',
+    label: 'Household & Living',
+    color: '#4A7C9E',
+    items: [
+      { key: 'd_conservancy',     label: 'Conservancy / MCST / Property Tax', simpleKey: 's_household', detailedKey: 'd_conservancy' },
+      { key: 'd_utilities',       label: 'Utilities & Bills',                  simpleKey: 's_household', detailedKey: 'd_utilities' },
+      { key: 'd_family_food',     label: 'Family Food & Groceries',            simpleKey: 's_household', detailedKey: 'd_family_food' },
+      { key: 'd_maid',            label: 'Maid Services (incl. Levy)',         simpleKey: 's_household', detailedKey: 'd_maid' },
+      { key: 'd_other_household', label: 'Other Household Expenses',           simpleKey: 's_household', detailedKey: 'd_other_household' },
     ],
   },
   {
     id: 'personal',
-    label: 'Personal & Daily',
+    label: 'Personal Expenses',
+    color: '#7A6AAA',
+    items: [
+      { key: 'd_personal_food', label: 'Personal Food & Dining',      simpleKey: 's_personal', detailedKey: 'd_personal_food' },
+      { key: 'd_transport',     label: 'Public Transport',            simpleKey: 's_personal', detailedKey: 'd_transport' },
+      { key: 'd_car_petrol',    label: 'Car Petrol / Parking / Tax',  simpleKey: 's_personal', detailedKey: 'd_car_petrol' },
+      { key: 'd_car_insurance', label: 'Car Insurance',               simpleKey: 's_personal', detailedKey: 'd_car_insurance' },
+    ],
+  },
+  {
+    id: 'children',
+    label: 'Children Expenses',
     color: '#2D5A4E',
     items: [
-      { key: 'd_family_food',   label: 'Groceries & Food',       simpleKey: 's_family_food',  detailedKey: 'd_family_food' },
-      { key: 'd_personal_food', label: 'Personal Meals & Dining', detailedKey: 'd_personal_food' },
-      { key: 'd_transport',     label: 'Public Transport',        simpleKey: 's_transport',    detailedKey: 'd_transport' },
-      { key: 'd_car_petrol',    label: 'Car Petrol',              detailedKey: 'd_car_petrol' },
-      { key: 'd_car_insurance', label: 'Car Insurance & Road Tax',detailedKey: 'd_car_insurance' },
+      { key: 'd_childcare',          label: 'Childcare / DayCare',        simpleKey: 's_children', detailedKey: 'd_childcare' },
+      { key: 'd_school_fees',        label: 'School & Tuition Fees',      simpleKey: 's_children', detailedKey: 'd_school_fees' },
+      { key: 'd_school_transport',   label: 'School Transport',           simpleKey: 's_children', detailedKey: 'd_school_transport' },
+      { key: 'd_allowance_children', label: 'Allowance / Pocket Money',   simpleKey: 's_children', detailedKey: 'd_allowance_children' },
+      { key: 'd_other_children',     label: 'Other Children Expenses',    simpleKey: 's_children', detailedKey: 'd_other_children' },
     ],
   },
   {
     id: 'lifestyle',
-    label: 'Lifestyle & Leisure',
-    color: '#6B5B8B',
+    label: 'Lifestyle & Miscellaneous',
+    color: '#9A7C5A',
     items: [
-      { key: 'd_holidays',          label: 'Holidays & Travel',      simpleKey: 's_lifestyle',    detailedKey: 'd_holidays' },
-      { key: 'd_hobbies',           label: 'Hobbies & Leisure',      detailedKey: 'd_hobbies' },
-      { key: 'd_allowance_parents', label: 'Allowance for Parents',  detailedKey: 'd_allowance_parents' },
-      { key: 'd_others_lifestyle',  label: 'Other Lifestyle',        simpleKey: 's_others',       detailedKey: 'd_others_lifestyle' },
-    ],
-  },
-  {
-    id: 'insurance',
-    label: 'Insurance & Healthcare',
-    color: '#C0392B',
-    items: [
-      { key: 's_insurance', label: 'Insurance Premiums', simpleKey: 's_insurance', detailedKey: 'd_insurance' },
+      { key: 'd_holidays',          label: 'Holidays / Travel',         simpleKey: 's_lifestyle', detailedKey: 'd_holidays' },
+      { key: 'd_hobbies',           label: 'Hobbies / Recreation',      simpleKey: 's_lifestyle', detailedKey: 'd_hobbies' },
+      { key: 'd_allowance_parents', label: 'Allowance to Parents',      simpleKey: 's_lifestyle', detailedKey: 'd_allowance_parents' },
+      { key: 'd_others_lifestyle',  label: 'Others (Shopping, Tithes)', simpleKey: 's_lifestyle', detailedKey: 'd_others_lifestyle' },
     ],
   },
 ]
@@ -276,10 +294,26 @@ function readExpenseValue(ff: Record<string, unknown>, item: ExpenseItem, expens
       return (ff[key] as number) || 0
     }
   }
+  // Simplified mode mapping
+  const simpleMap: Record<string, string> = {
+    's_financial': 'd_income_tax',
+    's_cpf_oa': 'd_mortgage_cpf',
+    's_mortgage': 'd_mortgage_cash',
+    's_household': 'd_conservancy',
+    's_personal': 'd_personal_food',
+    's_children': 'd_childcare',
+    's_lifestyle': 'd_holidays',
+  }
   const base = item.simpleKey
   if (base) {
     const key = who === 'spouse' ? base.replace('s_', 's2_') : base
-    return (ff[key] as number) || 0
+    const val = (ff[key] as number) || 0
+    
+    const mappedDetailedKey = simpleMap[base]
+    if (mappedDetailedKey && item.detailedKey === mappedDetailedKey) {
+      return val
+    }
+    return 0
   }
   return 0
 }
