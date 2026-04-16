@@ -314,6 +314,8 @@ export default function ObjectivesPage() {
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
   const [spouseName, setSpouseName] = useState('Spouse')
+  const [clientDOB, setClientDOB] = useState<string | undefined>()
+  const [spouseDOB, setSpouseDOB] = useState<string | undefined>()
   const [ff, setFf] = useState<FactFinding>({})
   const [p, setP] = useState<ProtectionData>({
     planType: 'individual',
@@ -456,26 +458,30 @@ setP(prev => ({
   existingCICoverSpouse: calcCIHave('spouse'),
 }))
   }
-    // Load client name
-    const { data: clientData } = await supabase
-      .from('clients')
-      .select('name')
-      .eq('id', id)
-      .single()
-    if (clientData) {
-      setClientName(clientData.name || 'Client')
-    }
+    // Load client name and DOB
+const { data: clientData } = await supabase
+  .from('clients')
+  .select('name, date_of_birth')
+  .eq('id', id)
+  .single()
+if (clientData) {
+  setClientName(clientData.name || 'Client')
+  setClientDOB(clientData.date_of_birth)
+}
     // Load family members - spouse name + children
    const { data: familyData } = await supabase
   .from('family_members')
   .select('*')
   .eq('client_id', id)
     if (familyData) {
-      const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
-      if (spouse) setSpouseName(spouse.name || 'Spouse')
-      const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
-      setChildren(kids)
-    }
+  const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
+  if (spouse) {
+    setSpouseName(spouse.name || 'Spouse')
+    setSpouseDOB(spouse.date_of_birth)
+  }
+  const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
+  setChildren(kids)
+}
  setLoading(false)
   }
 
@@ -1071,20 +1077,8 @@ useEffect(() => {
     isCouple={isCouple}
     clientName={clientName}
     spouseName={spouseName}
-clientAge={(() => {
-  const p1 = ff.person1 as any || {}
-  if (p1.date_of_birth) {
-    return getAge(p1.date_of_birth)
-  }
-  return p1.age ?? 35
-})()}
-spouseAge={(() => {
-  const p2 = ff.person2 as any || {}
-  if (p2.date_of_birth) {
-    return getAge(p2.date_of_birth)
-  }
-  return p2.age ?? 33
-})()}
+clientAge={clientDOB ? getAge(clientDOB) : 0}
+spouseAge={spouseDOB ? getAge(spouseDOB) : 0}
     clientCPF_OA={ff.a_cpf_oa as number ?? 0}
     clientCPF_SA={ff.a_cpf_sa as number ?? 0}
     clientCPF_RA={ff.a_cpf_ra as number ?? 0}
