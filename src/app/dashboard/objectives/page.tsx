@@ -396,6 +396,7 @@ export default function ObjectivesPage() {
   }
 
   async function loadData(id: string) {
+  console.log('🚀 loadData started for client ID:', id)
   setLoading(true)
   // Load BOTH financials and protection_needs data
   const { data: ffRows } = await supabase
