@@ -414,7 +414,7 @@ function PillSelect<T extends string>({ options, value, onChange }: {
 
 // ─── EXPENSE PICKER ───────────────────────────────────────────────────────────
 
-function function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
+ffunction ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
   ff: Record<string, unknown>; expenseMode: 'simple' | 'detailed'
   selectedKeys: Record<string, boolean>; onChange: (keys: Record<string, boolean>) => void
   showSpouse: boolean
