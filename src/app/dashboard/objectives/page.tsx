@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
+import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
 
 // Module-level fallback so sub-components can access defaults before hook loads
 let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
@@ -349,6 +350,8 @@ export default function ObjectivesPage() {
     advisorNotes: '',
   })
   const accSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [ret, setRet] = useState<RetirementData>(DEFAULT_RETIREMENT_DATA)
+  const retSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [loading, setLoading] = useState(true)
   const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -397,7 +400,7 @@ export default function ObjectivesPage() {
     .from('fact_finding')
     .select('*')
     .eq('client_id', id)
-  .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation'])
+  .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement'])
     
   if (ffRows && ffRows.length > 0) {
   const merged: FactFinding = { client_id: id }
@@ -419,6 +422,8 @@ export default function ObjectivesPage() {
     if (accRow?.data?.acc) {
       setAcc((prev: AccumulationData) => ({ ...prev, ...accRow.data.acc }))
     }
+    const retRow = ffRows.find((r: any) => r.section === 'retirement')
+if (retRow?.data?.ret) setRet((prev: RetirementData) => ({ ...prev, ...retRow.data.ret }))
 
     // Load protection settings from the protection_needs section row
     const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
@@ -484,6 +489,18 @@ setP(prev => ({
         .from('fact_finding')
         .upsert(
           { client_id: clientId, section: 'accumulation', data: { acc: updated }, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+    }, 800)
+  }
+  function scheduleRetSave(updated: RetirementData) {
+    if (retSaveTimer.current) clearTimeout(retSaveTimer.current)
+    retSaveTimer.current = setTimeout(async () => {
+      if (!clientId) return
+      await supabase
+        .from('fact_finding')
+        .upsert(
+          { client_id: clientId, section: 'retirement', data: { ret: updated }, updated_at: new Date().toISOString() },
           { onConflict: 'client_id,section' }
         )
     }, 800)
@@ -1047,13 +1064,34 @@ useEffect(() => {
               spouseName={spouseName}
             />
           )}
-          {activeSection > 1 && (
-            <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
-              <p style={{ color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
-                {['','','Retirement','Education Planning','Estate Planning'][activeSection]} — coming soon
-              </p>
-            </div>
-          )}
+          {activeSection === 2 && (
+  <RetirementSection
+    data={ret}
+    onChange={(updated) => { setRet(updated); scheduleRetSave(updated) }}
+    isCouple={isCouple}
+    clientName={clientName}
+    spouseName={spouseName}
+    clientAge={(() => { const p1 = ff.person1 as any || {}; if (p1.date_of_birth) { const b = new Date(p1.date_of_birth); return new Date().getFullYear() - b.getFullYear() } return p1.age ?? 35 })()}
+    spouseAge={(() => { const p2 = ff.person2 as any || {}; if (p2.date_of_birth) { const b = new Date(p2.date_of_birth); return new Date().getFullYear() - b.getFullYear() } return p2.age ?? 33 })()}
+    clientCPF_OA={ff.a_cpf_oa as number ?? 0}
+    clientCPF_SA={ff.a_cpf_sa as number ?? 0}
+    clientCPF_RA={ff.a_cpf_ra as number ?? 0}
+    spouseCPF_OA={ff.a2_cpf_oa as number ?? 0}
+    spouseCPF_SA={ff.a2_cpf_sa as number ?? 0}
+    spouseCPF_RA={ff.a2_cpf_ra as number ?? 0}
+    clientLiquid={(ff.a_savings as number ?? 0) + (ff.a_fixed_deposit as number ?? 0) + (ff.a_srs as number ?? 0) + (ff.a_shares as number ?? 0) + (ff.a_etf as number ?? 0) + (ff.a_unit_trust as number ?? 0) + (ff.a_bonds as number ?? 0) + (ff.a_alternatives as number ?? 0)}
+    spouseLiquid={(ff.a2_savings as number ?? 0) + (ff.a2_fixed_deposit as number ?? 0) + (ff.a2_srs as number ?? 0) + (ff.a2_shares as number ?? 0) + (ff.a2_etf as number ?? 0) + (ff.a2_unit_trust as number ?? 0) + (ff.a2_bonds as number ?? 0) + (ff.a2_alternatives as number ?? 0)}
+    factFinding={ff as Record<string, unknown>}
+    expenseMode={(ff.expense_mode as 'simple' | 'detailed') ?? 'simple'}
+  />
+)}
+{activeSection > 2 && (
+  <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+    <p style={{ color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
+      {['','','','Education Planning','Estate Planning'][activeSection]} — coming soon
+    </p>
+  </div>
+)}
         </div>
 
         {/* RIGHT: SIDEBAR — collapsible */}
