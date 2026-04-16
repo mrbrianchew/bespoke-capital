@@ -467,6 +467,7 @@ const { data: clientData } = await supabase
 if (clientData) {
   setClientName(clientData.name || 'Client')
   setClientDOB(clientData.date_of_birth)
+  console.log('🔵 Client data from DB:', clientData)
 }
     // Load family members - spouse name + children
    const { data: familyData } = await supabase
@@ -478,6 +479,9 @@ if (clientData) {
   if (spouse) {
     setSpouseName(spouse.name || 'Spouse')
     setSpouseDOB(spouse.date_of_birth)
+    console.log('🟢 Spouse data from DB:', spouse)
+  } else {
+    console.log('🟡 No spouse found in family_members')
   }
   const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
   setChildren(kids)
