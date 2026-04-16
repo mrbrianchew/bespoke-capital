@@ -1045,61 +1045,133 @@ function EditExpenseItemsModal({ category, ff, expenseMode, selectedKeys, onChan
   const group = RETIREMENT_EXPENSE_GROUPS.find(g => g.id === category)
   if (!group) return null
 
+  function isClientIncluded(key: string) { 
+    return selectedKeys[key + '_c'] !== false 
+  }
+  
+  function isSpouseIncluded(key: string) { 
+    return selectedKeys[key + '_s'] !== false 
+  }
+  
+  function toggleClient(key: string) { 
+    const newKeys = { ...selectedKeys }
+    newKeys[key + '_c'] = !isClientIncluded(key)
+    onChange(newKeys)
+  }
+  
+  function toggleSpouse(key: string) { 
+    const newKeys = { ...selectedKeys }
+    newKeys[key + '_s'] = !isSpouseIncluded(key)
+    onChange(newKeys)
+  }
+  
   function toggleItem(key: string) {
     const newKeys = { ...selectedKeys }
-    newKeys[key] = !selectedKeys[key]
+    newKeys[key] = !(selectedKeys[key] !== false)
     onChange(newKeys)
   }
 
+  // Calculate selected totals
+  const selectedClientTotal = group.items.filter(k => isCouple ? isClientIncluded(k.key) : selectedKeys[k.key] !== false)
+    .reduce((s, item) => s + readExpenseValue(ff, item, expenseMode, 'client'), 0)
+  const selectedSpouseTotal = group.items.filter(k => isSpouseIncluded(k.key))
+    .reduce((s, item) => s + readExpenseValue(ff, item, expenseMode, 'spouse'), 0)
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 500, maxWidth: 600, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '80vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 550, maxWidth: 650, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '82vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
-            {group.label} — Select Items
+            {group.label}
           </h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}>×</button>
         </div>
-        
         <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
-          Select which specific expenses to include in retirement planning.
+          {isCouple ? 'Tick under each person to include that expense in their retirement calculation.' : 'Select which line items to include in the retirement calculation.'}
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {/* Column headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
+          <div style={{ fontSize: 9, color: group.color, fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{clientName}</div>
+          {isCouple && <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{spouseName}</div>}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {group.items.map(item => {
             const clientVal = readExpenseValue(ff, item, expenseMode, 'client')
             const spouseVal = isCouple ? readExpenseValue(ff, item, expenseMode, 'spouse') : 0
-            const isSelected = selectedKeys[item.key] !== false
+            const total = clientVal + spouseVal
+            const clientPct = total > 0 ? Math.round(clientVal / total * 100) : 0
+            const spousePct = total > 0 ? Math.round(spouseVal / total * 100) : 0
+            const clientOn = isCouple ? isClientIncluded(item.key) : selectedKeys[item.key] !== false
+            const spouseOn = isSpouseIncluded(item.key)
+            const rowActive = isCouple ? (clientOn || spouseOn) : clientOn
 
             return (
               <div key={item.key}
                 style={{ 
-                  display: 'grid',
-                  gridTemplateColumns: isCouple ? '24px 1fr 110px 110px' : '24px 1fr 110px',
+                  display: 'grid', 
+                  gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px',
                   gap: 8, 
-                  padding: '10px 12px', 
+                  padding: '10px 10px', 
+                  borderRadius: 6,
+                  background: rowActive ? '#F5F0E8' : 'transparent', 
                   alignItems: 'center',
-                  background: isSelected ? '#F5F0E8' : 'transparent',
-                  borderRadius: 4, 
-                  cursor: 'pointer'
+                  borderBottom: '1px solid #F0EDE8' 
                 }}
-                onClick={() => toggleItem(item.key)}
               >
-                <div style={{ 
-                  width: 16, height: 16, borderRadius: 3,
-                  background: isSelected ? group.color : 'transparent',
-                  border: `1.5px solid ${isSelected ? group.color : '#ccc'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                  {isSelected && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+                {/* Item name + amounts */}
+                <div>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17', marginBottom: 2 }}>{item.label}</div>
+                  {total > 0 && (
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'DM Mono, monospace' }}>
+                      {isCouple
+                        ? `${fmt(clientVal)} (${clientPct}%) · ${fmt(spouseVal)} (${spousePct}%)`
+                        : `${fmt(clientVal)}/yr`}
+                    </div>
+                  )}
                 </div>
-                <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{item.label}</span>
-                <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>
-                  {clientVal > 0 ? fmt(clientVal) : '—'}
-                </div>
+
+                {/* Client checkbox */}
+                {isCouple ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                    onClick={() => toggleClient(item.key)}>
+                    <div style={{ 
+                      width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
+                      background: clientOn ? group.color : 'transparent',
+                      border: `2px solid ${clientOn ? group.color : '#ccc'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                    }}>
+                      {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    {clientVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: group.color }}>{fmt(clientVal)}</div>}
+                  </div>
+                ) : (
+                  <div style={{ 
+                    width: 20, height: 20, borderRadius: 4, cursor: 'pointer', margin: '0 auto',
+                    background: clientOn ? group.color : 'transparent',
+                    border: `2px solid ${clientOn ? group.color : '#ccc'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                  }}
+                    onClick={() => toggleItem(item.key)}>
+                    {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                  </div>
+                )}
+
+                {/* Spouse checkbox (couple only) */}
                 {isCouple && (
-                  <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>
-                    {spouseVal > 0 ? fmt(spouseVal) : '—'}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
+                    onClick={() => toggleSpouse(item.key)}>
+                    <div style={{ 
+                      width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
+                      background: spouseOn ? '#2D5A4E' : 'transparent',
+                      border: `2px solid ${spouseOn ? '#2D5A4E' : '#ccc'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                    }}>
+                      {spouseOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    {spouseVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#2D5A4E' }}>{fmt(spouseVal)}</div>}
                   </div>
                 )}
               </div>
@@ -1107,9 +1179,30 @@ function EditExpenseItemsModal({ category, ff, expenseMode, selectedKeys, onChan
           })}
         </div>
 
-        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+        {/* Selected totals */}
+        <div style={{ marginTop: 16, padding: '12px 14px', background: '#1C1A17', borderRadius: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
+            {isCouple ? (
+              <div style={{ display: 'flex', gap: 20 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: group.color, fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedSpouseTotal)}/yr</div>
+                </div>
+              </div>
+            ) : (
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</span>
+            )}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={onClose}
-            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13 }}>
+            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.06em' }}>
             Done
           </button>
         </div>
