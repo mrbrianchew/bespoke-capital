@@ -659,12 +659,10 @@ export default function WealthAccumulationSection({
             <p style={{ fontFamily:'Inter', fontSize:9, letterSpacing:'0.15em', textTransform:'uppercase', color:'var(--gold)', marginBottom:16 }}>
               {data.goals.length} Goal{data.goals.length!==1?'s':''} · {data.returnRate}% return · {data.inflationRate}% inflation
             </p>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:0, marginBottom:24 }}>
-              {[
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:0, marginBottom:24 }}>
+   {[
   { label:'Total Lump Sum',    value:fmtSGD(totals.lumpSum),         sub:'Invest today' },
   { label:'Monthly Savings',   value:fmtSGD(totals.monthly),         sub:'Per month required' },
-  { label:'Annual Surplus',    value:fmtSGD(annualSurplus),          sub:'Available from profile' },
-  { label:surplusGap>=0?'Surplus Remaining':'Annual Shortfall', value:fmtSGD(Math.abs(surplusGap)), sub:surplusGap>=0?'After goals funded':'Goals exceed surplus', alert:surplusGap<0 },
 ].map((kpi,i) => (
                 <div key={i} style={{ paddingRight:i<3?24:0, borderRight:i<3?'1px solid rgba(255,255,255,0.12)':'none', paddingLeft:i>0?24:0 }}>
                   <div style={{ fontFamily:'Inter', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase', color:'rgba(255,255,255,0.5)', marginBottom:8 }}>{kpi.label}</div>
