@@ -9,7 +9,7 @@ import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './Re
 // Module-level fallback so sub-components can access defaults before hook loads
 let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
 
-// ─── INTERFACES ──────────────────────────────────────────────────────────────
+// ─── INTERFACES ─────────────────────────────────────────────────────────────
 
 interface MortgageProperty {
   id: string
