@@ -414,11 +414,10 @@ function PillSelect<T extends string>({ options, value, onChange }: {
 
 // ─── EXPENSE PICKER ───────────────────────────────────────────────────────────
 
-function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, coupleMode, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
+function function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
   ff: Record<string, unknown>; expenseMode: 'simple' | 'detailed'
   selectedKeys: Record<string, boolean>; onChange: (keys: Record<string, boolean>) => void
   showSpouse: boolean
-  coupleMode?: CoupleIncomeMode
   clientName: string; spouseName: string
   clientTotalSelected: number; spouseTotalSelected: number
   setEditModal: (v: { open: boolean; category: string }) => void
@@ -560,7 +559,7 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, co
         })}
       </div>
 
-            {/* Totals row */}
+                 {/* Totals row */}
       <div style={{ marginTop: 16, padding: '12px 16px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Selected Annual Expenses</span>
         {showSpouse ? (
@@ -576,11 +575,6 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, co
               <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(spouseTotalSelected / 12)}/mo</div>
             </div>
           </div>
-        ) : coupleMode === 'combined' ? (
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected + spouseTotalSelected)}/yr</div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt((clientTotalSelected + spouseTotalSelected) / 12)}/mo</div>
-          </div>
         ) : (
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected)}/yr</div>
@@ -588,9 +582,6 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, co
           </div>
         )}
       </div>
-    </div>
-  )
-}
 
 // ─── EXPECTATION COMPARISON ───────────────────────────────────────────────────
 
@@ -1249,27 +1240,29 @@ export default function RetirementSection({
 
   // ── Resolve income needs per person ─────────────────────────────────────
 
-  const clientExpAnnual = sumSelectedExpenses(factFinding, es.selectedExpenseKeys, expenseMode, 'client')
+    const clientExpAnnual = sumSelectedExpenses(factFinding, es.selectedExpenseKeys, expenseMode, 'client')
   const spouseExpAnnual = isCouple ? sumSelectedExpenses(factFinding, es.selectedExpenseKeys, expenseMode, 'spouse') : 0
   const combinedExpAnnual = clientExpAnnual + spouseExpAnnual
 
   let clientMonthly = 0, clientHolidays = 0, spouseMonthly = 0, spouseHolidays = 0
 
   if (mode === 'expense_based') {
-    if (!isCouple || coupleMode === 'separate') {
+    if (!isCouple) {
       clientMonthly = clientExpAnnual / 12
-      spouseMonthly = spouseExpAnnual / 12
+      spouseMonthly = 0
     } else {
+      // For couples, split the combined total equally
       clientMonthly = combinedExpAnnual / 2 / 12
       spouseMonthly = combinedExpAnnual / 2 / 12
     }
   } else {
-    if (!isCouple || coupleMode === 'separate') {
+    if (!isCouple) {
       clientMonthly = data.client.desiredMonthlyIncome
       clientHolidays = data.client.desiredAnnualHolidays
-      spouseMonthly = data.spouse.desiredMonthlyIncome
-      spouseHolidays = data.spouse.desiredAnnualHolidays
+      spouseMonthly = 0
+      spouseHolidays = 0
     } else {
+      // For couples, use the combined desired amounts split equally
       clientMonthly = es.combinedDesiredMonthly / 2
       clientHolidays = es.combinedDesiredHolidays / 2
       spouseMonthly = es.combinedDesiredMonthly / 2
@@ -1338,29 +1331,13 @@ export default function RetirementSection({
 
         <div style={{ padding: '22px 24px' }}>
 
-          {/* Couple input mode selector */}
-          {isCouple && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Input as</div>
-              <PillSelect<CoupleIncomeMode>
-                options={[
-                  { value: 'combined', label: 'Combined as a Couple' },
-                  { value: 'separate', label: 'Separate per Person' },
-                ]}
-                value={coupleMode}
-                onChange={v => updExp({ coupleIncomeMode: v })}
-              />
-            </div>
-          )}
-
           {/* ── EXPENSE-BASED ── */}
-          {mode === 'expense_based' && (
+           {mode === 'expense_based' && (
             <ExpensePicker
               ff={factFinding} expenseMode={expenseMode}
               selectedKeys={es.selectedExpenseKeys}
               onChange={keys => updExp({ selectedExpenseKeys: keys })}
-              showSpouse={isCouple && coupleMode === 'separate'}
-              coupleMode={coupleMode}
+              showSpouse={isCouple}
               clientName={clientName} spouseName={spouseName}
               clientTotalSelected={clientExpAnnual} spouseTotalSelected={spouseExpAnnual}
               setEditModal={setEditModal}
