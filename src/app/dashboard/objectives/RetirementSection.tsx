@@ -452,13 +452,20 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
         Select which expense categories to include in retirement planning.
       </p>
 
-      {/* Column headers for couple mode */}
-      {showSpouse && (
+            {/* Column headers */}
+      {showSpouse ? (
         <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 110px 110px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
           <div />
           <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
           <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
           <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>
+          <div />
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 100px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
+          <div />
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
+          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Annual</div>
           <div />
         </div>
       )}
@@ -523,7 +530,7 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
                 </div>
               )}
               
-                            {/* Edit button */}
+                           {/* Edit button */}
               <div style={{ textAlign: 'right' }}>
                 {expenseMode === 'detailed' && (
                   <button 
@@ -533,9 +540,9 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
                     }}
                     style={{ 
                       fontSize: 10, 
-                      color: group.color, 
+                      color: 'var(--gold)', 
                       background: 'none', 
-                      border: `1px solid ${group.color}`,
+                      border: '1px solid var(--gold)',
                       borderRadius: 3, 
                       padding: '2px 8px', 
                       cursor: 'pointer', 
@@ -1345,7 +1352,7 @@ export default function RetirementSection({
               ff={factFinding} expenseMode={expenseMode}
               selectedKeys={es.selectedExpenseKeys}
               onChange={keys => updExp({ selectedExpenseKeys: keys })}
-              showSpouse={isCouple && coupleMode === 'separate'}
+              showSpouse={isCouple}
               clientName={clientName} spouseName={spouseName}
               clientTotalSelected={clientExpAnnual} spouseTotalSelected={spouseExpAnnual}
               setEditModal={setEditModal}
