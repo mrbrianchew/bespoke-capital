@@ -270,12 +270,13 @@ let retMonthlySavings = savedMonthlySavings
 
 let retStatus: Status = 'empty'
 let retHeadline = 'Not yet configured'
+let retGapLabel = 'Savings Gap'
 let retSubline = 'Set retirement parameters in Strategic Objectives'
 const retActions: string[] = []
 
 if (retHasData || savedCorpusNeeded > 0) {
   retStatus = retGap > 0 ? 'gap' : 'good'
-  retHeadline = `Corpus ${fmt(corpusNeeded)}`
+  retHeadline = `Savings Gap ${fmt(retGap)}`
   retSubline = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
   if (retGap > 0) {
     retStatus = retGap > 100000 ? 'gap' : 'warn'
