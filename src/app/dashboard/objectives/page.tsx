@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
+import EducationSection, { EducationData, DEFAULT_EDUCATION_DATA } from './EducationSection'
+import EstateSection, { EstateData, DEFAULT_ESTATE_DATA } from './EstateSection'
 
 // Module-level fallback so sub-components can access defaults before hook loads
 let UNI_COST_DEFAULTS = UNI_COST_FALLBACK
@@ -354,6 +356,10 @@ export default function ObjectivesPage() {
   const accSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [ret, setRet] = useState<RetirementData>(DEFAULT_RETIREMENT_DATA)
   const retSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+const [edu, setEdu] = useState<EducationData>(DEFAULT_EDUCATION_DATA)
+const eduSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+const [estate, setEstate] = useState<EstateData>(DEFAULT_ESTATE_DATA)
+const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [loading, setLoading] = useState(true)
   const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -403,7 +409,7 @@ export default function ObjectivesPage() {
     .from('fact_finding')
     .select('*')
     .eq('client_id', id)
-  .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement'])
+  .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement', 'education', 'estate'])
     
   if (ffRows && ffRows.length > 0) {
   const merged: FactFinding = { client_id: id }
@@ -427,6 +433,12 @@ export default function ObjectivesPage() {
     }
     const retRow = ffRows.find((r: any) => r.section === 'retirement')
 if (retRow?.data?.ret) setRet((prev: RetirementData) => ({ ...prev, ...retRow.data.ret }))
+
+const eduRow = ffRows.find((r: any) => r.section === 'education')
+if (eduRow?.data?.edu) setEdu((prev: EducationData) => ({ ...prev, ...eduRow.data.edu }))
+
+const estateRow = ffRows.find((r: any) => r.section === 'estate')
+if (estateRow?.data?.estate) setEstate((prev: EstateData) => ({ ...prev, ...estateRow.data.estate }))
 
     // Load protection settings from the protection_needs section row
     const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
@@ -508,6 +520,31 @@ if (clientData) {
         .from('fact_finding')
         .upsert(
           { client_id: clientId, section: 'retirement', data: { ret: updated }, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+    }, 800)
+  }
+  function scheduleEduSave(updated: EducationData) {
+    if (eduSaveTimer.current) clearTimeout(eduSaveTimer.current)
+    eduSaveTimer.current = setTimeout(async () => {
+      if (!clientId) return
+      await supabase
+        .from('fact_finding')
+        .upsert(
+          { client_id: clientId, section: 'education', data: { edu: updated }, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+    }, 800)
+  }
+
+  function scheduleEstateSave(updated: EstateData) {
+    if (estateSaveTimer.current) clearTimeout(estateSaveTimer.current)
+    estateSaveTimer.current = setTimeout(async () => {
+      if (!clientId) return
+      await supabase
+        .from('fact_finding')
+        .upsert(
+          { client_id: clientId, section: 'estate', data: { estate: updated }, updated_at: new Date().toISOString() },
           { onConflict: 'client_id,section' }
         )
     }, 800)
@@ -924,6 +961,16 @@ useEffect(() => {
 
   const WP_TABS = ['Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset']
 
+const propertyEquity = ((ff.properties ?? []) as any[]).reduce((sum: number, prop: any) => {
+    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
+    const outstanding = prop.outstanding ?? 0
+    return sum + Math.max(0, val - outstanding)
+  }, 0)
+
+  const totalLiabilities = ((ff.properties ?? []) as any[]).reduce((sum: number, prop: any) => {
+    return sum + (prop.outstanding ?? 0)
+  }, 0) + (p.nonMortgageDebts ?? []).reduce((s: number, d: any) => s + d.amount, 0)
+
   // ─── RENDER ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -1092,12 +1139,35 @@ spouseAge={spouseDOB ? getAge(spouseDOB) : 0}
     expenseMode={(ff.expense_mode as 'simple' | 'detailed') ?? 'simple'}
   />
 )}
-{activeSection > 2 && (
-  <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
-    <p style={{ color: '#aaa', fontSize: 13, fontFamily: 'Inter' }}>
-      {['','','','Education Planning','Estate Planning'][activeSection]} — coming soon
-    </p>
-  </div>
+{activeSection === 3 && (
+  <EducationSection
+    data={edu}
+    onChange={(updated) => { setEdu(updated); scheduleEduSave(updated) }}
+    isCouple={isCouple}
+    clientName={clientName}
+    spouseName={spouseName}
+    clientAge={clientDOB ? getAge(clientDOB) : 35}
+    clientLiquid={(ff.a_savings as number ?? 0) + (ff.a_fixed_deposit as number ?? 0)}
+    spouseLiquid={(ff.a2_savings as number ?? 0) + (ff.a2_fixed_deposit as number ?? 0)}
+    familyMembers={[...children]}
+    uniCostDefaults={_uniCosts}
+  />
+)}
+{activeSection === 4 && (
+  <EstateSection
+    data={estate}
+    onChange={(updated) => { setEstate(updated); scheduleEstateSave(updated) }}
+    isCouple={isCouple}
+    clientName={clientName}
+    spouseName={spouseName}
+    clientLiquid={(ff.a_savings as number ?? 0) + (ff.a_fixed_deposit as number ?? 0) + (ff.a_srs as number ?? 0) + (ff.a_shares as number ?? 0) + (ff.a_etf as number ?? 0) + (ff.a_unit_trust as number ?? 0) + (ff.a_bonds as number ?? 0) + (ff.a_alternatives as number ?? 0)}
+    spouseLiquid={(ff.a2_savings as number ?? 0) + (ff.a2_fixed_deposit as number ?? 0) + (ff.a2_srs as number ?? 0) + (ff.a2_shares as number ?? 0) + (ff.a2_etf as number ?? 0) + (ff.a2_unit_trust as number ?? 0) + (ff.a2_bonds as number ?? 0) + (ff.a2_alternatives as number ?? 0)}
+    clientCPF={(ff.a_cpf_oa as number ?? 0) + (ff.a_cpf_sa as number ?? 0) + (ff.a_cpf_ma as number ?? 0) + (ff.a_cpf_ra as number ?? 0)}
+    spouseCPF={(ff.a2_cpf_oa as number ?? 0) + (ff.a2_cpf_sa as number ?? 0) + (ff.a2_cpf_ma as number ?? 0) + (ff.a2_cpf_ra as number ?? 0)}
+    propertyEquity={propertyEquity}
+    totalLiabilities={totalLiabilities}
+    familyMembers={[...children]}
+  />
 )}
         </div>
 
