@@ -288,6 +288,11 @@ const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_
   (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
   (fin.a_bonds || 0) + (fin.a_alternatives || 0)
 
+// Simple expense total for financial overview
+const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_regular_savings || 0) +
+  (fin.s_housing || 0) + (fin.s_utilities || 0) + (fin.s_family_food || 0) +
+  (fin.s_transport || 0) + (fin.s_children || 0) + (fin.s_lifestyle || 0) + (fin.s_others || 0)
+
 // ── EDUCATION ────────────────────────────────────────────────────────────────
 
   const eduChildren   = edu.children || []
