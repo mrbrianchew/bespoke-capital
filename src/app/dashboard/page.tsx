@@ -249,156 +249,39 @@ export default function ExecutiveSummaryPage() {
     if (totalAccMonthly > 0) accActions.push(`Invest ${fmt(totalAccMonthly)}/mo across ${accGoals.length} wealth goal${accGoals.length !== 1 ? 's' : ''}`)
   }
 
-  // ── RETIREMENT ───────────────────────────────────────────────────────────────
+// ── RETIREMENT ───────────────────────────────────────────────────────────────
 
-  const retClient      = ret.client || {}
-  const retHasData     = !!ret.client
-  const retAge         = retClient.retirementAge || 65
-  const retLE          = retClient.lifeExpectancy || 85
-  const retPreReturn   = ret.preReturnRate || 5
-  const yrsToRet       = Math.max(0, retAge - clientAge)
-  const retYears       = Math.max(0, retLE - retAge)
+const retClient = ret.client || {}
+const retHasData = !!ret.client
+const retAge = retClient.retirementAge || 65
+const retLE = retClient.lifeExpectancy || 85
+const yrsToRet = Math.max(0, retAge - clientAge)
+const retYears = Math.max(0, retLE - retAge)
 
-  const retInflation  = ret.inflationRate  || 3
-  const retPostReturn = ret.postReturnRate || 4
-  const rp = retPreReturn  / 100
-  const g  = retInflation  / 100
-  const r  = retPostReturn / 100
+// ✅ Read saved values from database
+const savedCorpusNeeded = ffData['retirement']?.corpusNeeded || 0
+const savedRetirementGap = ffData['retirement']?.retirementGap || 0
+const savedMonthlySavings = ffData['retirement']?.monthlySavingsNeeded || 0
 
-  const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_srs || 0) +
-    (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
-    (fin.a_bonds || 0) + (fin.a_alternatives || 0)
+// Use saved values
+let corpusNeeded = savedCorpusNeeded
+let retGap = savedRetirementGap
+let retMonthlySavings = savedMonthlySavings
 
-  // ── Resolve combined monthly need using ret.expenseSelections ────────────────
-  // This mirrors exactly what RetirementSection.tsx does: read mode + selections,
-  // then sum only the categories the advisor chose.
-  const expSel      = ret.expenseSelections || {}
-  const retMode     = expSel.mode || 'expense_based'
-  const selKeys     = expSel.selectedExpenseKeys || {}
-  const expMode     = fin.expense_mode || 'simple'
-  const isDetailed  = expMode === 'detailed'
+let retStatus: Status = 'empty'
+let retHeadline = 'Not yet configured'
+let retSubline = 'Set retirement parameters in Strategic Objectives'
+const retActions: string[] = []
 
-  // Simple expense category keys — matches RETIREMENT_EXPENSE_GROUPS in RetirementSection
-  const SIMPLE_CAT_KEYS: Record<string, string[]> = {
-    financial: ['s_income_tax','s_insurance','s_regular_savings','s_cpf_oa','s_mortgage'],
-    household: ['s_household','s_utilities','s_family_food'],
-    personal:  ['s_personal','s_transport'],
-    children:  ['s_children'],
-    lifestyle: ['s_lifestyle','s_others'],
+if (retHasData || savedCorpusNeeded > 0) {
+  retStatus = retGap > 0 ? 'gap' : 'good'
+  retHeadline = `Corpus ${fmt(corpusNeeded)}`
+  retSubline = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
+  if (retGap > 0) {
+    retStatus = retGap > 100000 ? 'gap' : 'warn'
+    retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
   }
-  const DETAILED_CAT_KEYS: Record<string, string[]> = {
-    financial: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'],
-    household: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'],
-    personal:  ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'],
-    children:  ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'],
-    lifestyle: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'],
-  }
-
-  function sumCatExpenses(prefix: '' | '2'): number {
-    // prefix '2' means spouse (d2_xxx / s2_xxx)
-    const cats = isDetailed ? DETAILED_CAT_KEYS : SIMPLE_CAT_KEYS
-    let total = 0
-    for (const [cat, keys] of Object.entries(cats)) {
-      if (selKeys[cat] === false) continue  // advisor deselected this category
-      for (const k of keys) {
-        const fieldKey = prefix === '2' ? k.replace(/^(d|s)_/, (_, p) => `${p}2_`) : k
-        total += (fin[fieldKey] as number) || 0
-      }
-    }
-    return total
-  }
-
-  let combinedMonthlyNeed = 0
-  if (retMode === 'expense_based') {
-    const clientAnn = sumCatExpenses('')
-    const spouseAnn = isCouple ? sumCatExpenses('2') : 0
-    combinedMonthlyNeed = (clientAnn + spouseAnn) / 12
-  } else {
-    // direct mode — use stored desired monthly
-    combinedMonthlyNeed = isCouple
-      ? (expSel.combinedDesiredMonthly || 0) + (expSel.combinedDesiredHolidays || 0) / 12
-      : (retClient.desiredMonthlyIncome || 0) + (retClient.desiredAnnualHolidays || 0) / 12
-  }
-
-  // ── Phased retirement corpus — exact same logic as calcPhasedRetirement ──────
-  const spouseRetClient = ret.spouse || {}
-  const spouseRetAge    = spouseRetClient.retirementAge || 65
-  const spouseLE        = spouseRetClient.lifeExpectancy || 85
-  const yrsToSpouseRet  = isCouple ? Math.max(0.5, spouseRetAge - spouseAge) : 0
-  const gapYears        = isCouple ? Math.max(0, yrsToSpouseRet - yrsToRet) : 0
-
-  // Single person path
-  let corpusNeeded = 0
-  if (!isCouple) {
-    const annualAtRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToRet) * 12
-    if (annualAtRet > 0 && retYears > 0) {
-      corpusNeeded = Math.abs(r - g) < 0.0001
-        ? annualAtRet * retYears / (1 + r)
-        : annualAtRet * (1 - Math.pow((1 + g) / (1 + r), retYears)) / (r - g)
-    }
-  } else {
-    // Couple phased path
-    const monthlyAtClientRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToRet)
-    const p2GrossMonthly     = (fin.person2 as any)?.gross_monthly || 0
-    const spouseTakeHome     = p2GrossMonthly * 0.8
-
-    // Gap fund: shortfall during gap years
-    let gapFundNeeded = 0
-    if (gapYears > 0) {
-      const annualShortfall = Math.max(0, monthlyAtClientRet - spouseTakeHome) * 12
-      for (let yr = 0; yr < gapYears; yr++) {
-        gapFundNeeded += (annualShortfall * Math.pow(1 + g, yr)) / Math.pow(1 + r, yr)
-      }
-    }
-
-    // Full corpus at spouse retirement, discounted back
-    const finalRetYears      = Math.max(1, spouseLE - spouseRetAge)
-    const monthlyAtSpouseRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToSpouseRet)
-    const annualAtSpouseRet  = monthlyAtSpouseRet * 12
-    let fullCorpusAtSpouseRet = 0
-    if (annualAtSpouseRet > 0 && finalRetYears > 0) {
-      fullCorpusAtSpouseRet = Math.abs(r - g) < 0.0001
-        ? annualAtSpouseRet * finalRetYears / (1 + r)
-        : annualAtSpouseRet * (1 - Math.pow((1 + g) / (1 + r), finalRetYears)) / (r - g)
-    }
-    const fullCorpusPV = gapYears > 0
-      ? fullCorpusAtSpouseRet / Math.pow(1 + r, gapYears)
-      : fullCorpusAtSpouseRet
-
-    corpusNeeded = Math.max(0, gapFundNeeded + fullCorpusPV)
-  }
-
-  const existingFV = clientLiquid * Math.pow(1 + rp, yrsToRet)
-  const retGap     = Math.max(0, corpusNeeded - existingFV)
-
-  const rMo  = rp / 12
-  const preMo = yrsToRet * 12
-  let retMonthlySavings = 0
-  if (retGap > 0 && preMo > 0) {
-    retMonthlySavings = rMo === 0
-      ? retGap / preMo
-      : retGap * rMo / ((Math.pow(1 + rMo, preMo) - 1) * (1 + rMo))
-  }
-
-  // Also derive annExpClient for financial overview strip (all categories, no selection filter)
-  const annExpClient = isDetailed
-    ? Object.values(DETAILED_CAT_KEYS).flat().reduce((s, k) => s + ((fin[k] as number) || 0), 0)
-    : Object.values(SIMPLE_CAT_KEYS).flat().reduce((s, k) => s + ((fin[k] as number) || 0), 0)
-
-  let retStatus: Status = 'empty'
-  let retHeadline = 'Not yet configured'
-  let retSubline  = 'Set retirement parameters in Strategic Objectives'
-  const retActions: string[] = []
-
-  if (retHasData || corpusNeeded > 0) {
-    retStatus   = retGap > 0 ? 'gap' : 'good'
-    retHeadline = `Corpus ${fmtShort(corpusNeeded)}`
-    retSubline  = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
-    if (retGap > 0) {
-      retStatus = retGap > 100000 ? 'gap' : 'warn'
-      retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
-    }
-  }
+}
 
   // ── EDUCATION ────────────────────────────────────────────────────────────────
 
