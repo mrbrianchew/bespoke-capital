@@ -178,10 +178,7 @@ export default function ExecutiveSummaryPage() {
     if (totalProtGap > 0) {
       protStatus   = 'gap'
       protHeadline = `${fmtShort(totalProtGap)} total gap`
-      protSubline  = [
-        lifeGapClient > 0 ? `D/TPD ${fmtShort(lifeGapClient)}` : '',
-        ciGapClient   > 0 ? `CI ${fmtShort(ciGapClient)}` : '',
-      ].filter(Boolean).join(' · ') || 'Review coverage'
+      // protSubline now built in AreaCard for multi-line — store structured data
       if (lifeGapClient > 0) protActions.push(`D/TPD gap of ${fmt(lifeGapClient)} for ${client.name}`)
       if (ciGapClient   > 0) protActions.push(`CI gap of ${fmt(ciGapClient)} for ${client.name}`)
       if (lifeGapSpouse > 0 && spouse) protActions.push(`D/TPD gap of ${fmt(lifeGapSpouse)} for ${spouse.name}`)
@@ -189,9 +186,27 @@ export default function ExecutiveSummaryPage() {
     } else {
       protStatus   = 'good'
       protHeadline = 'Coverage adequate'
-      protSubline  = `D/TPD ${fmtShort(existingLifeClient)} · CI ${fmtShort(existingCIClient)}`
     }
   }
+
+  // Build multi-line protection subline
+  const protSublines: string[] = []
+  if (protHasData && totalProtGap > 0) {
+    if (lifeGapClient > 0 || ciGapClient > 0) {
+      const parts = [lifeGapClient > 0 ? `D/TPD ${fmtShort(lifeGapClient)}` : '', ciGapClient > 0 ? `CI ${fmtShort(ciGapClient)}` : ''].filter(Boolean)
+      protSublines.push(`${client.name}: ${parts.join(' · ')}`)
+    }
+    if (isCouple && (lifeGapSpouse > 0 || ciGapSpouse > 0) && spouse) {
+      const parts = [lifeGapSpouse > 0 ? `D/TPD ${fmtShort(lifeGapSpouse)}` : '', ciGapSpouse > 0 ? `CI ${fmtShort(ciGapSpouse)}` : ''].filter(Boolean)
+      protSublines.push(`${spouse.name}: ${parts.join(' · ')}`)
+    }
+  } else if (protHasData) {
+    protSublines.push(`${client.name}: D/TPD ${fmtShort(existingLifeClient)} · CI ${fmtShort(existingCIClient)}`)
+    if (isCouple && spouse) protSublines.push(`${spouse.name}: D/TPD ${fmtShort(existingLifeSpouse)} · CI ${fmtShort(existingCISpouse)}`)
+  } else {
+    protSublines.push('Complete Wealth Protection tab')
+  }
+  const protSubline = protSublines.join('\n')
 
   // ── ACCUMULATION ─────────────────────────────────────────────────────────────
 
@@ -229,7 +244,7 @@ export default function ExecutiveSummaryPage() {
   const accActions: string[] = []
 
   if (accHasData) {
-    accStatus   = totalAccMonthly > 0 ? 'warn' : 'good'
+    accStatus   = totalAccMonthly > 0 ? 'gap' : 'good'
     accHeadline = `${accGoals.length} goal${accGoals.length !== 1 ? 's' : ''} · ${fmtShort(totalAccCorpus)}`
     accSubline  = totalAccMonthly > 0 ? `${fmt(totalAccMonthly)}/mo needed` : 'Fully funded from existing assets'
     if (totalAccMonthly > 0) accActions.push(`Invest ${fmt(totalAccMonthly)}/mo across ${accGoals.length} wealth goal${accGoals.length !== 1 ? 's' : ''}`)
@@ -245,77 +260,117 @@ export default function ExecutiveSummaryPage() {
   const yrsToRet       = Math.max(0, retAge - clientAge)
   const retYears       = Math.max(0, retLE - retAge)
 
-  // ── Read from stored RetirementSection data (phasedResult) ──────────────────
-  // RetirementSection saves the full ret object; we reconstruct the key outputs
-  // by re-running only the final corpus + gap — using the SAME formula as RetirementSection
   const retInflation  = ret.inflationRate  || 3
   const retPostReturn = ret.postReturnRate || 4
   const rp = retPreReturn  / 100
   const g  = retInflation  / 100
   const r  = retPostReturn / 100
 
-  // Expense total — read from financials exactly as Strategic Objectives does
-  const expMode      = fin.expense_mode || 'simple'
-  const annExpClient = expMode === 'detailed'
-    ? ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household',
-       'd_personal_food','d_transport','d_car_petrol','d_car_insurance',
-       'd_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle',
-       'd_income_tax','d_insurance','d_regular_savings','d_mortgage_cash',
-       'd_mortgage_cpf','d_vehicle_repay','d_personal_loan_repay',
-       'd_rental_expense','d_childcare','d_school_fees','d_school_transport',
-       'd_allowance_children','d_other_children','d_other_household']
-        .reduce((s, k) => s + ((fin[k] as number) || 0), 0)
-    : ['s_financial','s_cpf_oa','s_mortgage','s_household','s_personal',
-       's_children','s_lifestyle','s_others']
-        .reduce((s, k) => s + ((fin[k] as number) || 0), 0)
-
   const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_srs || 0) +
     (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
     (fin.a_bonds || 0) + (fin.a_alternatives || 0)
 
-  // Phased retirement corpus — same formula as calcPhasedRetirement in RetirementSection
-  // For couple: use combined monthly need, inflated to client retirement date
-  const spouseClient    = ret.spouse || {}
-  const spouseRetAge    = spouseClient.retirementAge || 65
-  const spouseLE        = spouseClient.lifeExpectancy || 85
-  const yrsToSpouseRet  = isCouple ? Math.max(0, spouseRetAge - spouseAge) : 0
-  const gapYears        = isCouple ? Math.max(0, yrsToSpouseRet - yrsToRet) : 0
-  const combinedMonthly = annExpClient / 12 + (isCouple ? ((fin['s2_financial']||0)+(fin['s2_household']||0)+(fin['s2_personal']||0)+(fin['s2_lifestyle']||0)+(fin['s2_others']||0)+(fin['s2_children']||0)) / 12 : 0)
+  // ── Resolve combined monthly need using ret.expenseSelections ────────────────
+  // This mirrors exactly what RetirementSection.tsx does: read mode + selections,
+  // then sum only the categories the advisor chose.
+  const expSel      = ret.expenseSelections || {}
+  const retMode     = expSel.mode || 'expense_based'
+  const selKeys     = expSel.selectedExpenseKeys || {}
+  const expMode     = fin.expense_mode || 'simple'
+  const isDetailed  = expMode === 'detailed'
 
-  // FV of combined monthly need at client retirement
-  const monthlyAtClientRet = combinedMonthly * Math.pow(1 + g, yrsToRet)
-
-  // Corpus for full retirement period (inflated to spouse retirement date, discounted back)
-  const finalRetYears   = isCouple ? Math.max(1, spouseLE - spouseRetAge) : retYears
-  const monthlyAtSpouseRet = combinedMonthly * Math.pow(1 + g, isCouple ? yrsToSpouseRet : yrsToRet)
-  const annualAtSpouseRet  = monthlyAtSpouseRet * 12
-
-  let fullCorpusAtSpouseRet = 0
-  if (annualAtSpouseRet > 0 && finalRetYears > 0) {
-    fullCorpusAtSpouseRet = Math.abs(r - g) < 0.0001
-      ? annualAtSpouseRet * finalRetYears / (1 + r)
-      : annualAtSpouseRet * (1 - Math.pow((1 + g) / (1 + r), finalRetYears)) / (r - g)
+  // Simple expense category keys — matches RETIREMENT_EXPENSE_GROUPS in RetirementSection
+  const SIMPLE_CAT_KEYS: Record<string, string[]> = {
+    financial: ['s_income_tax','s_insurance','s_regular_savings','s_cpf_oa','s_mortgage'],
+    household: ['s_household','s_utilities','s_family_food'],
+    personal:  ['s_personal','s_transport'],
+    children:  ['s_children'],
+    lifestyle: ['s_lifestyle','s_others'],
   }
-  // Discount back to client retirement date
-  const fullCorpusPV = isCouple && gapYears > 0
-    ? fullCorpusAtSpouseRet / Math.pow(1 + r, gapYears)
-    : fullCorpusAtSpouseRet
+  const DETAILED_CAT_KEYS: Record<string, string[]> = {
+    financial: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'],
+    household: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'],
+    personal:  ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'],
+    children:  ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'],
+    lifestyle: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'],
+  }
 
-  // Gap fund needed during phased period
-  let gapFundNeeded = 0
-  if (isCouple && gapYears > 0) {
-    const p2GrossMonthly = (fin.person2 as any)?.gross_monthly || 0
-    const spouseTakeHome = p2GrossMonthly * 0.8
-    const monthlyShortfall = Math.max(0, monthlyAtClientRet - spouseTakeHome)
-    const annualShortfall = monthlyShortfall * 12
-    for (let yr = 0; yr < gapYears; yr++) {
-      gapFundNeeded += (annualShortfall * Math.pow(1 + g, yr)) / Math.pow(1 + r, yr)
+  function sumCatExpenses(prefix: '' | '2'): number {
+    // prefix '2' means spouse (d2_xxx / s2_xxx)
+    const cats = isDetailed ? DETAILED_CAT_KEYS : SIMPLE_CAT_KEYS
+    let total = 0
+    for (const [cat, keys] of Object.entries(cats)) {
+      if (selKeys[cat] === false) continue  // advisor deselected this category
+      for (const k of keys) {
+        const fieldKey = prefix === '2' ? k.replace(/^(d|s)_/, (_, p) => `${p}2_`) : k
+        total += (fin[fieldKey] as number) || 0
+      }
     }
+    return total
   }
 
-  const corpusNeeded   = Math.max(0, gapFundNeeded + fullCorpusPV)
-  const existingFV     = clientLiquid * Math.pow(1 + rp, yrsToRet)
-  const retGap         = Math.max(0, corpusNeeded - existingFV)
+  let combinedMonthlyNeed = 0
+  if (retMode === 'expense_based') {
+    const clientAnn = sumCatExpenses('')
+    const spouseAnn = isCouple ? sumCatExpenses('2') : 0
+    combinedMonthlyNeed = (clientAnn + spouseAnn) / 12
+  } else {
+    // direct mode — use stored desired monthly
+    combinedMonthlyNeed = isCouple
+      ? (expSel.combinedDesiredMonthly || 0) + (expSel.combinedDesiredHolidays || 0) / 12
+      : (retClient.desiredMonthlyIncome || 0) + (retClient.desiredAnnualHolidays || 0) / 12
+  }
+
+  // ── Phased retirement corpus — exact same logic as calcPhasedRetirement ──────
+  const spouseRetClient = ret.spouse || {}
+  const spouseRetAge    = spouseRetClient.retirementAge || 65
+  const spouseLE        = spouseRetClient.lifeExpectancy || 85
+  const yrsToSpouseRet  = isCouple ? Math.max(0.5, spouseRetAge - spouseAge) : 0
+  const gapYears        = isCouple ? Math.max(0, yrsToSpouseRet - yrsToRet) : 0
+
+  // Single person path
+  let corpusNeeded = 0
+  if (!isCouple) {
+    const annualAtRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToRet) * 12
+    if (annualAtRet > 0 && retYears > 0) {
+      corpusNeeded = Math.abs(r - g) < 0.0001
+        ? annualAtRet * retYears / (1 + r)
+        : annualAtRet * (1 - Math.pow((1 + g) / (1 + r), retYears)) / (r - g)
+    }
+  } else {
+    // Couple phased path
+    const monthlyAtClientRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToRet)
+    const p2GrossMonthly     = (fin.person2 as any)?.gross_monthly || 0
+    const spouseTakeHome     = p2GrossMonthly * 0.8
+
+    // Gap fund: shortfall during gap years
+    let gapFundNeeded = 0
+    if (gapYears > 0) {
+      const annualShortfall = Math.max(0, monthlyAtClientRet - spouseTakeHome) * 12
+      for (let yr = 0; yr < gapYears; yr++) {
+        gapFundNeeded += (annualShortfall * Math.pow(1 + g, yr)) / Math.pow(1 + r, yr)
+      }
+    }
+
+    // Full corpus at spouse retirement, discounted back
+    const finalRetYears      = Math.max(1, spouseLE - spouseRetAge)
+    const monthlyAtSpouseRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToSpouseRet)
+    const annualAtSpouseRet  = monthlyAtSpouseRet * 12
+    let fullCorpusAtSpouseRet = 0
+    if (annualAtSpouseRet > 0 && finalRetYears > 0) {
+      fullCorpusAtSpouseRet = Math.abs(r - g) < 0.0001
+        ? annualAtSpouseRet * finalRetYears / (1 + r)
+        : annualAtSpouseRet * (1 - Math.pow((1 + g) / (1 + r), finalRetYears)) / (r - g)
+    }
+    const fullCorpusPV = gapYears > 0
+      ? fullCorpusAtSpouseRet / Math.pow(1 + r, gapYears)
+      : fullCorpusAtSpouseRet
+
+    corpusNeeded = Math.max(0, gapFundNeeded + fullCorpusPV)
+  }
+
+  const existingFV = clientLiquid * Math.pow(1 + rp, yrsToRet)
+  const retGap     = Math.max(0, corpusNeeded - existingFV)
 
   const rMo  = rp / 12
   const preMo = yrsToRet * 12
@@ -325,6 +380,11 @@ export default function ExecutiveSummaryPage() {
       ? retGap / preMo
       : retGap * rMo / ((Math.pow(1 + rMo, preMo) - 1) * (1 + rMo))
   }
+
+  // Also derive annExpClient for financial overview strip (all categories, no selection filter)
+  const annExpClient = isDetailed
+    ? Object.values(DETAILED_CAT_KEYS).flat().reduce((s, k) => s + ((fin[k] as number) || 0), 0)
+    : Object.values(SIMPLE_CAT_KEYS).flat().reduce((s, k) => s + ((fin[k] as number) || 0), 0)
 
   let retStatus: Status = 'empty'
   let retHeadline = 'Not yet configured'
@@ -410,7 +470,9 @@ export default function ExecutiveSummaryPage() {
   const estSpouse      = estate.spouse  || {}
   const estHasData     = Object.keys(estClient).length > 0
 
-  // Calculate net estate — same amortised logic as EstateSection.tsx
+  // Calculate net estate — prefer values computed by EstateSection (stored in estate row)
+  // since it has access to the correct amortised outstanding values.
+  // Fall back to financials-based calculation only when estate tab hasn't been visited.
   function amortisedOutstanding(prop: any): number {
     if (prop.outstanding > 0) return prop.outstanding
     const initialLoan = prop.initialLoanAmount ?? 0
@@ -428,20 +490,20 @@ export default function ExecutiveSummaryPage() {
     const n = tenure * 12
     if (months >= n) return 0
     if (!annualRate) return Math.round(initialLoan * (1 - months / n))
-    const r = annualRate / 100 / 12
-    const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+    const rv = annualRate / 100 / 12
+    const pmt = initialLoan * rv * Math.pow(1 + rv, n) / (Math.pow(1 + rv, n) - 1)
     return Math.max(0, Math.round(
-      initialLoan * Math.pow(1 + r, months) -
-      pmt * (Math.pow(1 + r, months) - 1) / r
+      initialLoan * Math.pow(1 + rv, months) -
+      pmt * (Math.pow(1 + rv, months) - 1) / rv
     ))
   }
   const allProps   = (fin.properties || []) as any[]
   const propEquity = allProps.reduce((s: number, p: any) =>
     s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
+  const totalLiab  = allProps.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
   const totalAssets = clientLiquid +
     (fin.a_cpf_oa || 0) + (fin.a_cpf_sa || 0) + (fin.a_cpf_ma || 0) + (fin.a_cpf_ra || 0) +
     propEquity
-  const totalLiab  = allProps.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
   const netEstate  = Math.max(0, totalAssets - totalLiab)
 
   // Readiness score: will, lpa, cpf nomination, trust
@@ -773,7 +835,11 @@ function AreaCard({ area }: { area: PlanningArea }) {
       </div>
       <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 4 }}>{area.label}</div>
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 600, color: '#1C1A17', marginBottom: 3, lineHeight: 1.2 }}>{area.headline}</div>
-      <div style={{ fontFamily: 'Inter', fontSize: 11, color: '#666', lineHeight: 1.4 }}>{area.subline}</div>
+      <div style={{ fontFamily: 'Inter', fontSize: 11, color: '#666', lineHeight: 1.6 }}>
+        {area.subline.split('\n').map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+      </div>
       {area.actions.length > 0 && (
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${cfg.border}` }}>
           <span style={{ fontFamily: 'Inter', fontSize: 10, color: cfg.dot, fontWeight: 500 }}>
