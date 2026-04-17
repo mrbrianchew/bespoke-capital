@@ -268,34 +268,6 @@ function ChildCard({
           )}
         </div>
 
-        {/* Couple split */}
-        {isCouple && (
-          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '14px 16px' }}>
-            <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12 }}>Funding Responsibility Split</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              {[
-                { label: clientName, key: 'coverPctClient' as const, val: child.coverPctClient, color: 'var(--gold)' },
-                { label: spouseName, key: 'coverPctSpouse' as const, val: child.coverPctSpouse, color: '#6B5B8B' },
-              ].map(item => (
-                <div key={item.key}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{item.label}</span>
-                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: item.color, fontWeight: 600 }}>{item.val}%</span>
-                  </div>
-                  <input type="range" min={0} max={100} step={5} value={item.val}
-                    onChange={e => {
-                      const v = parseInt(e.target.value)
-                      const other = 100 - v
-                      if (item.key === 'coverPctClient') onUpdate({ coverPctClient: v, coverPctSpouse: other })
-                      else onUpdate({ coverPctSpouse: v, coverPctClient: other })
-                    }}
-                    style={{ width: '100%', accentColor: item.color }} />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Funding mix */}
         {gap > 0 && (
           <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '14px 16px' }}>
@@ -473,43 +445,55 @@ export default function EducationSection({
 
           {/* ── SUMMARY ── */}
           <SubLabel color="var(--ink)">Education Capital Summary</SubLabel>
-          <div style={{ background: 'var(--ink)', borderRadius: 16, padding: '28px 32px', color: 'white', marginBottom: 24 }}>
-            <p style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 20 }}>
+          <div style={{ background: 'var(--ink)', borderRadius: 16, padding: '32px 36px', color: 'white', marginBottom: 24 }}>
+            <p style={{ fontFamily: 'Inter', fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 28 }}>
               {kids.length} {kids.length === 1 ? 'Child' : 'Children'} · {data.returnRate}% return · {data.tuitionInflation}% tuition inflation
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0, marginBottom: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0, marginBottom: 32 }}>
               {[
-                { label: 'Total Fund Required',  value: fmtSGD(totalFundAll),    sub: 'FV across all children' },
-                { label: 'Total Funding Gap',    value: fmtSGD(totalGapAll),     sub: 'After existing savings', hi: totalGapAll > 0 },
-                { label: 'Total Monthly Needed', value: `${fmtSGD(totalMonthly)}/mo`, sub: 'Combined monthly savings' },
+                { label: 'Total Fund Required',  value: fmtSGD(totalFundAll),         sub: 'FV across all children' },
+                { label: 'Total Funding Gap',    value: fmtSGD(totalGapAll),          sub: 'After existing savings', hi: totalGapAll > 0 },
+                { label: 'Monthly Savings Needed', value: `${fmtSGD(totalMonthly)}/mo`, sub: 'Combined monthly investment' },
               ].map((kpi, i) => (
-                <div key={i} style={{ paddingRight: i < 2 ? 24 : 0, borderRight: i < 2 ? '1px solid rgba(255,255,255,0.12)' : 'none', paddingLeft: i > 0 ? 24 : 0 }}>
-                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>{kpi.label}</div>
-                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: kpi.hi ? '#f0a0a0' : i === 0 ? 'var(--gold)' : 'white', marginBottom: 4 }}>{kpi.value}</div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>{kpi.sub}</div>
+                <div key={i} style={{ paddingRight: i < 2 ? 32 : 0, borderRight: i < 2 ? '1px solid rgba(255,255,255,0.12)' : 'none', paddingLeft: i > 0 ? 32 : 0 }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>{kpi.label}</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 34, fontWeight: 600, color: kpi.hi ? '#f0a0a0' : i === 0 ? 'var(--gold)' : 'white', marginBottom: 6, lineHeight: 1 }}>{kpi.value}</div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>{kpi.sub}</div>
                 </div>
               ))}
             </div>
 
             {/* Per-child breakdown */}
-            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 20 }}>
-              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>Per Child Breakdown</div>
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 24 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 16 }}>Per Child Breakdown</div>
               {childList.map(child => {
                 const fund = calcChildFund(child, data.tuitionInflation, data.livingInflation)
                 const gap  = calcFundingGap(fund, child.existingSavings, data.returnRate, Math.max(0, child.uniEntryAge - child.age))
                 const mo   = calcMonthlySavings(gap * (1 - child.lumpSumPct / 100), data.returnRate, Math.max(0, child.uniEntryAge - child.age))
                 const ls   = calcLumpSum(gap, child.lumpSumPct, data.returnRate, Math.max(0, child.uniEntryAge - child.age))
                 return (
-                  <div key={child.childId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span style={{ fontSize: 14 }}>👤</span>
-                      <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>{child.name}</span>
-                      <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>· Age {child.age} · {child.uniEntryAge - child.age}y · {fmtSGD(fund)}</span>
+                  <div key={child.childId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, padding: '12px 16px', background: 'rgba(255,255,255,0.05)', borderRadius: 8 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <span style={{ fontSize: 16 }}>👤</span>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 14, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>{child.name}</div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>Age {child.age} · {Math.max(0, child.uniEntryAge - child.age)}y to uni · {fmtSGD(fund)} total</div>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                      {child.lumpSumPct > 0  && ls > 0  && <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--gold)' }}>{fmtSGD(ls)} lump</span>}
-                      {child.lumpSumPct < 100 && mo > 0  && <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{fmtSGD(mo)}/mo</span>}
-                      {gap <= 0 && <span style={{ fontFamily: 'Inter', fontSize: 12, color: '#6fcf97' }}>✓ Funded</span>}
+                    <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+                      {child.lumpSumPct > 0  && ls > 0  && (
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Lump Sum</div>
+                          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'var(--gold)', fontWeight: 600 }}>{fmtSGD(ls)}</div>
+                        </div>
+                      )}
+                      {child.lumpSumPct < 100 && mo > 0  && (
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>Monthly</div>
+                          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'white', fontWeight: 600 }}>{fmtSGD(mo)}/mo</div>
+                        </div>
+                      )}
+                      {gap <= 0 && <span style={{ fontFamily: 'Inter', fontSize: 13, color: '#6fcf97', fontWeight: 600 }}>✓ Fully Funded</span>}
                     </div>
                   </div>
                 )
@@ -518,74 +502,6 @@ export default function EducationSection({
           </div>
         </>
       )}
-
-      {/* ── CPF / SRS PLANNING ── */}
-      <SubLabel color="var(--emerald)">CPF &amp; SRS Considerations</SubLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 8 }}>
-
-        {/* CPF Education Scheme */}
-        <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 16px', background: 'var(--cream)', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 3, height: 16, background: 'var(--emerald)', borderRadius: 2 }} />
-            <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink)' }}>CPF Education Scheme</span>
-          </div>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink)', lineHeight: 1.7, margin: 0 }}>
-              CPF OA savings can fund tuition fees at approved local institutions — NUS, NTU, SMU, SUTD, SIT, SUSS and select polytechnics — via an interest-free loan repayable within 1 year of graduation.
-            </p>
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[
-                { label: 'Loan basis',     note: 'Up to full tuition; interest-free' },
-                { label: 'Repayment',      note: 'Within 1 year of graduation' },
-                { label: 'Scope',          note: 'Local approved institutions only' },
-                { label: 'CPF impact',     note: 'Draws from OA — affects home purchase & retirement' },
-              ].map((row, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontFamily: 'Inter' }}>
-                  <span style={{ color: 'var(--ink3)', minWidth: 90 }}>{row.label}</span>
-                  <span style={{ color: 'var(--ink)', textAlign: 'right' }}>{row.note}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 12, padding: '9px 12px', background: '#EFF7F3', borderRadius: 6, borderLeft: '3px solid var(--emerald)' }}>
-              <p style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--emerald)', margin: 0, lineHeight: 1.5 }}>
-                Useful for local SG/PR students. Discuss whether OA usage conflicts with home purchase or retirement plans before recommending.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* SRS for Education */}
-        <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 16px', background: 'var(--cream)', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 3, height: 16, background: 'var(--gold)', borderRadius: 2 }} />
-            <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink)' }}>SRS as Education Vehicle</span>
-          </div>
-          <div style={{ padding: '16px' }}>
-            <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink)', lineHeight: 1.7, margin: 0 }}>
-              SRS contributions (up to SGD 15,300/yr for citizens/PRs; SGD 35,700 for foreigners) reduce taxable income. Invested SRS funds can grow tax-deferred, making it a tax-efficient savings vehicle for high-income earners funding education over a long horizon.
-            </p>
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[
-                { label: 'Annual cap',     note: 'SGD 15,300 (SC/PR); 35,700 (foreigner)' },
-                { label: 'Tax benefit',    note: 'Contribution deducted from chargeable income' },
-                { label: 'Withdrawal',     note: '50% taxable if before retirement age (63)' },
-                { label: 'Best for',       note: 'Long runway (8+ yrs) & marginal tax rate ≥ 7%' },
-              ].map((row, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontFamily: 'Inter' }}>
-                  <span style={{ color: 'var(--ink3)', minWidth: 90 }}>{row.label}</span>
-                  <span style={{ color: 'var(--ink)', textAlign: 'right' }}>{row.note}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 12, padding: '9px 12px', background: '#FDF8F0', borderRadius: 6, borderLeft: '3px solid var(--gold)' }}>
-              <p style={{ fontFamily: 'Inter', fontSize: 11, color: '#A0732A', margin: 0, lineHeight: 1.5 }}>
-                Most suitable when child is young (8+ years to university) and client is in the 11.5%+ tax bracket. Early withdrawal penalty makes this unsuitable for near-term education goals.
-              </p>
-            </div>
-          </div>
-        </div>
-
-      </div>
 
       {/* ── ADVISOR NOTES ── */}
       <SubLabel>Advisor Notes</SubLabel>
