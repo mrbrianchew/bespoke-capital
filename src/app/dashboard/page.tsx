@@ -142,7 +142,7 @@ export default function ExecutiveSummaryPage() {
   const spouseAge = spouse?.dob ? getAge(spouse.dob) : (spouse?.age || 0)
   const isCouple  = !!spouse
 
-  const prot  = ffData['protection_needs'] || {}
+  const prot = ffData['protection_needs']?.protection || ffData['protection_needs'] || {}
   const portf = ffData['protection_portfolio'] || {}
   const acc   = ffData['accumulation']?.acc || {}
   const ret   = ffData['retirement']?.ret || {}
@@ -167,7 +167,7 @@ export default function ExecutiveSummaryPage() {
   const lifeGapSpouse  = Math.max(0, dtpdNeedSpouse - existingLifeSpouse)
   const ciGapSpouse    = Math.max(0, ciNeedSpouse   - existingCISpouse)
   const totalProtGap   = lifeGapClient + ciGapClient + lifeGapSpouse + ciGapSpouse
-  const protHasData    = dtpdNeedClient > 0 || ciNeedClient > 0
+  const protHasData = (dtpdNeedClient > 0) || (ciNeedClient > 0) || (prot.p1_dtpd_need > 0) || (prot.p1_ci_need > 0)
 
   let protStatus: Status = 'empty'
   let protHeadline = 'Not yet assessed'
