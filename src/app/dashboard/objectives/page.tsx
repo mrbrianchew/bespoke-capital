@@ -513,17 +513,129 @@ if (clientData) {
     }, 800)
   }
   function scheduleRetSave(updated: RetirementData) {
-    if (retSaveTimer.current) clearTimeout(retSaveTimer.current)
-    retSaveTimer.current = setTimeout(async () => {
-      if (!clientId) return
-      await supabase
-        .from('fact_finding')
-        .upsert(
-          { client_id: clientId, section: 'retirement', data: { ret: updated }, updated_at: new Date().toISOString() },
-          { onConflict: 'client_id,section' }
-        )
-    }, 800)
-  }
+  if (retSaveTimer.current) clearTimeout(retSaveTimer.current)
+  retSaveTimer.current = setTimeout(async () => {
+    if (!clientId) return
+    
+    // Get client and spouse ages for calculation
+    const clientAge = clientDOB ? getAge(clientDOB) : 35
+    const spouseAge = spouseDOB ? getAge(spouseDOB) : 33
+    
+    // Calculate combined monthly need (same as RetirementSection does)
+    const isCouple = spouseDOB ? true : false
+    const expenseMode = ff.expense_mode || 'simple'
+    
+    // Simple expense sum function
+    const sumExpenses = (prefix: string) => {
+      const keys = expenseMode === 'simple' 
+        ? ['s_income_tax','s_insurance','s_regular_savings','s_housing','s_utilities','s_family_food','s_transport','s_children','s_lifestyle','s_others']
+        : ['d_income_tax','d_insurance','d_regular_savings','d_conservancy','d_utilities','d_family_food','d_maid','d_other_household','d_personal_food','d_transport','d_car_petrol','d_car_insurance','d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children','d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle']
+      
+      return keys.reduce((sum, k) => {
+        const key = prefix === 'spouse' ? k.replace(/^(d|s)_/, (_, p) => `${p}2_`) : k
+        return sum + ((ff as any)[key] || 0)
+      }, 0)
+    }
+    
+    const clientExpAnnual = sumExpenses('client')
+    const spouseExpAnnual = isCouple ? sumExpenses('spouse') : 0
+    const combinedMonthlyNeed = (clientExpAnnual + spouseExpAnnual) / 12
+    
+    // Get spouse income
+    const spouseGrossMonthly = (ff as any)?.person2?.gross_monthly || 0
+    const spouseTakeHome = spouseGrossMonthly * 0.8
+    
+    // Calculate corpus needed
+    const g = (updated.inflationRate || 3) / 100
+    const r = (updated.postReturnRate || 4) / 100
+    const rp = (updated.preReturnRate || 5) / 100
+    
+    const clientRetAge = updated.client?.retirementAge || 65
+    const spouseRetAge = updated.spouse?.retirementAge || 65
+    const clientLE = updated.client?.lifeExpectancy || 85
+    const spouseLE = updated.spouse?.lifeExpectancy || 85
+    
+    const yrsToClientRet = Math.max(0.5, clientRetAge - clientAge)
+    const yrsToSpouseRet = isCouple ? Math.max(0.5, spouseRetAge - spouseAge) : 0
+    const gapYears = isCouple ? Math.max(0, yrsToSpouseRet - yrsToClientRet) : 0
+    
+    let corpusNeeded = 0
+    
+    if (!isCouple) {
+      const monthlyAtRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToClientRet)
+      const annualAtRet = monthlyAtRet * 12
+      const retYears = clientLE - clientRetAge
+      if (annualAtRet > 0 && retYears > 0) {
+        corpusNeeded = Math.abs(r - g) < 0.0001
+          ? annualAtRet * retYears / (1 + r)
+          : annualAtRet * (1 - Math.pow((1 + g) / (1 + r), retYears)) / (r - g)
+      }
+    } else {
+      const monthlyAtClientRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToClientRet)
+      
+      let gapFundNeeded = 0
+      if (gapYears > 0) {
+        const annualShortfall = Math.max(0, monthlyAtClientRet - spouseTakeHome) * 12
+        for (let yr = 0; yr < gapYears; yr++) {
+          gapFundNeeded += (annualShortfall * Math.pow(1 + g, yr)) / Math.pow(1 + r, yr)
+        }
+      }
+      
+      const finalRetYears = spouseLE - spouseRetAge
+      const monthlyAtSpouseRet = combinedMonthlyNeed * Math.pow(1 + g, yrsToSpouseRet)
+      const annualAtSpouseRet = monthlyAtSpouseRet * 12
+      let fullCorpusAtSpouseRet = 0
+      if (annualAtSpouseRet > 0 && finalRetYears > 0) {
+        fullCorpusAtSpouseRet = Math.abs(r - g) < 0.0001
+          ? annualAtSpouseRet * finalRetYears / (1 + r)
+          : annualAtSpouseRet * (1 - Math.pow((1 + g) / (1 + r), finalRetYears)) / (r - g)
+      }
+      
+      const fullCorpusPV = gapYears > 0
+        ? fullCorpusAtSpouseRet / Math.pow(1 + r, gapYears)
+        : fullCorpusAtSpouseRet
+      
+      corpusNeeded = Math.max(0, gapFundNeeded + fullCorpusPV)
+    }
+    
+    // Calculate liquid assets
+    const clientLiquid = (ff.a_savings || 0) + (ff.a_fixed_deposit || 0) + (ff.a_srs || 0) +
+      (ff.a_shares || 0) + (ff.a_etf || 0) + (ff.a_unit_trust || 0) +
+      (ff.a_bonds || 0) + (ff.a_alternatives || 0)
+    
+    const existingFV = clientLiquid * Math.pow(1 + rp, yrsToClientRet)
+    const retirementGap = Math.max(0, corpusNeeded - existingFV)
+    
+    // Calculate monthly savings needed
+    const rMo = rp / 12
+    const preMo = yrsToClientRet * 12
+    let monthlySavingsNeeded = 0
+    if (retirementGap > 0 && preMo > 0) {
+      monthlySavingsNeeded = rMo === 0
+        ? retirementGap / preMo
+        : retirementGap * rMo / ((Math.pow(1 + rMo, preMo) - 1) * (1 + rMo))
+    }
+    
+    // ✅ SAVE WITH COMPUTED VALUES
+    await supabase
+      .from('fact_finding')
+      .upsert(
+        { 
+          client_id: clientId, 
+          section: 'retirement', 
+          data: { 
+            ret: updated,
+            // ✅ ADD THESE COMPUTED VALUES
+            corpusNeeded: corpusNeeded,
+            retirementGap: retirementGap,
+            monthlySavingsNeeded: monthlySavingsNeeded
+          }, 
+          updated_at: new Date().toISOString() 
+        },
+        { onConflict: 'client_id,section' }
+      )
+  }, 800)
+}
   function scheduleEduSave(updated: EducationData) {
     if (eduSaveTimer.current) clearTimeout(eduSaveTimer.current)
     eduSaveTimer.current = setTimeout(async () => {
