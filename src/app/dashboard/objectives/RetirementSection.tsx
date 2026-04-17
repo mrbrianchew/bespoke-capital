@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -1446,7 +1446,8 @@ export default function RetirementSection({
   spouseCPF_OA = 0, spouseCPF_SA = 0, spouseCPF_RA = 0,
   clientLiquid = 0, spouseLiquid = 0,
   factFinding = {}, expenseMode = 'simple',
-}: RetirementProps) {
+  onCalculated,
+}: RetirementProps & { onCalculated?: (corpus: number, gap: number, monthly: number) => void }) {
 
   function upd(c: Partial<RetirementData>) { onChange({ ...data, ...c }) }
   function updClient(c: Partial<RetirementPersonData>) { upd({ client: { ...data.client, ...c } }) }
@@ -1510,7 +1511,23 @@ export default function RetirementSection({
     data.inflationRate,
     data.postReturnRate,
   )
-  
+useEffect(() => {
+  if (onCalculated && phasedResult.totalCorpusNeeded > 0) {
+    const existingFV = clientLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement)
+    const gap = Math.max(0, phasedResult.totalCorpusNeeded - existingFV)
+    
+    const rMo = data.preReturnRate / 100 / 12
+    const preMo = phasedResult.yearsToClientRetirement * 12
+    let monthly = 0
+    if (gap > 0 && preMo > 0) {
+      monthly = rMo === 0
+        ? gap / preMo
+        : gap * rMo / ((Math.pow(1 + rMo, preMo) - 1) * (1 + rMo))
+    }
+    
+    onCalculated(phasedResult.totalCorpusNeeded, gap, monthly)
+  }
+}, [phasedResult.totalCorpusNeeded, data.preReturnRate, phasedResult.yearsToClientRetirement, clientLiquid, onCalculated])
   // For backward compatibility with existing components
   const clientResult: RetirementCalcResult = {
     monthlyNeedAtRetirement: phasedResult.monthlyNeedAtClientRetirement,
