@@ -171,7 +171,6 @@ export default function ExecutiveSummaryPage() {
 
   let protStatus: Status = 'empty'
   let protHeadline = 'Not yet assessed'
-  let protSubline  = 'Complete Wealth Protection tab'
   const protActions: string[] = []
 
   if (protHasData) {
