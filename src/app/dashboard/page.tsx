@@ -276,7 +276,7 @@ const retActions: string[] = []
 
 if (retHasData || savedCorpusNeeded > 0) {
   retStatus = retGap > 0 ? 'gap' : 'good'
-  retHeadline = `Savings Gap ${fmt(retGap)}`
+  retHeadline = `Savings Gap ${fmtShort(retGap)}`
   retSubline = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
   if (retGap > 0) {
     retStatus = retGap > 100000 ? 'gap' : 'warn'
