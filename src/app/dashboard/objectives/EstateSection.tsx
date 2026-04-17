@@ -44,14 +44,14 @@ export interface EstateProps {
   isCouple: boolean
   clientName?: string
   spouseName?: string
-  // Assets from fact finding
   clientLiquid?: number
   spouseLiquid?: number
   clientCPF?: number
   spouseCPF?: number
-  properties?: any[]          // raw property objects from ff.properties
-  nonMortgageDebts?: any[]    // raw debt objects from p.nonMortgageDebts
+  properties?: any[]
+  nonMortgageDebts?: any[]
   familyMembers?: { id: string; name: string; relationship: string }[]
+  onCalculated?: (netEstate: number) => void
 }
 
 // ─── INTERNAL HELPERS ─────────────────────────────────────────────────────────
@@ -571,6 +571,7 @@ export default function EstateSection({
   properties = [],
   nonMortgageDebts = [],
   familyMembers = [],
+  onCalculated,
 }: EstateProps) {
 
   function upd(c: Partial<EstateData>) { onChange({ ...data, ...c }) }
@@ -581,6 +582,18 @@ export default function EstateSection({
   const { equity: propertyEquity, liabilities: mortgageLiabilities } = computePropertyEquityAndLiabilities(properties)
   const debtLiabilities = nonMortgageDebts.reduce((s: number, d: any) => s + (d.amount ?? 0), 0)
   const totalLiabilities = mortgageLiabilities + debtLiabilities
+    // Calculate net estate
+const combinedAssets = clientLiquid + clientCPF + (isCouple ? spouseLiquid + spouseCPF : 0) + propertyEquity
+const netEstate = Math.max(0, combinedAssets - totalLiabilities)
+
+// ✅ Send calculated value to parent
+import { useEffect } from 'react'  // Make sure this is at the top of the file
+
+useEffect(() => {
+  if (onCalculated && netEstate > 0) {
+    onCalculated(netEstate)
+  }
+}, [netEstate, onCalculated])
 
   return (
     <div>
