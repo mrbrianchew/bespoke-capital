@@ -961,16 +961,6 @@ useEffect(() => {
 
   const WP_TABS = ['Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset']
 
-const propertyEquity = ((ff.properties ?? []) as any[]).reduce((sum: number, prop: any) => {
-    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const outstanding = prop.outstanding ?? 0
-    return sum + Math.max(0, val - outstanding)
-  }, 0)
-
-  const totalLiabilities = ((ff.properties ?? []) as any[]).reduce((sum: number, prop: any) => {
-    return sum + (prop.outstanding ?? 0)
-  }, 0) + (p.nonMortgageDebts ?? []).reduce((s: number, d: any) => s + d.amount, 0)
-
   // ─── RENDER ────────────────────────────────────────────────────────────────
 
   if (loading) {
