@@ -282,7 +282,10 @@ if (retHasData || savedCorpusNeeded > 0) {
     retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
   }
 }
-
+const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_srs || 0) +
+  (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
+  (fin.a_bonds || 0) + (fin.a_alternatives || 0)
+  
   // ── EDUCATION ────────────────────────────────────────────────────────────────
 
   const eduChildren   = edu.children || []
