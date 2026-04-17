@@ -856,7 +856,7 @@ async function saveNeedsToDatabase() {
     .upsert({
       client_id: clientId,
       section: 'protection_needs',
-      data: { ...existingData, ...needs },
+      data: { ...existingData, protection: { ...existingData.protection, ...needs } },
       updated_at: new Date().toISOString()
     }, { onConflict: 'client_id,section' })
 }
