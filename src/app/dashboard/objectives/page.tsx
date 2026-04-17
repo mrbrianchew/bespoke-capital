@@ -1164,8 +1164,8 @@ spouseAge={spouseDOB ? getAge(spouseDOB) : 0}
     spouseLiquid={(ff.a2_savings as number ?? 0) + (ff.a2_fixed_deposit as number ?? 0) + (ff.a2_srs as number ?? 0) + (ff.a2_shares as number ?? 0) + (ff.a2_etf as number ?? 0) + (ff.a2_unit_trust as number ?? 0) + (ff.a2_bonds as number ?? 0) + (ff.a2_alternatives as number ?? 0)}
     clientCPF={(ff.a_cpf_oa as number ?? 0) + (ff.a_cpf_sa as number ?? 0) + (ff.a_cpf_ma as number ?? 0) + (ff.a_cpf_ra as number ?? 0)}
     spouseCPF={(ff.a2_cpf_oa as number ?? 0) + (ff.a2_cpf_sa as number ?? 0) + (ff.a2_cpf_ma as number ?? 0) + (ff.a2_cpf_ra as number ?? 0)}
-    propertyEquity={propertyEquity}
-    totalLiabilities={totalLiabilities}
+    properties={(ff.properties ?? []) as any[]}
+    nonMortgageDebts={p.nonMortgageDebts ?? []}
     familyMembers={[...children]}
   />
 )}
