@@ -49,9 +49,46 @@ export interface EstateProps {
   spouseLiquid?: number
   clientCPF?: number
   spouseCPF?: number
-  propertyEquity?: number   // total net equity across all properties
-  totalLiabilities?: number
+  properties?: any[]          // raw property objects from ff.properties
+  nonMortgageDebts?: any[]    // raw debt objects from p.nonMortgageDebts
   familyMembers?: { id: string; name: string; relationship: string }[]
+}
+
+// ─── INTERNAL HELPERS ─────────────────────────────────────────────────────────
+
+function calcAmortizedOutstanding(initialLoan: number, annualRate: number, tenureYears: number, startMmYyyy: string): number {
+  if (!initialLoan || !tenureYears) return initialLoan || 0
+  const parts = (startMmYyyy || '').split('/')
+  if (parts.length !== 2) return initialLoan
+  const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+  const today = new Date()
+  const monthsElapsed = (today.getFullYear() - startDate.getFullYear()) * 12 + (today.getMonth() - startDate.getMonth())
+  if (monthsElapsed <= 0) return initialLoan
+  const n = tenureYears * 12
+  if (monthsElapsed >= n) return 0
+  if (!annualRate) return Math.round(initialLoan * (1 - monthsElapsed / n))
+  const r = annualRate / 100 / 12
+  const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+  return Math.max(0, Math.round(initialLoan * Math.pow(1 + r, monthsElapsed) - pmt * (Math.pow(1 + r, monthsElapsed) - 1) / r))
+}
+
+function computePropertyEquityAndLiabilities(properties: any[]): { equity: number; liabilities: number } {
+  let equity = 0, liabilities = 0
+  for (const prop of properties) {
+    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
+    // Outstanding: prefer stored value, fall back to amortised calculation
+    const outstanding = prop.outstanding > 0
+      ? prop.outstanding
+      : calcAmortizedOutstanding(
+          prop.initialLoanAmount ?? 0,
+          prop.interestRate ?? 0,
+          prop.initialTenure ?? 25,
+          prop.loanStartDate ?? ''
+        )
+    liabilities += outstanding
+    equity += Math.max(0, val - outstanding)
+  }
+  return { equity, liabilities }
 }
 
 // ─── DEFAULT STATE ────────────────────────────────────────────────────────────
@@ -269,10 +306,11 @@ function PersonEstateCard({ person, onChange, name, color, cpfBalance }: {
 
 // ─── ESTATE SIZE CALCULATOR ───────────────────────────────────────────────────
 
-function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, propertyEquity, totalLiabilities, isCouple, clientName, spouseName }: {
+function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, propertyEquity, totalLiabilities, mortgageLiabilities, debtLiabilities, isCouple, clientName, spouseName }: {
   clientLiquid: number; spouseLiquid: number
   clientCPF: number; spouseCPF: number
   propertyEquity: number; totalLiabilities: number
+  mortgageLiabilities: number; debtLiabilities: number
   isCouple: boolean; clientName: string; spouseName: string
 }) {
   const clientTotal  = clientLiquid + clientCPF
@@ -315,7 +353,19 @@ function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, pro
           <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: 'var(--ink)', fontWeight: 600 }}>{fmtSGD(combinedAssets)}</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
-          <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--rouge)' }}>Less: Total Liabilities</span>
+          <div>
+            <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--rouge)' }}>Less: Total Liabilities</span>
+            {mortgageLiabilities > 0 && debtLiabilities > 0 && (
+              <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>
+                Mortgage {fmtSGD(mortgageLiabilities)} + Other debts {fmtSGD(debtLiabilities)}
+              </div>
+            )}
+            {mortgageLiabilities > 0 && debtLiabilities === 0 && (
+              <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>
+                Mortgage outstanding
+              </div>
+            )}
+          </div>
           <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--rouge)' }}>({fmtSGD(totalLiabilities)})</span>
         </div>
 
@@ -518,13 +568,19 @@ export default function EstateSection({
   clientName = 'Client', spouseName = 'Spouse',
   clientLiquid = 0, spouseLiquid = 0,
   clientCPF = 0, spouseCPF = 0,
-  propertyEquity = 0, totalLiabilities = 0,
+  properties = [],
+  nonMortgageDebts = [],
   familyMembers = [],
 }: EstateProps) {
 
   function upd(c: Partial<EstateData>) { onChange({ ...data, ...c }) }
   function updClient(c: Partial<EstatePerson>) { upd({ client: { ...data.client, ...c } }) }
   function updSpouse(c: Partial<EstatePerson>) { upd({ spouse: { ...data.spouse, ...c } }) }
+
+  // Compute equity and mortgage liabilities from raw property data
+  const { equity: propertyEquity, liabilities: mortgageLiabilities } = computePropertyEquityAndLiabilities(properties)
+  const debtLiabilities = nonMortgageDebts.reduce((s: number, d: any) => s + (d.amount ?? 0), 0)
+  const totalLiabilities = mortgageLiabilities + debtLiabilities
 
   return (
     <div>
@@ -542,7 +598,10 @@ export default function EstateSection({
       <EstateSizePanel
         clientLiquid={clientLiquid} spouseLiquid={spouseLiquid}
         clientCPF={clientCPF} spouseCPF={spouseCPF}
-        propertyEquity={propertyEquity} totalLiabilities={totalLiabilities}
+        propertyEquity={propertyEquity}
+        totalLiabilities={totalLiabilities}
+        mortgageLiabilities={mortgageLiabilities}
+        debtLiabilities={debtLiabilities}
         isCouple={isCouple} clientName={clientName} spouseName={spouseName}
       />
 
