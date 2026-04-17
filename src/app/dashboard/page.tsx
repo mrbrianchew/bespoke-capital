@@ -241,41 +241,83 @@ export default function ExecutiveSummaryPage() {
   const retHasData     = !!ret.client
   const retAge         = retClient.retirementAge || 65
   const retLE          = retClient.lifeExpectancy || 85
-  const retInflation   = ret.inflationRate || 3
-  const retPostReturn  = ret.postReturnRate || 4
-  const retPreReturn   = ret.preReturnRate  || 5
+  const retPreReturn   = ret.preReturnRate || 5
   const yrsToRet       = Math.max(0, retAge - clientAge)
   const retYears       = Math.max(0, retLE - retAge)
 
-  // Simple corpus estimate from expense data
-  const expMode       = fin.expense_mode || 'simple'
-  const annExpClient  = expMode === 'detailed'
+  // ── Read from stored RetirementSection data (phasedResult) ──────────────────
+  // RetirementSection saves the full ret object; we reconstruct the key outputs
+  // by re-running only the final corpus + gap — using the SAME formula as RetirementSection
+  const retInflation  = ret.inflationRate  || 3
+  const retPostReturn = ret.postReturnRate || 4
+  const rp = retPreReturn  / 100
+  const g  = retInflation  / 100
+  const r  = retPostReturn / 100
+
+  // Expense total — read from financials exactly as Strategic Objectives does
+  const expMode      = fin.expense_mode || 'simple'
+  const annExpClient = expMode === 'detailed'
     ? ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household',
        'd_personal_food','d_transport','d_car_petrol','d_car_insurance',
        'd_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle',
-       'd_income_tax','d_insurance','d_regular_savings','d_mortgage_cash'].reduce((s, k) => s + ((fin[k] as number) || 0), 0)
-    : ['s_financial','s_household','s_personal','s_lifestyle','s_others','s_children','s_mortgage'].reduce((s, k) => s + ((fin[k] as number) || 0), 0)
-
-  const monthlyNeedToday = annExpClient / 12
-  const g  = retInflation / 100
-  const r  = retPostReturn / 100
-  const rp = retPreReturn  / 100
-  const monthlyAtRet = monthlyNeedToday * Math.pow(1 + g, yrsToRet)
-  const annualAtRet  = monthlyAtRet * 12
-
-  let corpusNeeded = 0
-  if (annualAtRet > 0 && retYears > 0) {
-    corpusNeeded = Math.abs(r - g) < 0.0001
-      ? annualAtRet * retYears / (1 + r)
-      : annualAtRet * (1 - Math.pow((1 + g) / (1 + r), retYears)) / (r - g)
-  }
+       'd_income_tax','d_insurance','d_regular_savings','d_mortgage_cash',
+       'd_mortgage_cpf','d_vehicle_repay','d_personal_loan_repay',
+       'd_rental_expense','d_childcare','d_school_fees','d_school_transport',
+       'd_allowance_children','d_other_children','d_other_household']
+        .reduce((s, k) => s + ((fin[k] as number) || 0), 0)
+    : ['s_financial','s_cpf_oa','s_mortgage','s_household','s_personal',
+       's_children','s_lifestyle','s_others']
+        .reduce((s, k) => s + ((fin[k] as number) || 0), 0)
 
   const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_srs || 0) +
-    (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) + (fin.a_bonds || 0) + (fin.a_alternatives || 0)
-  const existingFV = clientLiquid * Math.pow(1 + rp, yrsToRet)
-  const retGap     = Math.max(0, corpusNeeded - existingFV)
+    (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
+    (fin.a_bonds || 0) + (fin.a_alternatives || 0)
 
-  const rMo = rp / 12
+  // Phased retirement corpus — same formula as calcPhasedRetirement in RetirementSection
+  // For couple: use combined monthly need, inflated to client retirement date
+  const spouseClient    = ret.spouse || {}
+  const spouseRetAge    = spouseClient.retirementAge || 65
+  const spouseLE        = spouseClient.lifeExpectancy || 85
+  const yrsToSpouseRet  = isCouple ? Math.max(0, spouseRetAge - spouseAge) : 0
+  const gapYears        = isCouple ? Math.max(0, yrsToSpouseRet - yrsToRet) : 0
+  const combinedMonthly = annExpClient / 12 + (isCouple ? ((fin['s2_financial']||0)+(fin['s2_household']||0)+(fin['s2_personal']||0)+(fin['s2_lifestyle']||0)+(fin['s2_others']||0)+(fin['s2_children']||0)) / 12 : 0)
+
+  // FV of combined monthly need at client retirement
+  const monthlyAtClientRet = combinedMonthly * Math.pow(1 + g, yrsToRet)
+
+  // Corpus for full retirement period (inflated to spouse retirement date, discounted back)
+  const finalRetYears   = isCouple ? Math.max(1, spouseLE - spouseRetAge) : retYears
+  const monthlyAtSpouseRet = combinedMonthly * Math.pow(1 + g, isCouple ? yrsToSpouseRet : yrsToRet)
+  const annualAtSpouseRet  = monthlyAtSpouseRet * 12
+
+  let fullCorpusAtSpouseRet = 0
+  if (annualAtSpouseRet > 0 && finalRetYears > 0) {
+    fullCorpusAtSpouseRet = Math.abs(r - g) < 0.0001
+      ? annualAtSpouseRet * finalRetYears / (1 + r)
+      : annualAtSpouseRet * (1 - Math.pow((1 + g) / (1 + r), finalRetYears)) / (r - g)
+  }
+  // Discount back to client retirement date
+  const fullCorpusPV = isCouple && gapYears > 0
+    ? fullCorpusAtSpouseRet / Math.pow(1 + r, gapYears)
+    : fullCorpusAtSpouseRet
+
+  // Gap fund needed during phased period
+  let gapFundNeeded = 0
+  if (isCouple && gapYears > 0) {
+    const p2GrossMonthly = (fin.person2 as any)?.gross_monthly || 0
+    const spouseTakeHome = p2GrossMonthly * 0.8
+    const monthlyShortfall = Math.max(0, monthlyAtClientRet - spouseTakeHome)
+    const annualShortfall = monthlyShortfall * 12
+    for (let yr = 0; yr < gapYears; yr++) {
+      gapFundNeeded += (annualShortfall * Math.pow(1 + g, yr)) / Math.pow(1 + r, yr)
+    }
+  }
+
+  const corpusNeeded   = Math.max(0, gapFundNeeded + fullCorpusPV)
+  const existingFV     = clientLiquid * Math.pow(1 + rp, yrsToRet)
+  const retGap         = Math.max(0, corpusNeeded - existingFV)
+
+  const rMo  = rp / 12
   const preMo = yrsToRet * 12
   let retMonthlySavings = 0
   if (retGap > 0 && preMo > 0) {
@@ -294,10 +336,8 @@ export default function ExecutiveSummaryPage() {
     retHeadline = `Corpus ${fmtShort(corpusNeeded)}`
     retSubline  = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
     if (retGap > 0) {
-      retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
-    }
-    if (retMonthlySavings > 0) {
       retStatus = retGap > 100000 ? 'gap' : 'warn'
+      retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
     }
   }
 
@@ -370,18 +410,39 @@ export default function ExecutiveSummaryPage() {
   const estSpouse      = estate.spouse  || {}
   const estHasData     = Object.keys(estClient).length > 0
 
-  // Calculate net estate from financials
-  const allProps      = (fin.properties || []) as any[]
-  const propEquity    = allProps.reduce((s: number, p: any) => {
-    const val         = p.propertyValue ?? p.purchasePrice ?? 0
-    const outstanding = p.outstanding ?? 0
-    return s + Math.max(0, val - outstanding)
-  }, 0)
-  const totalAssets   = clientLiquid +
+  // Calculate net estate — same amortised logic as EstateSection.tsx
+  function amortisedOutstanding(prop: any): number {
+    if (prop.outstanding > 0) return prop.outstanding
+    const initialLoan = prop.initialLoanAmount ?? 0
+    const annualRate  = prop.interestRate ?? 0
+    const tenure      = prop.initialTenure ?? 25
+    const start       = prop.loanStartDate ?? ''
+    if (!initialLoan || !tenure) return 0
+    const parts = start.split('/')
+    if (parts.length !== 2) return initialLoan
+    const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+    const today = new Date()
+    const months = (today.getFullYear() - startDate.getFullYear()) * 12 +
+      (today.getMonth() - startDate.getMonth())
+    if (months <= 0) return initialLoan
+    const n = tenure * 12
+    if (months >= n) return 0
+    if (!annualRate) return Math.round(initialLoan * (1 - months / n))
+    const r = annualRate / 100 / 12
+    const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+    return Math.max(0, Math.round(
+      initialLoan * Math.pow(1 + r, months) -
+      pmt * (Math.pow(1 + r, months) - 1) / r
+    ))
+  }
+  const allProps   = (fin.properties || []) as any[]
+  const propEquity = allProps.reduce((s: number, p: any) =>
+    s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
+  const totalAssets = clientLiquid +
     (fin.a_cpf_oa || 0) + (fin.a_cpf_sa || 0) + (fin.a_cpf_ma || 0) + (fin.a_cpf_ra || 0) +
     propEquity
-  const totalLiab     = allProps.reduce((s: number, p: any) => s + (p.outstanding ?? 0), 0)
-  const netEstate     = Math.max(0, totalAssets - totalLiab)
+  const totalLiab  = allProps.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
+  const netEstate  = Math.max(0, totalAssets - totalLiab)
 
   // Readiness score: will, lpa, cpf nomination, trust
   function checkItem(person: any, key: string, goodVal: string): boolean {
