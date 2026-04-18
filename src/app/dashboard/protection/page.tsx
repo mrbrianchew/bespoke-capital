@@ -260,8 +260,8 @@ console.log('All merged keys:', Object.keys(merged))
         setSpouseName(p2.name); setIsCouple(true)
         if (p2.age) setSpouseAge(Number(p2.age))
         else if (p2.dob) setSpouseAge(Math.floor((Date.now() - new Date(p2.dob).getTime()) / (365.25*24*3600*1000)))
-      } else if (merged.mode === 'couple') {
-        setIsCouple(true)
+      } else if (merged.mode === 'couple' || (merged.mode !== 'individual' && merged.person2?.name)) {
+  setIsCouple(true)
         const sn = merged.spouse_name || merged.spouseName || ''
         if (sn) setSpouseName(sn)
       }
@@ -271,8 +271,8 @@ console.log('All merged keys:', Object.keys(merged))
         const spouse = familyRows.find((m: any) =>
           m.relationship?.toLowerCase() === 'spouse'
         )
-        if (spouse?.name && !merged.person2?.name) {
-          setSpouseName(spouse.name); setIsCouple(true)
+        if (spouse?.name && !merged.person2?.name && merged.mode !== 'individual') {
+  setSpouseName(spouse.name); setIsCouple(true)
           if (spouse.age) setSpouseAge(Number(spouse.age))
           else if (spouse.dob) setSpouseAge(Math.floor((Date.now() - new Date(spouse.dob).getTime()) / (365.25*24*3600*1000)))
         }
