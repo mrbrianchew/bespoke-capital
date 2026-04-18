@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
+import ProtectionOverview from './ProtectionOverview'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
@@ -660,213 +661,25 @@ async function handleGenerateShare() {
           </div>
         </div>
       </div>
-            {/* ── OVERVIEW ── */}
+     
       {activeTab==='overview' && (
-        <div style={{padding:'36px 48px',flex:1}}>
-       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:32}}>
-
-  {/* Life & Disability Cover */}
-  <div style={{background:'white',border:'0.5px solid var(--line)',padding:'24px 28px',position:'relative'}}>
-    <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#A8834A'}}/>
-    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'#A8834A',marginBottom:16}}>Life &amp; Disability Cover</div>
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
-      <div style={{borderRight:'1px solid var(--line)',paddingRight:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Need</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'var(--ink)'}}>{fmt(aDTPD)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>FV annuity · {coverTerm}yr</div>
-      </div>
-      <div style={{borderRight:'1px solid var(--line)',padding:'0 20px'}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Have</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#A8834A'}}>{fmt(aLH)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>Active policies</div>
-      </div>
-      <div style={{paddingLeft:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Gap</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F'}}>{fmt(Math.max(0,aDTPD-aLH))}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</div>
-      </div>
-    </div>
-    <div style={{marginTop:16}}>
-      <div style={{height:3,background:'var(--line)',position:'relative'}}>
-        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aDTPD>0?Math.round(Math.min(aLH,aDTPD)/aDTPD*100):0}%`,background:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F'}}/>
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'var(--ink3)'}}>
-        <span>0%</span>
-        <span style={{color:Math.max(0,aDTPD-aLH)>0?'#C0392B':'#2D6A4F',fontWeight:500}}>{aDTPD>0?`${Math.round(Math.min(aLH,aDTPD)/aDTPD*100)}% covered`:'—'}</span>
-        <span>100%</span>
-      </div>
-    </div>
-  </div>
-
-  {/* Critical Illness Cover */}
-  <div style={{background:'white',border:'0.5px solid var(--line)',padding:'24px 28px',position:'relative'}}>
-    <div style={{position:'absolute',top:0,left:0,right:0,height:'2px',background:'#2D6A4F'}}/>
-    <div style={{fontSize:9,letterSpacing:'0.18em',textTransform:'uppercase',color:'#2D6A4F',marginBottom:16}}>Critical Illness Cover</div>
-    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr'}}>
-      <div style={{borderRight:'1px solid var(--line)',paddingRight:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Need</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'var(--ink)'}}>{fmt(aCI)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>24-month income window</div>
-      </div>
-      <div style={{borderRight:'1px solid var(--line)',padding:'0 20px'}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Have</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#A8834A'}}>{fmt(aCH)}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>Active policies</div>
-      </div>
-      <div style={{paddingLeft:20}}>
-        <div style={{fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Gap</div>
-        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F'}}>{fmt(Math.max(0,aCI-aCH))}</div>
-        <div style={{fontSize:10,color:'var(--ink3)',marginTop:4}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</div>
-      </div>
-    </div>
-    <div style={{marginTop:16}}>
-      <div style={{height:3,background:'var(--line)',position:'relative'}}>
-        <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${aCI>0?Math.round(Math.min(aCH,aCI)/aCI*100):0}%`,background:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F'}}/>
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',marginTop:5,fontSize:10,color:'var(--ink3)'}}>
-        <span>0%</span>
-        <span style={{color:Math.max(0,aCI-aCH)>0?'#C0392B':'#2D6A4F',fontWeight:500}}>{aCI>0?`${Math.round(Math.min(aCH,aCI)/aCI*100)}% covered`:'—'}</span>
-        <span>100%</span>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-          {isCouple && (
-            <div style={{display:'flex',gap:6,marginBottom:20}}>
-              {(['client','spouse'] as const).map(p=>(
-                <button key={p} onClick={()=>setOverviewPerson(p)}
-                  style={{padding:'7px 20px',border:`1px solid ${overviewPerson===p?'#c8a96e':'var(--line)'}`,background:overviewPerson===p?'#FDF6EC':'white',color:overviewPerson===p?'#A8834A':'var(--ink3)',cursor:'pointer',fontSize:12,fontWeight:overviewPerson===p?600:400}}>
-                  {p==='client'?clientName:spouseName}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <GapSection title={`${aName} — Coverage Gap Analysis`}
-            dtpdNeed={aDTPD} ciNeed={aCI} lifeHave={aLH} ciHave={aCH}
-            annualPremium={premHave(overviewPerson)} />
-
-          {hasChartData ? (
- <div style={{marginTop:24,display:'flex',flexDirection:'column',gap:24}}>
-    {(() => {
-  // Mortgage end age: read directly from mortgage data, not curve sniffing
-  // Use remainingTenure if available, otherwise tenure from properties
-  // Mortgage end age: read from flat financials fields
-  // objectives/page.tsx uses l_mortgage_residing + tenure from properties
-  const mortgageEndAges: number[] = []
-  const mortProps = (ff.properties || []).filter((p: any) =>
-    Number(p.outstanding || 0) > 0 || Number(p.remainingTenure || 0) > 0
-  )
-  mortProps.forEach((p: any) => {
-    const remaining = Number(p.remainingTenure || p.tenure || 0)
-    if (remaining > 0) mortgageEndAges.push(Math.round(aAge + remaining))
-  })
-  // Fallback: use the objectives mortgage tenure fields directly
-  if (mortgageEndAges.length === 0 && mort > 0) {
-    const t1 = Number(ff.l_mortgage_tenure || ff.mortgage_tenure || 0)
-    const t2 = Number(ff.l2_mortgage_tenure || 0)
-    if (t1 > 0) mortgageEndAges.push(Math.round(aAge + t1))
-    if (t2 > 0) mortgageEndAges.push(Math.round(aAge + t2))
-    // Last resort: read from properties initialTenure and loanStartDate
-    if (mortgageEndAges.length === 0) {
-      ;(ff.properties || []).forEach((p: any) => {
-        const initialTenure = Number(p.initialTenure || 0)
-        const loanStart = p.loanStartDate // mm/yyyy
-        if (initialTenure > 0 && loanStart) {
-          const parts = loanStart.split('/')
-          if (parts.length === 2) {
-            const startYear = parseInt(parts[1])
-            const endYear = startYear + initialTenure
-            const currentYear = new Date().getFullYear()
-            const yearsLeft = Math.max(0, endYear - currentYear)
-            if (yearsLeft > 0) mortgageEndAges.push(Math.round(aAge + yearsLeft))
-          }
-        } else if (initialTenure > 0) {
-          mortgageEndAges.push(Math.round(aAge + initialTenure))
-        }
-      })
-    }
-  }
-
-  // Education: children have no gender field — use family_members table data via ffData
-  // Default: female enters uni at 19, male at 21 — but since no gender, use 21 for all (conservative)
-  // Sort by age descending so oldest child graduates first = Child 1
-  const eduEndAges = [...children]
-    .sort((a: any, b: any) => Number(b.age||0) - Number(a.age||0))
-    .map((child: any) => {
-      const childAge = Number(child.age || 0)
-      // No gender stored in children array — check family_members data in ff
-      const fm = (ff.family_members || []).find((m: any) => m.name === child.name)
-      const gender = fm?.gender || child.gender || ''
-      const uniEntryAge = gender === 'Male' ? 21 : gender === 'Female' ? 19 : 21
-      return aAge + Math.max(0, uniEntryAge - childAge) + 4
-    })
-    console.log('MORT END AGES:', mortgageEndAges, 'ff.properties sample:', JSON.stringify((ff.properties||[]).map((p:any) => ({label:p.label, remainingTenure:p.remainingTenure, tenure:p.tenure, initialTenure:p.initialTenure, loanStartDate:p.loanStartDate, outstanding:p.outstanding}))))
-  console.log('ff mortgage flat fields:', ff.l_mortgage_tenure, ff.l2_mortgage_tenure, ff.mortgage_tenure)
-
-  const dtpdCoverageEnds = (() => {
-    for (let i = chartData.length - 1; i >= 0; i--) {
-      if (chartData[i].dtpd > 0) return chartData[i].age
-    }
-    return null
-  })()
-
-  const ciCoverageEnds = (() => {
-    for (let i = chartData.length - 1; i >= 0; i--) {
-      if (chartData[i].ci > 0) return chartData[i].age
-    }
-    return null
-  })()
-
-      return <>
-    <FlexibleCoverageChart
-      variant="dtpd"
-      eyebrow="Life & Disability"
-      title="Death / TPD Coverage Needs Analysis"
-      needLabel="Required capital"
-      haveLabel="Existing portfolio"
-      data={chartData.map(d => ({age: d.age, need: d.dtpd, have: aLH}))}
-      accentColor="#C4A464"
-      milestones={{
-        mortgageEnds: mortgageEndAges,
-        educationEnds: eduEndAges,
-        coverageEnds: dtpdCoverageEnds,
-        clientAge: aAge
-      }}
-    />
-    <FlexibleCoverageChart
-      variant="ci"
-      eyebrow="Critical Illness"
-      title="Critical Illness Coverage Needs Analysis"
-      needLabel="Required capital"
-      haveLabel="Existing portfolio"
-      data={chartData.map(d => ({age: d.age, need: d.ci, have: aCH}))}
-      accentColor="#2D6A4F"
-      milestones={{
-        mortgageEnds: mortgageEndAges,
-        educationEnds: eduEndAges,
-        coverageEnds: ciCoverageEnds,
-        clientAge: aAge
-      }}
-    />
-  </>
-})()}
-  </div>
-) : (
-            <div style={{marginTop:20,padding:'24px',background:'white',border:'0.5px solid var(--line)',textAlign:'center',fontSize:13,color:'var(--ink3)'}}>
-              Complete the Financial Profile to generate coverage need charts.
-            </div>
-          )}
-
-          <div style={{marginTop:28,background:'white',border:'0.5px solid var(--line)',padding:26}}>
-            <div style={{fontSize:10,letterSpacing:'0.14em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:12}}>Advisor Notes</div>
-            <textarea value={rmData.advisorNotes} onChange={e=>updateRm({...rmData,advisorNotes:e.target.value})}
-              placeholder="Record observations, client concerns, agreed priorities, follow-up actions…" rows={4}
-             style={{width:'100%',resize:'vertical',border:'1px solid var(--line)',outline:'none',background:'#FAFAF8',color:'var(--ink)',fontFamily:'DM Mono,monospace',fontSize:13,padding:'14px 16px',borderRadius:4,boxSizing:'border-box',lineHeight:1.7}} />
-          </div>
-        </div>
+        <ProtectionOverview
+          clientName={clientName}
+          clientAge={clientAge}
+          spouseName={spouseName}
+          spouseAge={spouseAge}
+          isCouple={isCouple}
+          children={children}
+          ffData={ffData}
+          clientDTPD={clientDTPD}
+          clientCI={clientCI}
+          spouseDTPD={spouseDTPD}
+          spouseCI={spouseCI}
+          activePolicies={activePolicies}
+          rmData={rmData}
+          updateRm={updateRm}
+          inflation={inflation}
+        />
       )}
 
       {/* ── PORTFOLIO ── */}
