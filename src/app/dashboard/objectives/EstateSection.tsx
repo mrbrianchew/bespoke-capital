@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -587,8 +587,6 @@ const combinedAssets = clientLiquid + clientCPF + (isCouple ? spouseLiquid + spo
 const netEstate = Math.max(0, combinedAssets - totalLiabilities)
 
 // ✅ Send calculated value to parent
-import { useEffect } from 'react'  // Make sure this is at the top of the file
-
 useEffect(() => {
   if (onCalculated && netEstate > 0) {
     onCalculated(netEstate)
