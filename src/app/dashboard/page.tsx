@@ -363,9 +363,14 @@ const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_r
   const estSpouse      = estate.spouse  || {}
   const estHasData     = Object.keys(estClient).length > 0
 
-  // Calculate net estate — prefer values computed by EstateSection (stored in estate row)
-  // since it has access to the correct amortised outstanding values.
-  // Fall back to financials-based calculation only when estate tab hasn't been visited.
+  // ✅ Read saved net estate from database FIRST
+const savedNetEstate = ffData['estate']?.netEstate || estate.netEstate || 0
+
+// Use saved value if available, otherwise calculate
+let netEstate = savedNetEstate
+
+// Fallback calculation only if no saved value
+if (netEstate === 0) {
   function amortisedOutstanding(prop: any): number {
     if (prop.outstanding > 0) return prop.outstanding
     const initialLoan = prop.initialLoanAmount ?? 0
@@ -397,7 +402,8 @@ const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_r
   const totalAssets = clientLiquid +
     (fin.a_cpf_oa || 0) + (fin.a_cpf_sa || 0) + (fin.a_cpf_ma || 0) + (fin.a_cpf_ra || 0) +
     propEquity
-  const netEstate  = Math.max(0, totalAssets - totalLiab)
+  netEstate = Math.max(0, totalAssets - totalLiab)
+}
 
   // Readiness score: will, lpa, cpf nomination, trust
   function checkItem(person: any, key: string, goodVal: string): boolean {
@@ -425,7 +431,7 @@ const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_r
 
   if (estHasData || netEstate > 0) {
     estStatus   = estScore === 1 ? 'good' : estScore >= 0.5 ? 'warn' : 'gap'
-    estHeadline = `Net estate ${fmtShort(netEstate)}`
+    estHeadline = `Net estate ${fmt(netEstate)}`
     estSubline  = estHasData ? `${doneChecks}/${totalChecks} readiness items done` : 'Estate documents not reviewed'
     if (!checkItem(estClient, 'willStatus', 'has_will'))
       estActions.push(`Will not in place for ${client.name}`)
