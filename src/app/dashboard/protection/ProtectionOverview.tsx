@@ -4,35 +4,50 @@ import React, { useState, useMemo, useRef } from 'react'
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Policy {
   id: string
+  // Classification
   categoryCode: string
   policyTypeCode: string
   companyName: string
   productName: string
+  // People
   policyholder: string
   lifeAssured: string
+  // Policy details
   policyNo: string
   briefDescription: string
+  // Sums
   baseDeath: number
   baseTPD: number
   baseAdvCI: number
   baseEarlyCI: number
   sumAssured: number
   monthlyBenefit: number
+  deferredPeriod: string
+  benefitTerm?: string
+  payoutTerm?: string
   multiplier: number
   multiplierEnd?: number
   coverStep: number
   stepDownPct?: number
   currentCashValue: number
+  // Endowment benefit input modes
+  endowDeathMode?: '%' | '$'
+  endowTPDMode?: '%' | '$'
+  // Premiums
   premiumMedisave: number
   premiumCash: number
   premiumMode: string
   frequency: string
+  // Dates
   inceptionDate: string
   premiumMaturity: string
   coverageMaturity: string
+  // Status
   status: string
   remarks: string
+  // Section
   person: string
+  // USD policy flag
   isUSD?: boolean
   fxRate?: number
 }
