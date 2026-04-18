@@ -551,18 +551,25 @@ if (clientData) {
     }, 800)
   }
 
-  function scheduleEstateSave(updated: EstateData) {
-    if (estateSaveTimer.current) clearTimeout(estateSaveTimer.current)
-    estateSaveTimer.current = setTimeout(async () => {
-      if (!clientId) return
-      await supabase
-        .from('fact_finding')
-        .upsert(
-          { client_id: clientId, section: 'estate', data: { estate: updated }, updated_at: new Date().toISOString() },
-          { onConflict: 'client_id,section' }
-        )
-    }, 800)
-  }
+  function scheduleEstateSave(updated: EstateData, netEstate?: number) {
+  if (estateSaveTimer.current) clearTimeout(estateSaveTimer.current)
+  estateSaveTimer.current = setTimeout(async () => {
+    if (!clientId) return
+    
+    const dataToSave: any = { estate: updated }
+    
+    if (netEstate !== undefined) {
+      dataToSave.netEstate = netEstate
+    }
+    
+    await supabase
+      .from('fact_finding')
+      .upsert(
+        { client_id: clientId, section: 'estate', data: dataToSave, updated_at: new Date().toISOString() },
+        { onConflict: 'client_id,section' }
+      )
+  }, 800)
+}
     
   // ─── AUTO-SAVE ─────────────────────────────────────────────────────────────
 
