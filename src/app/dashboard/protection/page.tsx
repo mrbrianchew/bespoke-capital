@@ -176,6 +176,7 @@ const [shareCopied, setShareCopied] = useState(false)
   }, [])
 
   useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
+useEffect(() => { if (clientId && activeTab === 'overview') loadAll(clientId) }, [activeTab])
 
   useEffect(() => {
     // Reset the inactive toggle when switching people
