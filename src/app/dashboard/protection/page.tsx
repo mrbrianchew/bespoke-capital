@@ -269,40 +269,47 @@ console.log('All merged keys:', Object.keys(merged))
       setFfData(merged)
 
       // Spouse: try person2 first, then family_members table
-      const p2 = merged.person2
-      if (p2?.name) {
-        setSpouseName(p2.name); setIsCouple(true)
-        if (p2.age) setSpouseAge(Number(p2.age))
-        else if (p2.dob) setSpouseAge(Math.floor((Date.now() - new Date(p2.dob).getTime()) / (365.25*24*3600*1000)))
-      } else if (merged.mode === 'couple' || (merged.mode !== 'individual' && merged.person2?.name)) {
-  setIsCouple(true)
-        const sn = merged.spouse_name || merged.spouseName || ''
-        if (sn) setSpouseName(sn)
-      }
+      // Determine couple/individual mode
+// Check both legacy 'mode' field and objectives 'planType' field
+const isIndividualMode = 
+  merged.mode === 'individual' || 
+  merged.protection?.planType === 'individual'
 
-      // Children: try family_members table first (most reliable), then merged JSON
-      if (familyRows && familyRows.length > 0) {
-        const spouse = familyRows.find((m: any) =>
-          m.relationship?.toLowerCase() === 'spouse'
-        )
-        if (spouse?.name && !merged.person2?.name && merged.mode !== 'individual') {
-  setSpouseName(spouse.name); setIsCouple(true)
-          if (spouse.age) setSpouseAge(Number(spouse.age))
-          else if (spouse.dob) setSpouseAge(Math.floor((Date.now() - new Date(spouse.dob).getTime()) / (365.25*24*3600*1000)))
-        }
-        const kids = familyRows.filter((m: any) =>
-          m.relationship?.toLowerCase() !== 'spouse'
-        )
-        if (kids.length > 0) {
-          setChildren(kids.map((k: any) => ({ name: k.name, age: k.age, id: k.id })))
-        } else {
-          const jsonKids = merged.children || []
-          setChildren(Array.isArray(jsonKids) ? jsonKids : [])
-        }
-      } else {
-        const jsonKids = merged.children || []
-        setChildren(Array.isArray(jsonKids) ? jsonKids : [])
-      }
+// Spouse: try person2 first, then family_members table
+const p2 = merged.person2
+if (p2?.name && !isIndividualMode) {
+  setSpouseName(p2.name); setIsCouple(true)
+  if (p2.age) setSpouseAge(Number(p2.age))
+  else if (p2.dob) setSpouseAge(Math.floor((Date.now() - new Date(p2.dob).getTime()) / (365.25*24*3600*1000)))
+} else if (merged.mode === 'couple' && !isIndividualMode) {
+  setIsCouple(true)
+  const sn = merged.spouse_name || merged.spouseName || ''
+  if (sn) setSpouseName(sn)
+}
+
+// Children: try family_members table first (most reliable), then merged JSON
+if (familyRows && familyRows.length > 0) {
+  const spouse = familyRows.find((m: any) =>
+    m.relationship?.toLowerCase() === 'spouse'
+  )
+  if (spouse?.name && !merged.person2?.name && !isIndividualMode) {
+    setSpouseName(spouse.name); setIsCouple(true)
+    if (spouse.age) setSpouseAge(Number(spouse.age))
+    else if (spouse.dob) setSpouseAge(Math.floor((Date.now() - new Date(spouse.dob).getTime()) / (365.25*24*3600*1000)))
+  }
+  const kids = familyRows.filter((m: any) =>
+    m.relationship?.toLowerCase() !== 'spouse'
+  )
+  if (kids.length > 0) {
+    setChildren(kids.map((k: any) => ({ name: k.name, age: k.age, id: k.id })))
+  } else {
+    const jsonKids = merged.children || []
+    setChildren(Array.isArray(jsonKids) ? jsonKids : [])
+  }
+} else {
+  const jsonKids = merged.children || []
+  setChildren(Array.isArray(jsonKids) ? jsonKids : [])
+}
 
       const rm = merged.risk_management
             if (rm) setRmData({ ...EMPTY_RM, ...rm })
