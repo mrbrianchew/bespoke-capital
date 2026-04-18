@@ -176,7 +176,6 @@ const [shareCopied, setShareCopied] = useState(false)
   }, [])
 
   useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
-useEffect(() => { if (clientId && activeTab === 'overview') loadAll(clientId) }, [activeTab])
 
   useEffect(() => {
     // Reset the inactive toggle when switching people
@@ -217,7 +216,9 @@ const { data: financialsRow } = await supabase
   .select('data')
   .eq('client_id', id)
   .eq('section', 'financials')
-  .maybeSingle()
+  .order('updated_at', { ascending: false })
+  .limit(1)
+  .then(r => ({ data: r.data?.[0] ?? null, error: r.error }))
 
 // Get protection portfolio (existing policies)
 // Get protection portfolio (existing policies)
