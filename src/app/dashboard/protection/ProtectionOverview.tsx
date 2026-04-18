@@ -403,9 +403,8 @@ export default function ProtectionOverview({
       })
     }
     return result
-  }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
+  }, [activePerson, clientAge, spouseAge, JSON.stringify(activePolicies), clientFloor, spouseFloor,
       p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm])
-
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
   const aAge = activePerson === 'client' ? clientAge : spouseAge
