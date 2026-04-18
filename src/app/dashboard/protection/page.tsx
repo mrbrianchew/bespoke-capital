@@ -259,7 +259,6 @@ const merged: any = {
 // Debug - check what was loaded
 console.log('Loaded financial data:', financialsRow?.data)
 console.log('Protection needs data:', needsRow?.data)
-console.log('planType check:', needsRow?.data?.protection?.planType, 'mode check:', merged.mode)
 console.log('All merged keys:', Object.keys(merged))
 
     // Also load family members from dedicated table (spouse + children)
