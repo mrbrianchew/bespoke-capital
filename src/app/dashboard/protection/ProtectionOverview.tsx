@@ -165,6 +165,7 @@ function getDTPDHaveAtAge(
   currentAge: number,
   activePolicies: Policy[]
 ): number {
+  if (age === currentAge) console.log('POLICIES:', JSON.stringify(activePolicies.filter(p => p.person === person && p.categoryCode === 'life').map(p => ({ id: p.id.slice(0,8), coverageMaturity: p.coverageMaturity, multiplier: p.multiplier, multiplierEnd: p.multiplierEnd, baseDeath: p.baseDeath, baseTPD: p.baseTPD }))))
   return activePolicies
     .filter(p => p.person === person && p.categoryCode === 'life')
     .reduce((sum, p) => {
