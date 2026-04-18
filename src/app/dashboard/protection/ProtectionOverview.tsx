@@ -657,7 +657,7 @@ export default function ProtectionOverview({
     for (let i = 0; i < data.length; i++) {
       const need = (data[i] as any)[needKey]
       const have = (data[i] as any)[haveKey]
-      const isSurplus = have > need
+      const isSurplus = have > need + 1000
       if (isSurplus && surpStart === -1) surpStart = i
       else if (!isSurplus && surpStart !== -1) {
         const seg = data.slice(surpStart, i)
