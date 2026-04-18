@@ -436,7 +436,7 @@ const estActions: string[] = []
 
 if (estHasData || netEstate > 0) {
   estStatus   = estScore === 1 ? 'good' : estScore >= 0.5 ? 'warn' : 'gap'
-  estHeadline = `Net estate ${fmt(netEstate)}`
+  estHeadline = `Net estate ${fmtShort(netEstate)}`
   estSubline  = estHasData ? `${doneChecks}/${totalChecks} readiness items done` : 'Estate documents not reviewed'
   if (!checkItem(estClient, 'willStatus', 'has_will'))
     estActions.push(`Will not in place for ${client.name}`)
