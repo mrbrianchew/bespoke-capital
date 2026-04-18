@@ -357,13 +357,39 @@ const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_r
     }
   }
 
-  // ── ESTATE ───────────────────────────────────────────────────────────────────
+// ── ESTATE ───────────────────────────────────────────────────────────────────
 
-  const estClient      = estate.client || {}
-  const estSpouse      = estate.spouse  || {}
-  const estHasData     = Object.keys(estClient).length > 0
+const estClient      = estate.client || {}
+const estSpouse      = estate.spouse  || {}
+const estHasData     = Object.keys(estClient).length > 0
 
-  // ✅ Read saved net estate from database FIRST
+// Helper function (moved outside the if block)
+function amortisedOutstanding(prop: any): number {
+  if (prop.outstanding > 0) return prop.outstanding
+  const initialLoan = prop.initialLoanAmount ?? 0
+  const annualRate  = prop.interestRate ?? 0
+  const tenure      = prop.initialTenure ?? 25
+  const start       = prop.loanStartDate ?? ''
+  if (!initialLoan || !tenure) return 0
+  const parts = start.split('/')
+  if (parts.length !== 2) return initialLoan
+  const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+  const today = new Date()
+  const months = (today.getFullYear() - startDate.getFullYear()) * 12 +
+    (today.getMonth() - startDate.getMonth())
+  if (months <= 0) return initialLoan
+  const n = tenure * 12
+  if (months >= n) return 0
+  if (!annualRate) return Math.round(initialLoan * (1 - months / n))
+  const rv = annualRate / 100 / 12
+  const pmt = initialLoan * rv * Math.pow(1 + rv, n) / (Math.pow(1 + rv, n) - 1)
+  return Math.max(0, Math.round(
+    initialLoan * Math.pow(1 + rv, months) -
+    pmt * (Math.pow(1 + rv, months) - 1) / rv
+  ))
+}
+
+// ✅ Read saved net estate from database FIRST
 const savedNetEstate = ffData['estate']?.netEstate || estate.netEstate || 0
 
 // Use saved value if available, otherwise calculate
@@ -371,30 +397,6 @@ let netEstate = savedNetEstate
 
 // Fallback calculation only if no saved value
 if (netEstate === 0) {
-  function amortisedOutstanding(prop: any): number {
-    if (prop.outstanding > 0) return prop.outstanding
-    const initialLoan = prop.initialLoanAmount ?? 0
-    const annualRate  = prop.interestRate ?? 0
-    const tenure      = prop.initialTenure ?? 25
-    const start       = prop.loanStartDate ?? ''
-    if (!initialLoan || !tenure) return 0
-    const parts = start.split('/')
-    if (parts.length !== 2) return initialLoan
-    const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
-    const today = new Date()
-    const months = (today.getFullYear() - startDate.getFullYear()) * 12 +
-      (today.getMonth() - startDate.getMonth())
-    if (months <= 0) return initialLoan
-    const n = tenure * 12
-    if (months >= n) return 0
-    if (!annualRate) return Math.round(initialLoan * (1 - months / n))
-    const rv = annualRate / 100 / 12
-    const pmt = initialLoan * rv * Math.pow(1 + rv, n) / (Math.pow(1 + rv, n) - 1)
-    return Math.max(0, Math.round(
-      initialLoan * Math.pow(1 + rv, months) -
-      pmt * (Math.pow(1 + rv, months) - 1) / rv
-    ))
-  }
   const allProps   = (fin.properties || []) as any[]
   const propEquity = allProps.reduce((s: number, p: any) =>
     s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
@@ -405,47 +407,48 @@ if (netEstate === 0) {
   netEstate = Math.max(0, totalAssets - totalLiab)
 }
 
-  // Readiness score: will, lpa, cpf nomination, trust
-  function checkItem(person: any, key: string, goodVal: string): boolean {
-    return person[key] === goodVal
-  }
-  const clientChecks = [
-    checkItem(estClient, 'willStatus',   'has_will'),
-    checkItem(estClient, 'lpaStatus',    'registered'),
-    checkItem(estClient, 'cpfNomStatus', 'nominated'),
-  ]
-  const spouseChecks = isCouple ? [
-    checkItem(estSpouse, 'willStatus',   'has_will'),
-    checkItem(estSpouse, 'lpaStatus',    'registered'),
-    checkItem(estSpouse, 'cpfNomStatus', 'nominated'),
-  ] : []
-  const allChecks   = [...clientChecks, ...spouseChecks]
-  const doneChecks  = allChecks.filter(Boolean).length
-  const totalChecks = allChecks.length || 3
-  const estScore    = totalChecks > 0 ? doneChecks / totalChecks : 0
+// Readiness score: will, lpa, cpf nomination, trust
+function checkItem(person: any, key: string, goodVal: string): boolean {
+  return person[key] === goodVal
+}
 
-  let estStatus: Status = 'empty'
-  let estHeadline = 'Not yet reviewed'
-  let estSubline  = 'Complete Estate Planning tab'
-  const estActions: string[] = []
+const clientChecks = [
+  checkItem(estClient, 'willStatus',   'has_will'),
+  checkItem(estClient, 'lpaStatus',    'registered'),
+  checkItem(estClient, 'cpfNomStatus', 'nominated'),
+]
+const spouseChecks = isCouple ? [
+  checkItem(estSpouse, 'willStatus',   'has_will'),
+  checkItem(estSpouse, 'lpaStatus',    'registered'),
+  checkItem(estSpouse, 'cpfNomStatus', 'nominated'),
+] : []
+const allChecks   = [...clientChecks, ...spouseChecks]
+const doneChecks  = allChecks.filter(Boolean).length
+const totalChecks = allChecks.length || 3
+const estScore    = totalChecks > 0 ? doneChecks / totalChecks : 0
 
-  if (estHasData || netEstate > 0) {
-    estStatus   = estScore === 1 ? 'good' : estScore >= 0.5 ? 'warn' : 'gap'
-    estHeadline = `Net estate ${fmt(netEstate)}`
-    estSubline  = estHasData ? `${doneChecks}/${totalChecks} readiness items done` : 'Estate documents not reviewed'
-    if (!checkItem(estClient, 'willStatus', 'has_will'))
-      estActions.push(`Will not in place for ${client.name}`)
-    if (!checkItem(estClient, 'lpaStatus', 'registered'))
-      estActions.push(`LPA not registered for ${client.name}`)
-    if (!checkItem(estClient, 'cpfNomStatus', 'nominated') && (fin.a_cpf_oa || fin.a_cpf_sa || fin.a_cpf_ra))
-      estActions.push(`CPF nomination missing for ${client.name}`)
-    if (isCouple && spouse) {
-      if (!checkItem(estSpouse, 'willStatus', 'has_will'))
-        estActions.push(`Will not in place for ${spouse.name}`)
-      if (!checkItem(estSpouse, 'lpaStatus', 'registered'))
-        estActions.push(`LPA not registered for ${spouse.name}`)
-    }
+let estStatus: Status = 'empty'
+let estHeadline = 'Not yet reviewed'
+let estSubline  = 'Complete Estate Planning tab'
+const estActions: string[] = []
+
+if (estHasData || netEstate > 0) {
+  estStatus   = estScore === 1 ? 'good' : estScore >= 0.5 ? 'warn' : 'gap'
+  estHeadline = `Net estate ${fmt(netEstate)}`
+  estSubline  = estHasData ? `${doneChecks}/${totalChecks} readiness items done` : 'Estate documents not reviewed'
+  if (!checkItem(estClient, 'willStatus', 'has_will'))
+    estActions.push(`Will not in place for ${client.name}`)
+  if (!checkItem(estClient, 'lpaStatus', 'registered'))
+    estActions.push(`LPA not registered for ${client.name}`)
+  if (!checkItem(estClient, 'cpfNomStatus', 'nominated') && (fin.a_cpf_oa || fin.a_cpf_sa || fin.a_cpf_ra))
+    estActions.push(`CPF nomination missing for ${client.name}`)
+  if (isCouple && spouse) {
+    if (!checkItem(estSpouse, 'willStatus', 'has_will'))
+      estActions.push(`Will not in place for ${spouse.name}`)
+    if (!checkItem(estSpouse, 'lpaStatus', 'registered'))
+      estActions.push(`LPA not registered for ${spouse.name}`)
   }
+}
 
   // ── ASSEMBLE PLANNING AREAS ──────────────────────────────────────────────────
 
