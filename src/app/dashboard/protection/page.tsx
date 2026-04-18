@@ -183,8 +183,10 @@ const [shareCopied, setShareCopied] = useState(false)
   }, [portfolioPerson])
 
     async function loadAll(id: string) {
-    try {
-      setError(null)
+  try {
+    setError(null)
+    // Force fresh Supabase client to bypass any client-side cache
+    const supabase = createClient()
       // Reference tables
       const [
         { data: cats },
