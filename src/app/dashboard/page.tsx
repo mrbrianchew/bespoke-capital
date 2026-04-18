@@ -363,7 +363,7 @@ const estClient      = estate.client || {}
 const estSpouse      = estate.spouse  || {}
 const estHasData     = Object.keys(estClient).length > 0
 
-// Helper function (moved outside the if block)
+// Helper function
 function amortisedOutstanding(prop: any): number {
   if (prop.outstanding > 0) return prop.outstanding
   const initialLoan = prop.initialLoanAmount ?? 0
@@ -389,6 +389,12 @@ function amortisedOutstanding(prop: any): number {
   ))
 }
 
+// Calculate property equity (needed for both Estate and Financial Overview)
+const allProps   = (fin.properties || []) as any[]
+const propEquity = allProps.reduce((s: number, p: any) =>
+  s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
+const totalLiab  = allProps.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
+
 // ✅ Read saved net estate from database FIRST
 const savedNetEstate = ffData['estate']?.netEstate || estate.netEstate || 0
 
@@ -397,10 +403,6 @@ let netEstate = savedNetEstate
 
 // Fallback calculation only if no saved value
 if (netEstate === 0) {
-  const allProps   = (fin.properties || []) as any[]
-  const propEquity = allProps.reduce((s: number, p: any) =>
-    s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
-  const totalLiab  = allProps.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
   const totalAssets = clientLiquid +
     (fin.a_cpf_oa || 0) + (fin.a_cpf_sa || 0) + (fin.a_cpf_ma || 0) + (fin.a_cpf_ra || 0) +
     propEquity
