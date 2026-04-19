@@ -128,42 +128,17 @@ export default function ExecutiveSummaryPage() {
   async function updateClientComplete(updatedData: any) {
   setSaving(true)
   try {
-    console.log('Updating client with data:', updatedData)
-    console.log('Client ID:', client.id)
-    
-    // Check if client.id exists
-    if (!client.id) {
-      throw new Error('No client ID found')
-    }
-    
-    const updateFields: any = {
-      name: updatedData.name,
-      gender: updatedData.gender,
-    }
-    
-    // Only add fields if they have values
+    if (!client.id) throw new Error('No client ID found')
+    const updateFields: any = { name: updatedData.name, gender: updatedData.gender }
     if (updatedData.dob) updateFields.dob = updatedData.dob
     if (updatedData.citizenship) updateFields.citizenship = updatedData.citizenship
-    
-    console.log('Update fields:', updateFields)
-    
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('clients')
       .update(updateFields)
       .eq('id', client.id)
-      .select()
-    
-    if (error) {
-      console.error('Supabase error:', error)
-      throw error
-    }
-    
-    console.log('Update successful:', data)
-    
-    await load()
-    setShowEditModal(false)
+    if (error) throw error
+    setClient((prev: any) => ({ ...prev, ...updateFields }))
   } catch (error: any) {
-    console.error('Full error object:', error)
     alert(`Failed to update client: ${error.message || 'Unknown error'}`)
   } finally {
     setSaving(false)
@@ -173,42 +148,28 @@ export default function ExecutiveSummaryPage() {
 async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
   setSaving(true)
   try {
-    console.log('Updating family member with data:', updatedData)
-    console.log('Member ID:', memberId)
-    
-    if (!memberId) {
-      throw new Error('No member ID found')
-    }
-    
+    if (!memberId) throw new Error('No member ID found')
     const updateFields: any = {
       name: updatedData.name,
       gender: updatedData.gender,
       relationship: updatedData.relationship,
     }
-    
     if (updatedData.dob) updateFields.date_of_birth = updatedData.dob
     if (updatedData.citizenship) updateFields.citizenship = updatedData.citizenship
-    
-    console.log('Update fields:', updateFields)
-    
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('family_members')
       .update(updateFields)
       .eq('id', memberId)
-      .select()
-    
-    if (error) {
-      console.error('Supabase error:', error)
-      throw error
+    if (error) throw error
+    if (updatedData.relationship === 'Spouse') {
+      setSpouse((prev: any) => ({ ...prev, ...updateFields }))
+    } else {
+      setChildren((prev: any[]) =>
+        prev.map(k => k.id === memberId ? { ...k, ...updateFields } : k)
+      )
     }
-    
-    console.log('Update successful:', data)
-    
-    await load()
-    setShowEditModal(false)
   } catch (error: any) {
-    console.error('Full error object:', error)
-    alert(`Failed to update family member: ${error.message || 'Unknown error'}`)
+    alert(`Failed to update: ${error.message || 'Unknown error'}`)
   } finally {
     setSaving(false)
   }
@@ -1016,7 +977,6 @@ function EditMemberModal({
     setIsSaving(true)
     try {
       await onSave(formData)
-      onClose()
     } catch (error) {
       console.error('Save failed:', error)
     } finally {
