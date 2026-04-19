@@ -73,6 +73,7 @@ interface ProtectionOverviewProps {
   rmData: RiskMgmtData
   updateRm: (data: RiskMgmtData) => void
   inflation: number
+  educationChildren?: any[]  // From Objectives page - contains uniEntryAge per child
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -211,6 +212,7 @@ export default function ProtectionOverview({
   rmData,
   updateRm,
   inflation,
+  educationChildren = [],
 }: ProtectionOverviewProps) {
   const [activePerson, setActivePerson] = useState<'client' | 'spouse'>('client')
  const ff = ffData || {}
@@ -264,13 +266,17 @@ useEffect(() => {
 
   // ── Uni entry ages per child (for sharp drops) ──────────────────────────────
   const childUniEntryAges = useMemo(() => {
-    return children.map((c: any) => {
-      const childAge = Number(c.age || 0)
-      const gender = c.gender || ''
-      const uniAge = gender === 'Female' ? 19 : 21
-      return { childAge, uniAge }
-    })
-  }, [children])
+  return children.map((c: any) => {
+    const childAge = Number(c.age || 0)
+    const gender = c.gender || ''
+    // Look up stored uniEntryAge from Objectives page
+    const eduChild = educationChildren?.find((ec: any) => ec.childId === c.id)
+    const uniEntryAge = eduChild?.uniEntryAge ?? (gender === 'Female' ? 19 : 21)
+    // Calculate at what PARENT AGE this child enters university
+    const parentAgeAtUni = clientAge + (uniEntryAge - childAge)
+    return { childAge, uniEntryAge, parentAgeAtUni }
+  }).sort((a, b) => a.parentAgeAtUni - b.parentAgeAtUni)
+}, [children, clientAge, educationChildren])
 
   // ── Floor calculation ───────────────────────────────────────────────────────
   // Floor = higher of ($300K) or (basic living expenses inflated to retirement/last milestone)
@@ -330,16 +336,15 @@ useEffect(() => {
 
     // Education — step down sharply as each child enters uni
     let eduRemaining = edu
-    if (children.length > 0) {
-      const childrenNotYetAtUni = childUniEntryAges.filter(({ childAge, uniAge }) => {
-        const yearsUntilUni = uniAge - childAge
-        return (age - currentAge) < yearsUntilUni
-      }).length
-      const eduFraction = childrenNotYetAtUni / children.length
-      eduRemaining = edu * eduFraction
-    } else {
-      eduRemaining = yLeft > 0 ? edu : 0
-    }
+if (children.length > 0) {
+  const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
+    return age < parentAgeAtUni
+  }).length
+  const eduFraction = childrenNotYetAtUni / children.length
+  eduRemaining = edu * eduFraction
+} else {
+  eduRemaining = yLeft > 0 ? edu : 0
+}
 
     const raw = ageFD + ageMort + eduRemaining - offset
     return Math.max(floor, raw)
@@ -359,20 +364,19 @@ useEffect(() => {
 
     // Fraction remaining based on children still dependent
     let incomeFraction = 1.0
-    if (children.length > 0) {
-      const childrenNotYetAtUni = childUniEntryAges.filter(({ childAge, uniAge }) => {
-        const yearsUntilUni = uniAge - childAge
-        return (age - currentAge) < yearsUntilUni
-      }).length
-      // Sharp drop when last child enters uni
-      if (yLeft <= 0) {
-        incomeFraction = 0
-      } else {
-        incomeFraction = childrenNotYetAtUni / children.length
-      }
-    } else {
-      incomeFraction = yLeft > 0 ? 1.0 : 0
-    }
+if (children.length > 0) {
+  const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
+    return age < parentAgeAtUni
+  }).length
+  // Sharp drop when last child enters uni
+  if (yLeft <= 0) {
+    incomeFraction = 0
+  } else {
+    incomeFraction = childrenNotYetAtUni / children.length
+  }
+} else {
+  incomeFraction = yLeft > 0 ? 1.0 : 0
+}
 
     const incomeComponent = incomeWindow * incomeFraction
 
@@ -381,15 +385,14 @@ useEffect(() => {
 
     // Education component (sharp drops at each child's uni entry)
     let eduComponent = 0
-    if (children.length > 0) {
-      const childrenNotYetAtUni = childUniEntryAges.filter(({ childAge, uniAge }) => {
-        const yearsUntilUni = uniAge - childAge
-        return (age - currentAge) < yearsUntilUni
-      }).length
-      eduComponent = edu * (childrenNotYetAtUni / children.length)
-    } else {
-      eduComponent = yLeft > 0 ? edu : 0
-    }
+if (children.length > 0) {
+  const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
+    return age < parentAgeAtUni
+  }).length
+  eduComponent = edu * (childrenNotYetAtUni / children.length)
+} else {
+  eduComponent = yLeft > 0 ? edu : 0
+}
 
     const raw = incomeComponent + mortComponent + eduComponent
     return Math.max(floor, raw)
@@ -473,11 +476,11 @@ useEffect(() => {
 
   // ── Milestone ages (for chart annotations) ──────────────────────────────────
   const milestoneAges = useMemo(() => {
-    const currentAge = activePerson === 'client' ? clientAge : spouseAge
-    const uniAges = childUniEntryAges
-      .map(({ childAge, uniAge }) => currentAge + Math.max(0, uniAge - childAge))
-      .filter(a => a > currentAge)
-      .sort((a, b) => a - b)
+  const currentAge = activePerson === 'client' ? clientAge : spouseAge
+  const uniAges = childUniEntryAges
+    .map(({ parentAgeAtUni }) => parentAgeAtUni)
+    .filter(a => a > currentAge)
+    .sort((a, b) => a - b)
 
     const mortEndAge = (() => {
       const allMortgages = properties.flatMap((p: any) => p.mortgages || [])
