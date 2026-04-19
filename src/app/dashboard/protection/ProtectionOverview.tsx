@@ -424,36 +424,29 @@ if (children.length > 0) {
   const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
-  const currentPolicies = policiesRef.current
-  const currentProperties = propertiesRef.current
+  
+  console.log(`🔵 chartData recalculating - policies: ${activePolicies.length}`)
   
   const result = []
   for (let age = currentAge; age <= 100; age++) {
+    const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
+    const ciHave = getCIHaveAtAge(age, personKey, currentAge, activePolicies)
+    
     result.push({
       age,
-      dtpdNeed: getDTPDNeedAtAge(age, personKey, currentProperties),
-      dtpdHave: getDTPDHaveAtAge(age, personKey, currentAge, currentPolicies),
-      ciNeed: getCINeedAtAge(age, personKey, currentProperties),
-      ciHave: getCIHaveAtAge(age, personKey, currentAge, currentPolicies),
+      dtpdNeed: getDTPDNeedAtAge(age, personKey, properties),
+      dtpdHave: dtpdHave,
+      ciNeed: getCINeedAtAge(age, personKey, properties),
+      ciHave: ciHave,
     })
   }
+  
+  console.log(`🔵 First point age ${result[0].age}: dtpdHave = ${result[0].dtpdHave}`)
+  
   return result
-}, [
-  activePerson, 
-  clientAge, 
-  spouseAge, 
-  activePolicies, 
-  clientFloor, 
-  spouseFloor,
-  p1AnnExp, 
-  p2AnnExp, 
-  inflation, 
-  properties, 
-  children, 
-  edu, 
-  coverTerm,
-  childUniEntryAges
-])
+}, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
+    p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges])
+  
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
   const aAge = activePerson === 'client' ? clientAge : spouseAge
