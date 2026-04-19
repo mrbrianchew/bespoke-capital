@@ -582,7 +582,6 @@ if (children.length > 0) {
       clientFloor, spouseFloor, clientRunwayMonths, spouseRunwayMonths, isCouple])
 
   // ── Chart rendering ──────────────────────────────────────────────────────────
-  function // ─── Chart rendering ──────────────────────────────────────────────────────────
 function CoverageChart({
   data,
   type,
