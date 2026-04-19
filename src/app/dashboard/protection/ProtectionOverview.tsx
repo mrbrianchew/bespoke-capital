@@ -477,21 +477,27 @@ if (children.length > 0) {
   // ── Milestone ages (for chart annotations) ──────────────────────────────────
   const milestoneAges = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
+  
+  // University milestones with child names
   const uniAges = childUniEntryAges
-    .map(({ parentAgeAtUni }) => parentAgeAtUni)
-    .filter(a => a > currentAge)
-    .sort((a, b) => a - b)
+    .map((item, i) => ({
+      age: item.parentAgeAtUni,
+      label: children[i]?.name || `Child ${i + 1} uni`,
+    }))
+    .filter(a => a.age > currentAge && a.age < 100)
+    .sort((a, b) => a.age - b.age)
 
-    const mortEndAge = (() => {
-      const allMortgages = properties.flatMap((p: any) => p.mortgages || [])
-      if (allMortgages.length === 0) return null
-      const maxTenure = Math.max(...allMortgages.map((m: any) => Number(m.tenure || m.remainingTenure || 0)))
-      return maxTenure > 0 ? Math.round(currentAge + maxTenure) : null
-    })()
+  const mortEndAge = (() => {
+    const allMortgages = properties.flatMap((p: any) => p.mortgages || [])
+    if (allMortgages.length === 0) return null
+    const maxTenure = Math.max(...allMortgages.map((m: any) => Number(m.tenure || m.remainingTenure || 0)))
+    return maxTenure > 0 ? Math.round(currentAge + maxTenure) : null
+  })()
 
-    const retireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
-    return { uniAges, mortEndAge, retireAge }
-  }, [activePerson, clientAge, spouseAge, childUniEntryAges, properties, p1RetireAge, p2RetireAge])
+  const retireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
+  
+  return { uniAges, mortEndAge, retireAge }
+}, [activePerson, clientAge, spouseAge, childUniEntryAges, children, properties, p1RetireAge, p2RetireAge])
 
   // ── Priority actions (dynamically ranked) ───────────────────────────────────
   const priorityActions = useMemo(() => {
@@ -576,347 +582,379 @@ if (children.length > 0) {
       clientFloor, spouseFloor, clientRunwayMonths, spouseRunwayMonths, isCouple])
 
   // ── Chart rendering ──────────────────────────────────────────────────────────
-  function CoverageChart({
-    data,
-    type,
+  function // ─── Chart rendering ──────────────────────────────────────────────────────────
+function CoverageChart({
+  data,
+  type,
+  floor,
+  accentColor,
+  currentAge,
+  milestones,
+  personName,
+}: {
+  data: typeof chartData
+  type: 'dtpd' | 'ci'
+  floor: number
+  accentColor: string
+  currentAge: number
+  milestones: { uniAges: { age: number; label: string }[]; mortEndAge: number | null; retireAge: number }
+  personName: string
+}) {
+  const [hovered, setHovered] = useState<{
+    age: number
+    need: number
+    have: number
+    x: number
+    yNeed: number
+    yHave: number
+  } | null>(null)
+
+  if (!data.length) return null
+
+  // Chart dimensions
+  const W = 900
+  const H = 280
+  const PL = 70
+  const PR = 40
+  const PT = 50
+  const PB = 50
+  const iW = W - PL - PR
+  const iH = H - PT - PB
+
+  const needKey = type === 'dtpd' ? 'dtpdNeed' : 'ciNeed'
+  const haveKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
+
+  // Find max value for Y-axis scaling
+  const maxV = Math.max(
+    ...data.map(d => Math.max((d as any)[needKey], (d as any)[haveKey])),
     floor,
-    accentColor,
-    currentAge,
-    milestones,
-  }: {
-    data: typeof chartData
-    type: 'dtpd' | 'ci'
-    floor: number
-    accentColor: string
-    currentAge: number
-    milestones: { uniAges: number[]; mortEndAge: number | null; retireAge: number }
-  }) {
-    const [hovered, setHovered] = useState<{
-      age: number; need: number; have: number; x: number
-    } | null>(null)
+    100000
+  )
 
-    if (!data.length) return null
+  const minA = data[0].age
+  const aRange = data[data.length - 1].age - minA || 1
 
-    const W = 900, H = 220, PL = 72, PR = 48, PT = 24, PB = 40
-    const iW = W - PL - PR
-    const iH = H - PT - PB
+  const xP = (age: number) => PL + ((age - minA) / aRange) * iW
+  const yP = (v: number) => PT + iH - Math.min(1, v / maxV) * iH
 
-    const needKey = type === 'dtpd' ? 'dtpdNeed' : 'ciNeed'
-    const haveKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
-
-    const maxV = Math.max(
-      ...data.map(d => Math.max((d as any)[needKey], (d as any)[haveKey])),
-      floor,
-      1
-    )
-
-    const minA = data[0].age
-    const aRange = data[data.length - 1].age - minA || 1
-
-    const xP = (age: number) => ((age - minA) / aRange) * iW
-    const yP = (v: number) => iH - Math.min(1, v / maxV) * iH
-
-    const fmtAx = (n: number) => {
-      if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
-      if (n >= 1e3) return `$${Math.round(n / 1000)}K`
-      return `$${Math.round(n)}`
-    }
-
-    const ticks = [0, 0.25, 0.5, 0.75, 1]
-    const floorY = PT + yP(floor)
-
-    // Build need path (with sharp drops for CI)
-    function buildNeedPath(): string {
-      const pts: { x: number; y: number }[] = []
-      data.forEach((d, i) => {
-        const prev = i > 0 ? data[i - 1] : null
-        const curr = (d as any)[needKey]
-        const px = PL + xP(d.age)
-        const py = PT + yP(curr)
-        if (prev) {
-          const prevV = (prev as any)[needKey]
-          // Sharp drop = large decrease in one year
-          if (prevV - curr > prevV * 0.1) {
-            // Draw vertical line first
-            pts.push({ x: PL + xP(prev.age), y: PT + yP(curr) })
-          }
-        }
-        pts.push({ x: px, y: py })
-      })
-      return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
-    }
-
-    const needPath = buildNeedPath()
-
-    // Have path (stepped based on policy maturities)
-    const havePts = data.map(d => ({
-      x: PL + xP(d.age),
-      y: PT + yP((d as any)[haveKey]),
-    }))
-    const havePath = havePts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
-
-    // Shortfall fill (where need > have)
-    const shortfallSegments: string[] = []
-    let segStart = -1
-    for (let i = 0; i < data.length; i++) {
-      const need = (data[i] as any)[needKey]
-      const have = (data[i] as any)[haveKey]
-      const isShortfall = need > have
-      if (isShortfall && segStart === -1) segStart = i
-      else if (!isShortfall && segStart !== -1) {
-        const seg = data.slice(segStart, i)
-        const topPts = seg.map((d: any) => `${PL + xP(d.age).toFixed(1)},${(PT + yP(d[needKey])).toFixed(1)}`)
-        const botPts = [...seg].reverse().map((d: any) => `${PL + xP(d.age).toFixed(1)},${(PT + yP(d[haveKey])).toFixed(1)}`)
-        shortfallSegments.push(`M ${topPts.join(' L ')} L ${botPts.join(' L ')} Z`)
-        segStart = -1
-      }
-    }
-    if (segStart !== -1) {
-      const seg = data.slice(segStart)
-      const topPts = seg.map((d: any) => `${(PL + xP(d.age)).toFixed(1)},${(PT + yP(d[needKey])).toFixed(1)}`)
-      const botPts = [...seg].reverse().map((d: any) => `${(PL + xP(d.age)).toFixed(1)},${(PT + yP(d[haveKey])).toFixed(1)}`)
-      shortfallSegments.push(`M ${topPts.join(' L ')} L ${botPts.join(' L ')} Z`)
-    }
-
-    // Surplus fill (where have > need)
-    const surplusSegments: string[] = []
-    let surpStart = -1
-    for (let i = 0; i < data.length; i++) {
-      const need = (data[i] as any)[needKey]
-      const have = (data[i] as any)[haveKey]
-      const isSurplus = have > need + 1000
-      if (isSurplus && surpStart === -1) surpStart = i
-      else if (!isSurplus && surpStart !== -1) {
-        const seg = data.slice(surpStart, i)
-        const topPts = seg.map((d: any) => `${(PL + xP(d.age)).toFixed(1)},${(PT + yP(d[haveKey])).toFixed(1)}`)
-        const botPts = [...seg].reverse().map((d: any) => `${(PL + xP(d.age)).toFixed(1)},${(PT + yP(d[needKey])).toFixed(1)}`)
-        surplusSegments.push(`M ${topPts.join(' L ')} L ${botPts.join(' L ')} Z`)
-        surpStart = -1
-      }
-    }
-
-    // Age labels
-    const ageLabels = data.filter((_, i) => i % 5 === 0 || i === data.length - 1)
-
-    function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const mx = (e.clientX - rect.left) * (W / rect.width)
-      if (mx >= PL && mx <= PL + iW) {
-        const rel = (mx - PL) / iW
-        const targetAge = minA + rel * aRange
-        const closest = data.reduce((prev, curr) =>
-          Math.abs(curr.age - targetAge) < Math.abs(prev.age - targetAge) ? curr : prev
-        )
-        setHovered({
-          age: closest.age,
-          need: (closest as any)[needKey],
-          have: (closest as any)[haveKey],
-          x: PL + xP(closest.age),
-        })
-      } else {
-        setHovered(null)
-      }
-    }
-
-    const CREAM = '#FDFCFA'
-    const AXIS_TEXT = '#9A9896'
-
-    return (
-      <div style={{ position: 'relative', overflow: 'visible' }}>
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          width="100%"
-          style={{ display: 'block', overflow: 'visible' }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHovered(null)}
-        >
-          {/* Grid */}
-          {ticks.map(f => {
-            const y = PT + iH - f * iH
-            return (
-              <g key={f}>
-                <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke="#F0EDE8" strokeWidth="0.5" />
-                {f > 0 && (
-                  <text x={PL - 10} y={y + 3.5} fontSize="9" fill={AXIS_TEXT}
-                    textAnchor="end" fontFamily="Inter, sans-serif" fontWeight="300">
-                    {fmtAx(maxV * f)}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-
-          {/* Axes */}
-          <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
-          <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
-
-          {/* Floor band */}
-          <rect x={PL} y={floorY - 1} width={iW} height={2} fill={accentColor} opacity="0.08" />
-          <line x1={PL} y1={floorY} x2={PL + iW} y2={floorY}
-            stroke={accentColor} strokeWidth="1.2" strokeDasharray="6,4" opacity="0.5" />
-          <rect x={PL + iW - 90} y={floorY - 11} width={88} height={14} rx="4" fill="#FDFCFA" />
-          <text x={PL + iW - 46} y={floorY - 1} textAnchor="middle" fontSize="9"
-            fill={accentColor} fontFamily="Inter, sans-serif" fontWeight="500" opacity="0.8">
-            Floor · {fmtShort(floor)}
-          </text>
-
-          {/* Shortfall fills (red) */}
-          {shortfallSegments.map((d, i) => (
-            <path key={`sf-${i}`} d={d} fill="rgba(192,57,43,0.07)" stroke="rgba(192,57,43,0.15)" strokeWidth="0.5" />
-          ))}
-
-          {/* Surplus fills (green) */}
-          {surplusSegments.map((d, i) => (
-            <path key={`sp-${i}`} d={d} fill="rgba(45,106,79,0.06)" stroke="rgba(45,106,79,0.15)" strokeWidth="0.5" />
-          ))}
-
-          {/* Have bars */}
-          {data.map(d => {
-            const have = (d as any)[haveKey]
-            const bx = PL + xP(d.age)
-            const barH = Math.max(0, iH - yP(have))
-            const barW = Math.max(2, (iW / data.length) * 0.6)
-            return (
-              <rect key={`bar-${d.age}`}
-                x={bx - barW / 2} y={PT + yP(have)}
-                width={barW} height={barH}
-                fill={accentColor} opacity="0.22" rx="1.5"
-              />
-            )
-          })}
-
-          {/* Milestone verticals */}
-          {milestones.uniAges.map((a, i) => {
-            const mx = PL + xP(a)
-            if (mx < PL || mx > PL + iW) return null
-            return (
-              <g key={`uni-${i}`}>
-                <line x1={mx} y1={PT} x2={mx} y2={PT + iH}
-                  stroke="#2D6A4F" strokeWidth="0.5" strokeDasharray="3,3" opacity="0.25" />
-                <text x={mx} y={PT - 4} textAnchor="middle" fontSize="8"
-                  fill="#2D6A4F" fontFamily="Inter, sans-serif" opacity="0.7">
-                  {`Child ${i + 1} uni`}
-                </text>
-              </g>
-            )
-          })}
-          {milestones.mortEndAge && (() => {
-            const mx = PL + xP(milestones.mortEndAge!)
-            if (mx < PL || mx > PL + iW) return null
-            return (
-              <g key="mort">
-                <line x1={mx} y1={PT} x2={mx} y2={PT + iH}
-                  stroke="#A8834A" strokeWidth="0.5" strokeDasharray="3,3" opacity="0.25" />
-                <text x={mx} y={PT + iH + 22} textAnchor="middle" fontSize="8"
-                  fill="#A8834A" fontFamily="Inter, sans-serif" opacity="0.7">
-                  Mortgage end
-                </text>
-              </g>
-            )
-          })()}
-          {(() => {
-            const mx = PL + xP(milestones.retireAge)
-            if (mx < PL || mx > PL + iW) return null
-            return (
-              <g key="retire">
-                <line x1={mx} y1={PT} x2={mx} y2={PT + iH}
-                  stroke="#555" strokeWidth="0.5" strokeDasharray="3,3" opacity="0.2" />
-                <text x={mx} y={PT - 4} textAnchor="middle" fontSize="8"
-                  fill="#555" fontFamily="Inter, sans-serif" opacity="0.6">
-                  Retirement
-                </text>
-              </g>
-            )
-          })()}
-
-          {/* Need curve */}
-          <path d={needPath} stroke={accentColor} strokeWidth="2" fill="none"
-            strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* Have curve */}
-          <path d={havePath} stroke={accentColor} strokeWidth="1.2" fill="none"
-            strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4,3" opacity="0.6" />
-
-          {/* Crosshair */}
-          {hovered && (
-            <line x1={hovered.x} y1={PT} x2={hovered.x} y2={PT + iH}
-              stroke="#1C1A17" strokeWidth="0.5" strokeDasharray="2,4" opacity="0.15" />
-          )}
-
-          {/* Hover dot on need */}
-          {hovered && (
-            <circle cx={hovered.x} cy={PT + yP(hovered.need)} r="3"
-              fill={accentColor} stroke={CREAM} strokeWidth="1.5" />
-          )}
-
-          {/* Hover dot on have */}
-          {hovered && (
-            <circle cx={hovered.x} cy={PT + yP(hovered.have)} r="2.5"
-              fill={accentColor} stroke={CREAM} strokeWidth="1.5" opacity="0.6" />
-          )}
-
-          {/* Age labels */}
-          {ageLabels.map(d => (
-            <text key={d.age} x={PL + xP(d.age)} y={PT + iH + 14}
-              fontSize="9" fill={AXIS_TEXT} textAnchor="middle"
-              fontFamily="Inter, sans-serif" fontWeight="300">
-              {d.age}
-            </text>
-          ))}
-        </svg>
-
-        {/* Tooltip */}
-        {hovered && (() => {
-          const gap = hovered.need - hovered.have
-          const isOver = hovered.have > hovered.need
-          const leftPct = ((hovered.x - PL) / iW) * 100
-          return (
-            <div style={{
-              position: 'absolute',
-              left: `${Math.min(Math.max(leftPct, 10), 85)}%`,
-              top: '10px',
-              transform: 'translateX(-50%)',
-              background: '#1C1A17',
-              color: '#F0EDE8',
-              padding: '14px 18px',
-              borderRadius: 10,
-              fontSize: 11,
-              pointerEvents: 'none',
-              zIndex: 10,
-              whiteSpace: 'nowrap' as const,
-              minWidth: 190,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-            }}>
-              <div style={{ marginBottom: 10, color: accentColor, fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase' as const }}>
-                Age {hovered.age}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                  <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Need</span>
-                  <span style={{ fontFamily: 'Georgia, serif', fontSize: 17, fontWeight: 300 }}>{fmt(hovered.need)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                  <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Have</span>
-                  <span style={{ fontFamily: 'Georgia, serif', fontSize: 17, fontWeight: 300, color: accentColor }}>{fmt(hovered.have)}</span>
-                </div>
-                <div style={{ paddingTop: 8, borderTop: '0.5px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', gap: 24 }}>
-                  <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>
-                    {gap > 0 ? 'Shortfall' : isOver ? 'Surplus' : 'Covered'}
-                  </span>
-                  <span style={{
-                    fontFamily: 'Georgia, serif', fontSize: 17, fontWeight: 300,
-                    color: gap > 0 ? '#FF8A80' : isOver ? '#A0D0B8' : '#F0EDE8',
-                  }}>
-                    {gap > 0 ? fmt(gap) : isOver ? fmt(-gap) : '✓'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )
-        })()}
-      </div>
-    )
+  // Format Y-axis labels
+  const fmtY = (n: number) => {
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
+    if (n >= 1e3) return `$${Math.round(n / 1000)}K`
+    return `$${Math.round(n)}`
   }
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+  const floorY = yP(floor)
+
+  // Build need line path
+  const needPoints = data.map(d => ({
+    x: xP(d.age),
+    y: yP((d as any)[needKey])
+  }))
+  const needPath = needPoints.map((p, i) => 
+    `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`
+  ).join(' ')
+
+  // Build have line path
+  const havePoints = data.map(d => ({
+    x: xP(d.age),
+    y: yP((d as any)[haveKey])
+  }))
+  const havePath = havePoints.map((p, i) => 
+    `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`
+  ).join(' ')
+
+  // Build shortfall fill areas (where need > have)
+  const shortfallSegments: string[] = []
+  let segStart = -1
+  
+  for (let i = 0; i < data.length; i++) {
+    const need = (data[i] as any)[needKey]
+    const have = (data[i] as any)[haveKey]
+    const isShortfall = need > have
+    
+    if (isShortfall && segStart === -1) {
+      segStart = i
+    } else if (!isShortfall && segStart !== -1) {
+      // End of a shortfall segment
+      const seg = data.slice(segStart, i)
+      const topPts = seg.map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[needKey]).toFixed(1)}`)
+      const botPts = [...seg].reverse().map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[haveKey]).toFixed(1)}`)
+      shortfallSegments.push(`M ${topPts.join(' L ')} L ${botPts.join(' L ')} Z`)
+      segStart = -1
+    }
+  }
+  
+  // Handle segment that goes to the end
+  if (segStart !== -1) {
+    const seg = data.slice(segStart)
+    const topPts = seg.map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[needKey]).toFixed(1)}`)
+    const botPts = [...seg].reverse().map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[haveKey]).toFixed(1)}`)
+    shortfallSegments.push(`M ${topPts.join(' L ')} L ${botPts.join(' L ')} Z`)
+  }
+
+  // Age labels (every 5 years)
+  const ageLabels = data.filter(d => d.age % 5 === 0 || d.age === currentAge || d.age === 100)
+
+  // Mouse interaction
+  function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    
+    if (mx >= PL && mx <= PL + iW) {
+      const rel = (mx - PL) / iW
+      const targetAge = minA + rel * aRange
+      const closest = data.reduce((prev, curr) =>
+        Math.abs(curr.age - targetAge) < Math.abs(prev.age - targetAge) ? curr : prev
+      )
+      setHovered({
+        age: closest.age,
+        need: (closest as any)[needKey],
+        have: (closest as any)[haveKey],
+        x: xP(closest.age),
+        yNeed: yP((closest as any)[needKey]),
+        yHave: yP((closest as any)[haveKey]),
+      })
+    } else {
+      setHovered(null)
+    }
+  }
+
+  // Build milestone markers
+  const allMilestones: { age: number; label: string; color: string }[] = []
+  
+  milestones.uniAges.forEach((m, i) => {
+    allMilestones.push({
+      age: m.age,
+      label: m.label,
+      color: '#2D6A4F'
+    })
+  })
+  
+  if (milestones.mortEndAge) {
+    allMilestones.push({
+      age: milestones.mortEndAge,
+      label: 'Mortgage paid',
+      color: '#A8834A'
+    })
+  }
+  
+  if (milestones.retireAge) {
+    allMilestones.push({
+      age: milestones.retireAge,
+      label: 'Retirement',
+      color: '#6B7B8D'
+    })
+  }
+
+  return (
+    <div style={{ position: 'relative', overflow: 'visible' }}>
+      {/* Chart header */}
+      <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9A9896' }}>
+          {personName} · Age {currentAge} to 100
+        </div>
+        <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 16, height: 2, background: accentColor }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Coverage Needed</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 12, height: 8, background: accentColor, opacity: 0.25, borderRadius: 2 }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Existing Portfolio</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 12, height: 8, background: '#C0392B', opacity: 0.15, borderRadius: 2 }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Shortfall</span>
+          </div>
+        </div>
+      </div>
+
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        style={{ display: 'block', overflow: 'visible', background: '#FDFCFA', borderRadius: 8 }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHovered(null)}
+      >
+        {/* Grid lines */}
+        {ticks.map(f => {
+          const y = PT + iH - f * iH
+          return (
+            <g key={f}>
+              <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke="#F0EDE8" strokeWidth="0.5" />
+              {f > 0 && (
+                <text x={PL - 10} y={y + 4} fontSize="10" fill="#9A9896" textAnchor="end" fontFamily="Inter, sans-serif">
+                  {fmtY(maxV * f)}
+                </text>
+              )}
+            </g>
+          )
+        })}
+
+        {/* Floor line */}
+        <line x1={PL} y1={floorY} x2={PL + iW} y2={floorY} stroke={accentColor} strokeWidth="1" strokeDasharray="4,4" opacity="0.4" />
+        <text x={PL + iW - 10} y={floorY - 6} fontSize="9" fill={accentColor} textAnchor="end" fontFamily="Inter, sans-serif" opacity="0.7">
+          Floor {fmtShort(floor)}
+        </text>
+
+        {/* Axes */}
+        <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
+        <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
+
+        {/* Shortfall fill (red shading) */}
+        {shortfallSegments.map((d, i) => (
+          <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
+        ))}
+
+        {/* Have bars (existing portfolio) */}
+        {data.map(d => {
+          const have = (d as any)[haveKey]
+          const bx = xP(d.age)
+          const barH = Math.max(0, iH - (yP(have) - PT))
+          const barW = Math.max(3, (iW / data.length) * 0.7)
+          
+          return (
+            <rect
+              key={`bar-${d.age}`}
+              x={bx - barW / 2}
+              y={yP(have)}
+              width={barW}
+              height={barH}
+              fill={accentColor}
+              opacity="0.25"
+              rx="2"
+            />
+          )
+        })}
+
+        {/* Need line */}
+        <path d={needPath} stroke={accentColor} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Have line (optional, subtle) */}
+        <path d={havePath} stroke={accentColor} strokeWidth="0.8" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
+
+        {/* Milestone markers */}
+        {allMilestones.map((m, i) => {
+          const mx = xP(m.age)
+          if (mx < PL || mx > PL + iW) return null
+          
+          return (
+            <g key={`ms-${i}`}>
+              <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.3" />
+              <circle cx={mx} cy={PT + iH + 8} r="3" fill={m.color} opacity="0.6" />
+              <text x={mx} y={PT + iH + 22} fontSize="9" fill={m.color} textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="500">
+                {m.label}
+              </text>
+              <text x={mx} y={PT + iH + 34} fontSize="8" fill="#9A9896" textAnchor="middle" fontFamily="Inter, sans-serif">
+                age {m.age}
+              </text>
+            </g>
+          )
+        })}
+
+        {/* Age labels */}
+        {ageLabels.map(d => (
+          <text
+            key={d.age}
+            x={xP(d.age)}
+            y={PT + iH + 20}
+            fontSize="9"
+            fill="#9A9896"
+            textAnchor="middle"
+            fontFamily="Inter, sans-serif"
+          >
+            {d.age}
+          </text>
+        ))}
+
+        {/* Hover vertical line */}
+        {hovered && (
+          <line
+            x1={hovered.x}
+            y1={PT}
+            x2={hovered.x}
+            y2={PT + iH}
+            stroke="#1C1A17"
+            strokeWidth="0.5"
+            strokeDasharray="2,4"
+            opacity="0.2"
+          />
+        )}
+
+        {/* Hover dot on need line */}
+        {hovered && (
+          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill={accentColor} stroke="#FDFCFA" strokeWidth="2" />
+        )}
+
+        {/* Hover dot on have line */}
+        {hovered && hovered.have > 0 && (
+          <circle cx={hovered.x} cy={hovered.yHave} r="3" fill={accentColor} stroke="#FDFCFA" strokeWidth="1.5" opacity="0.6" />
+        )}
+      </svg>
+
+      {/* Tooltip */}
+      {hovered && (
+        <div
+          style={{
+            position: 'absolute',
+            left: ((hovered.x - PL) / iW) * 100 + '%',
+            top: '20px',
+            transform: 'translateX(-50%)',
+            background: '#1C1A17',
+            color: '#F0EDE8',
+            padding: '16px 20px',
+            borderRadius: 12,
+            fontSize: 11,
+            pointerEvents: 'none',
+            zIndex: 10,
+            whiteSpace: 'nowrap',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.2)',
+          }}
+        >
+          <div style={{ marginBottom: 12, color: accentColor, fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+            Age {hovered.age}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Coverage Needed</span>
+              <span style={{ fontFamily: 'Georgia, serif', fontSize: 18, fontWeight: 300 }}>{fmt(hovered.need)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Existing Portfolio</span>
+              <span style={{ fontFamily: 'Georgia, serif', fontSize: 18, fontWeight: 300, color: accentColor }}>{fmt(hovered.have)}</span>
+            </div>
+            <div style={{ paddingTop: 10, borderTop: '0.5px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', gap: 32 }}>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {hovered.need > hovered.have ? 'Shortfall' : 'Surplus'}
+              </span>
+              <span style={{
+                fontFamily: 'Georgia, serif',
+                fontSize: 18,
+                fontWeight: 300,
+                color: hovered.need > hovered.have ? '#FF8A80' : '#A0D0B8',
+              }}>
+                {hovered.need > hovered.have ? fmt(hovered.need - hovered.have) : fmt(hovered.have - hovered.need)}
+              </span>
+            </div>
+          </div>
+          <div style={{
+            position: 'absolute',
+            bottom: -6,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 0,
+            height: 0,
+            borderLeft: '6px solid transparent',
+            borderRight: '6px solid transparent',
+            borderTop: '6px solid #1C1A17',
+          }} />
+        </div>
+      )}
+    </div>
+  )
+}
 
   // ── Coverage cell ────────────────────────────────────────────────────────────
   function CoverageCell({
@@ -1244,13 +1282,14 @@ if (children.length > 0) {
             </div>
           </div>
           <CoverageChart
-            data={chartData}
-            type="dtpd"
-            floor={aFloor}
-            accentColor="#C4A464"
-            currentAge={aAge}
-            milestones={milestoneAges}
-          />
+  data={chartData}
+  type="dtpd"
+  floor={aFloor}
+  accentColor="#C4A464"
+  currentAge={aAge}
+  milestones={milestoneAges}
+  personName={aName} 
+/>
           <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
             Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
           </div>
@@ -1283,13 +1322,14 @@ if (children.length > 0) {
             </div>
           </div>
           <CoverageChart
-            data={chartData}
-            type="ci"
-            floor={aFloor}
-            accentColor="#2D6A4F"
-            currentAge={aAge}
-            milestones={milestoneAges}
-          />
+  data={chartData}
+  type="ci"
+  floor={aFloor}
+  accentColor="#2D6A4F"
+  currentAge={aAge}
+  milestones={milestoneAges}
+  personName={aName}
+/>
           <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
             Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
           </div>
