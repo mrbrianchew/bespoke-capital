@@ -747,6 +747,14 @@ function CoverageChart({
     })
   }
 
+    // DEBUG: Check if policies have coverage values
+  console.log(`=== ${type.toUpperCase()} CHART DEBUG ===`)
+  console.log(`Person: ${personName}`)
+  console.log(`First 5 data points:`)
+  data.slice(0, 5).forEach(d => {
+    console.log(`  Age ${d.age}: Need = ${fmt((d as any)[needKey])}, Have = ${fmt((d as any)[haveKey])}`)
+  })
+
   return (
     <div style={{ position: 'relative', overflow: 'visible' }}>
       {/* Chart header */}
@@ -808,25 +816,30 @@ function CoverageChart({
         ))}
 
         {/* Have bars (existing portfolio) */}
-        {data.map(d => {
-          const have = (d as any)[haveKey]
-          const bx = xP(d.age)
-          const barH = Math.max(0, iH - (yP(have) - PT))
-          const barW = Math.max(3, (iW / data.length) * 0.7)
-          
-          return (
-            <rect
-              key={`bar-${d.age}`}
-              x={bx - barW / 2}
-              y={yP(have)}
-              width={barW}
-              height={barH}
-              fill={accentColor}
-              opacity="0.25"
-              rx="2"
-            />
-          )
-        })}
+{data.map(d => {
+  const have = (d as any)[haveKey]
+  
+  // Only render if there's actual coverage
+  if (have <= 0) return null
+  
+  const bx = xP(d.age)
+  const haveY = yP(have)
+  const barH = Math.max(2, PT + iH - haveY)
+  const barW = Math.max(3, (iW / data.length) * 0.8)
+  
+  return (
+    <rect
+      key={`bar-${d.age}`}
+      x={bx - barW / 2}
+      y={haveY}
+      width={barW}
+      height={barH}
+      fill={accentColor}
+      opacity="0.35"
+      rx="2"
+    />
+  )
+})}
 
         {/* Need line */}
         <path d={needPath} stroke={accentColor} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -834,24 +847,24 @@ function CoverageChart({
         {/* Have line (optional, subtle) */}
         <path d={havePath} stroke={accentColor} strokeWidth="0.8" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
 
-        {/* Milestone markers */}
-        {allMilestones.map((m, i) => {
-          const mx = xP(m.age)
-          if (mx < PL || mx > PL + iW) return null
-          
-          return (
-            <g key={`ms-${i}`}>
-              <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.3" />
-              <circle cx={mx} cy={PT + iH + 8} r="3" fill={m.color} opacity="0.6" />
-              <text x={mx} y={PT + iH + 22} fontSize="9" fill={m.color} textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="500">
-                {m.label}
-              </text>
-              <text x={mx} y={PT + iH + 34} fontSize="8" fill="#9A9896" textAnchor="middle" fontFamily="Inter, sans-serif">
-                age {m.age}
-              </text>
-            </g>
-          )
-        })}
+        {/* Milestone markers - positioned at TOP */}
+{allMilestones.map((m, i) => {
+  const mx = xP(m.age)
+  if (mx < PL || mx > PL + iW) return null
+  
+  return (
+    <g key={`ms-${i}`}>
+      <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.3" />
+      <circle cx={mx} cy={PT - 8} r="3" fill={m.color} opacity="0.6" />
+      <text x={mx} y={PT - 22} fontSize="9" fill={m.color} textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="500">
+        {m.label}
+      </text>
+      <text x={mx} y={PT - 12} fontSize="8" fill="#9A9896" textAnchor="middle" fontFamily="Inter, sans-serif">
+        age {m.age}
+      </text>
+    </g>
+  )
+})}
 
         {/* Age labels */}
         {ageLabels.map(d => (
