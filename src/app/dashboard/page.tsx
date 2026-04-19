@@ -131,7 +131,6 @@ export default function ExecutiveSummaryPage() {
     if (!client.id) throw new Error('No client ID found')
     const updateFields: any = { name: updatedData.name, gender: updatedData.gender }
     if (updatedData.dob) updateFields.dob = updatedData.dob
-    if (updatedData.citizenship) updateFields.citizenship = updatedData.citizenship
     const { error } = await supabase
       .from('clients')
       .update(updateFields)
@@ -163,9 +162,14 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
     if (error) throw error
     if (updatedData.relationship === 'Spouse') {
       setSpouse((prev: any) => ({ ...prev, ...updateFields }))
-    } else {
+   } else {
       setChildren((prev: any[]) =>
-        prev.map(k => k.id === memberId ? { ...k, ...updateFields } : k)
+        prev.map(k => k.id === memberId ? { 
+          ...k, 
+          ...updateFields, 
+          dob: updatedData.dob || k.dob,
+          date_of_birth: updatedData.dob || k.date_of_birth 
+        } : k)
       )
     }
   } catch (error: any) {
