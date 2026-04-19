@@ -177,14 +177,26 @@ function getDTPDHaveAtAge(
   const lifePolicies = activePolicies.filter(p => p.person === person && p.categoryCode === 'life')
   console.log(`  lifePolicies found: ${lifePolicies.length}`)
   
-  return lifePolicies
-    .reduce((sum, p) => {
-      if (!policyActiveAtAge(p, age, currentAge)) return sum
-      const mult = effectiveMultiplierAtAge(p, age)
-      const death = toSGD((p.baseDeath || 0) * mult, p)
-      const tpd = toSGD((p.baseTPD || 0) * mult, p)
-      return sum + Math.max(death, tpd)
-    }, 0)
+ return lifePolicies.reduce((sum, p) => {
+  const isActive = policyActiveAtAge(p, age, currentAge)
+  const mult = effectiveMultiplierAtAge(p, age)
+  const death = toSGD((p.baseDeath || 0) * mult, p)
+  const tpd = toSGD((p.baseTPD || 0) * mult, p)
+  const maxBenefit = Math.max(death, tpd)
+  
+  // DEBUG: Log each policy's contribution
+  if (age === currentAge) { // Only log once at current age
+    console.log(`Policy: ${p.productName}`)
+    console.log(`  isActive: ${isActive}`)
+    console.log(`  multiplier: ${mult}`)
+    console.log(`  baseDeath: ${p.baseDeath}, baseTPD: ${p.baseTPD}`)
+    console.log(`  death benefit: ${death}, tpd benefit: ${tpd}`)
+    console.log(`  added to sum: ${maxBenefit}`)
+  }
+  
+  if (!isActive) return sum
+  return sum + maxBenefit
+}, 0)
 }
 
 // CI have at a given age for a person
