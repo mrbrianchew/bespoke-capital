@@ -76,8 +76,11 @@ export default function ExecutiveSummaryPage() {
   const [spouse, setSpouse]         = useState<any>(null)
   const [children, setChildren]     = useState<any[]>([])
   const [ffData, setFfData]         = useState<Record<string, any>>({})
-  const [lastUpdated, setLastUpdated] = useState<Record<string, string>>({})
-  const router = useRouter()
+const [lastUpdated, setLastUpdated] = useState<Record<string, string>>({})
+const [editingField, setEditingField] = useState<string | null>(null)  
+const [saving, setSaving] = useState(false)                             
+const [editingMemberId, setEditingMemberId] = useState<string | null>(null) 
+const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => { load() }, [])
@@ -117,6 +120,48 @@ export default function ExecutiveSummaryPage() {
     }
 
     setLoading(false)
+  }
+    // ─── UPDATE FUNCTIONS ───────────────────────────────────────────────────────
+
+  async function updateClient(field: string, value: any) {
+    setSaving(true)
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .update({ [field]: value })
+        .eq('id', client.id)
+      
+      if (error) throw error
+      
+      await load()
+      setEditingField(null)
+    } catch (error) {
+      console.error('Error updating client:', error)
+      alert('Failed to update. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function updateFamilyMember(memberId: string, field: string, value: any) {
+    setSaving(true)
+    try {
+      const { error } = await supabase
+        .from('family_members')
+        .update({ [field]: value })
+        .eq('id', memberId)
+      
+      if (error) throw error
+      
+      await load()
+      setEditingMemberId(null)
+      setEditingField(null)
+    } catch (error) {
+      console.error('Error updating family member:', error)
+      alert('Failed to update. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) return (
@@ -486,6 +531,23 @@ if (estHasData || netEstate > 0) {
   return (
     <div style={{ minHeight: '100vh', background: '#F5F3EE', fontFamily: 'Inter, sans-serif' }}>
 
+          {saving && (
+      <div style={{
+        position: 'fixed',
+        top: 20,
+        right: 20,
+        background: '#A8834A',
+        color: 'white',
+        padding: '8px 16px',
+        borderRadius: 20,
+        fontSize: 12,
+        zIndex: 9999,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+      }}>
+        Saving changes...
+      </div>
+    )}
+
       {/* ── HERO BAND ── */}
       <div style={{ background: '#1C1A17', padding: '28px 40px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -497,8 +559,25 @@ if (estHasData || netEstate > 0) {
             <div>
               <p style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 6 }}>Executive Summary</p>
               <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 30, fontWeight: 300, color: '#F5F0E8', letterSpacing: 0.5, marginBottom: 4 }}>
-                {isCouple ? `${client.name} & ${spouse.name}` : client.name}
-              </h1>
+  {isCouple && spouse ? (
+    <>
+      <EditableField 
+        value={client.name} 
+        onSave={(newName) => updateClient('name', newName)}
+      />
+      {' & '}
+      <EditableField 
+        value={spouse.name}
+        onSave={(newName) => updateFamilyMember(spouse.id, 'name', newName)}
+      />
+    </>
+  ) : (
+    <EditableField 
+      value={client.name} 
+      onSave={(newName) => updateClient('name', newName)}
+    />
+  )}
+</h1>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                 <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
                   {client.gender || 'Client'} · Age {clientAge}
@@ -637,7 +716,7 @@ if (estHasData || netEstate > 0) {
             <div style={{ padding: '12px 18px', background: '#F5F3EE', borderBottom: '1px solid #E8E4DC' }}>
               <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#1C1A17' }}>Household</span>
             </div>
-            <div style={{ padding: '12px 18px' }}>
+                       <div style={{ padding: '12px 18px' }}>
               {/* Client */}
               <HouseholdRow
                 name={client.name}
@@ -646,6 +725,8 @@ if (estHasData || netEstate > 0) {
                 age={clientAge}
                 gender={client.gender}
                 dob={client.dob}
+                isClient={true}
+                onUpdate={updateClient}
               />
               {/* Spouse */}
               {spouse && (
@@ -656,6 +737,8 @@ if (estHasData || netEstate > 0) {
                   age={spouseAge}
                   gender={spouse.gender}
                   dob={spouse.dob}
+                  memberId={spouse.id}
+                  onUpdate={(field, value) => updateFamilyMember(spouse.id, field, value)}
                 />
               )}
               {/* Children */}
@@ -669,6 +752,8 @@ if (estHasData || netEstate > 0) {
                   gender={kid.gender}
                   dob={kid.date_of_birth}
                   isLast={i === children.length - 1}
+                  memberId={kid.id}
+                  onUpdate={(field, value) => updateFamilyMember(kid.id, field, value)}
                 />
               ))}
               {!spouse && children.length === 0 && (
@@ -714,6 +799,93 @@ if (estHasData || netEstate > 0) {
   )
 }
 
+// ─── EDITABLE FIELD COMPONENT ─────────────────────────────────────────────────
+
+function EditableField({ 
+  value, 
+  onSave,
+  type = 'text',
+  placeholder = '—'
+}: { 
+  value: any
+  onSave: (newValue: any) => Promise<void>
+  type?: 'text' | 'date' | 'number'
+  placeholder?: string
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [tempValue, setTempValue] = useState(value)
+  const [isSaving, setIsSaving] = useState(false)
+  
+  const handleSave = async () => {
+    if (tempValue === value) {
+      setIsEditing(false)
+      return
+    }
+    
+    setIsSaving(true)
+    try {
+      await onSave(tempValue)
+      setIsEditing(false)
+    } catch (error) {
+      console.error('Save failed:', error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+  
+  if (isSaving) {
+    return <span style={{ opacity: 0.5 }}>Saving...</span>
+  }
+  
+  if (!isEditing) {
+    return (
+      <span 
+        onClick={() => setIsEditing(true)}
+        style={{ 
+          cursor: 'pointer', 
+          borderBottom: '1px dashed rgba(168,131,74,0.5)',
+          display: 'inline-block'
+        }}
+        title="Click to edit"
+      >
+        {value || placeholder}
+      </span>
+    )
+  }
+  
+  return (
+    <input
+      type={type}
+      value={tempValue}
+      onChange={(e) => setTempValue(e.target.value)}
+      onBlur={handleSave}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          handleSave()
+        }
+        if (e.key === 'Escape') {
+          setTempValue(value)
+          setIsEditing(false)
+        }
+      }}
+      autoFocus
+      style={{
+        fontFamily: 'inherit',
+        fontSize: 'inherit',
+        fontWeight: 'inherit',
+        color: '#1C1A17',
+        padding: '2px 4px',
+        border: '1px solid #A8834A',
+        borderRadius: 4,
+        background: 'white',
+        outline: 'none',
+        width: 'auto',
+        minWidth: '100px'
+      }}
+    />
+  )
+}
+
 // ─── AREA CARD ────────────────────────────────────────────────────────────────
 
 function AreaCard({ area }: { area: PlanningArea }) {
@@ -755,21 +927,81 @@ function AreaCard({ area }: { area: PlanningArea }) {
   )
 }
 
-// ─── HOUSEHOLD ROW ────────────────────────────────────────────────────────────
+// ─── HOUSEHOLD ROW WITH EDITING ────────────────────────────────────────────────
 
-function HouseholdRow({ name, tag, tagColor, age, gender, dob, isLast }: {
-  name: string; tag: string; tagColor: string
-  age: number; gender?: string; dob?: string; isLast?: boolean
+function HouseholdRow({ 
+  name, 
+  tag, 
+  tagColor, 
+  age, 
+  gender, 
+  dob, 
+  isLast,
+  memberId,
+  isClient = false,
+  onUpdate
+}: {
+  name: string
+  tag: string
+  tagColor: string
+  age: number
+  gender?: string
+  dob?: string
+  isLast?: boolean
+  memberId?: string
+  isClient?: boolean
+  onUpdate?: (field: string, value: any) => Promise<void>
 }) {
+  const [showEditMenu, setShowEditMenu] = useState(false)
+  
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: isLast ? 'none' : '1px solid #F0EDE8' }}>
-      <div style={{ width: 32, height: 32, borderRadius: '50%', background: tagColor + '22', border: `1px solid ${tagColor}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cormorant Garamond, serif', fontSize: 13, color: tagColor, flexShrink: 0 }}>
+    <div style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: 10, 
+      padding: '9px 0', 
+      borderBottom: isLast ? 'none' : '1px solid #F0EDE8',
+      position: 'relative'
+    }}>
+      <div style={{ 
+        width: 32, 
+        height: 32, 
+        borderRadius: '50%', 
+        background: tagColor + '22', 
+        border: `1px solid ${tagColor}44`, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        fontFamily: 'Cormorant Garamond, serif', 
+        fontSize: 13, 
+        color: tagColor, 
+        flexShrink: 0 
+      }}>
         {name?.trim().split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() || '?'}
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: '#1C1A17' }}>{name}</span>
-          <span style={{ fontFamily: 'Inter', fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: tagColor, background: tagColor + '18', padding: '1px 6px', borderRadius: 3 }}>{tag}</span>
+          {onUpdate ? (
+            <EditableField 
+              value={name} 
+              onSave={(newName) => onUpdate('name', newName)}
+            />
+          ) : (
+            <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: '#1C1A17' }}>{name}</span>
+          )}
+          <span style={{ 
+            fontFamily: 'Inter', 
+            fontSize: 9, 
+            fontWeight: 600, 
+            letterSpacing: '0.06em', 
+            textTransform: 'uppercase', 
+            color: tagColor, 
+            background: tagColor + '18', 
+            padding: '1px 6px', 
+            borderRadius: 3 
+          }}>
+            {tag}
+          </span>
         </div>
         <div style={{ fontFamily: 'Inter', fontSize: 11, color: '#888', marginTop: 1 }}>
           Age {age}{gender ? ` · ${gender}` : ''}
