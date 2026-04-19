@@ -76,11 +76,12 @@ export default function ExecutiveSummaryPage() {
   const [spouse, setSpouse]         = useState<any>(null)
   const [children, setChildren]     = useState<any[]>([])
   const [ffData, setFfData]         = useState<Record<string, any>>({})
-const [lastUpdated, setLastUpdated] = useState<Record<string, string>>({})
-const [editingField, setEditingField] = useState<string | null>(null)  
-const [saving, setSaving] = useState(false)                             
-const [editingMemberId, setEditingMemberId] = useState<string | null>(null) 
-const router = useRouter()
+  const [lastUpdated, setLastUpdated] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingType, setEditingType] = useState<'client' | 'spouse' | 'child' | null>(null)
+  const [editingMember, setEditingMember] = useState<any>(null)
+  const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => { load() }, [])
@@ -121,44 +122,55 @@ const router = useRouter()
 
     setLoading(false)
   }
-    // ─── UPDATE FUNCTIONS ───────────────────────────────────────────────────────
 
-  async function updateClient(field: string, value: any) {
+  // ─── UPDATE FUNCTIONS ───────────────────────────────────────────────────────
+
+  async function updateClientComplete(updatedData: any) {
     setSaving(true)
     try {
       const { error } = await supabase
         .from('clients')
-        .update({ [field]: value })
+        .update({
+          name: updatedData.name,
+          dob: updatedData.dob,
+          gender: updatedData.gender,
+          citizenship: updatedData.citizenship,
+        })
         .eq('id', client.id)
       
       if (error) throw error
       
       await load()
-      setEditingField(null)
+      setShowEditModal(false)
     } catch (error) {
       console.error('Error updating client:', error)
-      alert('Failed to update. Please try again.')
+      alert('Failed to update client. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
-  async function updateFamilyMember(memberId: string, field: string, value: any) {
+  async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
     setSaving(true)
     try {
       const { error } = await supabase
         .from('family_members')
-        .update({ [field]: value })
+        .update({
+          name: updatedData.name,
+          date_of_birth: updatedData.date_of_birth || updatedData.dob,
+          gender: updatedData.gender,
+          relationship: updatedData.relationship,
+          citizenship: updatedData.citizenship,
+        })
         .eq('id', memberId)
       
       if (error) throw error
       
       await load()
-      setEditingMemberId(null)
-      setEditingField(null)
+      setShowEditModal(false)
     } catch (error) {
       console.error('Error updating family member:', error)
-      alert('Failed to update. Please try again.')
+      alert('Failed to update family member. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -222,7 +234,6 @@ const router = useRouter()
     if (totalProtGap > 0) {
       protStatus   = 'gap'
       protHeadline = `${fmtShort(totalProtGap)} total gap`
-      // protSubline now built in AreaCard for multi-line — store structured data
       if (lifeGapClient > 0) protActions.push(`D/TPD gap of ${fmt(lifeGapClient)} for ${client.name}`)
       if (ciGapClient   > 0) protActions.push(`CI gap of ${fmt(ciGapClient)} for ${client.name}`)
       if (lifeGapSpouse > 0 && spouse) protActions.push(`D/TPD gap of ${fmt(lifeGapSpouse)} for ${spouse.name}`)
@@ -233,7 +244,6 @@ const router = useRouter()
     }
   }
 
-  // Build multi-line protection subline
   const protSublines: string[] = []
   if (protHasData && totalProtGap > 0) {
     if (lifeGapClient > 0 || ciGapClient > 0) {
@@ -294,52 +304,47 @@ const router = useRouter()
     if (totalAccMonthly > 0) accActions.push(`Invest ${fmt(totalAccMonthly)}/mo across ${accGoals.length} wealth goal${accGoals.length !== 1 ? 's' : ''}`)
   }
 
-// ── RETIREMENT ───────────────────────────────────────────────────────────────
+  // ── RETIREMENT ───────────────────────────────────────────────────────────────
 
-const retClient = ret.client || {}
-const retHasData = !!ret.client
-const retAge = retClient.retirementAge || 65
-const retLE = retClient.lifeExpectancy || 85
-const yrsToRet = Math.max(0, retAge - clientAge)
-const retYears = Math.max(0, retLE - retAge)
+  const retClient = ret.client || {}
+  const retHasData = !!ret.client
+  const retAge = retClient.retirementAge || 65
+  const retLE = retClient.lifeExpectancy || 85
+  const yrsToRet = Math.max(0, retAge - clientAge)
+  const retYears = Math.max(0, retLE - retAge)
 
-// ✅ Read saved values from database
-const savedCorpusNeeded = ffData['retirement']?.corpusNeeded || 0
-const savedRetirementGap = ffData['retirement']?.retirementGap || 0
-const savedMonthlySavings = ffData['retirement']?.monthlySavingsNeeded || 0
+  const savedCorpusNeeded = ffData['retirement']?.corpusNeeded || 0
+  const savedRetirementGap = ffData['retirement']?.retirementGap || 0
+  const savedMonthlySavings = ffData['retirement']?.monthlySavingsNeeded || 0
 
-// Use saved values
-let corpusNeeded = savedCorpusNeeded
-let retGap = savedRetirementGap
-let retMonthlySavings = savedMonthlySavings
+  let corpusNeeded = savedCorpusNeeded
+  let retGap = savedRetirementGap
+  let retMonthlySavings = savedMonthlySavings
 
-let retStatus: Status = 'empty'
-let retHeadline = 'Not yet configured'
-let retGapLabel = 'Savings Gap'
-let retSubline = 'Set retirement parameters in Strategic Objectives'
-const retActions: string[] = []
+  let retStatus: Status = 'empty'
+  let retHeadline = 'Not yet configured'
+  let retSubline = 'Set retirement parameters in Strategic Objectives'
+  const retActions: string[] = []
 
-if (retHasData || savedCorpusNeeded > 0) {
-  retStatus = retGap > 0 ? 'gap' : 'good'
-  retHeadline = `Savings Gap ${fmtShort(retGap)}`
-  retSubline = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
-  if (retGap > 0) {
-    retStatus = retGap > 100000 ? 'gap' : 'warn'
-    retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
+  if (retHasData || savedCorpusNeeded > 0) {
+    retStatus = retGap > 0 ? 'gap' : 'good'
+    retHeadline = `Savings Gap ${fmtShort(retGap)}`
+    retSubline = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
+    if (retGap > 0) {
+      retStatus = retGap > 100000 ? 'gap' : 'warn'
+      retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
+    }
   }
-}
 
-// Calculate liquid assets (needed for Estate and Financial Overview)
-const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_srs || 0) +
-  (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
-  (fin.a_bonds || 0) + (fin.a_alternatives || 0)
+  const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_srs || 0) +
+    (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
+    (fin.a_bonds || 0) + (fin.a_alternatives || 0)
 
-// Simple expense total for financial overview
-const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_regular_savings || 0) +
-  (fin.s_housing || 0) + (fin.s_utilities || 0) + (fin.s_family_food || 0) +
-  (fin.s_transport || 0) + (fin.s_children || 0) + (fin.s_lifestyle || 0) + (fin.s_others || 0)
+  const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_regular_savings || 0) +
+    (fin.s_housing || 0) + (fin.s_utilities || 0) + (fin.s_family_food || 0) +
+    (fin.s_transport || 0) + (fin.s_children || 0) + (fin.s_lifestyle || 0) + (fin.s_others || 0)
 
-// ── EDUCATION ────────────────────────────────────────────────────────────────
+  // ── EDUCATION ────────────────────────────────────────────────────────────────
 
   const eduChildren   = edu.children || []
   const eduReturnRate = edu.returnRate || 5
@@ -402,100 +407,93 @@ const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_r
     }
   }
 
-// ── ESTATE ───────────────────────────────────────────────────────────────────
+  // ── ESTATE ───────────────────────────────────────────────────────────────────
 
-const estClient      = estate.client || {}
-const estSpouse      = estate.spouse  || {}
-const estHasData     = Object.keys(estClient).length > 0
+  const estClient      = estate.client || {}
+  const estSpouse      = estate.spouse  || {}
+  const estHasData     = Object.keys(estClient).length > 0
 
-// Helper function
-function amortisedOutstanding(prop: any): number {
-  if (prop.outstanding > 0) return prop.outstanding
-  const initialLoan = prop.initialLoanAmount ?? 0
-  const annualRate  = prop.interestRate ?? 0
-  const tenure      = prop.initialTenure ?? 25
-  const start       = prop.loanStartDate ?? ''
-  if (!initialLoan || !tenure) return 0
-  const parts = start.split('/')
-  if (parts.length !== 2) return initialLoan
-  const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
-  const today = new Date()
-  const months = (today.getFullYear() - startDate.getFullYear()) * 12 +
-    (today.getMonth() - startDate.getMonth())
-  if (months <= 0) return initialLoan
-  const n = tenure * 12
-  if (months >= n) return 0
-  if (!annualRate) return Math.round(initialLoan * (1 - months / n))
-  const rv = annualRate / 100 / 12
-  const pmt = initialLoan * rv * Math.pow(1 + rv, n) / (Math.pow(1 + rv, n) - 1)
-  return Math.max(0, Math.round(
-    initialLoan * Math.pow(1 + rv, months) -
-    pmt * (Math.pow(1 + rv, months) - 1) / rv
-  ))
-}
-
-// Calculate property equity (needed for both Estate and Financial Overview)
-const allProps   = (fin.properties || []) as any[]
-const propEquity = allProps.reduce((s: number, p: any) =>
-  s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
-const totalLiab  = allProps.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
-
-// ✅ Read saved net estate from database FIRST
-const savedNetEstate = ffData['estate']?.netEstate || estate.netEstate || 0
-
-// Use saved value if available, otherwise calculate
-let netEstate = savedNetEstate
-
-// Fallback calculation only if no saved value
-if (netEstate === 0) {
-  const totalAssets = clientLiquid +
-    (fin.a_cpf_oa || 0) + (fin.a_cpf_sa || 0) + (fin.a_cpf_ma || 0) + (fin.a_cpf_ra || 0) +
-    propEquity
-  netEstate = Math.max(0, totalAssets - totalLiab)
-}
-
-// Readiness score: will, lpa, cpf nomination, trust
-function checkItem(person: any, key: string, goodVal: string): boolean {
-  return person[key] === goodVal
-}
-
-const clientChecks = [
-  checkItem(estClient, 'willStatus',   'has_will'),
-  checkItem(estClient, 'lpaStatus',    'registered'),
-  checkItem(estClient, 'cpfNomStatus', 'nominated'),
-]
-const spouseChecks = isCouple ? [
-  checkItem(estSpouse, 'willStatus',   'has_will'),
-  checkItem(estSpouse, 'lpaStatus',    'registered'),
-  checkItem(estSpouse, 'cpfNomStatus', 'nominated'),
-] : []
-const allChecks   = [...clientChecks, ...spouseChecks]
-const doneChecks  = allChecks.filter(Boolean).length
-const totalChecks = allChecks.length || 3
-const estScore    = totalChecks > 0 ? doneChecks / totalChecks : 0
-
-let estStatus: Status = 'empty'
-let estHeadline = 'Not yet reviewed'
-let estSubline  = 'Complete Estate Planning tab'
-const estActions: string[] = []
-
-if (estHasData || netEstate > 0) {
-  estStatus   = estScore === 1 ? 'good' : estScore >= 0.5 ? 'warn' : 'gap'
-  estHeadline = `Net estate ${fmtShort(netEstate)}`
-  estSubline  = estHasData ? `${doneChecks}/${totalChecks} readiness items done` : 'Estate documents not reviewed'
-  if (!checkItem(estClient, 'willStatus', 'has_will'))
-    estActions.push(`Will not in place for ${client.name}`)
-  if (!checkItem(estClient, 'lpaStatus', 'registered'))
-    estActions.push(`LPA not registered for ${client.name}`)
-  if (!checkItem(estClient, 'cpfNomStatus', 'nominated') && (fin.a_cpf_oa || fin.a_cpf_sa || fin.a_cpf_ra))
-    estActions.push(`CPF nomination missing for ${client.name}`)
-  if (isCouple && spouse) {
-    if (!checkItem(estSpouse, 'willStatus', 'has_will'))
-      estActions.push(`Will not in place for ${spouse.name}`)
-    if (!checkItem(estSpouse, 'lpaStatus', 'registered'))
-      estActions.push(`LPA not registered for ${spouse.name}`)
+  function amortisedOutstanding(prop: any): number {
+    if (prop.outstanding > 0) return prop.outstanding
+    const initialLoan = prop.initialLoanAmount ?? 0
+    const annualRate  = prop.interestRate ?? 0
+    const tenure      = prop.initialTenure ?? 25
+    const start       = prop.loanStartDate ?? ''
+    if (!initialLoan || !tenure) return 0
+    const parts = start.split('/')
+    if (parts.length !== 2) return initialLoan
+    const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+    const today = new Date()
+    const months = (today.getFullYear() - startDate.getFullYear()) * 12 +
+      (today.getMonth() - startDate.getMonth())
+    if (months <= 0) return initialLoan
+    const n = tenure * 12
+    if (months >= n) return 0
+    if (!annualRate) return Math.round(initialLoan * (1 - months / n))
+    const rv = annualRate / 100 / 12
+    const pmt = initialLoan * rv * Math.pow(1 + rv, n) / (Math.pow(1 + rv, n) - 1)
+    return Math.max(0, Math.round(
+      initialLoan * Math.pow(1 + rv, months) -
+      pmt * (Math.pow(1 + rv, months) - 1) / rv
+    ))
   }
-}
+
+  const allProps   = (fin.properties || []) as any[]
+  const propEquity = allProps.reduce((s: number, p: any) =>
+    s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
+  const totalLiab  = allProps.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
+
+  const savedNetEstate = ffData['estate']?.netEstate || estate.netEstate || 0
+  let netEstate = savedNetEstate
+
+  if (netEstate === 0) {
+    const totalAssets = clientLiquid +
+      (fin.a_cpf_oa || 0) + (fin.a_cpf_sa || 0) + (fin.a_cpf_ma || 0) + (fin.a_cpf_ra || 0) +
+      propEquity
+    netEstate = Math.max(0, totalAssets - totalLiab)
+  }
+
+  function checkItem(person: any, key: string, goodVal: string): boolean {
+    return person[key] === goodVal
+  }
+
+  const clientChecks = [
+    checkItem(estClient, 'willStatus',   'has_will'),
+    checkItem(estClient, 'lpaStatus',    'registered'),
+    checkItem(estClient, 'cpfNomStatus', 'nominated'),
+  ]
+  const spouseChecks = isCouple ? [
+    checkItem(estSpouse, 'willStatus',   'has_will'),
+    checkItem(estSpouse, 'lpaStatus',    'registered'),
+    checkItem(estSpouse, 'cpfNomStatus', 'nominated'),
+  ] : []
+  const allChecks   = [...clientChecks, ...spouseChecks]
+  const doneChecks  = allChecks.filter(Boolean).length
+  const totalChecks = allChecks.length || 3
+  const estScore    = totalChecks > 0 ? doneChecks / totalChecks : 0
+
+  let estStatus: Status = 'empty'
+  let estHeadline = 'Not yet reviewed'
+  let estSubline  = 'Complete Estate Planning tab'
+  const estActions: string[] = []
+
+  if (estHasData || netEstate > 0) {
+    estStatus   = estScore === 1 ? 'good' : estScore >= 0.5 ? 'warn' : 'gap'
+    estHeadline = `Net estate ${fmtShort(netEstate)}`
+    estSubline  = estHasData ? `${doneChecks}/${totalChecks} readiness items done` : 'Estate documents not reviewed'
+    if (!checkItem(estClient, 'willStatus', 'has_will'))
+      estActions.push(`Will not in place for ${client.name}`)
+    if (!checkItem(estClient, 'lpaStatus', 'registered'))
+      estActions.push(`LPA not registered for ${client.name}`)
+    if (!checkItem(estClient, 'cpfNomStatus', 'nominated') && (fin.a_cpf_oa || fin.a_cpf_sa || fin.a_cpf_ra))
+      estActions.push(`CPF nomination missing for ${client.name}`)
+    if (isCouple && spouse) {
+      if (!checkItem(estSpouse, 'willStatus', 'has_will'))
+        estActions.push(`Will not in place for ${spouse.name}`)
+      if (!checkItem(estSpouse, 'lpaStatus', 'registered'))
+        estActions.push(`LPA not registered for ${spouse.name}`)
+    }
+  }
 
   // ── ASSEMBLE PLANNING AREAS ──────────────────────────────────────────────────
 
@@ -515,69 +513,90 @@ if (estHasData || netEstate > 0) {
     ...accActions .map(t => ({ priority: 'medium' as const, area: '🏦 Accumulation', text: t, href: '/dashboard/objectives' })),
   ]
 
-  // Last session — most recent updated_at across all sections
   const lastSessionDate = Object.values(lastUpdated).sort().reverse()[0] || ''
-
-  // ── FINANCIAL SNAPSHOT ───────────────────────────────────────────────────────
 
   const p1Gross  = (fin.person1 as any)?.gross_monthly || 0
   const p2Gross  = isCouple ? ((fin.person2 as any)?.gross_monthly || 0) : 0
   const totalIncome = (p1Gross + p2Gross) * 12
   const totalExp    = annExpClient
-  const annualSurplus = totalIncome * 0.8 - totalExp  // rough take-home after CPF
+  const annualSurplus = totalIncome * 0.8 - totalExp
 
   // ─── RENDER ──────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ minHeight: '100vh', background: '#F5F3EE', fontFamily: 'Inter, sans-serif' }}>
 
-          {saving && (
-      <div style={{
-        position: 'fixed',
-        top: 20,
-        right: 20,
-        background: '#A8834A',
-        color: 'white',
-        padding: '8px 16px',
-        borderRadius: 20,
-        fontSize: 12,
-        zIndex: 9999,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-      }}>
-        Saving changes...
-      </div>
-    )}
+      {saving && (
+        <div style={{
+          position: 'fixed',
+          top: 20,
+          right: 20,
+          background: '#A8834A',
+          color: 'white',
+          padding: '8px 16px',
+          borderRadius: 20,
+          fontSize: 12,
+          zIndex: 9999,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+        }}>
+          Saving changes...
+        </div>
+      )}
 
       {/* ── HERO BAND ── */}
       <div style={{ background: '#1C1A17', padding: '28px 40px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            {/* Avatar */}
             <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(168,131,74,0.25)', border: '1px solid rgba(168,131,74,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cormorant Garamond, serif', fontSize: 20, color: 'rgba(255,255,255,0.8)', flexShrink: 0 }}>
               {initials(client.name)}
             </div>
             <div>
               <p style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 6 }}>Executive Summary</p>
               <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 30, fontWeight: 300, color: '#F5F0E8', letterSpacing: 0.5, marginBottom: 4 }}>
-  {isCouple && spouse ? (
-    <>
-      <EditableField 
-        value={client.name} 
-        onSave={(newName) => updateClient('name', newName)}
-      />
-      {' & '}
-      <EditableField 
-        value={spouse.name}
-        onSave={(newName) => updateFamilyMember(spouse.id, 'name', newName)}
-      />
-    </>
-  ) : (
-    <EditableField 
-      value={client.name} 
-      onSave={(newName) => updateClient('name', newName)}
-    />
-  )}
-</h1>
+                {isCouple ? `${client.name} & ${spouse.name}` : client.name}
+              </h1>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    setEditingType('client')
+                    setEditingMember(client)
+                    setShowEditModal(true)
+                  }}
+                  style={{
+                    background: 'rgba(168,131,74,0.2)',
+                    border: '1px solid rgba(168,131,74,0.4)',
+                    color: '#A8834A',
+                    padding: '4px 12px',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    fontFamily: 'Inter'
+                  }}
+                >
+                  ✎ Edit Client
+                </button>
+                {spouse && (
+                  <button
+                    onClick={() => {
+                      setEditingType('spouse')
+                      setEditingMember(spouse)
+                      setShowEditModal(true)
+                    }}
+                    style={{
+                      background: 'rgba(107,91,139,0.2)',
+                      border: '1px solid rgba(107,91,139,0.4)',
+                      color: '#6B5B8B',
+                      padding: '4px 12px',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      cursor: 'pointer',
+                      fontFamily: 'Inter'
+                    }}
+                  >
+                    ✎ Edit Spouse
+                  </button>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                 <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
                   {client.gender || 'Client'} · Age {clientAge}
@@ -597,7 +616,6 @@ if (estHasData || netEstate > 0) {
             </div>
           </div>
 
-          {/* Quick financial snapshot */}
           <div style={{ display: 'flex', gap: 32, alignItems: 'flex-end' }}>
             {[
               { label: 'Annual Income',    val: totalIncome > 0 ? fmtShort(totalIncome) : '—', sub: 'gross combined'         },
@@ -617,10 +635,7 @@ if (estHasData || netEstate > 0) {
       {/* ── MAIN BODY ── */}
       <div style={{ padding: '32px 40px', display: 'grid', gridTemplateColumns: '1fr 320px', gap: 28, alignItems: 'start' }}>
 
-        {/* LEFT COLUMN */}
         <div>
-
-          {/* Planning Status Grid */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink3)' }}>Planning Status</span>
@@ -638,7 +653,6 @@ if (estHasData || netEstate > 0) {
             </div>
           </div>
 
-          {/* Action Items */}
           {allActions.length > 0 && (
             <div style={{ marginTop: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -683,7 +697,6 @@ if (estHasData || netEstate > 0) {
             </div>
           )}
 
-          {/* Financial Overview bar */}
           {(annExpClient > 0 || totalIncome > 0) && (
             <div style={{ marginTop: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -708,61 +721,116 @@ if (estHasData || netEstate > 0) {
           )}
         </div>
 
-        {/* RIGHT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-          {/* Household */}
           <div style={{ background: 'white', border: '1px solid #E8E4DC', borderRadius: 14, overflow: 'hidden' }}>
             <div style={{ padding: '12px 18px', background: '#F5F3EE', borderBottom: '1px solid #E8E4DC' }}>
               <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#1C1A17' }}>Household</span>
             </div>
-                       <div style={{ padding: '12px 18px' }}>
-              {/* Client */}
-              <HouseholdRow
-                name={client.name}
-                tag="Client"
-                tagColor="#A8834A"
-                age={clientAge}
-                gender={client.gender}
-                dob={client.dob}
-                isClient={true}
-                onUpdate={updateClient}
-              />
-              {/* Spouse */}
+            <div style={{ padding: '12px 18px' }}>
+              <div style={{ position: 'relative' }}>
+                <HouseholdRow
+                  name={client.name}
+                  tag="Client"
+                  tagColor="#A8834A"
+                  age={clientAge}
+                  gender={client.gender}
+                  dob={client.dob}
+                />
+                <button
+                  onClick={() => {
+                    setEditingType('client')
+                    setEditingMember(client)
+                    setShowEditModal(true)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 8,
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#A8834A',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    padding: '4px 8px'
+                  }}
+                >
+                  ✎
+                </button>
+              </div>
+              
               {spouse && (
-                <HouseholdRow
-                  name={spouse.name}
-                  tag="Spouse"
-                  tagColor="#6B5B8B"
-                  age={spouseAge}
-                  gender={spouse.gender}
-                  dob={spouse.dob}
-                  memberId={spouse.id}
-                  onUpdate={(field, value) => updateFamilyMember(spouse.id, field, value)}
-                />
+                <div style={{ position: 'relative' }}>
+                  <HouseholdRow
+                    name={spouse.name}
+                    tag="Spouse"
+                    tagColor="#6B5B8B"
+                    age={spouseAge}
+                    gender={spouse.gender}
+                    dob={spouse.dob}
+                  />
+                  <button
+                    onClick={() => {
+                      setEditingType('spouse')
+                      setEditingMember(spouse)
+                      setShowEditModal(true)
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 8,
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#6B5B8B',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      padding: '4px 8px'
+                    }}
+                  >
+                    ✎
+                  </button>
+                </div>
               )}
-              {/* Children */}
+              
               {children.map((kid, i) => (
-                <HouseholdRow
-                  key={kid.id}
-                  name={kid.name || kid.relationship}
-                  tag={kid.relationship}
-                  tagColor={kid.gender === 'Female' ? '#7A6AAA' : '#4A7C9E'}
-                  age={kid.age ?? getAge(kid.date_of_birth)}
-                  gender={kid.gender}
-                  dob={kid.date_of_birth}
-                  isLast={i === children.length - 1}
-                  memberId={kid.id}
-                  onUpdate={(field, value) => updateFamilyMember(kid.id, field, value)}
-                />
+                <div key={kid.id} style={{ position: 'relative' }}>
+                  <HouseholdRow
+                    name={kid.name || kid.relationship}
+                    tag={kid.relationship}
+                    tagColor={kid.gender === 'Female' ? '#7A6AAA' : '#4A7C9E'}
+                    age={kid.age ?? getAge(kid.date_of_birth)}
+                    gender={kid.gender}
+                    dob={kid.date_of_birth}
+                    isLast={i === children.length - 1}
+                  />
+                  <button
+                    onClick={() => {
+                      setEditingType('child')
+                      setEditingMember(kid)
+                      setShowEditModal(true)
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 8,
+                      background: 'transparent',
+                      border: 'none',
+                      color: kid.gender === 'Female' ? '#7A6AAA' : '#4A7C9E',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      padding: '4px 8px'
+                    }}
+                  >
+                    ✎
+                  </button>
+                </div>
               ))}
+              
               {!spouse && children.length === 0 && (
                 <p style={{ fontFamily: 'Inter', fontSize: 12, color: '#aaa', padding: '8px 0' }}>No family members added</p>
               )}
             </div>
           </div>
 
-          {/* Section Progress */}
           <div style={{ background: 'white', border: '1px solid #E8E4DC', borderRadius: 14, overflow: 'hidden' }}>
             <div style={{ padding: '12px 18px', background: '#F5F3EE', borderBottom: '1px solid #E8E4DC' }}>
               <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#1C1A17' }}>Session Progress</span>
@@ -792,97 +860,29 @@ if (estHasData || netEstate > 0) {
               })}
             </div>
           </div>
-
         </div>
       </div>
+
+      {/* ─── EDIT MODAL ────────────────────────────────────────────────────── */}
+      {showEditModal && editingMember && (
+        <EditMemberModal
+          type={editingType!}
+          member={editingMember}
+          onClose={() => {
+            setShowEditModal(false)
+            setEditingType(null)
+            setEditingMember(null)
+          }}
+          onSave={async (updatedData) => {
+            if (editingType === 'client') {
+              await updateClientComplete(updatedData)
+            } else {
+              await updateFamilyMemberComplete(editingMember.id, updatedData)
+            }
+          }}
+        />
+      )}
     </div>
-  )
-}
-
-// ─── EDITABLE FIELD COMPONENT ─────────────────────────────────────────────────
-
-function EditableField({ 
-  value, 
-  onSave,
-  type = 'text',
-  placeholder = '—'
-}: { 
-  value: any
-  onSave: (newValue: any) => Promise<void>
-  type?: 'text' | 'date' | 'number'
-  placeholder?: string
-}) {
-  const [isEditing, setIsEditing] = useState(false)
-  const [tempValue, setTempValue] = useState(value)
-  const [isSaving, setIsSaving] = useState(false)
-  
-  const handleSave = async () => {
-    if (tempValue === value) {
-      setIsEditing(false)
-      return
-    }
-    
-    setIsSaving(true)
-    try {
-      await onSave(tempValue)
-      setIsEditing(false)
-    } catch (error) {
-      console.error('Save failed:', error)
-    } finally {
-      setIsSaving(false)
-    }
-  }
-  
-  if (isSaving) {
-    return <span style={{ opacity: 0.5 }}>Saving...</span>
-  }
-  
-  if (!isEditing) {
-    return (
-      <span 
-        onClick={() => setIsEditing(true)}
-        style={{ 
-          cursor: 'pointer', 
-          borderBottom: '1px dashed rgba(168,131,74,0.5)',
-          display: 'inline-block'
-        }}
-        title="Click to edit"
-      >
-        {value || placeholder}
-      </span>
-    )
-  }
-  
-  return (
-    <input
-      type={type}
-      value={tempValue}
-      onChange={(e) => setTempValue(e.target.value)}
-      onBlur={handleSave}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          handleSave()
-        }
-        if (e.key === 'Escape') {
-          setTempValue(value)
-          setIsEditing(false)
-        }
-      }}
-      autoFocus
-      style={{
-        fontFamily: 'inherit',
-        fontSize: 'inherit',
-        fontWeight: 'inherit',
-        color: '#1C1A17',
-        padding: '2px 4px',
-        border: '1px solid #A8834A',
-        borderRadius: 4,
-        background: 'white',
-        outline: 'none',
-        width: 'auto',
-        minWidth: '100px'
-      }}
-    />
   )
 }
 
@@ -927,85 +927,311 @@ function AreaCard({ area }: { area: PlanningArea }) {
   )
 }
 
-// ─── HOUSEHOLD ROW WITH EDITING ────────────────────────────────────────────────
+// ─── HOUSEHOLD ROW ────────────────────────────────────────────────────────────
 
-function HouseholdRow({ 
-  name, 
-  tag, 
-  tagColor, 
-  age, 
-  gender, 
-  dob, 
-  isLast,
-  memberId,
-  isClient = false,
-  onUpdate
-}: {
-  name: string
-  tag: string
-  tagColor: string
-  age: number
-  gender?: string
-  dob?: string
-  isLast?: boolean
-  memberId?: string
-  isClient?: boolean
-  onUpdate?: (field: string, value: any) => Promise<void>
+function HouseholdRow({ name, tag, tagColor, age, gender, dob, isLast }: {
+  name: string; tag: string; tagColor: string
+  age: number; gender?: string; dob?: string; isLast?: boolean
 }) {
-  const [showEditMenu, setShowEditMenu] = useState(false)
-  
   return (
-    <div style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      gap: 10, 
-      padding: '9px 0', 
-      borderBottom: isLast ? 'none' : '1px solid #F0EDE8',
-      position: 'relative'
-    }}>
-      <div style={{ 
-        width: 32, 
-        height: 32, 
-        borderRadius: '50%', 
-        background: tagColor + '22', 
-        border: `1px solid ${tagColor}44`, 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        fontFamily: 'Cormorant Garamond, serif', 
-        fontSize: 13, 
-        color: tagColor, 
-        flexShrink: 0 
-      }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: isLast ? 'none' : '1px solid #F0EDE8' }}>
+      <div style={{ width: 32, height: 32, borderRadius: '50%', background: tagColor + '22', border: `1px solid ${tagColor}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cormorant Garamond, serif', fontSize: 13, color: tagColor, flexShrink: 0 }}>
         {name?.trim().split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() || '?'}
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {onUpdate ? (
-            <EditableField 
-              value={name} 
-              onSave={(newName) => onUpdate('name', newName)}
-            />
-          ) : (
-            <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: '#1C1A17' }}>{name}</span>
-          )}
-          <span style={{ 
-            fontFamily: 'Inter', 
-            fontSize: 9, 
-            fontWeight: 600, 
-            letterSpacing: '0.06em', 
-            textTransform: 'uppercase', 
-            color: tagColor, 
-            background: tagColor + '18', 
-            padding: '1px 6px', 
-            borderRadius: 3 
-          }}>
-            {tag}
-          </span>
+          <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: '#1C1A17' }}>{name}</span>
+          <span style={{ fontFamily: 'Inter', fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: tagColor, background: tagColor + '18', padding: '1px 6px', borderRadius: 3 }}>{tag}</span>
         </div>
         <div style={{ fontFamily: 'Inter', fontSize: 11, color: '#888', marginTop: 1 }}>
-          Age {age}{gender ? ` · ${gender}` : ''}
+          Age {age}{gender ? ` · ${gender}` : ''}{dob ? ` · DOB: ${formatDate(dob)}` : ''}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── EDIT MEMBER MODAL ────────────────────────────────────────────────────────
+
+function EditMemberModal({ 
+  type, 
+  member, 
+  onClose, 
+  onSave 
+}: { 
+  type: 'client' | 'spouse' | 'child'
+  member: any
+  onClose: () => void
+  onSave: (data: any) => Promise<void>
+}) {
+  const [formData, setFormData] = useState({
+    name: member.name || '',
+    dob: member.dob || member.date_of_birth || '',
+    gender: member.gender || '',
+    citizenship: member.citizenship || 'Singaporean',
+    relationship: member.relationship || type,
+  })
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSaving(true)
+    try {
+      await onSave(formData)
+      onClose()
+    } catch (error) {
+      console.error('Save failed:', error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div 
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000
+      }}
+      onClick={onClose}
+    >
+      <div 
+        style={{
+          background: 'white',
+          borderRadius: 16,
+          padding: '28px',
+          width: '100%',
+          maxWidth: '450px',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ marginBottom: 24 }}>
+          <h2 style={{ 
+            fontFamily: 'Cormorant Garamond, serif', 
+            fontSize: 24, 
+            fontWeight: 300, 
+            color: '#1C1A17',
+            marginBottom: 4
+          }}>
+            Edit {type === 'client' ? 'Client' : type === 'spouse' ? 'Spouse' : 'Child'}
+          </h2>
+          <p style={{ fontFamily: 'Inter', fontSize: 12, color: '#888' }}>
+            Update the information below
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ 
+              display: 'block', 
+              fontFamily: 'Inter', 
+              fontSize: 11, 
+              fontWeight: 600, 
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              color: '#666',
+              marginBottom: 6
+            }}>
+              Full Name
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                fontFamily: 'Inter',
+                fontSize: 14,
+                border: '1px solid #E8E4DC',
+                borderRadius: 8,
+                outline: 'none'
+              }}
+              required
+            />
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ 
+              display: 'block', 
+              fontFamily: 'Inter', 
+              fontSize: 11, 
+              fontWeight: 600, 
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              color: '#666',
+              marginBottom: 6
+            }}>
+              Date of Birth
+            </label>
+            <input
+              type="date"
+              value={formData.dob}
+              onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                fontFamily: 'Inter',
+                fontSize: 14,
+                border: '1px solid #E8E4DC',
+                borderRadius: 8,
+                outline: 'none'
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ 
+              display: 'block', 
+              fontFamily: 'Inter', 
+              fontSize: 11, 
+              fontWeight: 600, 
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              color: '#666',
+              marginBottom: 6
+            }}>
+              Gender
+            </label>
+            <select
+              value={formData.gender}
+              onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                fontFamily: 'Inter',
+                fontSize: 14,
+                border: '1px solid #E8E4DC',
+                borderRadius: 8,
+                outline: 'none',
+                background: 'white'
+              }}
+            >
+              <option value="">Select Gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ 
+              display: 'block', 
+              fontFamily: 'Inter', 
+              fontSize: 11, 
+              fontWeight: 600, 
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              color: '#666',
+              marginBottom: 6
+            }}>
+              Citizenship
+            </label>
+            <select
+              value={formData.citizenship}
+              onChange={(e) => setFormData({ ...formData, citizenship: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                fontFamily: 'Inter',
+                fontSize: 14,
+                border: '1px solid #E8E4DC',
+                borderRadius: 8,
+                outline: 'none',
+                background: 'white'
+              }}
+            >
+              <option value="Singaporean">Singaporean</option>
+              <option value="PR">Permanent Resident</option>
+              <option value="Foreigner">Foreigner</option>
+            </select>
+          </div>
+
+          {type !== 'client' && (
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ 
+                display: 'block', 
+                fontFamily: 'Inter', 
+                fontSize: 11, 
+                fontWeight: 600, 
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                color: '#666',
+                marginBottom: 6
+              }}>
+                Relationship
+              </label>
+              <select
+                value={formData.relationship}
+                onChange={(e) => setFormData({ ...formData, relationship: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontFamily: 'Inter',
+                  fontSize: 14,
+                  border: '1px solid #E8E4DC',
+                  borderRadius: 8,
+                  outline: 'none',
+                  background: 'white'
+                }}
+              >
+                <option value="Spouse">Spouse</option>
+                <option value="Son">Son</option>
+                <option value="Daughter">Daughter</option>
+                <option value="Child">Child</option>
+              </select>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 28 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: '12px',
+                background: 'transparent',
+                border: '1px solid #E8E4DC',
+                borderRadius: 8,
+                fontFamily: 'Inter',
+                fontSize: 13,
+                fontWeight: 500,
+                color: '#666',
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              style={{
+                flex: 1,
+                padding: '12px',
+                background: '#A8834A',
+                border: 'none',
+                borderRadius: 8,
+                fontFamily: 'Inter',
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'white',
+                cursor: isSaving ? 'not-allowed' : 'pointer',
+                opacity: isSaving ? 0.7 : 1
+              }}
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
