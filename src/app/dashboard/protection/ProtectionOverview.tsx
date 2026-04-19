@@ -166,8 +166,26 @@ function getDTPDHaveAtAge(
   currentAge: number,
   activePolicies: Policy[]
 ): number {
-  return activePolicies
-    .filter(p => p.person === person && p.categoryCode === 'life')
+  // DEBUG: Check what policies exist
+  console.log(`getDTPDHaveAtAge called:`)
+  console.log(`  person param: "${person}"`)
+  console.log(`  total activePolicies: ${activePolicies.length}`)
+  activePolicies.forEach((p, i) => {
+    console.log(`  Policy ${i}: person="${p.person}", categoryCode="${p.categoryCode}", product="${p.productName}"`)
+  })
+  
+  const lifePolicies = activePolicies.filter(p => p.person === person && p.categoryCode === 'life')
+  console.log(`  lifePolicies found: ${lifePolicies.length}`)
+  
+  return lifePolicies
+    .reduce((sum, p) => {
+      if (!policyActiveAtAge(p, age, currentAge)) return sum
+      const mult = effectiveMultiplierAtAge(p, age)
+      const death = toSGD((p.baseDeath || 0) * mult, p)
+      const tpd = toSGD((p.baseTPD || 0) * mult, p)
+      return sum + Math.max(death, tpd)
+    }, 0)
+}
     .reduce((sum, p) => {
       if (!policyActiveAtAge(p, age, currentAge)) return sum
       const mult = effectiveMultiplierAtAge(p, age)
