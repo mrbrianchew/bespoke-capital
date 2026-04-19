@@ -62,7 +62,7 @@ interface ProtectionOverviewProps {
   clientAge: number
   spouseName: string
   spouseAge: number
-  effectiveeffectiveIsCouple: boolean
+  isCouple: boolean
   children: any[]
   ffData: any
   clientDTPD: number
@@ -201,7 +201,7 @@ export default function ProtectionOverview({
   clientAge,
   spouseName,
   spouseAge,
-  effectiveeffectiveIsCouple,
+  isCouple,
   children,
   ffData,
   clientDTPD,
@@ -217,8 +217,8 @@ export default function ProtectionOverview({
   const [activePerson, setActivePerson] = useState<'client' | 'spouse'>('client')
  const ff = ffData || {}
 const properties: any[] = ff.properties || []
-  const savedPlanType = ff.protection?.planType ?? ff.planType ?? null
-const effectiveeffectiveeffectiveIsCouple = savedPlanType ? savedPlanType === 'couple' : effectiveeffectiveIsCouple
+const savedPlanType = ff.protection?.planType ?? ff.planType ?? null
+const effectiveIsCouple = savedPlanType ? savedPlanType === 'couple' : isCouple
 
 // Refs to stabilize memoization
 const policiesRef = useRef(activePolicies)
@@ -434,16 +434,16 @@ if (children.length > 0) {
   // Current have values (at current age)
   const clientDTPDHave = getDTPDHaveAtAge(clientAge, 'client', clientAge, activePolicies)
   const clientCIHave = getCIHaveAtAge(clientAge, 'client', clientAge, activePolicies)
-  const spouseDTPDHave = effectiveeffectiveeffectiveIsCouple ? getDTPDHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies) : 0
-  const spouseCIHave = effectiveeffectiveeffectiveIsCouple ? getCIHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies) : 0
+  const spouseDTPDHave = effectiveIsCouple ? getDTPDHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies) : 0
+  const spouseCIHave = effectiveIsCouple ? getCIHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies) : 0
 
   const aDTPDHave = activePerson === 'client' ? clientDTPDHave : spouseDTPDHave
   const aCIHave = activePerson === 'client' ? clientCIHave : spouseCIHave
 
   const clientDTPDShortfall = Math.max(0, clientDTPD - clientDTPDHave)
   const clientCIShortfall = Math.max(0, clientCI - clientCIHave)
-  const spouseDTPDShortfall = effectiveeffectiveeffectiveIsCouple ? Math.max(0, spouseDTPD - spouseDTPDHave) : 0
-  const spouseCIShortfall = effectiveeffectiveeffectiveIsCouple ? Math.max(0, spouseCI - spouseCIHave) : 0
+  const spouseDTPDShortfall = effectiveIsCouple ? Math.max(0, spouseDTPD - spouseDTPDHave) : 0
+  const spouseCIShortfall = effectiveIsCouple ? Math.max(0, spouseCI - spouseCIHave) : 0
 
   const clientDTPDPct = clientDTPD > 0 ? Math.round(Math.min(clientDTPDHave, clientDTPD) / clientDTPD * 100) : 0
   const clientCIPct = clientCI > 0 ? Math.round(Math.min(clientCIHave, clientCI) / clientCI * 100) : 0
@@ -516,7 +516,7 @@ if (children.length > 0) {
           badgeBg: '#FEF3C7',
           badgeC: '#854F0B',
         },
-        ...(effectiveeffectiveeffectiveIsCouple ? [{
+        ...(effectiveIsCouple ? [{
           gap: spouseDTPDShortfall + spouseCIShortfall,
           n: 3,
           bg: '#F5F3EE',
@@ -570,7 +570,7 @@ if (children.length > 0) {
   }, [activePerson, clientName, spouseName, clientDTPDShortfall, clientCIShortfall,
       spouseDTPDShortfall, spouseCIShortfall, clientDTPDHave, clientCIHave,
       spouseDTPDHave, spouseCIHave, clientCIBelowFloor, spouseCIBelowFloor,
-      clientFloor, spouseFloor, clientRunwayMonths, spouseRunwayMonths, effectiveeffectiveeffectiveIsCouple])
+      clientFloor, spouseFloor, clientRunwayMonths, spouseRunwayMonths, effectiveIsCouple])
 
   // ── Chart rendering ──────────────────────────────────────────────────────────
 function CoverageChart({
@@ -1092,7 +1092,7 @@ function CoverageChart({
             Death &amp; total permanent disability
           </div>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            {effectiveeffectiveeffectiveIsCouple ? (
+            {effectiveIsCouple ? (
               <>If <span style={{ color: '#c8a96e', fontSize: 30 }}>{clientName}</span> or <span style={{ color: '#c8a96e', fontSize: 30 }}>{spouseName}</span> were gone tomorrow —</>
             ) : (
               <>If <span style={{ color: '#c8a96e', fontSize: 30 }}>{clientName}</span> were gone tomorrow —</>
@@ -1100,8 +1100,8 @@ function CoverageChart({
           </div>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 15, fontWeight: 300, color: 'rgba(240,237,232,0.45)', lineHeight: 1.7, maxWidth: 600 }}>
             {children.length > 0
-              ? `${effectiveeffectiveeffectiveIsCouple ? 'The surviving spouse' : 'Your family'} would be left to raise ${children.map((c: any) => c.name || 'your child').join(' and ')} alone. The mortgage, school fees, and daily life continue — but the income that makes it possible would not.`
-              : `${effectiveeffectiveeffectiveIsCouple ? 'The surviving spouse' : 'Your family'} would face an immediate income gap. The mortgage and daily expenses continue — but without your income to fund them.`
+              ? `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would be left to raise ${children.map((c: any) => c.name || 'your child').join(' and ')} alone. The mortgage, school fees, and daily life continue — but the income that makes it possible would not.`
+              : `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would face an immediate income gap. The mortgage and daily expenses continue — but without your income to fund them.`
             }
           </div>
         </div>
@@ -1109,7 +1109,7 @@ function CoverageChart({
         {/* Coverage cells */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: effectiveeffectiveeffectiveIsCouple ? '1fr 1fr' : '1fr',
+          gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
           gap: 12,
           padding: '0 28px 28px',
         }}>
@@ -1127,7 +1127,7 @@ function CoverageChart({
             accentColor="#c8a96e"
             type="dtpd"
           />
-          {effectiveeffectiveeffectiveIsCouple && (
+          {effectiveIsCouple && (
             <CoverageCell
               personLabel={spouseName}
               initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -1153,7 +1153,7 @@ function CoverageChart({
             Critical illness
           </div>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            {effectiveeffectiveIsCouple ? (
+            {effectiveIsCouple ? (
               <>If <span style={{ color: '#7FC47F', fontSize: 30 }}>{clientName}</span> or <span style={{ color: '#7FC47F', fontSize: 30 }}>{spouseName}</span> received a critical illness diagnosis —</>
             ) : (
               <>If <span style={{ color: '#7FC47F', fontSize: 30 }}>{clientName}</span> received a critical illness diagnosis —</>
@@ -1165,7 +1165,7 @@ function CoverageChart({
         </div>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: effectiveeffectiveIsCouple ? '1fr 1fr' : '1fr',
+          gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
           gap: 12,
           padding: '0 28px 28px',
         }}>
@@ -1186,7 +1186,7 @@ function CoverageChart({
             belowFloor={clientCIBelowFloor}
             floor={clientFloor}
           />
-          {effectiveeffectiveIsCouple && (
+          {effectiveIsCouple && (
             <CoverageCell
               personLabel={spouseName}
               initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -1220,7 +1220,7 @@ function CoverageChart({
               {aName}'s protection journey — age {aAge} to 100
             </div>
           </div>
-          {effectiveeffectiveIsCouple && (
+          {effectiveIsCouple && (
             <div style={{ display: 'flex', gap: 4, background: '#F5F3EE', padding: 4, borderRadius: 10 }}>
               {(['client', 'spouse'] as const).map(p => (
                 <button
@@ -1337,11 +1337,11 @@ function CoverageChart({
           The intention gap
         </div>
         <div style={{ fontFamily: 'Georgia, serif', fontSize: 20, fontWeight: 300, color: '#1C1A17', lineHeight: 1.65 }}>
-          {aName}'s intention is for {activePerson === 'client' && effectiveeffectiveIsCouple ? `${spouseName} and the family` : 'the family'} to never have to compromise.
+          {aName}'s intention is for {activePerson === 'client' && effectiveIsCouple ? `${spouseName} and the family` : 'the family'} to never have to compromise.
           Today, <span style={{ color: '#C0392B' }}>{fmt(aTotalShortfall)}</span> of that intention — across D/TPD and CI — remains unprotected.
           {aTotalShortfall > 0 && ' This is entirely addressable.'}
         </div>
-        {effectiveeffectiveIsCouple && (
+        {effectiveIsCouple && (
           <div style={{ marginTop: 10, fontSize: 13, color: '#888' }}>
             Combined household shortfall: <strong style={{ color: '#1C1A17', fontFamily: 'DM Mono, monospace' }}>{fmt(combinedShortfall)}</strong>
           </div>
