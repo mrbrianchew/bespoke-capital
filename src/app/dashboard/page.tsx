@@ -354,7 +354,7 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
   let totalEduFund = 0, totalEduGap = 0, totalEduMonthly = 0
 
   for (const kid of children) {
-    const age = kid.age ?? getAge(kid.date_of_birth)
+    const age = kid.age ?? getAge(kid.dob)
     const ec  = eduChildren.find((e: any) => e.childId === kid.id)
     const defaultEntry = kid.gender === 'Male' ? 21 : 19
     const uniEntryAge  = ec?.uniEntryAge  || defaultEntry
@@ -796,9 +796,9 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
                     name={kid.name || kid.relationship}
                     tag={kid.relationship}
                     tagColor={kid.gender === 'Female' ? '#7A6AAA' : '#4A7C9E'}
-                    age={kid.age ?? getAge(kid.date_of_birth)}
+                    age={kid.age ?? getAge(kid.dob)}
                     gender={kid.gender}
-                    dob={kid.date_of_birth}
+                    dob={kid.dob}
                     isLast={i === children.length - 1}
                   />
                   <button
@@ -965,7 +965,7 @@ function EditMemberModal({
 }) {
   const [formData, setFormData] = useState({
     name: member.name || '',
-    dob: member.dob || member.date_of_birth || '',
+    dob: member.dob || member.dob || '',
     gender: member.gender || '',
     citizenship: member.citizenship || 'Singaporean',
     relationship: member.relationship || type,
