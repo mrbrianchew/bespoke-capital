@@ -255,27 +255,20 @@ const merged: any = {
   ...(needsRow?.data || {}),
   ...(objectivesRow?.data || {})
 }
-
-// Replace setFfData(merged) with:
-setFfData(prev => {
-  if (JSON.stringify(prev) === JSON.stringify(merged)) return prev
-  return merged
-})
-
 // Debug - check what was loaded
 console.log('Loaded financial data:', financialsRow?.data)
 console.log('Protection needs data:', needsRow?.data)
 console.log('All merged keys:', Object.keys(merged))
 
-    // Also load family members from dedicated table (spouse + children)
-    const { data: familyRows } = await supabase
-      .from('family_members').select('*').eq('client_id', id)
+// Also load family members from dedicated table (spouse + children)
+const { data: familyRows } = await supabase
+  .from('family_members').select('*').eq('client_id', id)
 
-    if (Object.keys(merged).length > 0) {
-      setFfData(prev => {
-  if (JSON.stringify(prev) === JSON.stringify(merged)) return prev
-  return merged
-})
+if (Object.keys(merged).length > 0) {
+  setFfData((prev: any) => {
+    if (JSON.stringify(prev) === JSON.stringify(merged)) return prev
+    return merged
+  })
 
       // Spouse: try person2 first, then family_members table
       // Determine couple/individual mode
