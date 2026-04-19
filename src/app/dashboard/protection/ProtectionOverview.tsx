@@ -166,37 +166,15 @@ function getDTPDHaveAtAge(
   currentAge: number,
   activePolicies: Policy[]
 ): number {
-  // DEBUG: Check what policies exist
-  console.log(`getDTPDHaveAtAge called:`)
-  console.log(`  person param: "${person}"`)
-  console.log(`  total activePolicies: ${activePolicies.length}`)
-  activePolicies.forEach((p, i) => {
-    console.log(`  Policy ${i}: person="${p.person}", categoryCode="${p.categoryCode}", product="${p.productName}"`)
-  })
-  
-  const lifePolicies = activePolicies.filter(p => p.person === person && p.categoryCode === 'life')
-  console.log(`  lifePolicies found: ${lifePolicies.length}`)
-  
- return lifePolicies.reduce((sum, p) => {
-  const isActive = policyActiveAtAge(p, age, currentAge)
-  const mult = effectiveMultiplierAtAge(p, age)
-  const death = toSGD((p.baseDeath || 0) * mult, p)
-  const tpd = toSGD((p.baseTPD || 0) * mult, p)
-  const maxBenefit = Math.max(death, tpd)
-  
-  // DEBUG: Log each policy's contribution
-  if (age === currentAge) { // Only log once at current age
-    console.log(`Policy: ${p.productName}`)
-    console.log(`  isActive: ${isActive}`)
-    console.log(`  multiplier: ${mult}`)
-    console.log(`  baseDeath: ${p.baseDeath}, baseTPD: ${p.baseTPD}`)
-    console.log(`  death benefit: ${death}, tpd benefit: ${tpd}`)
-    console.log(`  added to sum: ${maxBenefit}`)
-  }
-  
-  if (!isActive) return sum
-  return sum + maxBenefit
-}, 0)
+  return activePolicies
+    .filter(p => p.person === person && p.categoryCode === 'life')
+    .reduce((sum, p) => {
+      if (!policyActiveAtAge(p, age, currentAge)) return sum
+      const mult = effectiveMultiplierAtAge(p, age)
+      const death = toSGD((p.baseDeath || 0) * mult, p)
+      const tpd = toSGD((p.baseTPD || 0) * mult, p)
+      return sum + Math.max(death, tpd)
+    }, 0)
 }
 
 // CI have at a given age for a person
@@ -425,8 +403,6 @@ if (children.length > 0) {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
   
-  console.log(`🔵 chartData recalculating - policies: ${activePolicies.length}`)
-  
   const result = []
   for (let age = currentAge; age <= 100; age++) {
     const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
@@ -440,8 +416,6 @@ if (children.length > 0) {
       ciHave: ciHave,
     })
   }
-  
-  console.log(`🔵 First point age ${result[0].age}: dtpdHave = ${result[0].dtpdHave}`)
   
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
@@ -761,14 +735,6 @@ function CoverageChart({
       color: '#6B7B8D'
     })
   }
-
-    // DEBUG: Check if policies have coverage values
-  console.log(`=== ${type.toUpperCase()} CHART DEBUG ===`)
-  console.log(`Person: ${personName}`)
-  console.log(`First 5 data points:`)
-  data.slice(0, 5).forEach(d => {
-    console.log(`  Age ${d.age}: Need = ${fmt((d as any)[needKey])}, Have = ${fmt((d as any)[haveKey])}`)
-  })
 
   return (
     <div style={{ position: 'relative', overflow: 'visible' }}>
