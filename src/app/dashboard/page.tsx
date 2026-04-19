@@ -182,7 +182,48 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
     setSaving(false)
   }
 }
+async function deleteFamilyMember(memberId: string) {
+    if (!confirm('Are you sure you want to remove this family member?')) return
+    setSaving(true)
+    try {
+      const { error } = await supabase
+        .from('family_members')
+        .delete()
+        .eq('id', memberId)
+      if (error) throw error
+      if (spouse?.id === memberId) {
+        setSpouse(null)
+      } else {
+        setChildren((prev: any[]) => prev.filter(k => k.id !== memberId))
+      }
+    } catch (error: any) {
+      alert(`Failed to delete: ${error.message || 'Unknown error'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
 
+  async function addFamilyMember(relationship: string) {
+    if (!client?.id) return
+    setSaving(true)
+    try {
+      const { data, error } = await supabase
+        .from('family_members')
+        .insert({ client_id: client.id, name: relationship, relationship, gender: '' })
+        .select()
+        .single()
+      if (error) throw error
+      if (relationship === 'Spouse') {
+        setSpouse(data)
+      } else {
+        setChildren((prev: any[]) => [...prev, data])
+      }
+    } catch (error: any) {
+      alert(`Failed to add: ${error.message || 'Unknown error'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
   if (loading) return (
     <div className="flex items-center justify-center h-screen" style={{ background: '#EEEADE' }}>
       <div className="text-center">
@@ -562,7 +603,7 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
               <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 30, fontWeight: 300, color: '#F5F0E8', letterSpacing: 0.5, marginBottom: 4 }}>
                 {isCouple ? `${client.name} & ${spouse.name}` : client.name}
               </h1>
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button
                   onClick={() => {
                     setEditingType('client')
@@ -582,27 +623,6 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
                 >
                   ✎ Edit Client
                 </button>
-                {spouse && (
-                  <button
-                    onClick={() => {
-                      setEditingType('spouse')
-                      setEditingMember(spouse)
-                      setShowEditModal(true)
-                    }}
-                    style={{
-                      background: 'rgba(107,91,139,0.2)',
-                      border: '1px solid rgba(107,91,139,0.4)',
-                      color: '#6B5B8B',
-                      padding: '4px 12px',
-                      borderRadius: 4,
-                      fontSize: 11,
-                      cursor: 'pointer',
-                      fontFamily: 'Inter'
-                    }}
-                  >
-                    ✎ Edit Spouse
-                  </button>
-                )}
               </div>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                 <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
@@ -775,26 +795,12 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
                     gender={spouse.gender}
                     dob={spouse.dob}
                   />
-                  <button
-                    onClick={() => {
-                      setEditingType('spouse')
-                      setEditingMember(spouse)
-                      setShowEditModal(true)
-                    }}
-                    style={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 8,
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#6B5B8B',
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      padding: '4px 8px'
-                    }}
-                  >
-                    ✎
-                  </button>
+                  <div style={{ position: 'absolute', right: 0, top: 8, display: 'flex', gap: 4 }}>
+                    <button onClick={() => { setEditingType('spouse'); setEditingMember(spouse); setShowEditModal(true) }}
+                      style={{ background: 'transparent', border: 'none', color: '#6B5B8B', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✎</button>
+                    <button onClick={() => deleteFamilyMember(spouse.id)}
+                      style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✕</button>
+                  </div>
                 </div>
               )}
               
@@ -809,32 +815,42 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
                     dob={kid.dob}
                     isLast={i === children.length - 1}
                   />
-                  <button
-                    onClick={() => {
-                      setEditingType('child')
-                      setEditingMember(kid)
-                      setShowEditModal(true)
-                    }}
-                    style={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 8,
-                      background: 'transparent',
-                      border: 'none',
-                      color: kid.gender === 'Female' ? '#7A6AAA' : '#4A7C9E',
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      padding: '4px 8px'
-                    }}
-                  >
-                    ✎
-                  </button>
+                  <div style={{ position: 'absolute', right: 0, top: 8, display: 'flex', gap: 4 }}>
+                    <button onClick={() => { setEditingType('child'); setEditingMember(kid); setShowEditModal(true) }}
+                      style={{ background: 'transparent', border: 'none', color: kid.gender === 'Female' ? '#7A6AAA' : '#4A7C9E', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✎</button>
+                    <button onClick={() => deleteFamilyMember(kid.id)}
+                      style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 14, padding: '4px 6px' }}>✕</button>
+                  </div>
                 </div>
               ))}
               
-              {!spouse && children.length === 0 && (
+             {!spouse && children.length === 0 && (
                 <p style={{ fontFamily: 'Inter', fontSize: 12, color: '#aaa', padding: '8px 0' }}>No family members added</p>
               )}
+              <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {!spouse && (
+                  <button onClick={() => addFamilyMember('Spouse')}
+                    style={{ fontSize: 11, fontFamily: 'Inter', color: '#6B5B8B', background: 'rgba(107,91,139,0.08)', border: '1px solid rgba(107,91,139,0.3)', borderRadius: 4, padding: '4px 10px', cursor: 'pointer' }}>
+                    + Spouse
+                  </button>
+                )}
+                <button onClick={() => addFamilyMember('Son')}
+                  style={{ fontSize: 11, fontFamily: 'Inter', color: '#4A7C9E', background: 'rgba(74,124,158,0.08)', border: '1px solid rgba(74,124,158,0.3)', borderRadius: 4, padding: '4px 10px', cursor: 'pointer' }}>
+                  + Son
+                </button>
+                <button onClick={() => addFamilyMember('Daughter')}
+                  style={{ fontSize: 11, fontFamily: 'Inter', color: '#7A6AAA', background: 'rgba(122,106,170,0.08)', border: '1px solid rgba(122,106,170,0.3)', borderRadius: 4, padding: '4px 10px', cursor: 'pointer' }}>
+                  + Daughter
+                </button>
+                <button onClick={() => addFamilyMember('Father')}
+                  style={{ fontSize: 11, fontFamily: 'Inter', color: '#888', background: '#F5F3EE', border: '1px solid #E8E4DC', borderRadius: 4, padding: '4px 10px', cursor: 'pointer' }}>
+                  + Father
+                </button>
+                <button onClick={() => addFamilyMember('Mother')}
+                  style={{ fontSize: 11, fontFamily: 'Inter', color: '#888', background: '#F5F3EE', border: '1px solid #E8E4DC', borderRadius: 4, padding: '4px 10px', cursor: 'pointer' }}>
+                  + Mother
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1191,9 +1207,18 @@ function EditMemberModal({
                 }}
               >
                 <option value="Spouse">Spouse</option>
-                <option value="Son">Son</option>
-                <option value="Daughter">Daughter</option>
-                <option value="Child">Child</option>
+              <option value="Son">Son</option>
+              <option value="Daughter">Daughter</option>
+              <option value="Sister">Sister</option>
+              <option value="Brother">Brother</option>
+              <option value="Father">Father</option>
+              <option value="Mother">Mother</option>
+              <option value="Grandfather">Grandfather</option>
+              <option value="Grandmother">Grandmother</option>
+              <option value="Brother-in-law">Brother-in-law</option>
+              <option value="Sister-in-law">Sister-in-law</option>
+              <option value="Uncle">Uncle</option>
+              <option value="Aunty">Aunty</option>
               </select>
             </div>
           )}
