@@ -186,14 +186,6 @@ function getDTPDHaveAtAge(
       return sum + Math.max(death, tpd)
     }, 0)
 }
-    .reduce((sum, p) => {
-      if (!policyActiveAtAge(p, age, currentAge)) return sum
-      const mult = effectiveMultiplierAtAge(p, age)
-      const death = toSGD((p.baseDeath || 0) * mult, p)
-      const tpd = toSGD((p.baseTPD || 0) * mult, p)
-      return sum + Math.max(death, tpd)
-    }, 0)
-}
 
 // CI have at a given age for a person
 function getCIHaveAtAge(
