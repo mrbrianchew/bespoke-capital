@@ -1265,23 +1265,7 @@ allMilestonesRaw.forEach((m, i) => {
                 Required capital vs portfolio · sharp drops at uni · mortgage slope · permanent floor
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 18, height: 2, background: '#C4A464' }} />
-                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Need</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 14, height: 7, background: '#C4A464', opacity: 0.28, borderRadius: 2 }} />
-                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Portfolio</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 14, height: 2, background: '#C0392B', opacity: 0.5 }} />
-                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Shortfall</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 14, height: 2, background: '#2D6A4F', opacity: 0.5 }} />
-                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Surplus</span>
-              </div>
+        
             </div>
           </div>
           <CoverageChart
@@ -1309,20 +1293,7 @@ allMilestonesRaw.forEach((m, i) => {
                 Income window · sharp drops at uni · mortgage slope · survival floor forever
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 18, height: 2, background: '#2D6A4F' }} />
-                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Need</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 14, height: 7, background: '#2D6A4F', opacity: 0.22, borderRadius: 2 }} />
-                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Portfolio</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 14, height: 2, background: '#C0392B', opacity: 0.5 }} />
-                <span style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Shortfall</span>
-              </div>
-            </div>
+            
           </div>
           <CoverageChart
   data={chartData}
