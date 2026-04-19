@@ -854,8 +854,9 @@ async function saveNeedsToDatabase() {
   const needs: any = {
     p1_dtpd_need: dtpdClient.net,
     p1_ci_need: ciClient.net,
+    planType: p.planType ?? 'individual',
   }
-  
+
   if (isCouple) {
     needs.p2_dtpd_need = dtpdSpouse.net
     needs.p2_ci_need = ciSpouse.net
