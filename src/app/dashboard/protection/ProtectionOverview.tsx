@@ -837,9 +837,9 @@ allMilestonesRaw.forEach((m, i) => {
   if (mx < PL || mx > PL + iW) return null
   // tier 0 = closest to chart, tier 1 = 22px higher, tier 2 = 44px higher
   const tierOffset = m.tier * 22
-  const labelY = PT - 24 - tierOffset
-  const ageY   = PT - 13 - tierOffset
-  const dotY   = PT - 6  - tierOffset
+  const labelY = PT - 24 + tierOffset
+  const ageY   = PT - 13 + tierOffset
+  const dotY   = PT - 6  + tierOffset
   return (
     <g key={`ms-${i}`}>
       {/* Vertical line from top of chart down */}
