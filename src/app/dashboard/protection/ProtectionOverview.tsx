@@ -165,7 +165,6 @@ function getDTPDHaveAtAge(
   currentAge: number,
   activePolicies: Policy[]
 ): number {
-  
   return activePolicies
     .filter(p => p.person === person && p.categoryCode === 'life')
     .reduce((sum, p) => {
@@ -214,8 +213,17 @@ export default function ProtectionOverview({
   inflation,
 }: ProtectionOverviewProps) {
   const [activePerson, setActivePerson] = useState<'client' | 'spouse'>('client')
-  const ff = ffData || {}
-  const properties: any[] = ff.properties || []
+ const ff = ffData || {}
+const properties: any[] = ff.properties || []
+
+// Refs to stabilize memoization
+const policiesRef = useRef(activePolicies)
+const propertiesRef = useRef(properties)
+
+useEffect(() => {
+  policiesRef.current = activePolicies
+  propertiesRef.current = properties
+}, [activePolicies, properties])
 
   // ── Expenses ────────────────────────────────────────────────────────────────
   const p1AnnExp = useMemo(() => {
@@ -305,20 +313,20 @@ export default function ProtectionOverview({
   const edu = Number(ff.strategic_objectives?.ed_total || 0)
 
   // ── D/TPD need at age ───────────────────────────────────────────────────────
-  function getDTPDNeedAtAge(age: number, person: 'client' | 'spouse'): number {
-    const currentAge = person === 'client' ? clientAge : spouseAge
-    const annExp = person === 'client' ? p1AnnExp : p2AnnExp
-    const offset = person === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
-    const floor = person === 'client' ? clientFloor : spouseFloor
+  function getDTPDNeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
+  const currentAge = person === 'client' ? clientAge : spouseAge
+  const annExp = person === 'client' ? p1AnnExp : p2AnnExp
+  const offset = person === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
+  const floor = person === 'client' ? clientFloor : spouseFloor
 
-    // Years left of dependency
-    const yLeft = Math.max(0, (currentAge + coverTerm) - age)
+  // Years left of dependency
+  const yLeft = Math.max(0, (currentAge + coverTerm) - age)
 
-    // Family dependency — FV annuity
-    const ageFD = fvAnnuity(annExp, inflation, yLeft)
+  // Family dependency — FV annuity
+  const ageFD = fvAnnuity(annExp, inflation, yLeft)
 
-    // Mortgage amortising balance
-    const ageMort = mortBalanceAtAge(age, currentAge, properties)
+  // Mortgage amortising balance
+  const ageMort = mortBalanceAtAge(age, currentAge, props)
 
     // Education — step down sharply as each child enters uni
     let eduRemaining = edu
@@ -338,16 +346,16 @@ export default function ProtectionOverview({
   }
 
   // ── CI need at age ──────────────────────────────────────────────────────────
-  function getCINeedAtAge(age: number, person: 'client' | 'spouse'): number {
-    const currentAge = person === 'client' ? clientAge : spouseAge
-    const annExp = person === 'client' ? p1AnnExp : p2AnnExp
-    const monthlyInc = person === 'client' ? p1MonthlyInc : p2MonthlyInc
-    const liqAssets = person === 'client' ? p1Liq : p2Liq
-    const floor = person === 'client' ? clientFloor : spouseFloor
+  function getCINeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
+  const currentAge = person === 'client' ? clientAge : spouseAge
+  const annExp = person === 'client' ? p1AnnExp : p2AnnExp
+  const monthlyInc = person === 'client' ? p1MonthlyInc : p2MonthlyInc
+  const liqAssets = person === 'client' ? p1Liq : p2Liq
+  const floor = person === 'client' ? clientFloor : spouseFloor
 
-    // Income window component (60-month window from today, declines as children independent)
-    const yLeft = Math.max(0, (currentAge + coverTerm) - age)
-    const incomeWindow = Math.max(0, monthlyInc * 60 - liqAssets)
+  // Income window component (60-month window from today, declines as children independent)
+  const yLeft = Math.max(0, (currentAge + coverTerm) - age)
+  const incomeWindow = Math.max(0, monthlyInc * 60 - liqAssets)
 
     // Fraction remaining based on children still dependent
     let incomeFraction = 1.0
@@ -369,7 +377,7 @@ export default function ProtectionOverview({
     const incomeComponent = incomeWindow * incomeFraction
 
     // Mortgage component (gradual slope)
-    const mortComponent = mortBalanceAtAge(age, currentAge, properties)
+    const mortComponent = mortBalanceAtAge(age, currentAge, props)
 
     // Education component (sharp drops at each child's uni entry)
     let eduComponent = 0
@@ -389,22 +397,38 @@ export default function ProtectionOverview({
 
   // ── Build chart data (age arrays) ───────────────────────────────────────────
   const chartData = useMemo(() => {
-    const currentAge = activePerson === 'client' ? clientAge : spouseAge
-    const personKey = activePerson
-    const result = []
-    for (let age = currentAge; age <= 100; age++) {
-      if (age === 75) console.log('HAVE at 75:', getDTPDHaveAtAge(75, personKey, currentAge, activePolicies), 'NEED at 75:', getDTPDNeedAtAge(75, personKey))
-      result.push({
-        age,
-        dtpdNeed: getDTPDNeedAtAge(age, personKey),
-        dtpdHave: getDTPDHaveAtAge(age, personKey, currentAge, activePolicies),
-        ciNeed: getCINeedAtAge(age, personKey),
-        ciHave: getCIHaveAtAge(age, personKey, currentAge, activePolicies),
-      })
-    }
-    return result
-  }, [activePerson, clientAge, spouseAge, JSON.stringify(activePolicies), clientFloor, spouseFloor,
-      p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm])
+  const currentAge = activePerson === 'client' ? clientAge : spouseAge
+  const personKey = activePerson
+  const currentPolicies = policiesRef.current
+  const currentProperties = propertiesRef.current
+  
+  const result = []
+  for (let age = currentAge; age <= 100; age++) {
+    result.push({
+      age,
+      dtpdNeed: getDTPDNeedAtAge(age, personKey, currentProperties),
+      dtpdHave: getDTPDHaveAtAge(age, personKey, currentAge, currentPolicies),
+      ciNeed: getCINeedAtAge(age, personKey, currentProperties),
+      ciHave: getCIHaveAtAge(age, personKey, currentAge, currentPolicies),
+    })
+  }
+  return result
+}, [
+  activePerson, 
+  clientAge, 
+  spouseAge, 
+  activePolicies, 
+  clientFloor, 
+  spouseFloor,
+  p1AnnExp, 
+  p2AnnExp, 
+  inflation, 
+  properties, 
+  children, 
+  edu, 
+  coverTerm,
+  childUniEntryAges
+])
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
   const aAge = activePerson === 'client' ? clientAge : spouseAge
