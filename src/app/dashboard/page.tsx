@@ -168,7 +168,8 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
           ...k, 
           ...updateFields, 
           dob: updatedData.dob || k.dob,
-          date_of_birth: updatedData.dob || k.date_of_birth 
+          date_of_birth: updatedData.dob || k.date_of_birth,
+          age: updatedData.dob ? getAge(updatedData.dob) : k.age
         } : k)
       )
     }
