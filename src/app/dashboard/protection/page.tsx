@@ -248,13 +248,19 @@ const { data: objectivesRow } = await supabase
   .eq('section', 'objectives')
   .maybeSingle()
 
-// Merge the data
+// Inside loadAll function, after merging data:
 const merged: any = {
   ...(financialsRow?.data || {}),
   ...(portfolioRow?.data || {}),
   ...(needsRow?.data || {}),
   ...(objectivesRow?.data || {})
 }
+
+// Replace setFfData(merged) with:
+setFfData(prev => {
+  if (JSON.stringify(prev) === JSON.stringify(merged)) return prev
+  return merged
+})
 
 // Debug - check what was loaded
 console.log('Loaded financial data:', financialsRow?.data)
@@ -266,7 +272,10 @@ console.log('All merged keys:', Object.keys(merged))
       .from('family_members').select('*').eq('client_id', id)
 
     if (Object.keys(merged).length > 0) {
-      setFfData(merged)
+      setFfData(prev => {
+  if (JSON.stringify(prev) === JSON.stringify(merged)) return prev
+  return merged
+})
 
       // Spouse: try person2 first, then family_members table
       // Determine couple/individual mode
@@ -355,11 +364,11 @@ if (familyRows && familyRows.length > 0) {
     }
   }
 
-  function updateRm(next: RiskMgmtData) {
-    setRmData(next)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => saveData(next), 1000)
-  }
+  const updateRm = useCallback((next: RiskMgmtData) => {
+  setRmData(next)
+  if (saveTimer.current) clearTimeout(saveTimer.current)
+  saveTimer.current = setTimeout(() => saveData(next), 1000)
+}, [])
 
   // ── Financial calculations ─────────────────────────────────────────────────
   const ff = ffData || {}
@@ -445,7 +454,9 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || localSpouseCI)   
   }
 
   // CORE CHANGE: Only reflect active policies for gaps and dashboards
-  const activePolicies = rmData.policies.filter(p => ACTIVE_STATUSES.includes(p.status))
+  const activePolicies = useMemo(() => {
+  return rmData.policies.filter(p => ACTIVE_STATUSES.includes(p.status))
+}, [rmData.policies])
 
   function lifeHave(person: string) {
     return activePolicies.filter(p=>p.person===person&&p.categoryCode==='life')
@@ -462,135 +473,6 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || localSpouseCI)   
   const cLH = lifeHave('client'), cCH = ciHave('client')
   const sLH = lifeHave('spouse'), sCH = ciHave('spouse')
   const totalPrem = activePolicies.reduce((s,p)=>s+annualPremSGD(p),0)
-
-  // Chart data
-function buildChart(age: number, annExp: number, offset: number, ciNeed: number) {
-  const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
-
-  // Floor = FV annuity for minimum 5-year window, matching spreadsheet C125
-  const floor = fvAnn(annExp, inflation, 5)
-
-  // Pull all mortgages from properties array — same source as objectives/page.tsx
-  const allMortgages = (ff.properties || []).flatMap((p: any) => p.mortgages || [])
-
-  // Compute declining mortgage balance at a future age using actual per-mortgage data
-  // Matches spreadsheet M121 = PV(rate/12, remainingMonths, -monthlyPayment)
-  function mortBalanceAtAge(atAge: number): number {
-    return allMortgages.reduce((total: number, m: any) => {
-      const outstanding  = Number(m.outstanding || 0)
-      const rate         = Number(m.interestRate || 0) / 100
-      const tenure       = Number(m.tenure || m.remainingTenure || 25)
-      if (outstanding <= 0) return total
-      const yearsElapsed = atAge - age
-      const yearsLeft    = Math.max(0, tenure - yearsElapsed)
-      if (yearsLeft <= 0) return total
-      if (rate === 0) return total + outstanding * (yearsLeft / tenure)
-      const monthlyRate  = rate / 12
-      const totalMonths  = tenure * 12
-      const monthlyPmt   = outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
-      const monthsLeft   = yearsLeft * 12
-      return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
-    }, 0)
-  }
-
-  return Array.from({length: 100 - age}, (_, i) => {
-    const a     = age + i
-    const yLeft = Math.max(0, (age + coverTerm) - a)
-
-    // Family dependency: FV annuity-due recalculated each year — matches M119
-    const ageFD   = fvAnn(annExp, inflation, yLeft)
-
-    // Mortgage: actual amortized declining balance per year — matches M121
-    const ageMort = mortBalanceAtAge(a)
-
-    // Education steps down when each child enters uni (not graduates)
-    // Remaining edu need = proportion of children not yet at uni
-    const childrenNotYetAtUni = children.filter((c: any) => {
-      const childAge = Number(c.age || 0)
-      const gender = c.gender || ''
-      const uniEntryAge = gender === 'Male' ? 21 : gender === 'Female' ? 19 : 21
-      return (a - aAge) < (uniEntryAge - childAge)
-    }).length
-    const eduFraction = children.length > 0 ? childrenNotYetAtUni / children.length : (yLeft > 0 ? 1 : 0)
-    const ageEdu = edu * eduFraction
-
-    // Total with floor — matches M115 = MAX(SUM(M119:M124), C125)
-    const dtpd = Math.max(floor, ageFD + ageMort + ageEdu - offset)
-
-    // CI: flat during coverage term then fades out
-    const ciFactor = a < age + coverTerm
-  ? 1.0
-  : Math.max(0, 1 - (a - (age + coverTerm)) * 0.025)
-
-    return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
-  })
-}
-    
-  const aAge    = overviewPerson==='client' ? clientAge  : spouseAge
-  const aDTPD   = overviewPerson==='client' ? clientDTPD : spouseDTPD
-  const aCI     = overviewPerson==='client' ? clientCI   : spouseCI
-  const aLH     = overviewPerson==='client' ? cLH        : sLH
-  const aCH     = overviewPerson==='client' ? cCH        : sCH
-  const aExp    = overviewPerson==='client' ? finalP1Exp      : finalP2Exp
-  const aOffset = overviewPerson==='client' ? p1CPF+p1Prop : p2CPF+p2Prop
-  const aName   = overviewPerson==='client' ? clientName : spouseName
-
-    const hasChartData = aDTPD > 0 || aCI > 0 || aExp > 0
-
-  const chartData = useMemo(() => {
-  if (!hasChartData) return []
-  
-  const age = overviewPerson === 'client' ? clientAge : spouseAge
-  const annExp = overviewPerson === 'client' ? finalP1Exp : finalP2Exp
-  const offset = overviewPerson === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
-  const ciNeedTotal = overviewPerson === 'client' ? clientCI : spouseCI
-
-  const floor = fvAnn(annExp, inflation, 5)
-  const allMortgages = (ff.properties || []).flatMap((p: any) => p.mortgages || [])
-
-  function mortBalanceAtAge(atAge: number): number {
-    return allMortgages.reduce((total: number, m: any) => {
-      const outstanding  = Number(m.outstanding || 0)
-      const rate         = Number(m.interestRate || 0) / 100
-      const tenure       = Number(m.tenure || m.remainingTenure || 25)
-      if (outstanding <= 0) return total
-      const yearsElapsed = atAge - age
-      const yearsLeft    = Math.max(0, tenure - yearsElapsed)
-      if (yearsLeft <= 0) return total
-      if (rate === 0) return total + outstanding * (yearsLeft / tenure)
-      const monthlyRate  = rate / 12
-      const totalMonths  = tenure * 12
-      const monthlyPmt   = outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
-      const monthsLeft   = yearsLeft * 12
-      return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
-    }, 0)
-  }
-
-  return Array.from({length: 100 - age}, (_, i) => {
-    const a = age + i
-    const yLeft = Math.max(0, (age + coverTerm) - a)
-    const ageFD = fvAnn(annExp, inflation, yLeft)
-    const ageMort = mortBalanceAtAge(a)
-    
-    const childrenNotYetAtUni = children.filter((c: any) => {
-      const childAge = Number(c.age || 0)
-      const gender = c.gender || ''
-      const uniEntryAge = gender === 'Male' ? 21 : gender === 'Female' ? 19 : 21
-      return (a - age) < (uniEntryAge - childAge)
-    }).length
-    
-    const eduFraction = children.length > 0 ? childrenNotYetAtUni / children.length : (yLeft > 0 ? 1 : 0)
-    const ageEdu = edu * eduFraction
-    const dtpd = Math.max(floor, ageFD + ageMort + ageEdu - offset)
-    
-    const ciFactor = a < age + coverTerm
-  ? 1.0
-  : Math.max(0, 1 - (a - (age + coverTerm)) * 0.025)
-
-    return { age: a, dtpd, ci: Math.max(0, ciNeedTotal * ciFactor) }
-  })
-}, [overviewPerson, clientAge, spouseAge, finalP1Exp, finalP2Exp, p1CPF, p1Prop, p2CPF, p2Prop, 
-    clientCI, spouseCI, inflation, coverTerm, ff.properties, children, edu, hasChartData])
 
   // People list for dropdowns
   const allPeople = [
