@@ -606,7 +606,7 @@ function CoverageChart({
   const H = 280
   const PL = 70
   const PR = 40
-  const PT = 50
+  const PT = 80
   const PB = 50
   const iW = W - PL - PR
   const iH = H - PT - PB
@@ -711,32 +711,33 @@ function CoverageChart({
     }
   }
 
-  // Build milestone markers
-  const allMilestones: { age: number; label: string; color: string }[] = []
-  
-  milestones.uniAges.forEach((m, i) => {
-    allMilestones.push({
-      age: m.age,
-      label: m.label,
-      color: '#2D6A4F'
-    })
-  })
-  
-  if (milestones.mortEndAge) {
-    allMilestones.push({
-      age: milestones.mortEndAge,
-      label: 'Mortgage paid',
-      color: '#A8834A'
-    })
+ // Build milestone markers with tier assignment to prevent overlap
+const allMilestonesRaw: { age: number; label: string; color: string }[] = []
+
+milestones.uniAges.forEach((m) => {
+  allMilestonesRaw.push({ age: m.age, label: m.label, color: '#2D6A4F' })
+})
+if (milestones.mortEndAge) {
+  allMilestonesRaw.push({ age: milestones.mortEndAge, label: 'Mortgage paid', color: '#A8834A' })
+}
+if (milestones.retireAge) {
+  allMilestonesRaw.push({ age: milestones.retireAge, label: 'Retirement', color: '#6B7B8D' })
+}
+
+// Sort by age, then assign tiers based on proximity
+const MIN_GAP = 7 // ages within 7 years get staggered
+allMilestonesRaw.sort((a, b) => a.age - b.age)
+const allMilestones: { age: number; label: string; color: string; tier: number }[] = []
+allMilestonesRaw.forEach((m, i) => {
+  if (i === 0) {
+    allMilestones.push({ ...m, tier: 0 })
+  } else {
+    const prev = allMilestonesRaw[i - 1]
+    const prevTier = allMilestones[i - 1].tier
+    const gap = m.age - prev.age
+    allMilestones.push({ ...m, tier: gap < MIN_GAP ? (prevTier + 1) % 3 : 0 })
   }
-  
-  if (milestones.retireAge) {
-    allMilestones.push({
-      age: milestones.retireAge,
-      label: 'Retirement',
-      color: '#6B7B8D'
-    })
-  }
+})
 
   return (
     <div style={{ position: 'relative', overflow: 'visible' }}>
@@ -830,19 +831,26 @@ function CoverageChart({
         {/* Have line (optional, subtle) */}
         <path d={havePath} stroke={accentColor} strokeWidth="0.8" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
 
-        {/* Milestone markers - positioned at TOP */}
+        {/* Milestone markers - tiered to prevent label overlap */}
 {allMilestones.map((m, i) => {
   const mx = xP(m.age)
   if (mx < PL || mx > PL + iW) return null
-  
+  // tier 0 = closest to chart, tier 1 = 22px higher, tier 2 = 44px higher
+  const tierOffset = m.tier * 22
+  const labelY = PT - 24 - tierOffset
+  const ageY   = PT - 13 - tierOffset
+  const dotY   = PT - 6  - tierOffset
   return (
     <g key={`ms-${i}`}>
-      <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.3" />
-      <circle cx={mx} cy={PT - 8} r="3" fill={m.color} opacity="0.6" />
-      <text x={mx} y={PT - 22} fontSize="9" fill={m.color} textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="500">
+      {/* Vertical line from top of chart down */}
+      <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.25" />
+      {/* Connector from dot up to chart top */}
+      <line x1={mx} y1={dotY + 3} x2={mx} y2={PT} stroke={m.color} strokeWidth="0.5" opacity="0.2" />
+      <circle cx={mx} cy={dotY} r="2.5" fill={m.color} opacity="0.6" />
+      <text x={mx} y={labelY} fontSize="8.5" fill={m.color} textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="500">
         {m.label}
       </text>
-      <text x={mx} y={PT - 12} fontSize="8" fill="#9A9896" textAnchor="middle" fontFamily="Inter, sans-serif">
+      <text x={mx} y={ageY} fontSize="7.5" fill="#9A9896" textAnchor="middle" fontFamily="Inter, sans-serif">
         age {m.age}
       </text>
     </g>
