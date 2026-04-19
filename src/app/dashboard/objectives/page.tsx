@@ -1164,7 +1164,10 @@ useEffect(() => {
     clientAge={clientDOB ? getAge(clientDOB) : 35}
     clientLiquid={(ff.a_savings as number ?? 0) + (ff.a_fixed_deposit as number ?? 0)}
     spouseLiquid={(ff.a2_savings as number ?? 0) + (ff.a2_fixed_deposit as number ?? 0)}
-    familyMembers={[...children]}
+    familyMembers={children.map(c => ({
+      ...c,
+      age: c.dob ? getAge(c.dob) : (c.date_of_birth ? getAge(c.date_of_birth) : c.age)
+    }))}
     uniCostDefaults={_uniCosts}
   />
 )}
