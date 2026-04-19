@@ -153,7 +153,10 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
       gender: updatedData.gender,
       relationship: updatedData.relationship,
     }
-    if (updatedData.dob) updateFields.dob = updatedData.dob
+    if (updatedData.dob) {
+      updateFields.dob = updatedData.dob
+      updateFields.age = getAge(updatedData.dob)
+    }
     if (updatedData.citizenship) updateFields.citizenship = updatedData.citizenship
     const { error } = await supabase
       .from('family_members')
