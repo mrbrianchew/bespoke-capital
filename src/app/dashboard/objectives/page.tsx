@@ -32,6 +32,7 @@ interface FamilyMember {
   relationship: string
   gender?: string
   date_of_birth?: string
+  dob?: string
   age?: number
 }
 
