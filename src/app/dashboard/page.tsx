@@ -126,55 +126,93 @@ export default function ExecutiveSummaryPage() {
   // ─── UPDATE FUNCTIONS ───────────────────────────────────────────────────────
 
   async function updateClientComplete(updatedData: any) {
-    setSaving(true)
-    try {
-      const { error } = await supabase
-        .from('clients')
-        .update({
-          name: updatedData.name,
-          dob: updatedData.dob,
-          gender: updatedData.gender,
-          citizenship: updatedData.citizenship,
-        })
-        .eq('id', client.id)
-      
-      if (error) throw error
-      
-      await load()
-      setShowEditModal(false)
-    } catch (error) {
-      console.error('Error updating client:', error)
-      alert('Failed to update client. Please try again.')
-    } finally {
-      setSaving(false)
+  setSaving(true)
+  try {
+    console.log('Updating client with data:', updatedData)
+    console.log('Client ID:', client.id)
+    
+    // Check if client.id exists
+    if (!client.id) {
+      throw new Error('No client ID found')
     }
+    
+    const updateFields: any = {
+      name: updatedData.name,
+      gender: updatedData.gender,
+    }
+    
+    // Only add fields if they have values
+    if (updatedData.dob) updateFields.dob = updatedData.dob
+    if (updatedData.citizenship) updateFields.citizenship = updatedData.citizenship
+    
+    console.log('Update fields:', updateFields)
+    
+    const { data, error } = await supabase
+      .from('clients')
+      .update(updateFields)
+      .eq('id', client.id)
+      .select()
+    
+    if (error) {
+      console.error('Supabase error:', error)
+      throw error
+    }
+    
+    console.log('Update successful:', data)
+    
+    await load()
+    setShowEditModal(false)
+  } catch (error: any) {
+    console.error('Full error object:', error)
+    alert(`Failed to update client: ${error.message || 'Unknown error'}`)
+  } finally {
+    setSaving(false)
   }
+}
 
-  async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
-    setSaving(true)
-    try {
-      const { error } = await supabase
-        .from('family_members')
-        .update({
-          name: updatedData.name,
-          date_of_birth: updatedData.date_of_birth || updatedData.dob,
-          gender: updatedData.gender,
-          relationship: updatedData.relationship,
-          citizenship: updatedData.citizenship,
-        })
-        .eq('id', memberId)
-      
-      if (error) throw error
-      
-      await load()
-      setShowEditModal(false)
-    } catch (error) {
-      console.error('Error updating family member:', error)
-      alert('Failed to update family member. Please try again.')
-    } finally {
-      setSaving(false)
+async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
+  setSaving(true)
+  try {
+    console.log('Updating family member with data:', updatedData)
+    console.log('Member ID:', memberId)
+    
+    if (!memberId) {
+      throw new Error('No member ID found')
     }
+    
+    const updateFields: any = {
+      name: updatedData.name,
+      gender: updatedData.gender,
+      relationship: updatedData.relationship,
+    }
+    
+    if (updatedData.dob) updateFields.date_of_birth = updatedData.dob
+    if (updatedData.citizenship) updateFields.citizenship = updatedData.citizenship
+    
+    console.log('Update fields:', updateFields)
+    
+    const { data, error } = await supabase
+      .from('family_members')
+      .update(updateFields)
+      .eq('id', memberId)
+      .select()
+    
+    if (error) {
+      console.error('Supabase error:', error)
+      throw error
+    }
+    
+    console.log('Update successful:', data)
+    
+    await load()
+    setShowEditModal(false)
+  } catch (error: any) {
+    console.error('Full error object:', error)
+    alert(`Failed to update family member: ${error.message || 'Unknown error'}`)
+  } finally {
+    setSaving(false)
   }
+}
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen" style={{ background: '#EEEADE' }}>
