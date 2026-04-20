@@ -329,7 +329,24 @@ useEffect(() => {
   // Build per-child fund map from Wealth Protection > Education Fund data
   const perChildFund: Record<string, number> = {}
   if (provideEduFund) {
-    wpEduChildren.forEach((ec: any) => {
+    // Include all children — use saved data if available, otherwise use defaults
+    const allChildIds = children.map((c: any) => c.id)
+    const savedChildIds = wpEduChildren.map((ec: any) => ec.childId)
+    const missingChildren = children.filter((c: any) => !savedChildIds.includes(c.id))
+
+    // Add default entries for missing children
+    const allEduChildren = [
+      ...wpEduChildren,
+      ...missingChildren.map((c: any) => ({
+        childId: c.id,
+        uniEntryAge: (c.gender || '') === 'Female' ? 19 : 21,
+        annualTuition: 10750,
+        annualLiving: 12500,
+        courseDuration: 4,
+      }))
+    ]
+
+    allEduChildren.forEach((ec: any) => {
       const child = children.find((c: any) => c.id === ec.childId)
       if (!child) return
       const childAge = Number(child.age || 0)
