@@ -328,18 +328,37 @@ useEffect(() => {
  // Years left of dependency
   const yLeft = Math.max(0, (currentAge + coverTerm) - age)
 
-  // Family dependency — step down annExp as each child enters uni
-  let adjAnnExp = annExp
-  if (children.length > 0) {
-    const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => age < parentAgeAtUni).length
-    // Each child accounts for s_children share; when they leave, reduce proportionally
-    const childExpShare = Number(ff.s_children || 0)
-    const childFraction = children.length > 0 ? childrenNotYetAtUni / children.length : 0
-    adjAnnExp = (annExp - childExpShare) + (childExpShare * childFraction)
-  }
+  // Family dependency — sum FV annuity across segments between uni milestones
+  // This produces sharp visible drops at each child's uni entry age
+  const childExpShare = Number(ff.s_children || 0)
+  const baseExp = annExp - childExpShare  // expenses without any children
 
-  // Family dependency — FV annuity with adjusted expenses
-  const ageFD = fvAnnuity(adjAnnExp, inflation, yLeft)
+  let ageFD = 0
+  if (children.length === 0 || childExpShare === 0) {
+    ageFD = fvAnnuity(annExp, inflation, yLeft)
+  } else {
+    // Build segments: each segment has a different number of dependent children
+    // Segments run from current age forward to each uni entry, then to coverTerm end
+    const sortedUniAges = childUniEntryAges.map(c => c.parentAgeAtUni).filter(a => a > age && a < currentAge + coverTerm)
+    const segmentBoundaries = [...new Set([age, ...sortedUniAges, currentAge + coverTerm])].sort((a, b) => a - b)
+
+    let accumulatedPV = 0
+    for (let i = 0; i < segmentBoundaries.length - 1; i++) {
+      const segStart = segmentBoundaries[i]
+      const segEnd = segmentBoundaries[i + 1]
+      const segYears = segEnd - segStart
+      const childrenInSeg = childUniEntryAges.filter(c => c.parentAgeAtUni > segStart).length
+      const segExp = baseExp + childExpShare * (childrenInSeg / children.length)
+      // Discount this segment's annuity back to current age
+      const yearsToSegStart = segStart - age
+      const segFV = fvAnnuity(segExp, inflation, segYears)
+      // Discount back: PV = FV / (1+r)^yearsToSegStart
+      accumulatedPV += inflation > 0
+        ? segFV / Math.pow(1 + inflation, yearsToSegStart)
+        : segFV
+    }
+    ageFD = accumulatedPV
+  }
 
   // Mortgage amortising balance
   const ageMort = mortBalanceAtAge(age, currentAge, props)
