@@ -245,6 +245,13 @@ const { data: educationRow } = await supabase
   .eq('section', 'education')
   .maybeSingle()
 
+const { data: retirementRow } = await supabase
+  .from('fact_finding')
+  .select('data')
+  .eq('client_id', id)
+  .eq('section', 'retirement')
+  .maybeSingle()
+
 // Get objectives section — needed to read couple/individual mode
 const { data: objectivesRow } = await supabase
   .from('fact_finding')
@@ -259,7 +266,8 @@ const merged: any = {
   ...(portfolioRow?.data || {}),
   ...(needsRow?.data || {}),
   ...(objectivesRow?.data || {}),
-  ...(educationRow?.data || {})
+  ...(educationRow?.data || {}),
+  ...(retirementRow?.data || {})
 }
 // Debug - check what was loaded
 console.log('Loaded financial data:', financialsRow?.data)
