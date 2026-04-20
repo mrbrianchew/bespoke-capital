@@ -370,8 +370,8 @@ if (children.length > 0) {
   const floor = person === 'client' ? clientFloor : spouseFloor
 
   // Income window component (60-month window from today, declines as children independent)
- // Years left of dependency
   const yLeft = Math.max(0, (currentAge + coverTerm) - age)
+  const incomeWindow = Math.max(0, monthlyInc * 60 - liqAssets)
 
   // Family dependency — step down annExp as each child enters uni
   let adjAnnExp = annExp
