@@ -435,6 +435,10 @@ if (children.length > 0) {
     eduComponent = yLeft > 0 ? edu : 0
   }
 
+    const raw = incomeComponent + mortComponent + eduComponent
+    return Math.max(floor, raw)
+  }
+
   // ── Build chart data (age arrays) ───────────────────────────────────────────
   const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
