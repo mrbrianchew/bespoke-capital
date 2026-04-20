@@ -268,15 +268,16 @@ useEffect(() => {
 
   // ── Uni entry ages per child (for sharp drops) ──────────────────────────────
   const childUniEntryAges = useMemo(() => {
+  const baseAge = activePerson === 'spouse' ? spouseAge : clientAge
   return children.map((c: any) => {
     const childAge = Number(c.age || 0)
     const gender = c.gender || ''
     const eduChild = educationChildren?.find((ec: any) => ec.childId === c.id)
     const uniEntryAge = eduChild?.uniEntryAge ?? (gender === 'Female' ? 19 : 21)
-    const parentAgeAtUni = clientAge + (uniEntryAge - childAge)
+    const parentAgeAtUni = baseAge + (uniEntryAge - childAge)
     return { childAge, uniEntryAge, parentAgeAtUni, name: c.name || 'Child' }
   }).sort((a, b) => a.parentAgeAtUni - b.parentAgeAtUni)
-}, [children, clientAge, educationChildren])
+}, [children, clientAge, spouseAge, activePerson, educationChildren])
 
   // ── Floor calculation ───────────────────────────────────────────────────────
   // Floor = higher of ($300K) or (basic living expenses inflated to retirement/last milestone)
