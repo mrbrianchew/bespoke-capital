@@ -324,7 +324,6 @@ useEffect(() => {
   function getDTPDNeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
   const currentAge = person === 'client' ? clientAge : spouseAge
   const annExp = person === 'client' ? p1AnnExp : p2AnnExp
-  const offset = person === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
   const floor = person === 'client' ? clientFloor : spouseFloor
 
   // Years left of dependency
@@ -342,14 +341,15 @@ if (children.length > 0) {
   const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
     return age < parentAgeAtUni
   }).length
-  const eduFraction = childrenNotYetAtUni / children.length
-  eduRemaining = edu * eduFraction
+  // Sharp step drop: only count edu for children not yet at uni
+  eduRemaining = edu > 0 ? (edu / children.length) * childrenNotYetAtUni : 0
 } else {
   eduRemaining = yLeft > 0 ? edu : 0
 }
 
-    const raw = ageFD + ageMort + eduRemaining - offset
-    return Math.max(floor, raw)
+  const assetOffset = person === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
+  const raw = ageFD + ageMort + eduRemaining - assetOffset
+  return Math.max(floor, raw)
   }
 
   // ── CI need at age ──────────────────────────────────────────────────────────
@@ -391,7 +391,7 @@ if (children.length > 0) {
   const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
     return age < parentAgeAtUni
   }).length
-  eduComponent = edu * (childrenNotYetAtUni / children.length)
+  eduComponent = edu > 0 ? (edu / children.length) * childrenNotYetAtUni : 0
 } else {
   eduComponent = yLeft > 0 ? edu : 0
 }
