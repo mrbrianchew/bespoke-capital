@@ -256,8 +256,8 @@ useEffect(() => {
 
   const p1MonthlyInc = Number(ff.person1?.gross_monthly || ff.monthly_income || 0)
   const p2MonthlyInc = Number(ff.person2?.gross_monthly || ff.monthly_income_spouse || 0)
-  const p1RetireAge = Number(ff.retirement_age || ff.person1?.retirement_age || 65)
-  const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_age || 62)
+  const p1RetireAge = Number(ff.retirement_age || ff.person1?.retirement_age || ff.client?.retirementAge || 65)
+const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_age || ff.spouse?.retirementAge || 62)
 
   // ── Cover term (until youngest child independent) ───────────────────────────
   const coverTerm = useMemo(() => {
