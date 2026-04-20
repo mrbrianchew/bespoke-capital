@@ -340,7 +340,8 @@ useEffect(() => {
     // Build segments: each segment has a different number of dependent children
     // Segments run from current age forward to each uni entry, then to coverTerm end
     const sortedUniAges = childUniEntryAges.map(c => c.parentAgeAtUni).filter(a => a > age && a < currentAge + coverTerm)
-    const segmentBoundaries = [...new Set([age, ...sortedUniAges, currentAge + coverTerm])].sort((a, b) => a - b)
+    const rawBoundaries = [age, ...sortedUniAges, currentAge + coverTerm]
+    const segmentBoundaries = rawBoundaries.filter((v, i, arr) => arr.indexOf(v) === i).sort((a, b) => a - b)
 
     let accumulatedPV = 0
     for (let i = 0; i < segmentBoundaries.length - 1; i++) {
