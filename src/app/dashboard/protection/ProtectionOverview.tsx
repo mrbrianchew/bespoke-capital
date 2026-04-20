@@ -382,22 +382,7 @@ useEffect(() => {
   // Family dependency — step down annExp as each child enters uni
   const ageFD = fvAnnuity(annExp, inflation, yLeft)
 
-    // Fraction remaining based on children still dependent
-    let incomeFraction = 1.0
-if (children.length > 0) {
-  const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
-    return age < parentAgeAtUni
-  }).length
-  // Sharp drop when last child enters uni
-  if (yLeft <= 0) {
-    incomeFraction = 0
-  } else {
-    incomeFraction = childrenNotYetAtUni / children.length
-  }
-} else {
-  incomeFraction = yLeft > 0 ? 1.0 : 0
-}
-
+    const incomeFraction = yLeft > 0 ? 1.0 : 0
     const incomeComponent = incomeWindow * incomeFraction
 
     // Mortgage component (gradual slope)
