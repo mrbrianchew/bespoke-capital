@@ -347,14 +347,7 @@ useEffect(() => {
     const floor = person === 'client' ? clientFloor : spouseFloor
     const yLeft = Math.max(0, (currentAge + coverTerm) - age)
 
-    const childExpShare = Number(ff.s_children || 0)
-    const baseExp = annExp - childExpShare
-    let adjAnnExp = annExp
-    if (children.length > 0 && childExpShare > 0) {
-      const childrenStillDep = childUniEntryAges.filter(u => age < u.parentAgeAtUni).length
-      adjAnnExp = baseExp + childExpShare * (childrenStillDep / children.length)
-    }
-    const ageFD = fvAnnuity(adjAnnExp, inflation, yLeft)
+    const ageFD = fvAnnuity(annExp, inflation, yLeft)
 
     const ageMort = mortBalanceAtAge(age, currentAge, props)
 
