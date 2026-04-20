@@ -380,17 +380,7 @@ useEffect(() => {
   const incomeWindow = Math.max(0, monthlyInc * 60 - liqAssets)
 
   // Family dependency — step down annExp as each child enters uni
-  let adjAnnExp = annExp
-  if (children.length > 0) {
-    const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => age < parentAgeAtUni).length
-    // Each child accounts for s_children share; when they leave, reduce proportionally
-    const childExpShare = Number(ff.s_children || 0)
-    const childFraction = children.length > 0 ? childrenNotYetAtUni / children.length : 0
-    adjAnnExp = (annExp - childExpShare) + (childExpShare * childFraction)
-  }
-
-  // Family dependency — FV annuity with adjusted expenses
-  const ageFD = fvAnnuity(adjAnnExp, inflation, yLeft)
+  const ageFD = fvAnnuity(annExp, inflation, yLeft)
 
     // Fraction remaining based on children still dependent
     let incomeFraction = 1.0
