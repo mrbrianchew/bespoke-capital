@@ -317,7 +317,28 @@ useEffect(() => {
   const p1Liq = (Number(ff.a_savings) || 0) + (Number(ff.a_alternatives) || 0)
   const p2Liq = (Number(ff.a2_savings) || 0) + (Number(ff.a2_alternatives) || 0)
 
-  const edu = Number(ff.strategic_objectives?.ed_total || 0)
+  // Per-child education fund from Education Planning section
+  // edu.children is array of EducationChild with uniEntryAge, annualTuition, annualLiving, courseDuration
+  const eduData = ff.edu as any
+  const eduChildren: any[] = eduData?.children || []
+  const tuitionInflation = (eduData?.tuitionInflation ?? 5) / 100
+  const livingInflationEdu = (eduData?.livingInflation ?? 3) / 100
+
+  // Build per-child fund map: childId -> totalFund
+  const perChildFund: Record<string, number> = {}
+  eduChildren.forEach((ec: any) => {
+    const child = children.find((c: any) => c.id === ec.childId)
+    if (!child) return
+    const childAge = Number(child.age || 0)
+    const yearsToUni = Math.max(0, ec.uniEntryAge - childAge)
+    const fvTuition = ec.annualTuition * Math.pow(1 + tuitionInflation, yearsToUni) * ec.courseDuration
+    const fvLiving  = ec.annualLiving  * Math.pow(1 + livingInflationEdu,  yearsToUni) * ec.courseDuration
+    perChildFund[ec.childId] = fvTuition + fvLiving
+  })
+
+  // Total education fund (fallback to old field if education section not yet saved)
+  const edu = Object.values(perChildFund).reduce((s, v) => s + v, 0) ||
+    Number(ff.strategic_objectives?.ed_total || 0)
 
   // ── D/TPD need at age ───────────────────────────────────────────────────────
   function getDTPDNeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
@@ -364,17 +385,21 @@ useEffect(() => {
   // Mortgage amortising balance
   const ageMort = mortBalanceAtAge(age, currentAge, props)
 
-    // Education — step down sharply as each child enters uni
-    let eduRemaining = edu
-if (children.length > 0) {
-  const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
-    return age < parentAgeAtUni
-  }).length
-  // Sharp step drop: only count edu for children not yet at uni
-  eduRemaining = edu > 0 ? (edu / children.length) * childrenNotYetAtUni : 0
-} else {
-  eduRemaining = yLeft > 0 ? edu : 0
-}
+   // Education — drop each child's fund sharply at their uni entry age
+  let eduRemaining = 0
+  if (children.length > 0) {
+    eduRemaining = children.reduce((s: number, c: any) => {
+      const uniEntry = childUniEntryAges.find(u => u.name === (c.name || 'Child'))
+      if (!uniEntry) return s
+      // Only include this child's fund if they haven't entered uni yet
+      if (age < uniEntry.parentAgeAtUni) {
+        return s + (perChildFund[c.id] || 0)
+      }
+      return s
+    }, 0)
+  } else {
+    eduRemaining = yLeft > 0 ? edu : 0
+  }
 
   const assetOffset = person === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
   const raw = ageFD + ageMort + eduRemaining - assetOffset
@@ -427,19 +452,19 @@ if (children.length > 0) {
     // Mortgage component (gradual slope)
     const mortComponent = mortBalanceAtAge(age, currentAge, props)
 
-    // Education component (sharp drops at each child's uni entry)
-    let eduComponent = 0
-if (children.length > 0) {
-  const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => {
-    return age < parentAgeAtUni
-  }).length
-  eduComponent = edu > 0 ? (edu / children.length) * childrenNotYetAtUni : 0
-} else {
-  eduComponent = yLeft > 0 ? edu : 0
-}
-
-    const raw = incomeComponent + mortComponent + eduComponent
-    return Math.max(floor, raw)
+   // Education component — sharp drop per child at their uni entry age
+  let eduComponent = 0
+  if (children.length > 0) {
+    eduComponent = children.reduce((s: number, c: any) => {
+      const uniEntry = childUniEntryAges.find(u => u.name === (c.name || 'Child'))
+      if (!uniEntry) return s
+      if (age < uniEntry.parentAgeAtUni) {
+        return s + (perChildFund[c.id] || 0)
+      }
+      return s
+    }, 0)
+  } else {
+    eduComponent = yLeft > 0 ? edu : 0
   }
 
   // ── Build chart data (age arrays) ───────────────────────────────────────────
