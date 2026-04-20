@@ -325,11 +325,21 @@ useEffect(() => {
   const annExp = person === 'client' ? p1AnnExp : p2AnnExp
   const floor = person === 'client' ? clientFloor : spouseFloor
 
-  // Years left of dependency
+ // Years left of dependency
   const yLeft = Math.max(0, (currentAge + coverTerm) - age)
 
-  // Family dependency — FV annuity
-  const ageFD = fvAnnuity(annExp, inflation, yLeft)
+  // Family dependency — step down annExp as each child enters uni
+  let adjAnnExp = annExp
+  if (children.length > 0) {
+    const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => age < parentAgeAtUni).length
+    // Each child accounts for s_children share; when they leave, reduce proportionally
+    const childExpShare = Number(ff.s_children || 0)
+    const childFraction = children.length > 0 ? childrenNotYetAtUni / children.length : 0
+    adjAnnExp = (annExp - childExpShare) + (childExpShare * childFraction)
+  }
+
+  // Family dependency — FV annuity with adjusted expenses
+  const ageFD = fvAnnuity(adjAnnExp, inflation, yLeft)
 
   // Mortgage amortising balance
   const ageMort = mortBalanceAtAge(age, currentAge, props)
@@ -360,8 +370,21 @@ if (children.length > 0) {
   const floor = person === 'client' ? clientFloor : spouseFloor
 
   // Income window component (60-month window from today, declines as children independent)
+ // Years left of dependency
   const yLeft = Math.max(0, (currentAge + coverTerm) - age)
-  const incomeWindow = Math.max(0, monthlyInc * 60 - liqAssets)
+
+  // Family dependency — step down annExp as each child enters uni
+  let adjAnnExp = annExp
+  if (children.length > 0) {
+    const childrenNotYetAtUni = childUniEntryAges.filter(({ parentAgeAtUni }) => age < parentAgeAtUni).length
+    // Each child accounts for s_children share; when they leave, reduce proportionally
+    const childExpShare = Number(ff.s_children || 0)
+    const childFraction = children.length > 0 ? childrenNotYetAtUni / children.length : 0
+    adjAnnExp = (annExp - childExpShare) + (childExpShare * childFraction)
+  }
+
+  // Family dependency — FV annuity with adjusted expenses
+  const ageFD = fvAnnuity(adjAnnExp, inflation, yLeft)
 
     // Fraction remaining based on children still dependent
     let incomeFraction = 1.0
