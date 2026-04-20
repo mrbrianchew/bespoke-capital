@@ -1265,7 +1265,6 @@ allMilestonesRaw.forEach((m, i) => {
                 Required capital vs portfolio · sharp drops at uni · mortgage slope · permanent floor
               </div>
             </div>
-        
             </div>
           </div>
           <CoverageChart
@@ -1293,7 +1292,6 @@ allMilestonesRaw.forEach((m, i) => {
                 Income window · sharp drops at uni · mortgage slope · survival floor forever
               </div>
             </div>
-            
           </div>
           <CoverageChart
   data={chartData}
