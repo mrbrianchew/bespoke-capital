@@ -902,7 +902,7 @@ allMilestonesRaw.forEach((m, i) => {
         <div
           style={{
             position: 'absolute',
-            left: ((hovered.x - PL) / iW) * 100 + '%',
+            left: Math.min(Math.max(((hovered.x - PL) / iW) * 100, 10), 90) + '%',
             top: '20px',
             transform: 'translateX(-50%)',
             background: '#1C1A17',
