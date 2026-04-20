@@ -231,13 +231,18 @@ const { data: portfolioRow } = await supabase
   .eq('section', 'protection_portfolio')
   .maybeSingle()
 
-// Get protection needs (calculated by Strategic Objectives)
-// Get protection needs (calculated by Strategic Objectives)
 const { data: needsRow } = await supabase
   .from('fact_finding')
   .select('data')
   .eq('client_id', id)
   .eq('section', 'protection_needs')
+  .maybeSingle()
+
+const { data: educationRow } = await supabase
+  .from('fact_finding')
+  .select('data')
+  .eq('client_id', id)
+  .eq('section', 'education')
   .maybeSingle()
 
 // Get objectives section — needed to read couple/individual mode
@@ -253,7 +258,8 @@ const merged: any = {
   ...(financialsRow?.data || {}),
   ...(portfolioRow?.data || {}),
   ...(needsRow?.data || {}),
-  ...(objectivesRow?.data || {})
+  ...(objectivesRow?.data || {}),
+  ...(educationRow?.data || {})
 }
 // Debug - check what was loaded
 console.log('Loaded financial data:', financialsRow?.data)
