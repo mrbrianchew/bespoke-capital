@@ -382,8 +382,7 @@ useEffect(() => {
   // Family dependency — step down annExp as each child enters uni
   const ageFD = fvAnnuity(annExp, inflation, yLeft)
 
-    const incomeFraction = yLeft > 0 ? 1.0 : 0
-    const incomeComponent = incomeWindow * incomeFraction
+    const incomeComponent = incomeWindow
 
     // Mortgage component (gradual slope)
     const mortComponent = mortBalanceAtAge(age, currentAge, props)
