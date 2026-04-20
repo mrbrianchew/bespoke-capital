@@ -261,13 +261,21 @@ const { data: objectivesRow } = await supabase
   .maybeSingle()
 
 // Inside loadAll function, after merging data:
+const retData = retirementRow?.data || {}
 const merged: any = {
   ...(financialsRow?.data || {}),
   ...(portfolioRow?.data || {}),
   ...(needsRow?.data || {}),
   ...(objectivesRow?.data || {}),
   ...(educationRow?.data || {}),
-  ...(retirementRow?.data || {})
+  client: {
+    ...((financialsRow?.data as any)?.client || {}),
+    retirementAge: (retData as any)?.client?.retirementAge,
+  },
+  spouse: {
+    ...((financialsRow?.data as any)?.spouse || {}),
+    retirementAge: (retData as any)?.spouse?.retirementAge,
+  },
 }
 // Debug - check what was loaded
 console.log('Loaded financial data:', financialsRow?.data)
