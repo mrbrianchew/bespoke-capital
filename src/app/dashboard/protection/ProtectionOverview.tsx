@@ -271,12 +271,10 @@ useEffect(() => {
   return children.map((c: any) => {
     const childAge = Number(c.age || 0)
     const gender = c.gender || ''
-    // Look up stored uniEntryAge from Objectives page
     const eduChild = educationChildren?.find((ec: any) => ec.childId === c.id)
     const uniEntryAge = eduChild?.uniEntryAge ?? (gender === 'Female' ? 19 : 21)
-    // Calculate at what PARENT AGE this child enters university
     const parentAgeAtUni = clientAge + (uniEntryAge - childAge)
-    return { childAge, uniEntryAge, parentAgeAtUni }
+    return { childAge, uniEntryAge, parentAgeAtUni, name: c.name || 'Child' }
   }).sort((a, b) => a.parentAgeAtUni - b.parentAgeAtUni)
 }, [children, clientAge, educationChildren])
 
@@ -473,7 +471,7 @@ if (children.length > 0) {
   const uniAges = childUniEntryAges
     .map((item, i) => ({
       age: item.parentAgeAtUni,
-      label: children[i]?.name || `Child ${i + 1} uni`,
+      label: item.name,
     }))
     .filter(a => a.age > currentAge && a.age < 100)
     .sort((a, b) => a.age - b.age)
