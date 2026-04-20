@@ -319,26 +319,33 @@ useEffect(() => {
 
   // Per-child education fund from Education Planning section
   // edu.children is array of EducationChild with uniEntryAge, annualTuition, annualLiving, courseDuration
-  const eduData = ff.edu as any
-  const eduChildren: any[] = eduData?.children || []
-  const tuitionInflation = (eduData?.tuitionInflation ?? 5) / 100
-  const livingInflationEdu = (eduData?.livingInflation ?? 3) / 100
+  // Read education children from Wealth Protection > Education Fund tab
+  // Saved under protection_needs section as protection.educationChildren
+  const wpEduChildren: any[] = ff.protection?.educationChildren || []
+  const provideEduFund: boolean = ff.protection?.provideEducationFund === true
+  const tuitionInflation = 0.05  // WP Education Fund always uses 5% tuition inflation
+  const livingInflationEdu = inflation  // Uses the same inflation rate as the rest
 
-  // Build per-child fund map: childId -> totalFund
+  // Build per-child fund map from Wealth Protection > Education Fund data
   const perChildFund: Record<string, number> = {}
-  eduChildren.forEach((ec: any) => {
-    const child = children.find((c: any) => c.id === ec.childId)
-    if (!child) return
-    const childAge = Number(child.age || 0)
-    const yearsToUni = Math.max(0, ec.uniEntryAge - childAge)
-    const fvTuition = ec.annualTuition * Math.pow(1 + tuitionInflation, yearsToUni) * ec.courseDuration
-    const fvLiving  = ec.annualLiving  * Math.pow(1 + livingInflationEdu,  yearsToUni) * ec.courseDuration
-    perChildFund[ec.childId] = fvTuition + fvLiving
-  })
+  if (provideEduFund) {
+    wpEduChildren.forEach((ec: any) => {
+      const child = children.find((c: any) => c.id === ec.childId)
+      if (!child) return
+      const childAge = Number(child.age || 0)
+      const defaultUniAge = (child.gender || '') === 'Female' ? 19 : 21
+      const uniEntryAge = ec.uniEntryAge ?? defaultUniAge
+      const yearsToUni = Math.max(0, uniEntryAge - childAge)
+      const annualTuition = ec.annualTuition ?? 10750
+      const annualLiving = ec.annualLiving ?? 12500
+      const courseDuration = ec.courseDuration ?? 4
+      const fvTuition = annualTuition * Math.pow(1 + tuitionInflation, yearsToUni) * courseDuration
+      const fvLiving  = annualLiving  * Math.pow(1 + livingInflationEdu, yearsToUni) * courseDuration
+      perChildFund[ec.childId] = fvTuition + fvLiving
+    })
+  }
 
-  // Total education fund (fallback to old field if education section not yet saved)
-  const edu = Object.values(perChildFund).reduce((s, v) => s + v, 0) ||
-    Number(ff.strategic_objectives?.ed_total || 0)
+  const edu = Object.values(perChildFund).reduce((s, v) => s + v, 0)
 
   // ── D/TPD need at age ───────────────────────────────────────────────────────
   function getDTPDNeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
