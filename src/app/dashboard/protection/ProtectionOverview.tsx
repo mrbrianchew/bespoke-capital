@@ -662,13 +662,12 @@ function CoverageChart({
     floor,
     100000
   )
-  const minV = Math.max(0, floor * 0.7)
 
   const minA = data[0].age
   const aRange = data[data.length - 1].age - minA || 1
 
   const xP = (age: number) => PL + ((age - minA) / aRange) * iW
-  const yP = (v: number) => PT + iH - Math.min(1, Math.max(0, (v - minV) / (maxV - minV))) * iH
+  const yP = (v: number) => PT + iH - Math.min(1, v / maxV) * iH
 
   // Format Y-axis labels
   const fmtY = (n: number) => {
@@ -678,7 +677,6 @@ function CoverageChart({
   }
 
   const ticks = [0, 0.25, 0.5, 0.75, 1]
-  const tickValues = ticks.map(f => minV + f * (maxV - minV))
   const floorY = yP(floor)
 
   // Build need line path
@@ -814,14 +812,14 @@ allMilestonesRaw.forEach((m, i) => {
         onMouseLeave={() => setHovered(null)}
       >
         {/* Grid lines */}
-        {ticks.map((f, i) => {
+        {ticks.map((f) => {
           const y = PT + iH - f * iH
           return (
             <g key={f}>
               <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke="#F0EDE8" strokeWidth="0.5" />
               {f > 0 && (
                 <text x={PL - 10} y={y + 4} fontSize="10" fill="#9A9896" textAnchor="end" fontFamily="Inter, sans-serif">
-                  {fmtY(tickValues[i])}
+                  {fmtY(maxV * f)}
                 </text>
               )}
             </g>
