@@ -431,10 +431,18 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   }
 
   // ── Build chart data (age arrays) ───────────────────────────────────────────
-  const chartData = useMemo(() => {
+ const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
-  
+  const savedDtpdNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
+  const savedCiNeed = activePerson === 'client' ? clientCI : spouseCI
+
+  // Compute scaling ratios so chart curves start at the saved Strategic Objectives value
+  const rawDtpdAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
+  const rawCiAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
+  const dtpdScale = rawDtpdAtCurrent > 0 ? savedDtpdNeed / rawDtpdAtCurrent : 1
+  const ciScale = rawCiAtCurrent > 0 ? savedCiNeed / rawCiAtCurrent : 1
+
   const result = []
   for (let age = currentAge; age <= 100; age++) {
     const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
@@ -442,16 +450,17 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     
     result.push({
       age,
-      dtpdNeed: getDTPDNeedAtAge(age, personKey, properties),
+      dtpdNeed: getDTPDNeedAtAge(age, personKey, properties) * dtpdScale,
       dtpdHave: dtpdHave,
-      ciNeed: getCINeedAtAge(age, personKey, properties),
+      ciNeed: getCINeedAtAge(age, personKey, properties) * ciScale,
       ciHave: ciHave,
     })
   }
   
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
-    p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges])
+    p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
+    clientDTPD, spouseDTPD, clientCI, spouseCI])
   
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
