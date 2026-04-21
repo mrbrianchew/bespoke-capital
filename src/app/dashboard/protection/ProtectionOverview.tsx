@@ -461,9 +461,10 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       ciNeed: Math.max(personFloor, rawCI * ciScale),
       ciHave,
     })
+  }
   
   return result
-], [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
+}, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
     p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
     clientDTPD, spouseDTPD, clientCI, spouseCI])
   
