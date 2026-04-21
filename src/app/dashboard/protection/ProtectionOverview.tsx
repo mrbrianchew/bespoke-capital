@@ -453,14 +453,14 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     const dtpdScale = rawDTPDAtCurrent > 0 ? savedDTPD / rawDTPDAtCurrent : 1
     const ciScale = rawCIAtCurrent > 0 ? savedCI / rawCIAtCurrent : 1
 
+    const personFloor = activePerson === 'client' ? clientFloor : spouseFloor
     result.push({
       age,
-      dtpdNeed: Math.max(aFloor, rawDTPD * dtpdScale),
+      dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
       dtpdHave,
-      ciNeed: Math.max(aFloor, rawCI * ciScale),
+      ciNeed: Math.max(personFloor, rawCI * ciScale),
       ciHave,
     })
-  }
   
   return result
 ], [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
