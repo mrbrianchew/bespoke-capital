@@ -260,6 +260,13 @@ const { data: objectivesRow } = await supabase
   .eq('section', 'objectives')
   .maybeSingle()
 
+const { data: accumulationRow } = await supabase
+  .from('fact_finding')
+  .select('data')
+  .eq('client_id', id)
+  .eq('section', 'accumulation')
+  .maybeSingle()
+
 // Inside loadAll function, after merging data:
 const retData = (retirementRow?.data as any)?.ret || retirementRow?.data || {}
 const merged: any = {
