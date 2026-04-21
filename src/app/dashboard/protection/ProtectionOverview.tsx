@@ -450,7 +450,14 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       age,
       dtpdNeed: getDTPDNeedAtAge(age, personKey, properties) * dtpdScale,
       dtpdHave: dtpdHave,
-      ciNeed: age === currentAge ? savedCiNeed : getCINeedAtAge(age, personKey, properties),
+      ciNeed: (() => {
+        const rawAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
+        const rawAtAge = getCINeedAtAge(age, personKey, properties)
+        if (rawAtCurrent <= 0) return savedCiNeed
+        // Apply saved need at current age, but preserve relative drops (uni steps + floor)
+        const drop = rawAtCurrent - rawAtAge
+        return Math.max(savedCiNeed - drop, clientFloor)
+      })(),
       ciHave: ciHave,
     })
   }
