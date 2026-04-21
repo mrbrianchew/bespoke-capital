@@ -279,6 +279,7 @@ const merged: any = {
   p2_ci_need: (needsRow?.data as any)?.protection?.p2_ci_need,
   ...(objectivesRow?.data || {}),
   ...(educationRow?.data || {}),
+  ...(accumulationRow?.data || {}),
   client: {
     ...((financialsRow?.data as any)?.client || {}),
     retirementAge: (retData as any)?.client?.retirementAge,
