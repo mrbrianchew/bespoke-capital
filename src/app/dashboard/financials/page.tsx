@@ -1232,18 +1232,12 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
       if (!client) return
       setSaving(true)
       const { client_id, ...data } = next
-      data.annual_surplus = anTotal - annExpNoCpf
-      const { data: existing } = await supabase
+      await supabase
         .from('fact_finding')
-        .select('id')
-        .eq('client_id', client.id)
-        .eq('section', 'financials')
-        .maybeSingle()
-      if (existing) {
-        await supabase.from('fact_finding').update({ data, updated_at: new Date().toISOString() }).eq('id', existing.id)
-      } else {
-        await supabase.from('fact_finding').insert({ client_id: client.id, section: 'financials', data, updated_at: new Date().toISOString() })
-      }
+        .upsert(
+          { client_id: client.id, section: 'financials', data, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
       setSaving(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
