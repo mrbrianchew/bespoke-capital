@@ -431,9 +431,10 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   }
 
   // ── Build chart data (age arrays) ───────────────────────────────────────────
- const chartData = useMemo(() => {
+  const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
+  
   const result = []
   for (let age = currentAge; age <= 100; age++) {
     const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
@@ -441,7 +442,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     
     result.push({
       age,
-     dtpdNeed: getDTPDNeedAtAge(age, personKey, properties),
+      dtpdNeed: getDTPDNeedAtAge(age, personKey, properties),
       dtpdHave: dtpdHave,
       ciNeed: getCINeedAtAge(age, personKey, properties),
       ciHave: ciHave,
