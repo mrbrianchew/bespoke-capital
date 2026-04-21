@@ -435,11 +435,6 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
   const savedDtpdNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
-  const savedCiNeed = activePerson === 'client' ? clientCI : spouseCI
-
-  // Compute D/TPD scaling ratio to anchor chart to Strategic Objectives value
-  const rawDtpdAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
-  const dtpdScale = rawDtpdAtCurrent > 0 ? savedDtpdNeed / rawDtpdAtCurrent : 1
 
   const result = []
   for (let age = currentAge; age <= 100; age++) {
@@ -448,16 +443,9 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     
     result.push({
       age,
-      dtpdNeed: getDTPDNeedAtAge(age, personKey, properties) * dtpdScale,
+     dtpdNeed: getDTPDNeedAtAge(age, personKey, properties),
       dtpdHave: dtpdHave,
-      ciNeed: (() => {
-        const rawAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
-        const rawAtAge = getCINeedAtAge(age, personKey, properties)
-        if (rawAtCurrent <= 0) return savedCiNeed
-        // Apply saved need at current age, but preserve relative drops (uni steps + floor)
-        const drop = rawAtCurrent - rawAtAge
-        return Math.max(savedCiNeed - drop, clientFloor)
-      })(),
+      ciNeed: getCINeedAtAge(age, personKey, properties),
       ciHave: ciHave,
     })
   }
