@@ -437,11 +437,9 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const savedDtpdNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
   const savedCiNeed = activePerson === 'client' ? clientCI : spouseCI
 
-  // Compute scaling ratios so chart curves start at the saved Strategic Objectives value
+  // Compute D/TPD scaling ratio to anchor chart to Strategic Objectives value
   const rawDtpdAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
-  const rawCiAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
   const dtpdScale = rawDtpdAtCurrent > 0 ? savedDtpdNeed / rawDtpdAtCurrent : 1
-  const ciScale = rawCiAtCurrent > 0 ? savedCiNeed / rawCiAtCurrent : 1
 
   const result = []
   for (let age = currentAge; age <= 100; age++) {
@@ -452,7 +450,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       age,
       dtpdNeed: getDTPDNeedAtAge(age, personKey, properties) * dtpdScale,
       dtpdHave: dtpdHave,
-      ciNeed: getCINeedAtAge(age, personKey, properties) * ciScale,
+      ciNeed: age === currentAge ? savedCiNeed : getCINeedAtAge(age, personKey, properties),
       ciHave: ciHave,
     })
   }
@@ -460,7 +458,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
     p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
-    clientDTPD, spouseDTPD, clientCI, spouseCI])
+    clientDTPD, spouseDTPD, clientCI, spouseCI, savedCiNeed, savedDtpdNeed])
   
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
