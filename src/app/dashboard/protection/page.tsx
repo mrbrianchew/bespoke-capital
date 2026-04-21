@@ -265,7 +265,7 @@ const retData = (retirementRow?.data as any)?.ret || retirementRow?.data || {}
 const merged: any = {
   ...(financialsRow?.data || {}),
   ...(portfolioRow?.data || {}),
-  ...(needsRow?.data || {}),
+  ...((needsRow?.data as any)?.protection || needsRow?.data || {}),
   ...(objectivesRow?.data || {}),
   ...(educationRow?.data || {}),
   client: {
