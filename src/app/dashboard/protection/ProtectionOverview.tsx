@@ -434,8 +434,6 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
  const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
-  const savedDtpdNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
-
   const result = []
   for (let age = currentAge; age <= 100; age++) {
     const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
@@ -452,8 +450,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
-    p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
-    clientDTPD, spouseDTPD, clientCI, spouseCI]) 
+    p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges])
   
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
