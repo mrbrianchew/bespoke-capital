@@ -430,28 +430,42 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     return Math.max(floor, raw)
   }
 
-  // ── Build chart data (age arrays) ───────────────────────────────────────────
+// ── Build chart data (age arrays) ───────────────────────────────────────────
   const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
-  
+  const savedDTPD = activePerson === 'client' ? clientDTPD : spouseDTPD
+  const savedCI = activePerson === 'client' ? clientCI : spouseCI
+
+  // Compute raw need at current age as scaling baseline
+  const rawDTPDAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
+  const rawCIAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
+
   const result = []
   for (let age = currentAge; age <= 100; age++) {
     const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
     const ciHave = getCIHaveAtAge(age, personKey, currentAge, activePolicies)
-    
+
+    // Scale chart curve so it anchors to saved Strategic Objectives value at current age
+    const rawDTPD = getDTPDNeedAtAge(age, personKey, properties)
+    const rawCI = getCINeedAtAge(age, personKey, properties)
+
+    const dtpdScale = rawDTPDAtCurrent > 0 ? savedDTPD / rawDTPDAtCurrent : 1
+    const ciScale = rawCIAtCurrent > 0 ? savedCI / rawCIAtCurrent : 1
+
     result.push({
       age,
-      dtpdNeed: getDTPDNeedAtAge(age, personKey, properties),
-      dtpdHave: dtpdHave,
-      ciNeed: getCINeedAtAge(age, personKey, properties),
-      ciHave: ciHave,
+      dtpdNeed: Math.max(aFloor, rawDTPD * dtpdScale),
+      dtpdHave,
+      ciNeed: Math.max(aFloor, rawCI * ciScale),
+      ciHave,
     })
   }
   
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
-    p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges])
+    p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
+    clientDTPD, spouseDTPD, clientCI, spouseCI, aFloor])
   
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
