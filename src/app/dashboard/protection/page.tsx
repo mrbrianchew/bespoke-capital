@@ -265,7 +265,11 @@ const retData = (retirementRow?.data as any)?.ret || retirementRow?.data || {}
 const merged: any = {
   ...(financialsRow?.data || {}),
   ...(portfolioRow?.data || {}),
-  ...((needsRow?.data as any)?.protection || needsRow?.data || {}),
+  ...(needsRow?.data || {}),
+  p1_dtpd_need: (needsRow?.data as any)?.protection?.p1_dtpd_need,
+  p1_ci_need: (needsRow?.data as any)?.protection?.p1_ci_need,
+  p2_dtpd_need: (needsRow?.data as any)?.protection?.p2_dtpd_need,
+  p2_ci_need: (needsRow?.data as any)?.protection?.p2_ci_need,
   ...(objectivesRow?.data || {}),
   ...(educationRow?.data || {}),
   client: {
