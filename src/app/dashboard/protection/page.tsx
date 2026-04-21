@@ -261,7 +261,7 @@ const { data: objectivesRow } = await supabase
   .maybeSingle()
 
 // Inside loadAll function, after merging data:
-const retData = retirementRow?.data || {}
+const retData = (retirementRow?.data as any)?.ret || retirementRow?.data || {}
 const merged: any = {
   ...(financialsRow?.data || {}),
   ...(portfolioRow?.data || {}),
