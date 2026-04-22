@@ -1959,55 +1959,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                     </>
                   )}
                 </div>
-                {/* Retirement Alignment */}
-                <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Retirement Alignment</div>
-                  {([
-                    { label: clientName, endAge: latestMortgageEndAge, retireKey: 'retirement_age' as keyof FactFinding, retireVal: ff.retirement_age },
-                    ...(isCouple ? [{ label: spouseName, endAge: latestMortgageEndAge2, retireKey: 'retirement_age2' as keyof FactFinding, retireVal: ff.retirement_age2 }] : [])
-                  ]).map((person, i, arr) => {
-                    const diff = person.endAge && person.retireVal ? person.retireVal - person.endAge : null
-                    const ok = diff !== null && diff >= 0
-                    return (
-                      <div key={person.label} style={{ borderBottom: i < arr.length - 1 ? '1px solid var(--line)' : 'none', paddingBottom: i < arr.length - 1 ? 12 : 0, marginBottom: i < arr.length - 1 ? 12 : 0 }}>
-                        {isCouple && <div className="text-xs font-medium mb-2" style={{ color: 'var(--gold-tag)' }}>{person.label}</div>}
-                        <div className="flex justify-between items-center py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
-                          <span style={{ color: 'var(--ink2)' }}>Mortgage End Age</span>
-                          <span style={{ color: 'var(--ink)', fontWeight: 600, fontSize: 14 }}>{person.endAge ?? '—'}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 text-xs">
-                          <span style={{ color: 'var(--ink2)' }}>Planned Retirement Age</span>
-                          <input
-                            type="number"
-                            value={person.retireVal || ''}
-                            onChange={e => upd(person.retireKey, parseInt(e.target.value) || undefined)}
-                            placeholder="65"
-                            className="text-xs text-right outline-none px-1"
-                            style={{ width: 48, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontWeight: 600, fontSize: 14 }}
-                            onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                            onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')}
-                          />
-                        </div>
-                        {diff !== null ? (
-                          <div className="mt-2 px-2.5 py-2 text-xs font-medium text-center"
-                            style={{
-                              background: ok ? 'rgba(80,160,120,0.1)' : 'rgba(200,80,80,0.08)',
-                              color: ok ? 'var(--emerald)' : 'var(--rouge)',
-                              border: `1px solid ${ok ? 'rgba(80,160,120,0.3)' : 'rgba(200,80,80,0.2)'}`,
-                            }}>
-                            {ok
-                              ? `✓ Paid off ${diff} yr${diff === 1 ? '' : 's'} before retirement`
-                              : `✗ Outlasts retirement by ${Math.abs(diff)} yr${Math.abs(diff) === 1 ? '' : 's'}`}
-                          </div>
-                        ) : (
-                          <div className="mt-2 text-xs text-center" style={{ color: 'var(--ink3)' }}>
-                            {allProperties.length === 0 ? 'Add properties first.' : 'Enter retirement age above.'}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+                
                 {/* Lock-in alerts */}
                 {allProperties.some(p => {
                   const d = parseMonthYear(p.lockInExpiry || '')
