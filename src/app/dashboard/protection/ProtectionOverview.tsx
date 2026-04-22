@@ -289,7 +289,8 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
         : ff.spouse?.lifeExpectancy
     ) || 85
     const ciWindow = Number(ff.protection?.ciYears) || 5
-    // Basic personal expenses for this person
+   // Basic personal expenses for this person — use total annual expenses as fallback
+    const annExp = person === 'client' ? p1AnnExp : p2AnnExp
     const basicExpForPerson = person === 'client'
       ? ff.expense_mode === 'detailed'
         ? (Number(ff.d_personal_food)||0)+(Number(ff.d_transport)||0)+(Number(ff.d_car_petrol)||0)+(Number(ff.d_car_insurance)||0)+(Number(ff.d_conservancy)||0)+(Number(ff.d_utilities)||0)
@@ -297,13 +298,15 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       : ff.expense_mode === 'detailed'
         ? (Number(ff.d2_personal_food)||0)+(Number(ff.d2_transport)||0)+(Number(ff.d2_car_petrol)||0)+(Number(ff.d2_car_insurance)||0)+(Number(ff.d2_conservancy)||0)+(Number(ff.d2_utilities)||0)
         : (Number(ff.s2_personal)||0)+(Number(ff.s2_household)||0)
+    // If detailed mode fields sum to zero (not yet filled), fall back to total annual expenses
+    const effectiveExp = basicExpForPerson > 0 ? basicExpForPerson : annExp
     // Window = last ciWindow years of life: from (lifeExp - ciWindow) to (lifeExp - 1)
     // Sum of annual expenses inflated to each of those years
     const windowStart = lifeExp - ciWindow  // age at start of window
     let floorFromExpenses = 0
     for (let age = windowStart; age < lifeExp; age++) {
       const yearsFromNow = Math.max(0, age - currentAge)
-      floorFromExpenses += basicExpForPerson * Math.pow(1 + inflation, yearsFromNow)
+      floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
     }
     return Math.max(300000, floorFromExpenses)
   }
