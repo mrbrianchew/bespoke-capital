@@ -536,10 +536,15 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || localSpouseCI)   
   
   // Note: savePolicy and delPolicy operate on the full rmData.policies to not lose inactive ones during updates
   function savePolicy(p: Policy) {
-    const exists = rmData.policies.find(x=>x.id===p.id)
+    // Derive person from lifeAssured name → match back to allPeople key
+    const laMatch = allPeople.find(ap => ap.label === p.lifeAssured)
+    const derivedPerson = laMatch ? laMatch.key : p.person
+    const resolved = { ...p, person: derivedPerson }
+
+    const exists = rmData.policies.find(x=>x.id===resolved.id)
     const next = exists
-      ? {...rmData, policies: rmData.policies.map(x=>x.id===p.id?p:x)}
-      : {...rmData, policies: [...rmData.policies, p]}
+      ? {...rmData, policies: rmData.policies.map(x=>x.id===resolved.id?resolved:x)}
+      : {...rmData, policies: [...rmData.policies, resolved]}
     updateRm(next); setShowModal(false); setEditingPolicy(null)
   }
   function delPolicy(id: string) { updateRm({...rmData, policies: rmData.policies.filter(p=>p.id!==id)}) }
