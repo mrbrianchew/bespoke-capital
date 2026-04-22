@@ -284,10 +284,12 @@ const merged: any = {
   client: {
     ...((financialsRow?.data as any)?.client || {}),
     retirementAge: (retData as any)?.client?.retirementAge,
+    lifeExpectancy: (retData as any)?.client?.lifeExpectancy,
   },
   spouse: {
     ...((financialsRow?.data as any)?.spouse || {}),
     retirementAge: (retData as any)?.spouse?.retirementAge,
+    lifeExpectancy: (retData as any)?.spouse?.lifeExpectancy,
   },
 }
 // Debug - check what was loaded
