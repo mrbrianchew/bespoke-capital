@@ -68,10 +68,7 @@ function fmt(n: number) {
 function getAge(dob?: string): number {
   if (!dob) return 10
   const birth = new Date(dob)
-  const today = new Date()
-  let age = today.getFullYear() - birth.getFullYear()
-  if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) age--
-  return Math.max(0, age)
+  return Math.max(0, new Date().getFullYear() - birth.getFullYear())
 }
 
 // ─── CALC ENGINE ─────────────────────────────────────────────────────────────
