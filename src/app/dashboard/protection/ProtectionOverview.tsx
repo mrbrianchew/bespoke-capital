@@ -282,24 +282,30 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   // ── Floor calculation ───────────────────────────────────────────────────────
   // Floor = higher of ($300K) or (basic living expenses inflated to retirement/last milestone)
   function getFloor(person: 'client' | 'spouse'): number {
-    const annExp = person === 'client' ? p1AnnExp : p2AnnExp
     const currentAge = person === 'client' ? clientAge : spouseAge
-    const retireAge = person === 'client' ? p1RetireAge : p2RetireAge
-    // Last milestone = later of retirement age or youngest child independent
-    const lastMilestoneAge = Math.max(retireAge, currentAge + coverTerm)
-    const yearsToFloor = Math.max(0, lastMilestoneAge - currentAge)
-    // Basic living = household + personal only (no mortgage, no children)
-    const basicExp =
-      (Number(ff.s_household) || 0) +
-      (Number(ff.s_personal) || 0) +
-      (Number(ff.s_financial) || 0)
+    const lifeExp = Number(
+      person === 'client'
+        ? ff.client?.lifeExpectancy
+        : ff.spouse?.lifeExpectancy
+    ) || 85
+    const ciWindow = Number(ff.protection?.ciYears) || 5
+    // Basic personal expenses for this person
     const basicExpForPerson = person === 'client'
-      ? basicExp > 0 ? basicExp : annExp * 0.5
-      : (Number(ff.s2_household) || 0) + (Number(ff.s2_personal) || 0) > 0
-        ? (Number(ff.s2_household) || 0) + (Number(ff.s2_personal) || 0)
-        : annExp * 0.5
-    const inflatedExp = basicExpForPerson * Math.pow(1 + inflation, yearsToFloor)
-    return Math.max(300000, inflatedExp)
+      ? ff.expense_mode === 'detailed'
+        ? (Number(ff.d_personal_food)||0)+(Number(ff.d_transport)||0)+(Number(ff.d_car_petrol)||0)+(Number(ff.d_car_insurance)||0)+(Number(ff.d_conservancy)||0)+(Number(ff.d_utilities)||0)
+        : (Number(ff.s_personal)||0)+(Number(ff.s_household)||0)
+      : ff.expense_mode === 'detailed'
+        ? (Number(ff.d2_personal_food)||0)+(Number(ff.d2_transport)||0)+(Number(ff.d2_car_petrol)||0)+(Number(ff.d2_car_insurance)||0)+(Number(ff.d2_conservancy)||0)+(Number(ff.d2_utilities)||0)
+        : (Number(ff.s2_personal)||0)+(Number(ff.s2_household)||0)
+    // Window = last ciWindow years of life: from (lifeExp - ciWindow) to (lifeExp - 1)
+    // Sum of annual expenses inflated to each of those years
+    const windowStart = lifeExp - ciWindow  // age at start of window
+    let floorFromExpenses = 0
+    for (let age = windowStart; age < lifeExp; age++) {
+      const yearsFromNow = Math.max(0, age - currentAge)
+      floorFromExpenses += basicExpForPerson * Math.pow(1 + inflation, yearsFromNow)
+    }
+    return Math.max(300000, floorFromExpenses)
   }
 
   const clientFloor = useMemo(() => getFloor('client'), [p1AnnExp, clientAge, p1RetireAge, inflation, ff, coverTerm])
