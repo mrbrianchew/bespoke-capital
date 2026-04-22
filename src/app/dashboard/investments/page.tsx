@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Chart, registerables } from 'chart.js'
@@ -388,9 +388,14 @@ export default function CapitalMandatePage() {
     await save(portfolio, settings, updGoals.filter(g => g.source === 'custom'))
   }
 
-  async function updateSettings(s: CMSettings) {
+  const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function updateSettings(s: CMSettings) {
     setSettings(s)
-    await save(portfolio, s, goals.filter(g => g.source === 'custom'))
+    if (settingsSaveTimer.current) clearTimeout(settingsSaveTimer.current)
+    settingsSaveTimer.current = setTimeout(() => {
+      save(portfolio, s, goals.filter(g => g.source === 'custom'))
+    }, 800)
   }
 
   // ── FILTERING ─────────────────────────────────────────────────────────────
