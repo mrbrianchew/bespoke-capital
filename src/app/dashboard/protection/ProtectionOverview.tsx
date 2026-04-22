@@ -308,8 +308,8 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     return Math.max(300000, floorFromExpenses)
   }
 
-  const clientFloor = useMemo(() => getFloor('client'), [p1AnnExp, clientAge, p1RetireAge, inflation, ff, coverTerm])
-  const spouseFloor = useMemo(() => getFloor('spouse'), [p2AnnExp, spouseAge, p2RetireAge, inflation, ff, coverTerm])
+  const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, ff])
+  const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, ff])
 
   // ── CPF and liquid assets ───────────────────────────────────────────────────
   const p1CPF = (Number(ff.a_cpf_oa) || 0) + (Number(ff.a_cpf_sa) || 0) + (Number(ff.a_cpf_ma) || 0)
