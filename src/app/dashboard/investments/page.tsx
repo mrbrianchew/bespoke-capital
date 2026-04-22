@@ -356,9 +356,14 @@ export default function CapitalMandatePage() {
     const c = clientRef.current
     if (!c) return
     const dataToSave = { portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals }
-    const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate').order('created_at', { ascending: false }).limit(1)
+    // Use same pattern as other tabs: fetch existing row by section, update by id or insert
+    const { data: rows } = await supabase
+      .from('fact_finding')
+      .select('id')
+      .eq('client_id', c.id)
+      .eq('section', 'capital_mandate')
     if (rows && rows.length > 0) {
-      await supabase.from('fact_finding').update({ data: dataToSave, updated_at: new Date().toISOString() }).eq('id', rows[0].id)
+      await supabase.from('fact_finding').update({ data: dataToSave }).eq('id', rows[0].id)
     } else {
       await supabase.from('fact_finding').insert({ client_id: c.id, section: 'capital_mandate', data: dataToSave })
     }
