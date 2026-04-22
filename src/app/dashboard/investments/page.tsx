@@ -254,6 +254,7 @@ export default function CapitalMandatePage() {
 
   const [loading, setLoading] = useState(true)
   const [client, setClient] = useState<any>(null)
+  const clientRef = useRef<any>(null)
   const [clientAge, setClientAge] = useState(40)
   const [spouseAge, setSpouseAge] = useState(38)
   const [clientName, setClientName] = useState('Client')
@@ -281,6 +282,7 @@ export default function CapitalMandatePage() {
     if (!clients?.length) { setLoading(false); return }
     const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]
     setClient(c)
+    clientRef.current = c
 
     const { data: rows } = await supabase.from('fact_finding').select('section, data').eq('client_id', c.id)
     const by: Record<string, any> = {}
@@ -351,13 +353,14 @@ export default function CapitalMandatePage() {
 
   // ── SAVE ──────────────────────────────────────────────────────────────────
   async function save(updPortfolio: PortfolioItem[], updSettings: CMSettings, updCustomGoals: CapitalGoal[]) {
-    if (!client) return
+    const c = clientRef.current
+    if (!c) return
     const dataToSave = { portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals }
-    const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', client.id).eq('section', 'capital_mandate').order('created_at', { ascending: false }).limit(1)
+    const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate').order('created_at', { ascending: false }).limit(1)
     if (rows && rows.length > 0) {
       await supabase.from('fact_finding').update({ data: dataToSave, updated_at: new Date().toISOString() }).eq('id', rows[0].id)
     } else {
-      await supabase.from('fact_finding').insert({ client_id: client.id, section: 'capital_mandate', data: dataToSave })
+      await supabase.from('fact_finding').insert({ client_id: c.id, section: 'capital_mandate', data: dataToSave })
     }
   }
 
