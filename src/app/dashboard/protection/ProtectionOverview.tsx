@@ -793,13 +793,13 @@ allMilestonesRaw.forEach((m, i) => {
     const prev = allMilestonesRaw[i - 1]
     const prevTier = allMilestones[i - 1].tier
     const gap = m.age - prev.age
-    if (gap <= 3) {
-      // Very close: pin both to same tier, push labels apart horizontally
-      allMilestones[i - 1] = { ...allMilestones[i - 1], tier: 0, anchor: 'end' }
-      allMilestones.push({ ...m, tier: 0, anchor: 'start' })
+    if (gap <= 8) {
+      // Close enough that names could collide: push labels apart horizontally, stagger vertically
+      const newTier = gap <= 3 ? 0 : (prevTier + 1) % 3
+      allMilestones[i - 1] = { ...allMilestones[i - 1], anchor: 'end' }
+      allMilestones.push({ ...m, tier: newTier, anchor: 'start' })
     } else {
-      const newTier = gap < MIN_GAP ? (prevTier + 1) % 3 : 0
-      allMilestones.push({ ...m, tier: newTier, anchor: 'middle' })
+      allMilestones.push({ ...m, tier: 0, anchor: 'middle' })
     }
   }
 })
