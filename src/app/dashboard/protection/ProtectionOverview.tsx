@@ -312,11 +312,14 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       const yearsFromNow = Math.max(0, age - currentAge)
       floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
     }
+   console.log('[FLOOR] ' + JSON.stringify({ person, lifeExp, ciWindow, effectiveExp, windowStart, floorFromExpenses, result: Math.max(300000, floorFromExpenses) }))
     return Math.max(300000, floorFromExpenses)
   }
 
-  const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, ff, p1AnnExp, ff.client?.lifeExpectancy])
-  const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, ff, p2AnnExp, ff.spouse?.lifeExpectancy])
+  const p1LifeExp = Number(ff.client?.lifeExpectancy) || 85
+  const p2LifeExp = Number(ff.spouse?.lifeExpectancy) || 85
+  const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.s_financial, ff.s_household, ff.s_personal, ff.s_lifestyle])
+  const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.s2_financial, ff.s2_household, ff.s2_personal, ff.s2_lifestyle])
 
   // ── CPF and liquid assets ───────────────────────────────────────────────────
   const p1CPF = (Number(ff.a_cpf_oa) || 0) + (Number(ff.a_cpf_sa) || 0) + (Number(ff.a_cpf_ma) || 0)
