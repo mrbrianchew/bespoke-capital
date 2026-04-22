@@ -7,14 +7,18 @@ Chart.register(...registerables)
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
+type PlanMode = 'couple' | 'individual'
+type ActivePerson = 'client' | 'spouse' | 'combined'
+
 interface CapitalGoal {
   id: string
   source: 'retirement' | 'wealth' | 'education' | 'custom'
   label: string
-  targetCorpus: number   // lump sum needed at target age
+  targetCorpus: number
   monthlyRequired: number
-  targetAge: number      // client age when corpus is needed
+  targetAge: number
   icon: string
+  owner: 'client' | 'spouse' | 'joint'
 }
 
 interface PortfolioItem {
@@ -26,6 +30,7 @@ interface PortfolioItem {
   currentValue: number
   expectedReturn: number
   startYear: number
+  owner: 'client' | 'spouse' | 'joint'
 }
 
 interface CMSettings {
@@ -50,29 +55,19 @@ function newId() {
   return 'cm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5)
 }
 
-// Project a portfolio forward: current value + monthly RSP at annual return r% for n years
-function projectPortfolio(currentValue: number, monthly: number, annualReturn: number, years: number): number {
-  if (years <= 0) return currentValue
+function calcMonthlyRequired(corpus: number, yearsLeft: number, annualReturn: number): number {
+  if (corpus <= 0 || yearsLeft <= 0) return 0
   const r = annualReturn / 100
   const rm = r / 12
-  const nm = years * 12
-  let fv = currentValue * Math.pow(1 + r, years)
-  if (monthly > 0 && rm > 0) {
-    fv += monthly * (Math.pow(1 + rm, nm) - 1) / rm
-  } else if (monthly > 0) {
-    fv += monthly * nm
-  }
-  return Math.max(0, fv)
+  const nm = yearsLeft * 12
+  return rm > 0 ? corpus * rm / (Math.pow(1 + rm, nm) - 1) : corpus / nm
 }
 
-// ─── MODAL ───────────────────────────────────────────────────────────────────
+// ─── PORTFOLIO MODAL ─────────────────────────────────────────────────────────
 
-function PortfolioModal({
-  item, onSave, onClose,
-}: {
-  item?: PortfolioItem
-  onSave: (p: PortfolioItem) => void
-  onClose: () => void
+function PortfolioModal({ item, onSave, onClose, isCouple, clientName, spouseName }: {
+  item?: PortfolioItem; onSave: (p: PortfolioItem) => void; onClose: () => void
+  isCouple: boolean; clientName: string; spouseName: string
 }) {
   const [name, setName] = useState(item?.name ?? '')
   const [type, setType] = useState(item?.type ?? 'Unit Trust')
@@ -81,40 +76,42 @@ function PortfolioModal({
   const [curVal, setCurVal] = useState(String(item?.currentValue ?? ''))
   const [ret, setRet] = useState(item?.expectedReturn ?? 6)
   const [startYear, setStartYear] = useState(item?.startYear ?? new Date().getFullYear())
+  const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>(item?.owner ?? 'client')
 
-  const inp: React.CSSProperties = {
-    width: '100%', background: 'white', border: '1px solid var(--line)',
-    borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13,
-    color: 'var(--ink)', outline: 'none', boxSizing: 'border-box',
-  }
+  const inp: React.CSSProperties = { width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }
 
   function save() {
     if (!name.trim()) return
-    onSave({
-      id: item?.id ?? newId(),
-      name: name.trim(), type, mode,
-      monthlyContribution: parseFloat(monthly) || 0,
-      currentValue: parseFloat(curVal) || 0,
-      expectedReturn: ret,
-      startYear,
-    })
+    onSave({ id: item?.id ?? newId(), name: name.trim(), type, mode, monthlyContribution: parseFloat(monthly) || 0, currentValue: parseFloat(curVal) || 0, expectedReturn: ret, startYear, owner })
   }
 
+  const ownerOpts = [
+    { value: 'client' as const, label: clientName },
+    ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, { value: 'joint' as const, label: 'Joint' }] : []),
+  ]
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ background: 'var(--cream)', borderRadius: 16, width: 520, boxShadow: '0 24px 64px rgba(0,0,0,0.22)', overflow: 'hidden' }}>
         <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 400, color: 'var(--ink)' }}>{item ? 'Edit Investment' : 'Add Investment'}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 20 }}>✕</button>
         </div>
         <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Name */}
           <div>
             <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Investment Name</div>
             <input style={inp} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Endowment Plan, Global Equity Fund" />
           </div>
-          {/* Type + Mode */}
+          {isCouple && (
+            <div>
+              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Belongs To</div>
+              <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+                {ownerOpts.map(o => (
+                  <button key={o.value} onClick={() => setOwner(o.value)} style={{ flex: 1, padding: '10px 4px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: owner === o.value ? 'var(--ink)' : 'white', color: owner === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.label}</button>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Type</div>
@@ -131,7 +128,6 @@ function PortfolioModal({
               </div>
             </div>
           </div>
-          {/* Values */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Value (S$)</div>
@@ -142,7 +138,6 @@ function PortfolioModal({
               <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
             </div>
           </div>
-          {/* Return + Start Year */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return %</div>
@@ -153,7 +148,7 @@ function PortfolioModal({
             </div>
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Year</div>
-              <input type="number" style={inp} value={startYear} onChange={e => setStartYear(parseInt(e.target.value) || new Date().getFullYear())} placeholder={String(new Date().getFullYear())} />
+              <input type="number" style={inp} value={startYear} onChange={e => setStartYear(parseInt(e.target.value) || new Date().getFullYear())} />
             </div>
           </div>
         </div>
@@ -168,26 +163,30 @@ function PortfolioModal({
 
 // ─── CUSTOM GOAL MODAL ────────────────────────────────────────────────────────
 
-function CustomGoalModal({ onSave, onClose, clientAge }: { onSave: (g: CapitalGoal) => void; onClose: () => void; clientAge: number }) {
+function CustomGoalModal({ onSave, onClose, clientAge, isCouple, clientName, spouseName }: {
+  onSave: (g: CapitalGoal) => void; onClose: () => void; clientAge: number
+  isCouple: boolean; clientName: string; spouseName: string
+}) {
   const [label, setLabel] = useState('')
   const [corpus, setCorpus] = useState('')
   const [monthly, setMonthly] = useState('')
   const [targetAge, setTargetAge] = useState(clientAge + 10)
+  const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>('client')
 
-  const inp: React.CSSProperties = {
-    width: '100%', background: 'white', border: '1px solid var(--line)',
-    borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13,
-    color: 'var(--ink)', outline: 'none', boxSizing: 'border-box',
-  }
+  const inp: React.CSSProperties = { width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }
+
+  const ownerOpts = [
+    { value: 'client' as const, label: clientName },
+    ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, { value: 'joint' as const, label: 'Joint' }] : []),
+  ]
 
   function save() {
     if (!label.trim()) return
-    onSave({ id: newId(), source: 'custom', label: label.trim(), icon: '✦', targetCorpus: parseFloat(corpus) || 0, monthlyRequired: parseFloat(monthly) || 0, targetAge })
+    onSave({ id: newId(), source: 'custom', label: label.trim(), icon: '✦', targetCorpus: parseFloat(corpus) || 0, monthlyRequired: parseFloat(monthly) || 0, targetAge, owner })
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ background: 'var(--cream)', borderRadius: 16, width: 440, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.22)' }}>
         <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 400 }}>Add Capital Goal</div>
@@ -198,6 +197,16 @@ function CustomGoalModal({ onSave, onClose, clientAge }: { onSave: (g: CapitalGo
             <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Goal Label</div>
             <input style={inp} value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Second property, Business fund" />
           </div>
+          {isCouple && (
+            <div>
+              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>For</div>
+              <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+                {ownerOpts.map(o => (
+                  <button key={o.value} onClick={() => setOwner(o.value)} style={{ flex: 1, padding: '10px 4px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: owner === o.value ? 'var(--ink)' : 'white', color: owner === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.label}</button>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Target Corpus (S$)</div>
@@ -222,6 +231,21 @@ function CustomGoalModal({ onSave, onClose, clientAge }: { onSave: (g: CapitalGo
   )
 }
 
+// ─── BADGES ──────────────────────────────────────────────────────────────────
+
+function SourceBadge({ source }: { source: CapitalGoal['source'] }) {
+  const map = { retirement: { label: 'Retirement', color: '#6B5B8B', bg: '#F0EBF8' }, wealth: { label: 'Wealth', color: '#4A7C9E', bg: '#EBF2F8' }, education: { label: 'Education', color: '#5E8A6A', bg: '#EBF5EE' }, custom: { label: 'Custom', color: '#A8834A', bg: '#F5EFE5' } }
+  const { label, color, bg } = map[source]
+  return <span style={{ fontFamily: 'Inter', fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color, background: bg, padding: '2px 8px', borderRadius: 4 }}>{label}</span>
+}
+
+function OwnerBadge({ owner, clientName, spouseName }: { owner: 'client' | 'spouse' | 'joint'; clientName: string; spouseName: string }) {
+  const map = { client: { color: '#4A7C9E', bg: '#EBF2F8' }, spouse: { color: '#6B5B8B', bg: '#F0EBF8' }, joint: { color: '#A8834A', bg: '#F5EFE5' } }
+  const { color, bg } = map[owner]
+  const label = owner === 'client' ? clientName : owner === 'spouse' ? spouseName : 'Joint'
+  return <span style={{ fontFamily: 'Inter', fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color, background: bg, padding: '2px 8px', borderRadius: 4 }}>{label}</span>
+}
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function CapitalMandatePage() {
@@ -231,17 +255,17 @@ export default function CapitalMandatePage() {
   const [loading, setLoading] = useState(true)
   const [client, setClient] = useState<any>(null)
   const [clientAge, setClientAge] = useState(40)
+  const [spouseAge, setSpouseAge] = useState(38)
   const [clientName, setClientName] = useState('Client')
+  const [spouseName, setSpouseName] = useState('Spouse')
 
-  // Goals pulled from objectives + custom additions
+  const [planMode, setPlanMode] = useState<PlanMode>('individual')
+  const [activePerson, setActivePerson] = useState<ActivePerson>('client')
+
   const [goals, setGoals] = useState<CapitalGoal[]>([])
   const [customGoalModal, setCustomGoalModal] = useState(false)
-
-  // Portfolio managed here
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([])
   const [portfolioModal, setPortfolioModal] = useState<{ open: boolean; item?: PortfolioItem }>({ open: false })
-
-  // Settings
   const [settings, setSettings] = useState<CMSettings>({ expectedReturn: 6, inflation: 3 })
 
   const chartRef = useRef<HTMLCanvasElement>(null)
@@ -253,134 +277,83 @@ export default function CapitalMandatePage() {
   async function load() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth'); return }
-
-    // Get selected client
     const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
     if (!clients?.length) { setLoading(false); return }
     const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]
     setClient(c)
 
-    // Fetch all fact_finding rows for this client
-    const { data: rows } = await supabase
-      .from('fact_finding')
-      .select('section, data')
-      .eq('client_id', c.id)
+    const { data: rows } = await supabase.from('fact_finding').select('section, data').eq('client_id', c.id)
+    const by: Record<string, any> = {}
+    if (rows) rows.forEach((r: any) => { by[r.section] = r.data })
 
-    const bySection: Record<string, any> = {}
-    if (rows) rows.forEach((r: any) => { bySection[r.section] = r.data })
-
-    // ── Client age + name ──
-    const fin = bySection['financials'] || bySection['factfinding'] || {}
+    const fin = by['financials'] || by['factfinding'] || {}
     const age = fin?.client?.age || c.age || 40
-    const name = fin?.client?.firstName ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim() : c.name || 'Client'
-    setClientAge(age)
-    setClientName(name)
+    const sage = fin?.spouse?.age || 38
+    const cName = fin?.client?.firstName ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim() : c.name || 'Client'
+    const sName = fin?.spouse?.firstName ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim() : 'Spouse'
+    setClientAge(age); setSpouseAge(sage); setClientName(cName); setSpouseName(sName)
 
-    // ── Build goals from saved sections ──
+    const protData = by['protection_needs']?.protection
+    const mode: PlanMode = protData?.planType === 'couple' ? 'couple' : 'individual'
+    setPlanMode(mode)
+    setActivePerson(mode === 'couple' ? 'combined' : 'client')
+
+    const cmData = by['capital_mandate'] || {}
+    const savedSettings: CMSettings = cmData?.settings ?? { expectedReturn: 6, inflation: 3 }
+    setSettings(savedSettings)
+
     const builtGoals: CapitalGoal[] = []
 
-    // Retirement corpus
-    const ret = bySection['retirement']?.ret || bySection['retirement'] || {}
+    // Retirement — client
+    const ret = by['retirement']?.ret || by['retirement'] || {}
     const retClient = ret?.client || ret
     if (retClient?.retirementCorpus && retClient.retirementCorpus > 0) {
       const retAge = retClient?.retirementAge || 65
-      const corpus = retClient.retirementCorpus
-      const yearsToRet = Math.max(1, retAge - age)
-      const r = (bySection['capital_mandate']?.settings?.expectedReturn ?? 6) / 100
-      const rm = r / 12
-      const nm = yearsToRet * 12
-      const monthlyReq = rm > 0 ? corpus * rm / (Math.pow(1 + rm, nm) - 1) : corpus / nm
-      builtGoals.push({
-        id: 'ret_client',
-        source: 'retirement',
-        label: `Retirement Fund`,
-        icon: '🏖',
-        targetCorpus: corpus,
-        monthlyRequired: monthlyReq,
-        targetAge: retAge,
-      })
+      builtGoals.push({ id: 'ret_client', source: 'retirement', label: `${cName}'s Retirement Fund`, icon: '🏖', targetCorpus: retClient.retirementCorpus, monthlyRequired: calcMonthlyRequired(retClient.retirementCorpus, Math.max(1, retAge - age), savedSettings.expectedReturn), targetAge: retAge, owner: 'client' })
+    }
+    // Retirement — spouse
+    const retSpouse = ret?.spouse
+    if (mode === 'couple' && retSpouse?.retirementCorpus && retSpouse.retirementCorpus > 0) {
+      const retAge = retSpouse?.retirementAge || 65
+      builtGoals.push({ id: 'ret_spouse', source: 'retirement', label: `${sName}'s Retirement Fund`, icon: '🏖', targetCorpus: retSpouse.retirementCorpus, monthlyRequired: calcMonthlyRequired(retSpouse.retirementCorpus, Math.max(1, retAge - sage), savedSettings.expectedReturn), targetAge: retAge, owner: 'spouse' })
     }
 
     // Wealth accumulation goals
-    const acc = bySection['accumulation']?.acc || bySection['accumulation'] || {}
+    const acc = by['accumulation']?.acc || by['accumulation'] || {}
     const accGoals: any[] = acc?.goals || []
     accGoals.forEach((g: any) => {
       if (!g.targetAmount) return
       const yearsLeft = Math.max(1, g.yearsToGoal || 10)
-      const r = (bySection['capital_mandate']?.settings?.expectedReturn ?? 6) / 100
-      const rm = r / 12
-      const nm = yearsLeft * 12
-      const corpus = g.amountType === 'pv'
-        ? g.targetAmount * Math.pow(1 + (bySection['capital_mandate']?.settings?.inflation ?? 3) / 100, yearsLeft)
-        : g.targetAmount
-      const monthlyReq = g.monthlyRequired ?? (rm > 0 ? corpus * rm / (Math.pow(1 + rm, nm) - 1) : corpus / nm)
-      builtGoals.push({
-        id: 'acc_' + g.id,
-        source: 'wealth',
-        label: g.label || 'Wealth Goal',
-        icon: '🏠',
-        targetCorpus: corpus,
-        monthlyRequired: monthlyReq,
-        targetAge: age + yearsLeft,
-      })
+      const corpus = g.amountType === 'pv' ? g.targetAmount * Math.pow(1 + savedSettings.inflation / 100, yearsLeft) : g.targetAmount
+      const owner: 'client' | 'spouse' | 'joint' = g.owner === 'spouse' ? 'spouse' : g.owner === 'joint' ? 'joint' : 'client'
+      builtGoals.push({ id: 'acc_' + g.id, source: 'wealth', label: g.label || 'Wealth Goal', icon: '🏠', targetCorpus: corpus, monthlyRequired: g.monthlyRequired ?? calcMonthlyRequired(corpus, yearsLeft, savedSettings.expectedReturn), targetAge: age + yearsLeft, owner })
     })
 
     // Education goals
-    const edu = bySection['education']?.edu || bySection['education'] || {}
+    const edu = by['education']?.edu || by['education'] || {}
     const eduChildren: any[] = edu?.children || []
     eduChildren.forEach((child: any) => {
-      if (!child.totalFundNeeded && !child.targetAmount) return
       const corpus = child.totalFundNeeded || child.targetAmount || 0
+      if (!corpus) return
       const targetAge = child.parentAgeAtEntry || (age + (child.yearsToUni || 18))
-      const yearsLeft = Math.max(1, targetAge - age)
-      const r = (bySection['capital_mandate']?.settings?.expectedReturn ?? 6) / 100
-      const rm = r / 12
-      const nm = yearsLeft * 12
-      const monthlyReq = rm > 0 ? corpus * rm / (Math.pow(1 + rm, nm) - 1) : corpus / nm
-      builtGoals.push({
-        id: 'edu_' + (child.id || child.name),
-        source: 'education',
-        label: `${child.name || 'Child'}'s Education Fund`,
-        icon: '🎓',
-        targetCorpus: corpus,
-        monthlyRequired: monthlyReq,
-        targetAge,
-      })
+      builtGoals.push({ id: 'edu_' + (child.id || child.name), source: 'education', label: `${child.name || 'Child'}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, targetAge - age), savedSettings.expectedReturn), targetAge, owner: 'joint' })
     })
 
-    // Custom goals saved here
-    const cmData = bySection['capital_mandate'] || {}
+    // Custom goals
     const customGoals: CapitalGoal[] = cmData?.customGoals || []
     customGoals.forEach(g => builtGoals.push({ ...g, source: 'custom' }))
-
     setGoals(builtGoals)
 
-    // Portfolio
-    const savedPortfolio: PortfolioItem[] = cmData?.portfolio || []
+    const savedPortfolio: PortfolioItem[] = (cmData?.portfolio || []).map((p: any) => ({ ...p, owner: p.owner ?? 'client' }))
     setPortfolio(savedPortfolio)
-
-    // Settings
-    if (cmData?.settings) setSettings(cmData.settings)
-
     setLoading(false)
   }
 
   // ── SAVE ──────────────────────────────────────────────────────────────────
   async function save(updPortfolio: PortfolioItem[], updSettings: CMSettings, updCustomGoals: CapitalGoal[]) {
     if (!client) return
-    const dataToSave = {
-      portfolio: updPortfolio,
-      settings: updSettings,
-      customGoals: updCustomGoals,
-    }
-    const { data: rows } = await supabase
-      .from('fact_finding')
-      .select('id, data')
-      .eq('client_id', client.id)
-      .eq('section', 'capital_mandate')
-      .order('created_at', { ascending: false })
-      .limit(1)
-
+    const dataToSave = { portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals }
+    const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', client.id).eq('section', 'capital_mandate').order('created_at', { ascending: false }).limit(1)
     if (rows && rows.length > 0) {
       await supabase.from('fact_finding').update({ data: dataToSave, updated_at: new Date().toISOString() }).eq('id', rows[0].id)
     } else {
@@ -388,14 +361,10 @@ export default function CapitalMandatePage() {
     }
   }
 
-  // ── PORTFOLIO CRUD ────────────────────────────────────────────────────────
   async function savePortfolioItem(item: PortfolioItem) {
-    const updated = portfolio.find(p => p.id === item.id)
-      ? portfolio.map(p => p.id === item.id ? item : p)
-      : [...portfolio, item]
+    const updated = portfolio.find(p => p.id === item.id) ? portfolio.map(p => p.id === item.id ? item : p) : [...portfolio, item]
     setPortfolio(updated)
-    const customGoals = goals.filter(g => g.source === 'custom')
-    await save(updated, settings, customGoals)
+    await save(updated, settings, goals.filter(g => g.source === 'custom'))
     setPortfolioModal({ open: false })
   }
 
@@ -403,84 +372,75 @@ export default function CapitalMandatePage() {
     if (!confirm('Remove this investment?')) return
     const updated = portfolio.filter(p => p.id !== id)
     setPortfolio(updated)
-    const customGoals = goals.filter(g => g.source === 'custom')
-    await save(updated, settings, customGoals)
+    await save(updated, settings, goals.filter(g => g.source === 'custom'))
   }
 
-  // ── CUSTOM GOALS ──────────────────────────────────────────────────────────
   async function addCustomGoal(g: CapitalGoal) {
     const updGoals = [...goals, g]
     setGoals(updGoals)
-    const customGoals = updGoals.filter(x => x.source === 'custom')
-    await save(portfolio, settings, customGoals)
+    await save(portfolio, settings, updGoals.filter(x => x.source === 'custom'))
     setCustomGoalModal(false)
   }
 
   async function removeGoal(id: string) {
     const updGoals = goals.filter(g => g.id !== id)
     setGoals(updGoals)
-    const customGoals = updGoals.filter(g => g.source === 'custom')
-    await save(portfolio, settings, customGoals)
+    await save(portfolio, settings, updGoals.filter(g => g.source === 'custom'))
   }
 
-  // ── SETTINGS ──────────────────────────────────────────────────────────────
   async function updateSettings(s: CMSettings) {
     setSettings(s)
-    const customGoals = goals.filter(g => g.source === 'custom')
-    await save(portfolio, s, customGoals)
+    await save(portfolio, s, goals.filter(g => g.source === 'custom'))
   }
 
-  // ── DERIVED NUMBERS ───────────────────────────────────────────────────────
-  const totalMonthlyNeeded = useMemo(() => goals.reduce((s, g) => s + g.monthlyRequired, 0), [goals])
-  const totalCorpus = useMemo(() => goals.reduce((s, g) => s + g.targetCorpus, 0), [goals])
-  const totalMonthlyInvesting = useMemo(() => portfolio.reduce((s, p) => s + p.monthlyContribution, 0), [portfolio])
-  const totalCurrentValue = useMemo(() => portfolio.reduce((s, p) => s + p.currentValue, 0), [portfolio])
+  // ── FILTERING ─────────────────────────────────────────────────────────────
+  function matchesPerson(owner: 'client' | 'spouse' | 'joint'): boolean {
+    if (planMode === 'individual') return true
+    if (activePerson === 'combined') return true
+    if (activePerson === 'client') return owner === 'client' || owner === 'joint'
+    if (activePerson === 'spouse') return owner === 'spouse' || owner === 'joint'
+    return true
+  }
+
+  const filteredGoals = useMemo(() => goals.filter(g => matchesPerson(g.owner)), [goals, planMode, activePerson])
+  const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, planMode, activePerson])
+
+  const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
+  const totalCorpus = useMemo(() => filteredGoals.reduce((s, g) => s + g.targetCorpus, 0), [filteredGoals])
+  const totalMonthlyInvesting = useMemo(() => filteredPortfolio.reduce((s, p) => s + p.monthlyContribution, 0), [filteredPortfolio])
+  const totalCurrentValue = useMemo(() => filteredPortfolio.reduce((s, p) => s + p.currentValue, 0), [filteredPortfolio])
   const monthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
+
+  const personLabel = planMode === 'individual' ? clientName
+    : activePerson === 'combined' ? `${clientName} & ${spouseName}`
+    : activePerson === 'client' ? clientName : spouseName
 
   // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (loading || !chartRef.current) return
     if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null }
 
-    const maxAge = Math.max(90, ...goals.map(g => g.targetAge + 5))
+    const maxAge = Math.max(85, clientAge + 30, ...filteredGoals.map(g => g.targetAge + 5))
     const ages = Array.from({ length: maxAge - clientAge + 1 }, (_, i) => clientAge + i)
-    const currentYear = new Date().getFullYear()
 
-    // Target corpus line: cumulative "required saved" at each age
-    // We build it as: at each age, sum of each goal's required corpus at that point in time
-    const targetLine = ages.map(a => {
-      return goals.reduce((sum, g) => {
-        const yearsLeft = g.targetAge - a
-        if (yearsLeft < 0) return sum  // goal passed
-        const r = settings.expectedReturn / 100
-        const rm = r / 12
-        const nm = yearsLeft * 12
-        // PV of goal corpus = corpus / (1+r)^yearsLeft
-        const pv = g.targetCorpus / Math.pow(1 + r, Math.max(yearsLeft, 0))
-        return sum + pv
-      }, 0)
-    })
+    const targetLine = ages.map(a => filteredGoals.reduce((sum, g) => {
+      const yearsLeft = g.targetAge - a
+      if (yearsLeft < 0) return sum
+      return sum + g.targetCorpus / Math.pow(1 + settings.expectedReturn / 100, Math.max(yearsLeft, 0.001))
+    }, 0))
 
-    // Projected portfolio line: grow all current holdings + RSPs forward
     const projectedLine = ages.map(a => {
       const yearsFromNow = a - clientAge
-      return portfolio.reduce((sum, p) => {
-        const yearsSinceStart = currentYear - p.startYear
-        const existingFV = p.currentValue * Math.pow(1 + p.expectedReturn / 100, yearsFromNow)
+      return filteredPortfolio.reduce((sum, p) => {
+        const fv = p.currentValue * Math.pow(1 + p.expectedReturn / 100, yearsFromNow)
         let rsv = 0
         if (p.monthlyContribution > 0 && yearsFromNow > 0) {
           const rm = p.expectedReturn / 100 / 12
           const nm = yearsFromNow * 12
           rsv = rm > 0 ? p.monthlyContribution * (Math.pow(1 + rm, nm) - 1) / rm : p.monthlyContribution * nm
         }
-        return sum + existingFV + rsv
+        return sum + fv + rsv
       }, 0)
-    })
-
-    // Actual/projected: current value flat to today, then projected
-    const actualLine = ages.map((a, i) => {
-      if (i === 0) return totalCurrentValue
-      return projectedLine[i]
     })
 
     const ctx = chartRef.current.getContext('2d')!
@@ -489,59 +449,16 @@ export default function CapitalMandatePage() {
       data: {
         labels: ages.map(a => 'Age ' + a),
         datasets: [
-          {
-            label: 'Target Corpus Required',
-            data: targetLine,
-            borderColor: '#A8834A',
-            backgroundColor: 'rgba(168,131,74,0.07)',
-            borderWidth: 2,
-            tension: 0.4,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            fill: true,
-          },
-          {
-            label: 'Projected Portfolio',
-            data: projectedLine,
-            borderColor: '#4A9E8A',
-            backgroundColor: 'rgba(74,158,138,0.05)',
-            borderWidth: 2,
-            borderDash: [6, 3],
-            tension: 0.4,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            fill: false,
-          },
-          ...(totalCurrentValue > 0 ? [{
-            label: 'Current Portfolio Value',
-            data: actualLine,
-            borderColor: '#4A7CB4',
-            backgroundColor: 'rgba(74,124,180,0.04)',
-            borderWidth: 2,
-            tension: 0.4,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            fill: false,
-          }] : []),
+          { label: 'Target Corpus Required', data: targetLine, borderColor: '#A8834A', backgroundColor: 'rgba(168,131,74,0.07)', borderWidth: 2, tension: 0.4, pointRadius: 0, pointHoverRadius: 4, fill: true },
+          { label: 'Projected Portfolio', data: projectedLine, borderColor: '#4A9E8A', backgroundColor: 'rgba(74,158,138,0.05)', borderWidth: 2, tension: 0.4, pointRadius: 0, pointHoverRadius: 4, fill: false },
         ],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: {
-            labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20 },
-          },
-          tooltip: {
-            backgroundColor: 'rgba(26,24,22,0.95)',
-            titleColor: 'rgba(196,164,100,0.9)',
-            bodyColor: 'rgba(240,237,232,0.7)',
-            padding: 12,
-            callbacks: {
-              label: (ctx: any) => ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y),
-            },
-          },
+          legend: { labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20 } },
+          tooltip: { backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.7)', padding: 12, callbacks: { label: (ctx: any) => ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y) } },
         },
         scales: {
           x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 12 }, grid: { display: false } },
@@ -549,25 +466,8 @@ export default function CapitalMandatePage() {
         },
       },
     })
-
     return () => { if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null } }
-  }, [loading, goals, portfolio, settings, clientAge, totalCurrentValue])
-
-  // ── SOURCE BADGE ──────────────────────────────────────────────────────────
-  function SourceBadge({ source }: { source: CapitalGoal['source'] }) {
-    const map = {
-      retirement: { label: 'Retirement', color: '#6B5B8B', bg: '#F0EBF8' },
-      wealth: { label: 'Wealth', color: '#4A7C9E', bg: '#EBF2F8' },
-      education: { label: 'Education', color: '#5E8A6A', bg: '#EBF5EE' },
-      custom: { label: 'Custom', color: '#A8834A', bg: '#F5EFE5' },
-    }
-    const { label, color, bg } = map[source]
-    return (
-      <span style={{ fontFamily: 'Inter', fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color, background: bg, padding: '2px 8px', borderRadius: 4 }}>
-        {label}
-      </span>
-    )
-  }
+  }, [loading, filteredGoals, filteredPortfolio, settings, clientAge])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}><div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)' }}>Loading…</div></div>
@@ -578,15 +478,31 @@ export default function CapitalMandatePage() {
 
       {/* ── HERO BAND ── */}
       <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '28px 0 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '28px 0 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 20 }}>
+          <div style={{ flex: 1 }}>
             <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 30, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.1 }}>Capital Mandate</div>
-            <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>{clientName} · {goals.length} goal{goals.length !== 1 ? 's' : ''} · Age {clientAge}</div>
+            <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>{personLabel} · {filteredGoals.length} goal{filteredGoals.length !== 1 ? 's' : ''}</div>
           </div>
+
+          {/* Person toggle — only in couple mode */}
+          {planMode === 'couple' && (
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 3 }}>
+              {([
+                { val: 'combined' as ActivePerson, label: 'Combined' },
+                { val: 'client' as ActivePerson, label: clientName },
+                { val: 'spouse' as ActivePerson, label: spouseName },
+              ]).map(opt => (
+                <button key={opt.val} onClick={() => setActivePerson(opt.val)}
+                  style={{ padding: '7px 18px', border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s', background: activePerson === opt.val ? 'rgba(255,255,255,0.15)' : 'transparent', color: activePerson === opt.val ? '#F0EDE8' : 'rgba(255,255,255,0.4)' }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* KPI strip */}
-        <div style={{ display: 'flex', padding: '20px 0', gap: 0 }}>
+        <div style={{ display: 'flex', padding: '20px 0' }}>
           {[
             { label: 'Total Capital Required', val: fmt(totalCorpus), color: '#C4A464' },
             { label: 'Monthly Savings Needed', val: fmtMo(totalMonthlyNeeded), color: '#F0EDE8' },
@@ -605,18 +521,10 @@ export default function CapitalMandatePage() {
       {/* ── SETTINGS BAR ── */}
       <div style={{ background: 'var(--cream2)', borderBottom: '1px solid var(--line)', padding: '10px 48px', display: 'flex', alignItems: 'center', gap: 36 }}>
         <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', flexShrink: 0 }}>Assumptions</span>
-        {[
-          { label: 'Expected Return', key: 'expectedReturn' as const, min: 1, max: 15, step: 0.5 },
-          { label: 'Inflation', key: 'inflation' as const, min: 1, max: 8, step: 0.5 },
-        ].map(s => (
+        {([{ label: 'Expected Return', key: 'expectedReturn' as const, min: 1, max: 15, step: 0.5 }, { label: 'Inflation', key: 'inflation' as const, min: 1, max: 8, step: 0.5 }]).map(s => (
           <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>{s.label}</span>
-            <input type="range" min={s.min} max={s.max} step={s.step} value={settings[s.key]}
-              onChange={e => {
-                const ns = { ...settings, [s.key]: parseFloat(e.target.value) }
-                updateSettings(ns)
-              }}
-              style={{ width: 100, accentColor: 'var(--gold)' }} />
+            <input type="range" min={s.min} max={s.max} step={s.step} value={settings[s.key]} onChange={e => updateSettings({ ...settings, [s.key]: parseFloat(e.target.value) })} style={{ width: 100, accentColor: 'var(--gold)' }} />
             <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 500, color: 'var(--ink)', background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 40, textAlign: 'center' }}>{settings[s.key]}%</span>
           </div>
         ))}
@@ -625,75 +533,61 @@ export default function CapitalMandatePage() {
       {/* ── BODY ── */}
       <div style={{ padding: '32px 48px', flex: 1, display: 'flex', flexDirection: 'column', gap: 32 }}>
 
-        {/* ── CHART ── */}
+        {/* CHART */}
         <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Capital Journey</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 400, color: 'var(--ink)' }}>Portfolio vs. Required Corpus — Age {clientAge} onwards</div>
-            </div>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Capital Journey · {personLabel}</div>
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 400, color: 'var(--ink)' }}>Projected Portfolio vs. Required Corpus</div>
           </div>
           <div style={{ padding: '16px 24px 20px', background: 'var(--cream)', height: 280 }}>
             <canvas ref={chartRef} />
           </div>
         </div>
 
-        {/* ── TWO COLUMN ── */}
+        {/* TWO COLUMNS */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
 
-          {/* LEFT: Capital Goals */}
+          {/* LEFT — Goals */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
               <div>
-                <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Pulled from Strategic Objectives</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>From Strategic Objectives</div>
                 <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, color: 'var(--ink)' }}>Capital Goals</div>
               </div>
-              <button onClick={() => setCustomGoalModal(true)}
-                style={{ fontFamily: 'Inter', fontSize: 11, padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 6, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>
-                + Add Goal
-              </button>
+              <button onClick={() => setCustomGoalModal(true)} style={{ fontFamily: 'Inter', fontSize: 11, padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 6, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>+ Add Goal</button>
             </div>
 
-            {goals.length === 0 ? (
+            {filteredGoals.length === 0 ? (
               <div style={{ background: 'white', border: '2px dashed var(--line)', borderRadius: 12, padding: '40px 24px', textAlign: 'center' }}>
                 <div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', marginBottom: 4 }}>No goals found</div>
                 <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Set goals in Strategic Objectives or add manually above</div>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                {goals.map((g, i) => (
-                  <div key={g.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{g.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                        <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{g.label}</span>
-                        <SourceBadge source={g.source} />
-                      </div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
-                        Target age {g.targetAge} · Corpus {fmt(g.targetCorpus)}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{fmtMo(g.monthlyRequired)}</div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>needed/mo</div>
-                    </div>
-                    {g.source === 'custom' && (
-                      <button onClick={() => removeGoal(g.id)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 6, cursor: 'pointer', color: 'var(--rouge)', fontFamily: 'Inter', fontSize: 11, padding: '4px 8px', flexShrink: 0 }}>×</button>
-                    )}
+            ) : filteredGoals.map(g => (
+              <div key={g.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{g.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{g.label}</span>
+                    <SourceBadge source={g.source} />
+                    {planMode === 'couple' && activePerson === 'combined' && <OwnerBadge owner={g.owner} clientName={clientName} spouseName={spouseName} />}
                   </div>
-                ))}
+                  <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Target age {g.targetAge} · {fmt(g.targetCorpus)}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 600, color: 'var(--ink)' }}>{fmtMo(g.monthlyRequired)}</div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>needed/mo</div>
+                </div>
+                {g.source === 'custom' && (
+                  <button onClick={() => removeGoal(g.id)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 6, cursor: 'pointer', color: 'var(--rouge)', fontFamily: 'Inter', fontSize: 11, padding: '4px 8px', flexShrink: 0 }}>×</button>
+                )}
               </div>
-            )}
+            ))}
 
-            {/* Monthly totals footer */}
-            {goals.length > 0 && (
+            {filteredGoals.length > 0 && (
               <div style={{ marginTop: 16, background: 'var(--charcoal)', borderRadius: 12, padding: '20px 24px' }}>
-                <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(168,131,74,0.6)', marginBottom: 12 }}>Aggregate Capital Mandate</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-                  {[
-                    { label: 'Total Corpus', val: fmt(totalCorpus), color: '#C4A464' },
-                    { label: 'Monthly Required', val: fmtMo(totalMonthlyNeeded), color: '#F0EDE8' },
-                  ].map((s, i) => (
+                <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(168,131,74,0.6)', marginBottom: 12 }}>Aggregate — {personLabel}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                  {[{ label: 'Total Corpus', val: fmt(totalCorpus), color: '#C4A464' }, { label: 'Monthly Required', val: fmtMo(totalMonthlyNeeded), color: '#F0EDE8' }].map((s, i) => (
                     <div key={i} style={{ paddingRight: i === 0 ? 20 : 0, paddingLeft: i === 1 ? 20 : 0, borderRight: i === 0 ? '1px solid rgba(255,255,255,0.08)' : 'none' }}>
                       <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>{s.label}</div>
                       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 300, color: s.color }}>{s.val}</div>
@@ -704,36 +598,34 @@ export default function CapitalMandatePage() {
             )}
           </div>
 
-          {/* RIGHT: Investment Portfolio */}
+          {/* RIGHT — Portfolio */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
               <div>
                 <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Funding Vehicles</div>
                 <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, color: 'var(--ink)' }}>Investment Portfolio</div>
               </div>
-              <button onClick={() => setPortfolioModal({ open: true })}
-                style={{ fontFamily: 'Inter', fontSize: 11, padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 6, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>
-                + Add
-              </button>
+              <button onClick={() => setPortfolioModal({ open: true })} style={{ fontFamily: 'Inter', fontSize: 11, padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 6, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>+ Add</button>
             </div>
 
-            {portfolio.length === 0 ? (
+            {filteredPortfolio.length === 0 ? (
               <div style={{ background: 'white', border: '2px dashed var(--line)', borderRadius: 12, padding: '40px 24px', textAlign: 'center' }}>
                 <div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', marginBottom: 4 }}>No investments recorded</div>
-                <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Add the client's existing RSPs and lump sum investments</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Add existing RSPs and lump sum investments</div>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                {portfolio.map((p, i) => (
+              <div>
+                {filteredPortfolio.map((p, i) => (
                   <div key={p.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 3, height: 36, borderRadius: 2, background: ['#A8834A', '#4A9E8A', '#4A7CB4', '#8A6AAA'][i % 4], flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
                         <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
                         <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '2px 6px', borderRadius: 4 }}>{p.type}</span>
+                        {planMode === 'couple' && activePerson === 'combined' && <OwnerBadge owner={p.owner} clientName={clientName} spouseName={spouseName} />}
                       </div>
                       <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
-                        {p.monthlyContribution > 0 ? fmtMo(p.monthlyContribution) : '—'} · {fmt(p.currentValue)} value · {p.expectedReturn}% p.a.
+                        {p.monthlyContribution > 0 ? fmtMo(p.monthlyContribution) : '—'} · {fmt(p.currentValue)} · {p.expectedReturn}% p.a.
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -749,32 +641,22 @@ export default function CapitalMandatePage() {
               </div>
             )}
 
-            {/* Gap analysis */}
+            {/* Gap panel */}
             <div style={{ marginTop: 16, background: monthlyGap > 0 ? 'var(--charcoal)' : 'rgba(128,196,160,0.12)', border: monthlyGap > 0 ? 'none' : '1px solid rgba(128,196,160,0.3)', borderRadius: 12, padding: '20px 24px' }}>
-              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: monthlyGap > 0 ? 'rgba(168,131,74,0.6)' : 'rgba(80,160,120,0.7)', marginBottom: 10 }}>Gap Analysis</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 300, color: monthlyGap > 0 ? '#F0EDE8' : '#50A078', marginBottom: 6 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: monthlyGap > 0 ? 'rgba(168,131,74,0.6)' : 'rgba(80,160,120,0.7)', marginBottom: 10 }}>Gap Analysis · {personLabel}</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 300, color: monthlyGap > 0 ? '#F0EDE8' : '#50A078', marginBottom: monthlyGap > 0 ? 6 : 0 }}>
                 {monthlyGap > 0
                   ? <>Need <span style={{ color: '#C4A464' }}>{fmtMo(totalMonthlyNeeded)}</span> · Investing <span style={{ color: '#E08080' }}>{fmtMo(totalMonthlyInvesting)}</span></>
-                  : <>Portfolio on track — investing {fmtMo(totalMonthlyInvesting)}</>
-                }
+                  : <>On track — investing {fmtMo(totalMonthlyInvesting)}</>}
               </div>
-              {monthlyGap > 0 && (
-                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
-                  Monthly shortfall: <span style={{ color: '#E08080', fontWeight: 600 }}>−{fmtMo(monthlyGap)}</span>
-                </div>
-              )}
+              {monthlyGap > 0 && <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Monthly shortfall: <span style={{ color: '#E08080', fontWeight: 600 }}>−{fmtMo(monthlyGap)}</span></div>}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── MODALS ── */}
-      {portfolioModal.open && (
-        <PortfolioModal item={portfolioModal.item} onSave={savePortfolioItem} onClose={() => setPortfolioModal({ open: false })} />
-      )}
-      {customGoalModal && (
-        <CustomGoalModal onSave={addCustomGoal} onClose={() => setCustomGoalModal(false)} clientAge={clientAge} />
-      )}
+      {portfolioModal.open && <PortfolioModal item={portfolioModal.item} onSave={savePortfolioItem} onClose={() => setPortfolioModal({ open: false })} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} />}
+      {customGoalModal && <CustomGoalModal onSave={addCustomGoal} onClose={() => setCustomGoalModal(false)} clientAge={clientAge} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} />}
     </div>
   )
 }
