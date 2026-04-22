@@ -208,7 +208,7 @@ const [shareCopied, setShareCopied] = useState(false)
     const { data: client } = await supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle()
     if (client) {
       setClientName(client.name)
-      if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25*24*3600*1000)))
+      if (client.dob) setClientAge(new Date().getFullYear() - new Date(client.dob).getFullYear())
       else if (client.age) setClientAge(Number(client.age))
     }
 
@@ -319,7 +319,7 @@ const p2 = merged.person2
 if (p2?.name && !isIndividualMode) {
   setSpouseName(p2.name); setIsCouple(true)
   if (p2.age) setSpouseAge(Number(p2.age))
-  else if (p2.dob) setSpouseAge(Math.floor((Date.now() - new Date(p2.dob).getTime()) / (365.25*24*3600*1000)))
+  else if (p2.dob) setSpouseAge(new Date().getFullYear() - new Date(p2.dob).getFullYear())
 } else if (merged.mode === 'couple' && !isIndividualMode) {
   setIsCouple(true)
   const sn = merged.spouse_name || merged.spouseName || ''
@@ -334,7 +334,7 @@ if (familyRows && familyRows.length > 0) {
   if (spouse?.name && !merged.person2?.name && !isIndividualMode) {
     setSpouseName(spouse.name); setIsCouple(true)
     if (spouse.age) setSpouseAge(Number(spouse.age))
-    else if (spouse.dob) setSpouseAge(Math.floor((Date.now() - new Date(spouse.dob).getTime()) / (365.25*24*3600*1000)))
+    else if (spouse.dob) setSpouseAge(new Date().getFullYear() - new Date(spouse.dob).getFullYear())
   }
   const kids = familyRows.filter((m: any) =>
     m.relationship?.toLowerCase() !== 'spouse'
