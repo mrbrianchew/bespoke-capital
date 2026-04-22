@@ -308,6 +308,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       const yearsFromNow = Math.max(0, age - currentAge)
       floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
     }
+    console.log('[FLOOR]', person, { lifeExp, ciWindow, effectiveExp, windowStart, floorFromExpenses, result: Math.max(300000, floorFromExpenses) })
     return Math.max(300000, floorFromExpenses)
   }
 
