@@ -783,17 +783,26 @@ if (milestones.retireAge) {
 }
 
 // Sort by age, then assign tiers based on proximity
-const MIN_GAP = 7 // ages within 7 years get staggered
+const MIN_GAP = 7
 allMilestonesRaw.sort((a, b) => a.age - b.age)
-const allMilestones: { age: number; label: string; color: string; tier: number }[] = []
+const allMilestones: { age: number; label: string; color: string; tier: number; anchor: string }[] = []
 allMilestonesRaw.forEach((m, i) => {
   if (i === 0) {
-    allMilestones.push({ ...m, tier: 0 })
+    allMilestones.push({ ...m, tier: 0, anchor: 'middle' })
   } else {
     const prev = allMilestonesRaw[i - 1]
     const prevTier = allMilestones[i - 1].tier
     const gap = m.age - prev.age
-    allMilestones.push({ ...m, tier: gap < MIN_GAP ? (prevTier + 1) % 3 : 0 })
+    const newTier = gap < MIN_GAP ? (prevTier + 1) % 3 : 0
+    // If same tier and very close (<=3 years), nudge anchors left/right
+    const sameY = newTier === prevTier
+    const veryClose = gap <= 3
+    if (sameY && veryClose) {
+      allMilestones[i - 1] = { ...allMilestones[i - 1], anchor: 'end' }
+      allMilestones.push({ ...m, tier: newTier, anchor: 'start' })
+    } else {
+      allMilestones.push({ ...m, tier: newTier, anchor: 'middle' })
+    }
   }
 })
 
@@ -905,10 +914,10 @@ allMilestonesRaw.forEach((m, i) => {
       {/* Connector from dot up to chart top */}
       <line x1={mx} y1={dotY + 3} x2={mx} y2={PT} stroke={m.color} strokeWidth="0.5" opacity="0.2" />
       <circle cx={mx} cy={dotY} r="2.5" fill={m.color} opacity="0.6" />
-      <text x={mx} y={labelY} fontSize="8.5" fill={m.color} textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="500">
+      <text x={mx} y={labelY} fontSize="8.5" fill={m.color} textAnchor={m.anchor as any} fontFamily="Inter, sans-serif" fontWeight="500">
         {m.label}
       </text>
-      <text x={mx} y={ageY} fontSize="7.5" fill="#9A9896" textAnchor="middle" fontFamily="Inter, sans-serif">
+      <text x={mx} y={ageY} fontSize="7.5" fill="#9A9896" textAnchor={m.anchor as any} fontFamily="Inter, sans-serif">
         age {m.age}
       </text>
     </g>
