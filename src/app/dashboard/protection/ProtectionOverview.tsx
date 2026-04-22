@@ -289,8 +289,21 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
         : ff.spouse?.lifeExpectancy
     ) || 85
     const ciWindow = Number(ff.protection?.ciYears) || 5
-   // Use total annual expenses (same as rest of chart — p1AnnExp/p2AnnExp)
-    const effectiveExp = person === 'client' ? p1AnnExp : p2AnnExp
+   // Retirement-era expenses = total expenses minus children's costs
+    // s_children / d2_children drop out after kids are independent
+    const p1RetirementExp =
+      (Number(ff.s_financial)||0) +
+      (Number(ff.s_household)||0) +
+      (Number(ff.s_personal)||0) +
+      (Number(ff.s_lifestyle)||0)
+    const p2RetirementExp =
+      (Number(ff.s2_financial)||0) +
+      (Number(ff.s2_household)||0) +
+      (Number(ff.s2_personal)||0) +
+      (Number(ff.s2_lifestyle)||0)
+    const effectiveExp = person === 'client'
+      ? (p1RetirementExp > 0 ? p1RetirementExp : p1AnnExp)
+      : (p2RetirementExp > 0 ? p2RetirementExp : p2AnnExp)
     // Window = last ciWindow years of life: from (lifeExp - ciWindow) to (lifeExp - 1)
     // Sum of annual expenses inflated to each of those years
     const windowStart = lifeExp - ciWindow  // age at start of window
