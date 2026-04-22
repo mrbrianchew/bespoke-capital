@@ -289,18 +289,16 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
         : ff.spouse?.lifeExpectancy
     ) || 85
     const ciWindow = Number(ff.protection?.ciYears) || 5
-   // Retirement-era expenses = total expenses minus children's costs
-    // s_children / d2_children drop out after kids are independent
-    const p1RetirementExp =
-      (Number(ff.s_financial)||0) +
-      (Number(ff.s_household)||0) +
-      (Number(ff.s_personal)||0) +
-      (Number(ff.s_lifestyle)||0)
-    const p2RetirementExp =
-      (Number(ff.s2_financial)||0) +
-      (Number(ff.s2_household)||0) +
-      (Number(ff.s2_personal)||0) +
-      (Number(ff.s2_lifestyle)||0)
+  // Floor expenses = Household & Living + Personal only
+    // (Financial obligations, children, lifestyle excluded — bare minimum during CI in retirement)
+    const p1RetirementExp = ff.expense_mode === 'detailed'
+      ? (Number(ff.d_conservancy)||0)+(Number(ff.d_utilities)||0)+(Number(ff.d_family_food)||0)+(Number(ff.d_maid)||0)+(Number(ff.d_other_household)||0)
+        +(Number(ff.d_personal_food)||0)+(Number(ff.d_transport)||0)+(Number(ff.d_car_petrol)||0)+(Number(ff.d_car_insurance)||0)
+      : (Number(ff.s_household)||0)+(Number(ff.s_personal)||0)
+    const p2RetirementExp = ff.expense_mode === 'detailed'
+      ? (Number(ff.d2_conservancy)||0)+(Number(ff.d2_utilities)||0)+(Number(ff.d2_family_food)||0)+(Number(ff.d2_maid)||0)+(Number(ff.d2_other_household)||0)
+        +(Number(ff.d2_personal_food)||0)+(Number(ff.d2_transport)||0)+(Number(ff.d2_car_petrol)||0)+(Number(ff.d2_car_insurance)||0)
+      : (Number(ff.s2_household)||0)+(Number(ff.s2_personal)||0)
     const effectiveExp = person === 'client'
       ? (p1RetirementExp > 0 ? p1RetirementExp : p1AnnExp)
       : (p2RetirementExp > 0 ? p2RetirementExp : p2AnnExp)
@@ -318,8 +316,8 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 
   const p1LifeExp = Number(ff.client?.lifeExpectancy) || 85
   const p2LifeExp = Number(ff.spouse?.lifeExpectancy) || 85
-  const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.s_financial, ff.s_household, ff.s_personal, ff.s_lifestyle])
-  const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.s2_financial, ff.s2_household, ff.s2_personal, ff.s2_lifestyle])
+  const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household, ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance, ff.s_household, ff.s_personal])
+  const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d2_conservancy, ff.d2_utilities, ff.d2_family_food, ff.d2_maid, ff.d2_other_household, ff.d2_personal_food, ff.d2_transport, ff.d2_car_petrol, ff.d2_car_insurance, ff.s2_household, ff.s2_personal])
 
   // ── CPF and liquid assets ───────────────────────────────────────────────────
   const p1CPF = (Number(ff.a_cpf_oa) || 0) + (Number(ff.a_cpf_sa) || 0) + (Number(ff.a_cpf_ma) || 0)
