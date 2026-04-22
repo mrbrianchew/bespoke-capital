@@ -413,14 +413,13 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const liqAssets = person === 'client' ? p1Liq : p2Liq
   const floor = person === 'client' ? clientFloor : spouseFloor
 
-  // Income window component (60-month window from today, declines as children independent)
+  const ciWindow = Number(ff.protection?.ciYears) || 5
   const yLeft = Math.max(0, (currentAge + coverTerm) - age)
-  const incomeWindow = Math.max(0, monthlyInc * 60 - liqAssets)
+  // Family dependency — CI uses a rolling ciWindow-year annuity of expenses (same as Strategic Objectives)
+  const fdYears = Math.min(ciWindow, yLeft)
+  const ageFD = fvAnnuity(annExp, inflation, fdYears)
 
-  // Family dependency — step down annExp as each child enters uni
-  const ageFD = fvAnnuity(annExp, inflation, yLeft)
-
-    const incomeComponent = incomeWindow
+    const incomeComponent = ageFD
 
     // Mortgage component (gradual slope)
     const mortComponent = mortBalanceAtAge(age, currentAge, props)
