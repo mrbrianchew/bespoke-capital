@@ -9,11 +9,7 @@ import { createClient } from '@/lib/supabase'
 function getAge(dob?: string): number {
   if (!dob) return 0
   const birth = new Date(dob)
-  const today = new Date()
-  let age = today.getFullYear() - birth.getFullYear()
-  if (today.getMonth() < birth.getMonth() ||
-    (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) age--
-  return Math.max(0, age)
+  return Math.max(0, new Date().getFullYear() - birth.getFullYear())
 }
 
 function fmt(n: number): string {
