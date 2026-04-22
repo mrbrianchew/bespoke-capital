@@ -793,14 +793,12 @@ allMilestonesRaw.forEach((m, i) => {
     const prev = allMilestonesRaw[i - 1]
     const prevTier = allMilestones[i - 1].tier
     const gap = m.age - prev.age
-    const newTier = gap < MIN_GAP ? (prevTier + 1) % 3 : 0
-    // If same tier and very close (<=3 years), nudge anchors left/right
-    const sameY = newTier === prevTier
-    const veryClose = gap <= 3
-    if (sameY && veryClose) {
-      allMilestones[i - 1] = { ...allMilestones[i - 1], anchor: 'end' }
-      allMilestones.push({ ...m, tier: newTier, anchor: 'start' })
+    if (gap <= 3) {
+      // Very close: pin both to same tier, push labels apart horizontally
+      allMilestones[i - 1] = { ...allMilestones[i - 1], tier: 0, anchor: 'end' }
+      allMilestones.push({ ...m, tier: 0, anchor: 'start' })
     } else {
+      const newTier = gap < MIN_GAP ? (prevTier + 1) % 3 : 0
       allMilestones.push({ ...m, tier: newTier, anchor: 'middle' })
     }
   }
