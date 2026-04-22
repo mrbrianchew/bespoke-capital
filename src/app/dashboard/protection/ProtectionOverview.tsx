@@ -471,7 +471,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       age,
       dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
       dtpdHave,
-      ciNeed: Math.max(personFloor, rawCI * ciScale),
+      ciNeed: rawCI <= personFloor ? personFloor : Math.max(personFloor, rawCI * ciScale),
       ciHave,
     })
   }
