@@ -1000,7 +1000,7 @@ const projectedLine = ages.map(a => {
       chartInstance.current = new Chart(canvasCtx, {
         type: 'line',
         plugins: [retireLinePlugin],
-                data: (() => {
+                        data: (() => {
           const baseDatasets = [
             {
               label: 'Retirement Fund Target',
@@ -1047,19 +1047,6 @@ const projectedLine = ages.map(a => {
             datasets: baseDatasets,
           };
         })(),
-            ...(legacyLine ? [{
-              label: 'Legacy Floor',
-              data: legacyLine,
-              borderColor: 'rgba(196,164,100,0.5)',
-              borderDash: [6, 4],
-              borderWidth: 1.5,
-              pointRadius: 0,
-              fill: false,
-              tension: 0,
-              spanGaps: false,
-            }] : []),
-          ],
-        },
         options: {
           responsive: true, maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
