@@ -839,67 +839,132 @@ export default function CapitalMandatePage() {
       }, 0)
     })
 
-    // Projected portfolio
-    const projectedLine = ages.map(a => {
-      const yearsFromNow = a - clientAge
+    // Calculate corpus at retirement ONCE (used for both lines)
+const corpusAtRetirement = filteredPortfolio.reduce((sum, p) => {
+  if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
+  const pRet = (p.expectedReturn || settings.expectedReturn) / 100
+  const ytr = retirementAge - clientAge
+  const fv = (p.currentValue || 0) * Math.pow(1 + pRet, ytr)
+  let rsv = 0
+  const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0) 
+    : p.vehicleType === 'annuity' ? p.monthlyContribution 
+    : p.monthlyContribution
+  if (monthly > 0 && ytr > 0) {
+    const rm = pRet / 12
+    const nm = ytr * 12
+    rsv = rm > 0 ? monthly * (Math.pow(1 + rm, nm) - 1) / rm : monthly * nm
+  }
+  // Add endowment maturity value at maturity year
+  let maturityBonus = 0
+  if (p.vehicleType === 'endowment' && p.endowmentMaturityValue && p.endowmentMaturityYear) {
+    const yearsToMaturity = p.endowmentMaturityYear - (new Date().getFullYear() + clientAge - clientAge) // simplified
+    if (yearsToMaturity > 0 && yearsToMaturity <= ytr) {
+      maturityBonus = p.endowmentMaturityValue * Math.pow(1 + pRet, ytr - yearsToMaturity)
+    }
+  }
+  return sum + fv + rsv + maturityBonus
+}, 0)
 
-      if (a <= retirementAge) {
-        return filteredPortfolio.reduce((sum, p) => {
-          if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
-          const pRet = (p.expectedReturn || settings.expectedReturn) / 100
-          const fv = (p.currentValue || 0) * Math.pow(1 + pRet, yearsFromNow)
-          let rsv = 0
-          const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
-            : p.vehicleType === 'annuity' ? p.monthlyContribution
-            : p.monthlyContribution
-          if (monthly > 0 && yearsFromNow > 0) {
-            const rm = pRet / 12
-            const nm = yearsFromNow * 12
-            rsv = rm > 0 ? monthly * (Math.pow(1 + rm, nm) - 1) / rm : monthly * nm
-          }
-          return sum + fv + rsv
-        }, 0)
-      } else {
-        const yearsIntoRetirement = a - retirementAge
-        const corpusAtRetirement = filteredPortfolio.reduce((sum, p) => {
-          if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
-          const pRet = (p.expectedReturn || settings.expectedReturn) / 100
-          const ytr = retirementAge - clientAge
-          const fv = (p.currentValue || 0) * Math.pow(1 + pRet, ytr)
-          let rsv = 0
-          const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0) : p.monthlyContribution
-          if (monthly > 0 && ytr > 0) {
-            const rm = pRet / 12
-            const nm = ytr * 12
-            rsv = rm > 0 ? monthly * (Math.pow(1 + rm, nm) - 1) / rm : monthly * nm
-          }
-          return sum + fv + rsv
-        }, 0)
+// Target corpus line (accumulation only) AND Retirement Fund Target
+const retirementGoal = filteredGoals.find(g => g.source === 'retirement')
+const retirementTargetCorpus = retirementGoal?.targetCorpus || 0
 
-        const cpfAnnuityMonthly = filteredPortfolio.reduce((sum, p) => {
-          if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
-          if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
-          if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
-          return sum
-        }, 0)
+// Retirement fund projection (starts at retirement age, depletes with inflation)
+const retirementFundLine = ages.map(a => {
+  if (a < retirementAge) return null
+  
+  const yearsIntoRetirement = a - retirementAge
+  const inflationRate = settings.inflation / 100
+  const postRetReturn = postRetirementReturn / 100
+  
+  // Calculate total CPF/Annuity/Rental income for this age
+  const guaranteedMonthlyIncome = filteredPortfolio.reduce((sum, p) => {
+    if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
+    if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
+    if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
+    return sum
+  }, 0)
+  
+  // Start with target corpus (or actual portfolio if smaller)
+  let fundValue = retirementTargetCorpus
+  
+  // Simulate year by year depletion with inflation
+  for (let y = 0; y < yearsIntoRetirement; y++) {
+    const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
+    const netMonthlyNeed = Math.max(0, inflatedMonthlyNeed - guaranteedMonthlyIncome)
+    const annualWithdrawal = netMonthlyNeed * 12
+    
+    if (settings.drawdownMode === 'cash') {
+      fundValue = fundValue - annualWithdrawal
+    } else {
+      fundValue = fundValue * (1 + postRetReturn) - annualWithdrawal
+    }
+    
+    if (fundValue <= 0) {
+      fundValue = 0
+      break
+    }
+  }
+  
+  return fundValue
+})
 
-        const netAnnualDrawdown = Math.max(0, (effectiveRetirementIncome - cpfAnnuityMonthly) * 12)
-        const legacy = settings.legacyAmount || 0
-
-        if (settings.drawdownMode === 'cash') {
-          const val = corpusAtRetirement - (netAnnualDrawdown * yearsIntoRetirement)
-          return Math.max(legacy, val)
-        } else {
-          const r = postRetirementReturn / 100
-          let val = corpusAtRetirement
-          for (let y = 0; y < yearsIntoRetirement; y++) {
-            val = val * (1 + r) - netAnnualDrawdown
-            if (val <= legacy) { val = legacy; break }
-          }
-          return Math.max(legacy, val)
-        }
+// Existing Portfolio projection (accumulation then depletion)
+const projectedLine = ages.map(a => {
+  if (a <= retirementAge) {
+    // Accumulation phase
+    const yearsFromNow = a - clientAge
+    return filteredPortfolio.reduce((sum, p) => {
+      if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
+      const pRet = (p.expectedReturn || settings.expectedReturn) / 100
+      const fv = (p.currentValue || 0) * Math.pow(1 + pRet, yearsFromNow)
+      let rsv = 0
+      const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
+        : p.vehicleType === 'annuity' ? p.monthlyContribution
+        : p.monthlyContribution
+      if (monthly > 0 && yearsFromNow > 0) {
+        const rm = pRet / 12
+        const nm = yearsFromNow * 12
+        rsv = rm > 0 ? monthly * (Math.pow(1 + rm, nm) - 1) / rm : monthly * nm
       }
-    })
+      return sum + fv + rsv
+    }, 0)
+  } else {
+    // Decumulation phase - start with actual corpus at retirement
+    const yearsIntoRetirement = a - retirementAge
+    const inflationRate = settings.inflation / 100
+    const postRetReturn = postRetirementReturn / 100
+    
+    // Calculate guaranteed income
+    const guaranteedMonthlyIncome = filteredPortfolio.reduce((sum, p) => {
+      if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
+      if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
+      if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
+      return sum
+    }, 0)
+    
+    let fundValue = corpusAtRetirement
+    
+    for (let y = 0; y < yearsIntoRetirement; y++) {
+      const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
+      const netMonthlyNeed = Math.max(0, inflatedMonthlyNeed - guaranteedMonthlyIncome)
+      const annualWithdrawal = netMonthlyNeed * 12
+      
+      if (settings.drawdownMode === 'cash') {
+        fundValue = fundValue - annualWithdrawal
+      } else {
+        fundValue = fundValue * (1 + postRetReturn) - annualWithdrawal
+      }
+      
+      if (fundValue <= 0) {
+        fundValue = 0
+        break
+      }
+    }
+    
+    return fundValue
+  }
+})
 
     const legacyLine = settings.legacyAmount > 0 ? ages.map(a => a >= retirementAge ? settings.legacyAmount : null) : null
     const retireIdx = ages.indexOf(retirementAge)
@@ -938,21 +1003,42 @@ export default function CapitalMandatePage() {
         data: {
           labels: ages.map(a => 'Age ' + a),
           datasets: [
-            {
-              label: 'Capital Required',
-              data: targetLine,
-              borderColor: '#A8834A',
-              backgroundColor: 'rgba(168,131,74,0.08)',
-              borderWidth: 2, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, fill: true,
-              spanGaps: false,
-            },
-            {
-              label: settings.drawdownMode === 'invested' ? 'Portfolio (Invested)' : 'Portfolio (Cash)',
-              data: projectedLine,
-              borderColor: '#4A9E8A',
-              backgroundColor: 'rgba(74,158,138,0.05)',
-              borderWidth: 2.5, tension: 0.35, pointRadius: 0, pointHoverRadius: 5, fill: false,
-            },
+  {
+    label: 'Retirement Fund Target',
+    data: retirementFundLine,
+    borderColor: '#A8834A',
+    backgroundColor: 'rgba(168,131,74,0.08)',
+    borderWidth: 2, 
+    borderDash: [8, 4],
+    tension: 0.35, 
+    pointRadius: 0, 
+    pointHoverRadius: 4, 
+    fill: false,
+    spanGaps: false,
+  },
+  {
+    label: settings.drawdownMode === 'invested' ? 'Your Portfolio (Invested)' : 'Your Portfolio (Cash)',
+    data: projectedLine,
+    borderColor: '#4A9E8A',
+    backgroundColor: 'rgba(74,158,138,0.05)',
+    borderWidth: 2.5, 
+    tension: 0.35, 
+    pointRadius: 0, 
+    pointHoverRadius: 5, 
+    fill: false,
+  },
+  ...(legacyLine ? [{
+    label: 'Legacy Floor',
+    data: legacyLine,
+    borderColor: 'rgba(196,164,100,0.5)',
+    borderDash: [6, 4],
+    borderWidth: 1.5, 
+    pointRadius: 0, 
+    fill: false, 
+    tension: 0, 
+    spanGaps: false,
+  }] : []),
+],
             ...(legacyLine ? [{
               label: 'Legacy Floor',
               data: legacyLine,
