@@ -607,7 +607,12 @@ export default function CapitalMandatePage() {
     const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]
     setClient(c); clientRef.current = c
 
-    const { data: rows } = await supabase.from('fact_finding').select('section, data').eq('client_id', c.id)
+    const [{ data: rows }, { data: familyMembers }] = await Promise.all([
+      supabase.from('fact_finding').select('section, data').eq('client_id', c.id),
+      supabase.from('family_members').select('*').eq('client_id', c.id),
+    ])
+    const liveChildren = (familyMembers || []).filter((m: any) => ['son', 'daughter'].includes(m.relationship?.toLowerCase()))
+    const liveChildIds = new Set(liveChildren.map((m: any) => m.id))
     const by: Record<string, any> = {}
     if (rows) rows.forEach((r: any) => { by[r.section] = r.data })
 
@@ -669,11 +674,13 @@ export default function CapitalMandatePage() {
       builtGoals.push({ id: 'acc_' + g.id, source: 'wealth', label: g.label || 'Wealth Goal', icon: '🏠', targetCorpus: corpus, monthlyRequired: g.monthlyRequired ?? calcMonthlyRequired(corpus, yearsLeft, savedSettings.expectedReturn), targetAge: age + yearsLeft, owner })
     })
 
-    // Education — guard: must have tuition OR living costs AND a name
+    // Education — cross-referenced against live family_members to avoid ghost children
     const edu = by['education']?.edu || by['education'] || {}
     const eduTuitionInf = (edu?.tuitionInflation ?? 5) / 100
     const eduLivingInf = (edu?.livingInflation ?? 3) / 100
     ;(edu?.children || []).forEach((child: any) => {
+      const childId = child.childId || child.id
+      if (childId && !liveChildIds.has(childId)) return   // deleted from family_members
       if ((!child.annualTuition && !child.annualLiving) || !child.name) return
       if ((child.annualTuition || 0) + (child.annualLiving || 0) === 0) return
       const yearsUntilUni = Math.max(1, (child.uniEntryAge || 18) - (child.age || 0))
@@ -889,6 +896,8 @@ export default function CapitalMandatePage() {
     const ctx = chartRef.current.getContext('2d')!
 
     // Custom plugin: draw retirement age vertical line
+    // Custom plugin: draw retirement age vertical line
+    const retireIdx = ages.indexOf(retirementAge)
     const retireLinePlugin = {
       id: 'retireLine',
       afterDraw(chart: any) {
@@ -914,7 +923,6 @@ export default function CapitalMandatePage() {
     }
 
     // Shade zones
-    const retireIdx = ages.indexOf(retirementAge)
 
     chartInstance.current = new Chart(ctx, {
       type: 'line',
