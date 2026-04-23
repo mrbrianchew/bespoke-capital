@@ -1000,45 +1000,53 @@ const projectedLine = ages.map(a => {
       chartInstance.current = new Chart(canvasCtx, {
         type: 'line',
         plugins: [retireLinePlugin],
-        data: {
-          labels: ages.map(a => 'Age ' + a),
-          datasets: [
-  {
-    label: 'Retirement Fund Target',
-    data: retirementFundLine,
-    borderColor: '#A8834A',
-    backgroundColor: 'rgba(168,131,74,0.08)',
-    borderWidth: 2, 
-    borderDash: [8, 4],
-    tension: 0.35, 
-    pointRadius: 0, 
-    pointHoverRadius: 4, 
-    fill: false,
-    spanGaps: false,
-  },
-  {
-    label: settings.drawdownMode === 'invested' ? 'Your Portfolio (Invested)' : 'Your Portfolio (Cash)',
-    data: projectedLine,
-    borderColor: '#4A9E8A',
-    backgroundColor: 'rgba(74,158,138,0.05)',
-    borderWidth: 2.5, 
-    tension: 0.35, 
-    pointRadius: 0, 
-    pointHoverRadius: 5, 
-    fill: false,
-  },
-  ...(legacyLine ? [{
-    label: 'Legacy Floor',
-    data: legacyLine,
-    borderColor: 'rgba(196,164,100,0.5)',
-    borderDash: [6, 4],
-    borderWidth: 1.5, 
-    pointRadius: 0, 
-    fill: false, 
-    tension: 0, 
-    spanGaps: false,
-  }] : []),
-],
+                data: (() => {
+          const baseDatasets = [
+            {
+              label: 'Retirement Fund Target',
+              data: retirementFundLine,
+              borderColor: '#A8834A',
+              backgroundColor: 'rgba(168,131,74,0.08)',
+              borderWidth: 2,
+              borderDash: [8, 4],
+              tension: 0.35,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              fill: false,
+              spanGaps: false,
+            },
+            {
+              label: settings.drawdownMode === 'invested' ? 'Your Portfolio (Invested)' : 'Your Portfolio (Cash)',
+              data: projectedLine,
+              borderColor: '#4A9E8A',
+              backgroundColor: 'rgba(74,158,138,0.05)',
+              borderWidth: 2.5,
+              tension: 0.35,
+              pointRadius: 0,
+              pointHoverRadius: 5,
+              fill: false,
+            },
+          ];
+          
+          if (legacyLine) {
+            baseDatasets.push({
+              label: 'Legacy Floor',
+              data: legacyLine,
+              borderColor: 'rgba(196,164,100,0.5)',
+              borderDash: [6, 4],
+              borderWidth: 1.5,
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              spanGaps: false,
+            });
+          }
+          
+          return {
+            labels: ages.map(a => 'Age ' + a),
+            datasets: baseDatasets,
+          };
+        })(),
             ...(legacyLine ? [{
               label: 'Legacy Floor',
               data: legacyLine,
