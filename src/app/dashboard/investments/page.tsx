@@ -888,11 +888,37 @@ export default function CapitalMandatePage() {
 
     const ctx = chartRef.current.getContext('2d')!
 
+    // Custom plugin: draw retirement age vertical line
+    const retireLinePlugin = {
+      id: 'retireLine',
+      afterDraw(chart: any) {
+        if (retireIdx < 0) return
+        const x = chart.scales.x.getPixelForIndex(retireIdx)
+        const top = chart.scales.y.top
+        const bottom = chart.scales.y.bottom
+        const c = chart.ctx
+        c.save()
+        c.beginPath()
+        c.setLineDash([5, 5])
+        c.moveTo(x, top)
+        c.lineTo(x, bottom)
+        c.strokeStyle = 'rgba(168,131,74,0.5)'
+        c.lineWidth = 1.5
+        c.stroke()
+        c.setLineDash([])
+        c.fillStyle = 'rgba(168,131,74,0.75)'
+        c.font = '10px Inter, sans-serif'
+        c.fillText('Retirement ' + retirementAge, x + 6, top + 14)
+        c.restore()
+      }
+    }
+
     // Shade zones
     const retireIdx = ages.indexOf(retirementAge)
 
     chartInstance.current = new Chart(ctx, {
       type: 'line',
+      plugins: [retireLinePlugin],
       data: {
         labels: ages.map(a => 'Age ' + a),
         datasets: [
@@ -929,17 +955,7 @@ export default function CapitalMandatePage() {
             backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.7)', padding: 12,
             callbacks: { label: (ctx: any) => ctx.parsed.y === null ? '' : ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y) }
           },
-          annotation: retireIdx >= 0 ? {
-            annotations: {
-              retireLine: {
-                type: 'line' as const,
-                xMin: retireIdx, xMax: retireIdx,
-                borderColor: 'rgba(168,131,74,0.4)',
-                borderDash: [5, 5], borderWidth: 1.5,
-                label: { content: 'Retirement Age ' + retirementAge, display: true, position: 'start', font: { size: 10 }, color: 'rgba(168,131,74,0.8)', backgroundColor: 'transparent' }
-              }
-            }
-          } : undefined,
+          
         },
         scales: {
           x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
