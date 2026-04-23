@@ -1028,14 +1028,16 @@ const projectedLine = ages.map(a => {
             },
           ];
           
-          if (legacyLine) {
+         if (legacyLine) {
             baseDatasets.push({
               label: 'Legacy Floor',
               data: legacyLine,
               borderColor: 'rgba(196,164,100,0.5)',
+              backgroundColor: 'rgba(196,164,100,0.03)',
               borderDash: [6, 4],
               borderWidth: 1.5,
               pointRadius: 0,
+              pointHoverRadius: 4,
               fill: false,
               tension: 0,
               spanGaps: false,
