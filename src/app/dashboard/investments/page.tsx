@@ -806,6 +806,9 @@ export default function CapitalMandatePage() {
   // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (loading || !chartRef.current) return
+    // Destroy any orphaned Chart.js instance (handles React StrictMode double-invoke)
+    const existing = Chart.getChart(chartRef.current)
+    if (existing) { existing.destroy() }
     if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null }
 
     const lifeEnd = Math.max(lifeExpectancy, clientAge + 35, 85)
@@ -895,10 +898,11 @@ export default function CapitalMandatePage() {
 
     const ctx = chartRef.current.getContext('2d')!
 
-    // Custom plugin: draw retirement age vertical line
-    // Custom plugin: draw retirement age vertical line
-    const retireIdx = ages.indexOf(retirementAge)
-    const retireLinePlugin = {
+   // Shade zones
+
+    // Register retire line plugin (unregister first to avoid duplicate on re-render)
+    Chart.unregister({ id: 'retireLine' } as any)
+    Chart.register({
       id: 'retireLine',
       afterDraw(chart: any) {
         if (retireIdx < 0) return
@@ -920,13 +924,11 @@ export default function CapitalMandatePage() {
         c.fillText('Retirement ' + retirementAge, x + 6, top + 14)
         c.restore()
       }
-    }
-
-    // Shade zones
+    } as any)
 
     chartInstance.current = new Chart(ctx, {
       type: 'line',
-      plugins: [retireLinePlugin],
+      plugins: [],
       data: {
         labels: ages.map(a => 'Age ' + a),
         datasets: [
