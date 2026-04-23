@@ -805,17 +805,31 @@ export default function CapitalMandatePage() {
 
   // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (loading || !chartRef.current) return
-    // Destroy any orphaned Chart.js instance (handles React StrictMode double-invoke)
-    const existing = Chart.getChart(chartRef.current)
-    if (existing) { existing.destroy() }
-    if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null }
+  // Wait for everything to be ready
+  if (loading) return
+  if (!chartRef.current) return
+  
+  const canvas = chartRef.current
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // Clean up old chart
+  if (chartInstance.current) {
+    chartInstance.current.destroy()
+    chartInstance.current = null
+  }
+
+  // Small delay to let DOM settle after any modal/state changes
+  const timer = setTimeout(() => {
+    // Check again that canvas is still valid
+    if (!chartRef.current) return
+    const canvasCtx = chartRef.current.getContext('2d')
+    if (!canvasCtx) return
 
     const lifeEnd = Math.max(lifeExpectancy, clientAge + 35, 85)
     const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
-    const nowYear = new Date().getFullYear()
 
-    // Target corpus line (accumulation phase only — PV of all goals)
+    // Target corpus line
     const targetLine = ages.map(a => {
       if (a > retirementAge) return null
       return filteredGoals.reduce((sum, g) => {
@@ -825,12 +839,11 @@ export default function CapitalMandatePage() {
       }, 0)
     })
 
-    // Projected portfolio — accumulation then drawdown
+    // Projected portfolio
     const projectedLine = ages.map(a => {
       const yearsFromNow = a - clientAge
 
       if (a <= retirementAge) {
-        // Accumulation: sum investment vehicles
         return filteredPortfolio.reduce((sum, p) => {
           if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
           const pRet = (p.expectedReturn || settings.expectedReturn) / 100
@@ -847,9 +860,7 @@ export default function CapitalMandatePage() {
           return sum + fv + rsv
         }, 0)
       } else {
-        // Post-retirement drawdown
         const yearsIntoRetirement = a - retirementAge
-        // Corpus at retirement
         const corpusAtRetirement = filteredPortfolio.reduce((sum, p) => {
           if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
           const pRet = (p.expectedReturn || settings.expectedReturn) / 100
@@ -865,7 +876,6 @@ export default function CapitalMandatePage() {
           return sum + fv + rsv
         }, 0)
 
-        // CPF + annuity offsets during retirement
         const cpfAnnuityMonthly = filteredPortfolio.reduce((sum, p) => {
           if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
           if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
@@ -877,11 +887,9 @@ export default function CapitalMandatePage() {
         const legacy = settings.legacyAmount || 0
 
         if (settings.drawdownMode === 'cash') {
-          // Linear drawdown
           const val = corpusAtRetirement - (netAnnualDrawdown * yearsIntoRetirement)
           return Math.max(legacy, val)
         } else {
-          // Remain invested — compound at post-retirement rate minus withdrawals
           const r = postRetirementReturn / 100
           let val = corpusAtRetirement
           for (let y = 0; y < yearsIntoRetirement; y++) {
@@ -893,22 +901,19 @@ export default function CapitalMandatePage() {
       }
     })
 
-    // Legacy floor line
     const legacyLine = settings.legacyAmount > 0 ? ages.map(a => a >= retirementAge ? settings.legacyAmount : null) : null
+    const retireIdx = ages.indexOf(retirementAge)
 
-    const ctx = chartRef.current.getContext('2d')!
-
-   // Shade zones
-
-    // Register retire line plugin (unregister first to avoid duplicate on re-render)
-    Chart.unregister({ id: 'retireLine' } as any)
-    Chart.register({
+    const retireLinePlugin = {
       id: 'retireLine',
       afterDraw(chart: any) {
         if (retireIdx < 0) return
-        const x = chart.scales.x.getPixelForIndex(retireIdx)
-        const top = chart.scales.y.top
-        const bottom = chart.scales.y.bottom
+        const xAxis = chart.scales.x
+        const yAxis = chart.scales.y
+        if (!xAxis || !yAxis) return
+        const x = xAxis.getPixelForValue(ages[retireIdx])
+        const top = yAxis.top
+        const bottom = yAxis.bottom
         const c = chart.ctx
         c.save()
         c.beginPath()
@@ -924,57 +929,68 @@ export default function CapitalMandatePage() {
         c.fillText('Retirement ' + retirementAge, x + 6, top + 14)
         c.restore()
       }
-    } as any)
+    }
 
-    chartInstance.current = new Chart(ctx, {
-      type: 'line',
-      plugins: [],
-      data: {
-        labels: ages.map(a => 'Age ' + a),
-        datasets: [
-          {
-            label: 'Capital Required',
-            data: targetLine,
-            borderColor: '#A8834A',
-            backgroundColor: 'rgba(168,131,74,0.08)',
-            borderWidth: 2, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, fill: true,
-            spanGaps: false,
-          },
-          {
-            label: settings.drawdownMode === 'invested' ? 'Portfolio (Invested)' : 'Portfolio (Cash)',
-            data: projectedLine,
-            borderColor: '#4A9E8A',
-            backgroundColor: 'rgba(74,158,138,0.05)',
-            borderWidth: 2.5, tension: 0.35, pointRadius: 0, pointHoverRadius: 5, fill: false,
-          },
-          ...(legacyLine ? [{
-            label: 'Legacy Floor',
-            data: legacyLine,
-            borderColor: 'rgba(196,164,100,0.5)',
-            borderDash: [6, 4],
-            borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, spanGaps: false,
-          }] : []),
-        ],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20, filter: (item: any) => item.text !== 'null' } },
-          tooltip: {
-            backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.7)', padding: 12,
-            callbacks: { label: (ctx: any) => ctx.parsed.y === null ? '' : ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y) }
-          },
-          
+    try {
+      chartInstance.current = new Chart(canvasCtx, {
+        type: 'line',
+        plugins: [retireLinePlugin],
+        data: {
+          labels: ages.map(a => 'Age ' + a),
+          datasets: [
+            {
+              label: 'Capital Required',
+              data: targetLine,
+              borderColor: '#A8834A',
+              backgroundColor: 'rgba(168,131,74,0.08)',
+              borderWidth: 2, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, fill: true,
+              spanGaps: false,
+            },
+            {
+              label: settings.drawdownMode === 'invested' ? 'Portfolio (Invested)' : 'Portfolio (Cash)',
+              data: projectedLine,
+              borderColor: '#4A9E8A',
+              backgroundColor: 'rgba(74,158,138,0.05)',
+              borderWidth: 2.5, tension: 0.35, pointRadius: 0, pointHoverRadius: 5, fill: false,
+            },
+            ...(legacyLine ? [{
+              label: 'Legacy Floor',
+              data: legacyLine,
+              borderColor: 'rgba(196,164,100,0.5)',
+              borderDash: [6, 4],
+              borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, spanGaps: false,
+            }] : []),
+          ],
         },
-        scales: {
-          x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
-          y: { ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } }, grid: { color: 'rgba(26,24,22,0.04)' }, min: 0 },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20, filter: (item: any) => item.text !== 'null' } },
+            tooltip: {
+              backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.7)', padding: 12,
+              callbacks: { label: (ctx: any) => ctx.parsed.y === null ? '' : ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y) }
+            },
+          },
+          scales: {
+            x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
+            y: { ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } }, grid: { color: 'rgba(26,24,22,0.04)' }, min: 0 },
+          },
         },
-      },
-    })
-    return () => { if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null } }
-  }, [loading, filteredGoals, filteredPortfolio, settings, clientAge, retirementAge, lifeExpectancy, effectiveRetirementIncome, postRetirementReturn])
+      })
+    } catch (error) {
+      console.error('Chart creation failed:', error)
+    }
+  }, 50) // 50ms delay
+
+  return () => {
+    clearTimeout(timer)
+    if (chartInstance.current) {
+      chartInstance.current.destroy()
+      chartInstance.current = null
+    }
+  }
+}, [loading, filteredGoals, filteredPortfolio, settings, clientAge, retirementAge, lifeExpectancy, effectiveRetirementIncome, postRetirementReturn, portfolio, goals])
 
   // ── XIRR per vehicle ──────────────────────────────────────────────────────
   const xirrMap = useMemo(() => {
@@ -1126,7 +1142,7 @@ export default function CapitalMandatePage() {
             )}
           </div>
           <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 300 }}>
-            <canvas ref={chartRef} />
+            <canvas key={`chart-${activePerson}-${filteredGoals.length}-${filteredPortfolio.length}`} ref={chartRef} />
           </div>
         </div>
 
