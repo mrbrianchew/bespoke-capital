@@ -652,14 +652,14 @@ export default function CapitalMandatePage() {
 
     // Retirement goal
     const totalCorpusNeeded = retRow?.corpusNeeded || 0
-    const totalMonthlyRet = retRow?.monthlySavingsRequired || retRow?.monthlySavingsNeeded || 0
+    const totalMonthlyRet = retRow?.monthlySavingsNeeded || retRow?.monthlySavingsRequired || 0
     const retAge = retClientData?.retirementAge || retRow?.retirementAge || 65
     if (totalCorpusNeeded > 0) {
       builtGoals.push({
         id: 'ret_combined', source: 'retirement',
         label: mode === 'couple' ? `${cName} & ${sName} — Retirement` : `${cName} — Retirement`,
         icon: '🏖', targetCorpus: totalCorpusNeeded,
-        monthlyRequired: totalMonthlyRet > 0 ? totalMonthlyRet : calcMonthlyRequired(totalCorpusNeeded, Math.max(1, retAge - age), savedSettings.expectedReturn),
+        monthlyRequired: totalMonthlyRet,
         targetAge: retAge, owner: mode === 'couple' ? 'joint' : 'client',
       })
     }
@@ -678,18 +678,24 @@ export default function CapitalMandatePage() {
     const edu = by['education']?.edu || by['education'] || {}
     const eduTuitionInf = (edu?.tuitionInflation ?? 5) / 100
     const eduLivingInf = (edu?.livingInflation ?? 3) / 100
+    const eduReturnRate = edu?.returnRate ?? 5
     ;(edu?.children || []).forEach((child: any) => {
       const childId = child.childId || child.id
       if (childId && !liveChildIds.has(childId)) return   // deleted from family_members
       if ((!child.annualTuition && !child.annualLiving) || !child.name) return
       if ((child.annualTuition || 0) + (child.annualLiving || 0) === 0) return
-      const yearsUntilUni = Math.max(1, (child.uniEntryAge || 18) - (child.age || 0))
+      // Use live age from family_members, not stale saved age
+      const liveChild = liveChildren.find((m: any) => m.id === childId)
+      const liveAge = liveChild?.age ?? liveChild?.date_of_birth
+        ? Math.max(0, new Date().getFullYear() - new Date(liveChild.date_of_birth).getFullYear())
+        : (child.age || 0)
+      const yearsUntilUni = Math.max(1, (child.uniEntryAge || 18) - liveAge)
       const duration = child.courseDuration || 4
       const fvTuition = (child.annualTuition || 0) * Math.pow(1 + eduTuitionInf, yearsUntilUni) * duration
       const fvLiving = (child.annualLiving || 0) * Math.pow(1 + eduLivingInf, yearsUntilUni) * duration
-      const corpus = Math.max(0, fvTuition + fvLiving - ((child.existingSavings || 0) * Math.pow(1 + savedSettings.expectedReturn / 100, yearsUntilUni)))
+      const corpus = Math.max(0, fvTuition + fvLiving - ((child.existingSavings || 0) * Math.pow(1 + eduReturnRate / 100, yearsUntilUni)))
       if (!corpus) return
-      builtGoals.push({ id: 'edu_' + (child.childId || child.name), source: 'education', label: `${child.name}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, yearsUntilUni), savedSettings.expectedReturn), targetAge: age + yearsUntilUni, owner: 'joint' })
+      builtGoals.push({ id: 'edu_' + (child.childId || child.name), source: 'education', label: `${child.name}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, yearsUntilUni), eduReturnRate), targetAge: age + yearsUntilUni, owner: 'joint' })
     })
 
     // Custom goals
