@@ -686,8 +686,12 @@ export default function CapitalMandatePage() {
       if ((child.annualTuition || 0) + (child.annualLiving || 0) === 0) return
       // Use live age from family_members, not stale saved age
       const liveChild = liveChildren.find((m: any) => m.id === childId)
-      const liveAge = liveChild?.age ?? liveChild?.date_of_birth
-        ? Math.max(0, new Date().getFullYear() - new Date(liveChild.date_of_birth).getFullYear())
+      const liveAge = liveChild
+        ? (liveChild.age != null
+            ? liveChild.age
+            : liveChild.date_of_birth
+              ? Math.max(0, new Date().getFullYear() - new Date(liveChild.date_of_birth).getFullYear())
+              : (child.age || 0))
         : (child.age || 0)
       const yearsUntilUni = Math.max(1, (child.uniEntryAge || 18) - liveAge)
       const duration = child.courseDuration || 4
