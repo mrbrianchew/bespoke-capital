@@ -89,7 +89,7 @@ function calcMonthlyRequired(corpus: number, yearsLeft: number, annualReturn: nu
   const r = annualReturn / 100
   const rm = r / 12
   const nm = yearsLeft * 12
-  return rm > 0 ? corpus * rm / (Math.pow(1 + rm, nm) - 1) : corpus / nm
+  return rm > 0 ? corpus * rm / ((Math.pow(1 + rm, nm) - 1) * (1 + rm)) : corpus / nm
 }
 
 // XIRR: Newton-Raphson solver
@@ -659,7 +659,7 @@ export default function CapitalMandatePage() {
         id: 'ret_combined', source: 'retirement',
         label: mode === 'couple' ? `${cName} & ${sName} — Retirement` : `${cName} — Retirement`,
         icon: '🏖', targetCorpus: totalCorpusNeeded,
-        monthlyRequired: totalMonthlyRet,
+        monthlyRequired: totalMonthlyRet > 0 ? totalMonthlyRet : calcMonthlyRequired(totalCorpusNeeded, Math.max(1, retAge - age), savedSettings.expectedReturn),
         targetAge: retAge, owner: mode === 'couple' ? 'joint' : 'client',
       })
     }
