@@ -867,6 +867,13 @@ export default function CapitalMandatePage() {
 
       const lifeEnd = Math.max(lifeExpectancy, clientAge + 35, 85)
       const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
+      console.log('CM Debug:', {
+        clientAge, retirementAge, lifeExpectancy, spouseLifeExpectancy,
+        effectiveRetirementIncome, desiredMonthlyIncome, currentExpenses,
+        incomeSource: settings.incomeSource, drawdownMode: settings.drawdownMode,
+        annualWithdrawalYear0: effectiveRetirementIncome * 12,
+        goals: filteredGoals.map(g => ({ label: g.label, source: g.source, targetAge: g.targetAge, targetCorpus: g.targetCorpus, monthlyRequired: g.monthlyRequired }))
+      })
       const preRetRate = settings.expectedReturn / 100
       const postRetRate = postRetirementReturn / 100
       const inflationRate = settings.inflation / 100
