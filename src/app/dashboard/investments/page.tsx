@@ -867,25 +867,23 @@ export default function CapitalMandatePage() {
       const inflationRate = settings.inflation / 100
 
       // ── REQUIRED INVESTMENTS LINE ───────────────────────────────────────
-      // Approach: For each goal, accumulate its monthly-required from now to its targetAge.
-      // At/after targetAge, the goal's contribution to the line stops growing AND
-      // its already-accumulated corpus (which equals its targetCorpus at that age)
-      // is "spent" — i.e. drops off the line for non-retirement goals.
-      // For retirement goal, instead of dropping at retirementAge, it depletes
-      // gradually using drawdown logic, netting CPF/Annuity/Rental income.
+      // Concept: At each age `a`, line value = capital needed at age `a` to fund
+      // ALL remaining future obligations from age `a` onwards.
+      //   - Accumulation phase: PV of each non-retirement goal's targetCorpus
+      //     (discounted at preRetRate) + PV of retirement need at retirementAge
+      //     (discounted back at preRetRate).
+      //   - Retirement phase: PV of remaining withdrawals from age `a` to
+      //     lifeExpectancy at postRetRate, net of guaranteed income, plus
+      //     legacy floor discounted back.
+      // This produces: smooth climb in accumulation, step-down when each
+      // non-retirement goal is paid, peak at retirementAge, smooth decline
+      // through retirement, landing at legacy (or zero) at lifeExpectancy.
 
-      // Pre-compute, for each goal:
-      // - accumulatedAt(age): value of monthly contributions from clientAge to min(age, targetAge),
-      //   compounded at preRetRate
       const goalsForLine = filteredGoals.slice()
-      // Identify retirement goal for special treatment
       const retGoal = goalsForLine.find(g => g.source === 'retirement') || null
-
-      function goalAccumAt(g: CapitalGoal, atAge: number): number {
-        const yrs = Math.min(atAge, g.targetAge) - clientAge
-        if (yrs <= 0) return 0
-        return fvAnnuityDue(g.monthlyRequired, preRetRate, yrs)
-      }
+      const nonRetGoals = goalsForLine.filter(g => g.source !== 'retirement')
+      const retYears = Math.max(0, lifeExpectancy - retirementAge)
+      const legacyAmt = settings.legacyAmount || 0
 
       // Total guaranteed monthly income at a given age (CPF / Annuity / Rental)
       function guaranteedMonthlyAt(age: number): number {
@@ -897,49 +895,77 @@ export default function CapitalMandatePage() {
         }, 0)
       }
 
-      // Required line: build year by year
+      // PV at retirementAge of all remaining retirement-phase obligations.
+      // Withdrawals are NET of guaranteed income at each future age.
+      // Year y after retirement corresponds to (retirementAge + y).
+      // effectiveRetirementIncome is the monthly need AT retirement age (already
+      // inflated from today to retirement by RetirementSection's own math).
+      function corpusNeededAtRetirement(): number {
+        let pv = 0
+        // Inflated withdrawals over retYears, discounted at postRetRate.
+        // If drawdownMode is 'cash', we model PV at 0% return (the corpus literally pays out without growth).
+        const discRate = settings.drawdownMode === 'invested' ? postRetRate : 0
+        for (let y = 0; y < retYears; y++) {
+          const ageY = retirementAge + y
+          const monthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
+          const netMonthly = Math.max(0, monthlyNeed - guaranteedMonthlyAt(ageY))
+          const annualNet = netMonthly * 12
+          pv += annualNet / Math.pow(1 + discRate, y)
+        }
+        // Add legacy floor (paid at end of life expectancy)
+        if (legacyAmt > 0 && retYears > 0) {
+          pv += legacyAmt / Math.pow(1 + discRate, retYears)
+        }
+        return pv
+      }
+
+      // PV at age `a` (where a >= retirementAge) of remaining retirement obligations
+      function pvRetirementAt(a: number): number {
+        if (a >= lifeExpectancy) return legacyAmt
+        const discRate = settings.drawdownMode === 'invested' ? postRetRate : 0
+        let pv = 0
+        const yearsIntoRet = a - retirementAge
+        for (let y = yearsIntoRet; y < retYears; y++) {
+          const ageY = retirementAge + y
+          const monthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
+          const netMonthly = Math.max(0, monthlyNeed - guaranteedMonthlyAt(ageY))
+          const annualNet = netMonthly * 12
+          const yearsFromA = y - yearsIntoRet
+          pv += annualNet / Math.pow(1 + discRate, yearsFromA)
+        }
+        if (legacyAmt > 0) {
+          pv += legacyAmt / Math.pow(1 + discRate, lifeExpectancy - a)
+        }
+        return pv
+      }
+
+      // Pre-compute the retirement corpus once
+      const corpusAtRet = retGoal ? corpusNeededAtRetirement() : 0
+
+      // Required line at age `a`
       const requiredLine: (number | null)[] = ages.map(a => {
-        // Accumulation: sum of all goal accumulations at age a, MINUS already-spent non-retirement goals
         let value = 0
-        goalsForLine.forEach(g => {
-          if (g === retGoal) {
-            // retirement handled separately for ages >= retirementAge
-            if (a <= retirementAge) {
-              value += goalAccumAt(g, a)
-            }
-          } else {
-            // Non-retirement: accumulates until targetAge, then drops to zero (spent)
-            if (a < g.targetAge) {
-              value += goalAccumAt(g, a)
-            }
-            // at or after targetAge: contribution to line = 0 (already spent)
+
+        // 1. Non-retirement goals: PV of each goal still in the future
+        nonRetGoals.forEach(g => {
+          if (g.targetAge > a) {
+            const yrs = g.targetAge - a
+            // Discount rate: preRet if still in accumulation, postRet if already retired
+            const r = a < retirementAge ? preRetRate : postRetRate
+            value += g.targetCorpus / Math.pow(1 + r, yrs)
           }
+          // If g.targetAge <= a, the goal has been paid and contributes 0
         })
 
-        // Retirement phase: at retirementAge, the retirement portion equals its targetCorpus.
-        // From retirementAge onwards, deplete it per drawdown logic.
-        if (a > retirementAge && retGoal) {
-          // Start from retGoal.targetCorpus at retirementAge
-          let fund = retGoal.targetCorpus + (settings.legacyAmount || 0)
-          // We want the legacy floor to remain — model as: deplete down to legacy floor
-          // Easier: deplete the non-legacy portion separately
-          let workingFund = retGoal.targetCorpus
-          for (let y = 0; y < (a - retirementAge); y++) {
-            const ageY = retirementAge + y
-            const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
-            const netMonthly = Math.max(0, inflatedMonthlyNeed - guaranteedMonthlyAt(ageY))
-            const annualWithdrawal = netMonthly * 12
-            if (settings.drawdownMode === 'cash') {
-              workingFund = workingFund - annualWithdrawal
-            } else {
-              workingFund = workingFund * (1 + postRetRate) - annualWithdrawal
-            }
-            if (workingFund <= 0) { workingFund = 0; break }
+        // 2. Retirement obligation
+        if (retGoal) {
+          if (a < retirementAge) {
+            // Discount the retirement corpus back to age `a` at preRetRate
+            value += corpusAtRet / Math.pow(1 + preRetRate, retirementAge - a)
+          } else {
+            // PV of remaining withdrawals at age `a`
+            value += pvRetirementAt(a)
           }
-          value += workingFund
-        } else if (a === retirementAge && retGoal) {
-          // exactly at retirement — show the full retirement corpus
-          value += retGoal.targetCorpus
         }
 
         return value
@@ -970,7 +996,7 @@ export default function CapitalMandatePage() {
           }, 0)
         } else {
           // Decumulation — same drawdown logic as Required line
-          const corpusAtRet = filteredPortfolio.reduce((sum, p) => {
+          const portfolioCorpusAtRet = filteredPortfolio.reduce((sum, p) => {
             if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
             const pRet = (p.expectedReturn || settings.expectedReturn) / 100
             const ytr = retirementAge - clientAge
@@ -990,7 +1016,7 @@ export default function CapitalMandatePage() {
             return sum + fv + rsv + maturityBonus
           }, 0)
 
-          let fundValue = corpusAtRet
+          let fundValue = portfolioCorpusAtRet
           for (let y = 0; y < (a - retirementAge); y++) {
             const ageY = retirementAge + y
             const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
