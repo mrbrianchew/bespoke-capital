@@ -92,6 +92,15 @@ function calcMonthlyRequired(corpus: number, yearsLeft: number, annualReturn: nu
   return rm > 0 ? corpus * rm / ((Math.pow(1 + rm, nm) - 1) * (1 + rm)) : corpus / nm
 }
 
+// FV of an annuity-due stream of monthly payments
+function fvAnnuityDue(monthly: number, annualRate: number, years: number): number {
+  if (monthly <= 0 || years <= 0) return 0
+  const rm = annualRate / 12
+  const nm = years * 12
+  if (rm === 0) return monthly * nm
+  return monthly * ((Math.pow(1 + rm, nm) - 1) / rm) * (1 + rm)
+}
+
 // XIRR: Newton-Raphson solver
 function xirr(cashflows: { amount: number; date: Date }[]): number | null {
   if (cashflows.length < 2) return null
@@ -122,14 +131,12 @@ function xirr(cashflows: { amount: number; date: Date }[]): number | null {
 function computeXIRR(vehicle: FundingVehicle): number | null {
   if (!vehicle.cashflows?.length && !vehicle.currentValue) return null
   const flows: { amount: number; date: Date }[] = []
-  // Historical cashflows (contributions negative, withdrawals positive)
   vehicle.cashflows?.forEach(cf => {
     const [yr, mo] = cf.date.split('-').map(Number)
     const d = new Date(yr, mo - 1, 1)
     const amt = cf.type === 'withdrawal' ? cf.amount : -cf.amount
     flows.push({ amount: amt, date: d })
   })
-  // If no cashflow history but we have contribution and start year, synthesise monthly contributions
   if (flows.length === 0 && vehicle.monthlyContribution > 0) {
     const start = new Date(vehicle.startYear, 0, 1)
     const now = new Date()
@@ -139,12 +146,10 @@ function computeXIRR(vehicle: FundingVehicle): number | null {
       d.setMonth(d.getMonth() + 1)
     }
   }
-  // Current value as terminal positive cashflow today
   if (vehicle.currentValue > 0) {
     flows.push({ amount: vehicle.currentValue, date: new Date() })
   }
   if (flows.length < 2) return null
-  // Sort by date
   flows.sort((a, b) => a.date.getTime() - b.date.getTime())
   return xirr(flows)
 }
@@ -188,7 +193,6 @@ function CashflowModal({ vehicle, onSave, onClose }: {
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 20 }}>✕</button>
         </div>
 
-        {/* Add new cashflow */}
         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', background: 'white' }}>
           <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>Add Event</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -202,7 +206,6 @@ function CashflowModal({ vehicle, onSave, onClose }: {
           </div>
         </div>
 
-        {/* Cashflow list */}
         <div style={{ overflow: 'auto', flex: 1, padding: '8px 24px' }}>
           {flows.length === 0 ? (
             <div style={{ padding: '32px 0', textAlign: 'center', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>No cashflow events recorded</div>
@@ -237,25 +240,20 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [name, setName] = useState(item?.name ?? '')
   const [vehicleType, setVehicleType] = useState<VehicleType>(item?.vehicleType ?? 'investment')
   const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>(item?.owner ?? 'client')
-  // Investment
   const [curVal, setCurVal] = useState(String(item?.currentValue ?? ''))
   const [monthly, setMonthly] = useState(String(item?.monthlyContribution ?? ''))
   const [ret, setRet] = useState(item?.expectedReturn ?? 6)
   const [startYear, setStartYear] = useState(item?.startYear ?? new Date().getFullYear())
   const [mode, setMode] = useState<'Regular' | 'Lump Sum' | 'Mixed'>(item?.mode ?? 'Regular')
-  // CPF Life
   const [cpfScheme, setCpfScheme] = useState<'BRS' | 'FRS' | 'ERS'>(item?.cpfScheme ?? 'FRS')
   const [cpfPayout, setCpfPayout] = useState(String(item?.cpfMonthlyPayout ?? ''))
   const [cpfStartAge, setCpfStartAge] = useState(item?.cpfPayoutStartAge ?? 65)
-  // Endowment
   const [endMatVal, setEndMatVal] = useState(String(item?.endowmentMaturityValue ?? ''))
   const [endMatYear, setEndMatYear] = useState(item?.endowmentMaturityYear ?? new Date().getFullYear() + 10)
   const [endPremium, setEndPremium] = useState(String(item?.endowmentPremium ?? ''))
-  // Annuity
   const [annuityIncome, setAnnuityIncome] = useState(String(item?.annuityMonthlyIncome ?? ''))
   const [annuityStartAge, setAnnuityStartAge] = useState(item?.annuityStartAge ?? 65)
   const [annuityGuarantee, setAnnuityGuarantee] = useState(item?.annuityGuaranteeYears ?? 10)
-  // Rental
   const [rentalNet, setRentalNet] = useState(String(item?.rentalMonthlyNet ?? ''))
   const [rentalStop, setRentalStop] = useState(item?.rentalStopAge ?? 75)
 
@@ -300,7 +298,6 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
         </div>
 
         <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {/* Vehicle type selector */}
           <div>
             <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Vehicle Type</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -326,7 +323,6 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
             </div>
           )}
 
-          {/* CPF Life fields */}
           {vehicleType === 'cpf_life' && (
             <>
               <div>
@@ -351,7 +347,6 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
             </>
           )}
 
-          {/* Endowment fields */}
           {vehicleType === 'endowment' && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -377,7 +372,6 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
             </>
           )}
 
-          {/* Annuity fields */}
           {vehicleType === 'annuity' && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
@@ -407,7 +401,6 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
             </>
           )}
 
-          {/* Rental fields */}
           {vehicleType === 'rental' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
@@ -421,7 +414,6 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
             </div>
           )}
 
-          {/* Investment / Other fields */}
           {(vehicleType === 'investment' || vehicleType === 'other') && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -553,7 +545,6 @@ function XIRRBadge({ rate }: { rate: number | null }) {
   )
 }
 
-// ─── VEHICLE TYPE ICON ────────────────────────────────────────────────────────
 function vehicleIcon(t: VehicleType) {
   return { investment: '📈', cpf_life: '🇸🇬', endowment: '📋', annuity: '🔄', rental: '🏠', other: '✦' }[t]
 }
@@ -572,7 +563,6 @@ export default function CapitalMandatePage() {
   const [clientName, setClientName] = useState('Client')
   const [spouseName, setSpouseName] = useState('Spouse')
 
-  // Retirement data from Strategic Objectives
   const [retirementAge, setRetirementAge] = useState(65)
   const [lifeExpectancy, setLifeExpectancy] = useState(85)
   const [desiredMonthlyIncome, setDesiredMonthlyIncome] = useState(0)
@@ -589,14 +579,12 @@ export default function CapitalMandatePage() {
   const [cashflowModal, setCashflowModal] = useState<FundingVehicle | null>(null)
   const [settings, setSettings] = useState<CMSettings>({ expectedReturn: 6, inflation: 3, legacyAmount: 0, incomeSource: 'desired', drawdownMode: 'invested' })
 
-  // Notes
   const [notes, setNotes] = useState('')
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const chartRef = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<any>(null)
 
-  // ── LOAD ──────────────────────────────────────────────────────────────────
   useEffect(() => { load() }, [])
 
   async function load() {
@@ -623,14 +611,12 @@ export default function CapitalMandatePage() {
     const sName = fin?.spouse?.firstName ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim() : 'Spouse'
     setClientAge(age); setSpouseAge(sage); setClientName(cName); setSpouseName(sName)
 
-    // Detect couple mode: check protection_needs planType, fallback to spouse presence
     const protData = by['protection_needs']?.protection
     const hasSpouse = !!(fin?.spouse?.firstName || fin?.spouse?.age)
     const mode: PlanMode = (protData?.planType === 'couple' || hasSpouse) ? 'couple' : 'individual'
     setPlanMode(mode)
     setActivePerson(mode === 'couple' ? 'combined' : 'client')
 
-    // Retirement data
     const retRow = by['retirement'] || {}
     const retNested = retRow?.ret || {}
     const retClientData = retNested?.client || {}
@@ -650,7 +636,6 @@ export default function CapitalMandatePage() {
 
     const builtGoals: CapitalGoal[] = []
 
-    // Retirement goal
     const totalCorpusNeeded = retRow?.corpusNeeded || 0
     const totalMonthlyRet = retRow?.monthlySavingsNeeded || retRow?.monthlySavingsRequired || 0
     const retAge = retClientData?.retirementAge || retRow?.retirementAge || 65
@@ -664,35 +649,38 @@ export default function CapitalMandatePage() {
       })
     }
 
-    // Wealth accumulation
     const acc = by['accumulation']?.acc || by['accumulation'] || {}
     ;(acc?.goals || []).forEach((g: any) => {
       if (!g.targetAmount) return
       const yearsLeft = Math.max(1, g.yearsToGoal || 10)
       const corpus = g.amountType === 'pv' ? g.targetAmount * Math.pow(1 + savedSettings.inflation / 100, yearsLeft) : g.targetAmount
       const owner: 'client' | 'spouse' | 'joint' = g.owner === 'spouse' ? 'spouse' : g.owner === 'joint' ? 'joint' : 'client'
-      builtGoals.push({ id: 'acc_' + g.id, source: 'wealth', label: g.label || 'Wealth Goal', icon: '🏠', targetCorpus: corpus, monthlyRequired: g.monthlyRequired ?? calcMonthlyRequired(corpus, yearsLeft, savedSettings.expectedReturn), targetAge: age + yearsLeft, owner })
+      const goalMonthly = (g.monthlyRequired != null) ? g.monthlyRequired : calcMonthlyRequired(corpus, yearsLeft, savedSettings.expectedReturn)
+      builtGoals.push({ id: 'acc_' + g.id, source: 'wealth', label: g.label || 'Wealth Goal', icon: '🏠', targetCorpus: corpus, monthlyRequired: goalMonthly, targetAge: age + yearsLeft, owner })
     })
 
-    // Education — cross-referenced against live family_members to avoid ghost children
     const edu = by['education']?.edu || by['education'] || {}
     const eduTuitionInf = (edu?.tuitionInflation ?? 5) / 100
     const eduLivingInf = (edu?.livingInflation ?? 3) / 100
     const eduReturnRate = edu?.returnRate ?? 5
     ;(edu?.children || []).forEach((child: any) => {
       const childId = child.childId || child.id
-      if (childId && !liveChildIds.has(childId)) return   // deleted from family_members
+      if (childId && !liveChildIds.has(childId)) return
       if ((!child.annualTuition && !child.annualLiving) || !child.name) return
       if ((child.annualTuition || 0) + (child.annualLiving || 0) === 0) return
-      // Use live age from family_members, not stale saved age
       const liveChild = liveChildren.find((m: any) => m.id === childId)
-      const liveAge = liveChild
-        ? (liveChild.age != null
-            ? liveChild.age
-            : liveChild.date_of_birth
-              ? Math.max(0, new Date().getFullYear() - new Date(liveChild.date_of_birth).getFullYear())
-              : (child.age || 0))
-        : (child.age || 0)
+      let liveAge: number
+      if (liveChild) {
+        if (liveChild.age != null) {
+          liveAge = liveChild.age
+        } else if (liveChild.date_of_birth) {
+          liveAge = Math.max(0, new Date().getFullYear() - new Date(liveChild.date_of_birth).getFullYear())
+        } else {
+          liveAge = child.age || 0
+        }
+      } else {
+        liveAge = child.age || 0
+      }
       const yearsUntilUni = Math.max(1, (child.uniEntryAge || 18) - liveAge)
       const duration = child.courseDuration || 4
       const fvTuition = (child.annualTuition || 0) * Math.pow(1 + eduTuitionInf, yearsUntilUni) * duration
@@ -702,11 +690,9 @@ export default function CapitalMandatePage() {
       builtGoals.push({ id: 'edu_' + (child.childId || child.name), source: 'education', label: `${child.name}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, yearsUntilUni), eduReturnRate), targetAge: age + yearsUntilUni, owner: 'joint' })
     })
 
-    // Custom goals
     ;(cmData?.customGoals || []).forEach((g: CapitalGoal) => builtGoals.push({ ...g, source: 'custom' }))
     setGoals(builtGoals)
 
-    // Portfolio — migrate old PortfolioItem format to FundingVehicle
     const savedPortfolio: FundingVehicle[] = (cmData?.portfolio || []).map((p: any) => ({
       cashflows: [],
       vehicleType: p.vehicleType || 'investment',
@@ -717,7 +703,6 @@ export default function CapitalMandatePage() {
     setLoading(false)
   }
 
-  // ── SAVE ──────────────────────────────────────────────────────────────────
   async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string) {
     const c = clientRef.current; if (!c) return
     const dataToSave = { portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes }
@@ -780,14 +765,12 @@ export default function CapitalMandatePage() {
     }, 1200)
   }
 
-  // ── FILTERING ─────────────────────────────────────────────────────────────
+  // ── FILTERING — driven by planMode only (no manual toggle) ────────────────
   const matchesPerson = useCallback((owner: 'client' | 'spouse' | 'joint'): boolean => {
     if (planMode === 'individual') return true
-    if (activePerson === 'combined') return true
-    if (activePerson === 'client') return owner === 'client' || owner === 'joint'
-    if (activePerson === 'spouse') return owner === 'spouse' || owner === 'joint'
+    // couple mode = combined view always
     return true
-  }, [planMode, activePerson])
+  }, [planMode])
 
   const filteredGoals = useMemo(() => goals.filter(g => matchesPerson(g.owner)), [goals, matchesPerson])
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
@@ -803,291 +786,12 @@ export default function CapitalMandatePage() {
   const totalCurrentValue = useMemo(() => filteredPortfolio.reduce((s, p) => s + (p.currentValue || 0), 0), [filteredPortfolio])
   const monthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
 
-  const personLabel = planMode === 'individual' ? clientName
-    : activePerson === 'combined' ? `${clientName} & ${spouseName}`
-    : activePerson === 'client' ? clientName : spouseName
+  const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
 
-  // Effective monthly retirement income
   const effectiveRetirementIncome = useMemo(() => {
     if (settings.incomeSource === 'desired' && desiredMonthlyIncome > 0) return desiredMonthlyIncome
     return currentExpenses || desiredMonthlyIncome
   }, [settings.incomeSource, desiredMonthlyIncome, currentExpenses])
-
-  // ── CHART ─────────────────────────────────────────────────────────────────
-  useEffect(() => {
-  // Wait for everything to be ready
-  if (loading) return
-  if (!chartRef.current) return
-  
-  const canvas = chartRef.current
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
-  // Clean up old chart
-  if (chartInstance.current) {
-    chartInstance.current.destroy()
-    chartInstance.current = null
-  }
-
-  // Small delay to let DOM settle after any modal/state changes
-  const timer = setTimeout(() => {
-    // Check again that canvas is still valid
-    if (!chartRef.current) return
-    const canvasCtx = chartRef.current.getContext('2d')
-    if (!canvasCtx) return
-
-    const lifeEnd = Math.max(lifeExpectancy, clientAge + 35, 85)
-    const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
-
-    // Target corpus line
-    const targetLine = ages.map(a => {
-      if (a > retirementAge) return null
-      return filteredGoals.reduce((sum, g) => {
-        const yearsLeft = g.targetAge - a
-        if (yearsLeft < 0) return sum
-        return sum + g.targetCorpus / Math.pow(1 + settings.expectedReturn / 100, Math.max(yearsLeft, 0.001))
-      }, 0)
-    })
-
-    // Calculate corpus at retirement ONCE (used for both lines)
-const corpusAtRetirement = filteredPortfolio.reduce((sum, p) => {
-  if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
-  const pRet = (p.expectedReturn || settings.expectedReturn) / 100
-  const ytr = retirementAge - clientAge
-  const fv = (p.currentValue || 0) * Math.pow(1 + pRet, ytr)
-  let rsv = 0
-  const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0) 
-    : p.vehicleType === 'annuity' ? p.monthlyContribution 
-    : p.monthlyContribution
-  if (monthly > 0 && ytr > 0) {
-    const rm = pRet / 12
-    const nm = ytr * 12
-    rsv = rm > 0 ? monthly * (Math.pow(1 + rm, nm) - 1) / rm : monthly * nm
-  }
-  // Add endowment maturity value at maturity year
-  let maturityBonus = 0
-  if (p.vehicleType === 'endowment' && p.endowmentMaturityValue && p.endowmentMaturityYear) {
-    const yearsToMaturity = p.endowmentMaturityYear - (new Date().getFullYear() + clientAge - clientAge) // simplified
-    if (yearsToMaturity > 0 && yearsToMaturity <= ytr) {
-      maturityBonus = p.endowmentMaturityValue * Math.pow(1 + pRet, ytr - yearsToMaturity)
-    }
-  }
-  return sum + fv + rsv + maturityBonus
-}, 0)
-
-// Target corpus line (accumulation only) AND Retirement Fund Target
-const retirementGoal = filteredGoals.find(g => g.source === 'retirement')
-const retirementTargetCorpus = retirementGoal?.targetCorpus || 0
-
-// Retirement fund projection (starts at retirement age, depletes with inflation)
-const retirementFundLine = ages.map(a => {
-  if (a < retirementAge) return null
-  
-  const yearsIntoRetirement = a - retirementAge
-  const inflationRate = settings.inflation / 100
-  const postRetReturn = postRetirementReturn / 100
-  
-  // Calculate total CPF/Annuity/Rental income for this age
-  const guaranteedMonthlyIncome = filteredPortfolio.reduce((sum, p) => {
-    if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
-    if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
-    if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
-    return sum
-  }, 0)
-  
-  // Start with target corpus (or actual portfolio if smaller)
-  let fundValue = retirementTargetCorpus
-  
-  // Simulate year by year depletion with inflation
-  for (let y = 0; y < yearsIntoRetirement; y++) {
-    const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
-    const netMonthlyNeed = Math.max(0, inflatedMonthlyNeed - guaranteedMonthlyIncome)
-    const annualWithdrawal = netMonthlyNeed * 12
-    
-    if (settings.drawdownMode === 'cash') {
-      fundValue = fundValue - annualWithdrawal
-    } else {
-      fundValue = fundValue * (1 + postRetReturn) - annualWithdrawal
-    }
-    
-    if (fundValue <= 0) {
-      fundValue = 0
-      break
-    }
-  }
-  
-  return fundValue
-})
-
-// Existing Portfolio projection (accumulation then depletion)
-const projectedLine = ages.map(a => {
-  if (a <= retirementAge) {
-    // Accumulation phase
-    const yearsFromNow = a - clientAge
-    return filteredPortfolio.reduce((sum, p) => {
-      if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
-      const pRet = (p.expectedReturn || settings.expectedReturn) / 100
-      const fv = (p.currentValue || 0) * Math.pow(1 + pRet, yearsFromNow)
-      let rsv = 0
-      const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
-        : p.vehicleType === 'annuity' ? p.monthlyContribution
-        : p.monthlyContribution
-      if (monthly > 0 && yearsFromNow > 0) {
-        const rm = pRet / 12
-        const nm = yearsFromNow * 12
-        rsv = rm > 0 ? monthly * (Math.pow(1 + rm, nm) - 1) / rm : monthly * nm
-      }
-      return sum + fv + rsv
-    }, 0)
-  } else {
-    // Decumulation phase - start with actual corpus at retirement
-    const yearsIntoRetirement = a - retirementAge
-    const inflationRate = settings.inflation / 100
-    const postRetReturn = postRetirementReturn / 100
-    
-    // Calculate guaranteed income
-    const guaranteedMonthlyIncome = filteredPortfolio.reduce((sum, p) => {
-      if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
-      if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
-      if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
-      return sum
-    }, 0)
-    
-    let fundValue = corpusAtRetirement
-    
-    for (let y = 0; y < yearsIntoRetirement; y++) {
-      const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
-      const netMonthlyNeed = Math.max(0, inflatedMonthlyNeed - guaranteedMonthlyIncome)
-      const annualWithdrawal = netMonthlyNeed * 12
-      
-      if (settings.drawdownMode === 'cash') {
-        fundValue = fundValue - annualWithdrawal
-      } else {
-        fundValue = fundValue * (1 + postRetReturn) - annualWithdrawal
-      }
-      
-      if (fundValue <= 0) {
-        fundValue = 0
-        break
-      }
-    }
-    
-    return fundValue
-  }
-})
-
-    const legacyLine = settings.legacyAmount > 0 ? ages.map(a => a >= retirementAge ? settings.legacyAmount : null) : null
-    const retireIdx = ages.indexOf(retirementAge)
-
-    const retireLinePlugin = {
-      id: 'retireLine',
-      afterDraw(chart: any) {
-        if (retireIdx < 0) return
-        const xAxis = chart.scales.x
-        const yAxis = chart.scales.y
-        if (!xAxis || !yAxis) return
-        const x = xAxis.getPixelForValue(ages[retireIdx])
-        const top = yAxis.top
-        const bottom = yAxis.bottom
-        const c = chart.ctx
-        c.save()
-        c.beginPath()
-        c.setLineDash([5, 5])
-        c.moveTo(x, top)
-        c.lineTo(x, bottom)
-        c.strokeStyle = 'rgba(168,131,74,0.5)'
-        c.lineWidth = 1.5
-        c.stroke()
-        c.setLineDash([])
-        c.fillStyle = 'rgba(168,131,74,0.75)'
-        c.font = '10px Inter, sans-serif'
-        c.fillText('Retirement ' + retirementAge, x + 6, top + 14)
-        c.restore()
-      }
-    }
-
-    try {
-      chartInstance.current = new Chart(canvasCtx, {
-        type: 'line',
-        plugins: [retireLinePlugin],
-                        data: (() => {
-          const baseDatasets = [
-            {
-              label: 'Retirement Fund Target',
-              data: retirementFundLine,
-              borderColor: '#A8834A',
-              backgroundColor: 'rgba(168,131,74,0.08)',
-              borderWidth: 2,
-              borderDash: [8, 4],
-              tension: 0.35,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              fill: false,
-              spanGaps: false,
-            },
-            {
-              label: settings.drawdownMode === 'invested' ? 'Your Portfolio (Invested)' : 'Your Portfolio (Cash)',
-              data: projectedLine,
-              borderColor: '#4A9E8A',
-              backgroundColor: 'rgba(74,158,138,0.05)',
-              borderWidth: 2.5,
-              tension: 0.35,
-              pointRadius: 0,
-              pointHoverRadius: 5,
-              fill: false,
-            },
-          ];
-          
-         if (legacyLine) {
-            baseDatasets.push({
-              label: 'Legacy Floor',
-              data: legacyLine,
-              borderColor: 'rgba(196,164,100,0.5)',
-              backgroundColor: 'rgba(196,164,100,0.03)',
-              borderDash: [6, 4],
-              borderWidth: 1.5,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              fill: false,
-              tension: 0,
-              spanGaps: false,
-            });
-          }
-          
-          return {
-            labels: ages.map(a => 'Age ' + a),
-            datasets: baseDatasets,
-          };
-        })(),
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20, filter: (item: any) => item.text !== 'null' } },
-            tooltip: {
-              backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.7)', padding: 12,
-              callbacks: { label: (ctx: any) => ctx.parsed.y === null ? '' : ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y) }
-            },
-          },
-          scales: {
-            x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
-            y: { ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } }, grid: { color: 'rgba(26,24,22,0.04)' }, min: 0 },
-          },
-        },
-      })
-    } catch (error) {
-      console.error('Chart creation failed:', error)
-    }
-  }, 50) // 50ms delay
-
-  return () => {
-    clearTimeout(timer)
-    if (chartInstance.current) {
-      chartInstance.current.destroy()
-      chartInstance.current = null
-    }
-  }
-}, [loading, filteredGoals, filteredPortfolio, settings, clientAge, retirementAge, lifeExpectancy, effectiveRetirementIncome, postRetirementReturn, portfolio, goals])
 
   // ── XIRR per vehicle ──────────────────────────────────────────────────────
   const xirrMap = useMemo(() => {
@@ -1095,6 +799,357 @@ const projectedLine = ages.map(a => {
     portfolio.forEach(p => { m[p.id] = computeXIRR(p) })
     return m
   }, [JSON.stringify(portfolio)])
+
+  // ── BLENDED PORTFOLIO XIRR (weighted by current value) ────────────────────
+  const blendedXIRR = useMemo(() => {
+    let totalVal = 0
+    let weighted = 0
+    let counted = 0
+    filteredPortfolio.forEach(p => {
+      const xr = xirrMap[p.id]
+      if (xr !== null && xr !== undefined && (p.currentValue || 0) > 0) {
+        totalVal += p.currentValue
+        weighted += xr * p.currentValue
+        counted++
+      }
+    })
+    if (totalVal === 0 || counted === 0) return null
+    return weighted / totalVal
+  }, [filteredPortfolio, xirrMap])
+
+  // ── PROJECTED PORTFOLIO AT RETIREMENT (at actual XIRR vs assumption) ──────
+  const projectedAtRetirement = useMemo(() => {
+    const ytr = retirementAge - clientAge
+    if (ytr <= 0) return { atAssumption: 0, atActual: 0 }
+    let atAssumption = 0
+    let atActual = 0
+    filteredPortfolio.forEach(p => {
+      if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
+      const assumptionRate = (p.expectedReturn || settings.expectedReturn) / 100
+      const actualRate = (blendedXIRR !== null) ? (blendedXIRR / 100) : assumptionRate
+      const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
+        : p.vehicleType === 'annuity' ? p.monthlyContribution
+        : p.monthlyContribution
+      // At assumption
+      const fvA = (p.currentValue || 0) * Math.pow(1 + assumptionRate, ytr)
+      const rsvA = fvAnnuityDue(monthly, assumptionRate, ytr)
+      atAssumption += fvA + rsvA
+      // At actual blended XIRR
+      const fvX = (p.currentValue || 0) * Math.pow(1 + actualRate, ytr)
+      const rsvX = fvAnnuityDue(monthly, actualRate, ytr)
+      atActual += fvX + rsvX
+    })
+    return { atAssumption, atActual }
+  }, [filteredPortfolio, settings.expectedReturn, blendedXIRR, retirementAge, clientAge])
+
+  // ── CHART ─────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (loading) return
+    if (!chartRef.current) return
+
+    // Destroy any orphaned chart on this canvas (StrictMode safety)
+    const existing = Chart.getChart(chartRef.current)
+    if (existing) existing.destroy()
+    if (chartInstance.current) {
+      chartInstance.current.destroy()
+      chartInstance.current = null
+    }
+
+    const timer = setTimeout(() => {
+      if (!chartRef.current) return
+      const canvasCtx = chartRef.current.getContext('2d')
+      if (!canvasCtx) return
+
+      const lifeEnd = Math.max(lifeExpectancy, clientAge + 35, 85)
+      const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
+      const preRetRate = settings.expectedReturn / 100
+      const postRetRate = postRetirementReturn / 100
+      const inflationRate = settings.inflation / 100
+
+      // ── REQUIRED INVESTMENTS LINE ───────────────────────────────────────
+      // Approach: For each goal, accumulate its monthly-required from now to its targetAge.
+      // At/after targetAge, the goal's contribution to the line stops growing AND
+      // its already-accumulated corpus (which equals its targetCorpus at that age)
+      // is "spent" — i.e. drops off the line for non-retirement goals.
+      // For retirement goal, instead of dropping at retirementAge, it depletes
+      // gradually using drawdown logic, netting CPF/Annuity/Rental income.
+
+      // Pre-compute, for each goal:
+      // - accumulatedAt(age): value of monthly contributions from clientAge to min(age, targetAge),
+      //   compounded at preRetRate
+      const goalsForLine = filteredGoals.slice()
+      // Identify retirement goal for special treatment
+      const retGoal = goalsForLine.find(g => g.source === 'retirement') || null
+
+      function goalAccumAt(g: CapitalGoal, atAge: number): number {
+        const yrs = Math.min(atAge, g.targetAge) - clientAge
+        if (yrs <= 0) return 0
+        return fvAnnuityDue(g.monthlyRequired, preRetRate, yrs)
+      }
+
+      // Total guaranteed monthly income at a given age (CPF / Annuity / Rental)
+      function guaranteedMonthlyAt(age: number): number {
+        return filteredPortfolio.reduce((sum, p) => {
+          if (p.vehicleType === 'cpf_life' && age >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
+          if (p.vehicleType === 'annuity' && age >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
+          if (p.vehicleType === 'rental' && age <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
+          return sum
+        }, 0)
+      }
+
+      // Required line: build year by year
+      const requiredLine: (number | null)[] = ages.map(a => {
+        // Accumulation: sum of all goal accumulations at age a, MINUS already-spent non-retirement goals
+        let value = 0
+        goalsForLine.forEach(g => {
+          if (g === retGoal) {
+            // retirement handled separately for ages >= retirementAge
+            if (a <= retirementAge) {
+              value += goalAccumAt(g, a)
+            }
+          } else {
+            // Non-retirement: accumulates until targetAge, then drops to zero (spent)
+            if (a < g.targetAge) {
+              value += goalAccumAt(g, a)
+            }
+            // at or after targetAge: contribution to line = 0 (already spent)
+          }
+        })
+
+        // Retirement phase: at retirementAge, the retirement portion equals its targetCorpus.
+        // From retirementAge onwards, deplete it per drawdown logic.
+        if (a > retirementAge && retGoal) {
+          // Start from retGoal.targetCorpus at retirementAge
+          let fund = retGoal.targetCorpus + (settings.legacyAmount || 0)
+          // We want the legacy floor to remain — model as: deplete down to legacy floor
+          // Easier: deplete the non-legacy portion separately
+          let workingFund = retGoal.targetCorpus
+          for (let y = 0; y < (a - retirementAge); y++) {
+            const ageY = retirementAge + y
+            const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
+            const netMonthly = Math.max(0, inflatedMonthlyNeed - guaranteedMonthlyAt(ageY))
+            const annualWithdrawal = netMonthly * 12
+            if (settings.drawdownMode === 'cash') {
+              workingFund = workingFund - annualWithdrawal
+            } else {
+              workingFund = workingFund * (1 + postRetRate) - annualWithdrawal
+            }
+            if (workingFund <= 0) { workingFund = 0; break }
+          }
+          value += workingFund
+        } else if (a === retirementAge && retGoal) {
+          // exactly at retirement — show the full retirement corpus
+          value += retGoal.targetCorpus
+        }
+
+        return value
+      })
+
+      // ── EXISTING PORTFOLIO LINE ────────────────────────────────────────
+      const portfolioLine: (number | null)[] = ages.map(a => {
+        if (a <= retirementAge) {
+          const yearsFromNow = a - clientAge
+          return filteredPortfolio.reduce((sum, p) => {
+            if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
+            const pRet = (p.expectedReturn || settings.expectedReturn) / 100
+            const fv = (p.currentValue || 0) * Math.pow(1 + pRet, yearsFromNow)
+            const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
+              : p.vehicleType === 'annuity' ? p.monthlyContribution
+              : p.monthlyContribution
+            const rsv = fvAnnuityDue(monthly, pRet, yearsFromNow)
+            // Endowment maturity bonus
+            let maturityBonus = 0
+            if (p.vehicleType === 'endowment' && p.endowmentMaturityValue && p.endowmentMaturityYear) {
+              const currentYear = new Date().getFullYear()
+              const yearsToMaturity = p.endowmentMaturityYear - currentYear
+              if (yearsToMaturity > 0 && yearsToMaturity <= yearsFromNow) {
+                maturityBonus = (p.endowmentMaturityValue || 0) * Math.pow(1 + pRet, yearsFromNow - yearsToMaturity)
+              }
+            }
+            return sum + fv + rsv + maturityBonus
+          }, 0)
+        } else {
+          // Decumulation — same drawdown logic as Required line
+          const corpusAtRet = filteredPortfolio.reduce((sum, p) => {
+            if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return sum
+            const pRet = (p.expectedReturn || settings.expectedReturn) / 100
+            const ytr = retirementAge - clientAge
+            const fv = (p.currentValue || 0) * Math.pow(1 + pRet, ytr)
+            const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
+              : p.vehicleType === 'annuity' ? p.monthlyContribution
+              : p.monthlyContribution
+            const rsv = fvAnnuityDue(monthly, pRet, ytr)
+            let maturityBonus = 0
+            if (p.vehicleType === 'endowment' && p.endowmentMaturityValue && p.endowmentMaturityYear) {
+              const currentYear = new Date().getFullYear()
+              const yearsToMaturity = p.endowmentMaturityYear - currentYear
+              if (yearsToMaturity > 0 && yearsToMaturity <= ytr) {
+                maturityBonus = (p.endowmentMaturityValue || 0) * Math.pow(1 + pRet, ytr - yearsToMaturity)
+              }
+            }
+            return sum + fv + rsv + maturityBonus
+          }, 0)
+
+          let fundValue = corpusAtRet
+          for (let y = 0; y < (a - retirementAge); y++) {
+            const ageY = retirementAge + y
+            const inflatedMonthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
+            const netMonthly = Math.max(0, inflatedMonthlyNeed - guaranteedMonthlyAt(ageY))
+            const annualWithdrawal = netMonthly * 12
+            if (settings.drawdownMode === 'cash') {
+              fundValue = fundValue - annualWithdrawal
+            } else {
+              fundValue = fundValue * (1 + postRetRate) - annualWithdrawal
+            }
+            if (fundValue <= 0) { fundValue = 0; break }
+          }
+          return fundValue
+        }
+      })
+
+      // ── GUARANTEED INCOME AREA (annualised, for visual reference) ───────
+      const hasGuaranteedIncome = filteredPortfolio.some(p =>
+        p.vehicleType === 'cpf_life' || p.vehicleType === 'annuity' || p.vehicleType === 'rental'
+      )
+      const guaranteedIncomeArea: (number | null)[] = ages.map(a => {
+        if (a < retirementAge) return null
+        // Show as 25× annualised (a notional "corpus equivalent" so it shows on $-scale chart)
+        const annual = guaranteedMonthlyAt(a) * 12
+        return annual * 25
+      })
+
+      const legacyLine: (number | null)[] | null = (settings.legacyAmount > 0)
+        ? ages.map(a => a >= retirementAge ? settings.legacyAmount : null)
+        : null
+
+      const retireIdx = ages.indexOf(retirementAge)
+
+      const retireLinePlugin = {
+        id: 'retireLine',
+        afterDraw(chart: any) {
+          if (retireIdx < 0) return
+          const xAxis = chart.scales.x
+          const yAxis = chart.scales.y
+          if (!xAxis || !yAxis) return
+          const x = xAxis.getPixelForValue(ages[retireIdx])
+          const top = yAxis.top
+          const bottom = yAxis.bottom
+          const c = chart.ctx
+          c.save()
+          c.beginPath()
+          c.setLineDash([5, 5])
+          c.moveTo(x, top)
+          c.lineTo(x, bottom)
+          c.strokeStyle = 'rgba(168,131,74,0.5)'
+          c.lineWidth = 1.5
+          c.stroke()
+          c.setLineDash([])
+          c.fillStyle = 'rgba(168,131,74,0.75)'
+          c.font = '10px Inter, sans-serif'
+          c.fillText('Retirement ' + retirementAge, x + 6, top + 14)
+          c.restore()
+        }
+      }
+
+      const datasets: any[] = []
+
+      // Guaranteed income area first (so it sits beneath)
+      if (hasGuaranteedIncome) {
+        datasets.push({
+          label: 'Guaranteed Income (CPF/Annuity/Rental, capitalised)',
+          data: guaranteedIncomeArea,
+          borderColor: 'rgba(94,138,106,0.4)',
+          backgroundColor: 'rgba(94,138,106,0.08)',
+          borderWidth: 1,
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          fill: 'origin',
+          spanGaps: false,
+        })
+      }
+
+      // Required Investments — solid bold gold
+      datasets.push({
+        label: 'Required Investments (to hit all goals)',
+        data: requiredLine,
+        borderColor: '#A8834A',
+        backgroundColor: 'rgba(168,131,74,0.05)',
+        borderWidth: 3,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        fill: false,
+      })
+
+      // Existing Portfolio — dashed teal
+      datasets.push({
+        label: settings.drawdownMode === 'invested' ? 'Existing Portfolio (Remain Invested)' : 'Existing Portfolio (Cash Drawdown)',
+        data: portfolioLine,
+        borderColor: '#4A9E8A',
+        backgroundColor: 'rgba(74,158,138,0.04)',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        fill: false,
+      })
+
+      // Legacy floor
+      if (legacyLine) {
+        datasets.push({
+          label: 'Legacy Floor',
+          data: legacyLine,
+          borderColor: 'rgba(196,164,100,0.5)',
+          backgroundColor: 'rgba(196,164,100,0.03)',
+          borderDash: [3, 3],
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: false,
+          tension: 0,
+          spanGaps: false,
+        })
+      }
+
+      try {
+        chartInstance.current = new Chart(canvasCtx, {
+          type: 'line',
+          plugins: [retireLinePlugin],
+          data: {
+            labels: ages.map(a => 'Age ' + a),
+            datasets,
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20, filter: (item: any) => item.text !== 'null' } },
+              tooltip: {
+                backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.7)', padding: 12,
+                callbacks: { label: (ctx: any) => ctx.parsed.y === null ? '' : ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y) }
+              },
+            },
+            scales: {
+              x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
+              y: { ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } }, grid: { color: 'rgba(26,24,22,0.04)' }, min: 0 },
+            },
+          },
+        })
+      } catch (error) {
+        console.error('Chart creation failed:', error)
+      }
+    }, 50)
+
+    return () => {
+      clearTimeout(timer)
+      if (chartInstance.current) {
+        chartInstance.current.destroy()
+        chartInstance.current = null
+      }
+    }
+  }, [loading, filteredGoals, filteredPortfolio, settings, clientAge, retirementAge, lifeExpectancy, effectiveRetirementIncome, postRetirementReturn])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}><div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)' }}>Loading…</div></div>
@@ -1104,25 +1159,61 @@ const projectedLine = ages.map(a => {
     investment: '#4A9E8A', cpf_life: '#4A7C9E', endowment: '#A8834A', annuity: '#6B5B8B', rental: '#5E8A6A', other: '#9A9690'
   }
 
+  // ── Narrative comparison strip text ───────────────────────────────────────
+  type StripTone = 'good' | 'warn' | 'bad' | 'neutral'
+  let narrativeStrip: { tone: StripTone; text: React.ReactNode } | null = null
+  if (blendedXIRR !== null && filteredPortfolio.length > 0) {
+    const diff = blendedXIRR - settings.expectedReturn
+    const diffAbs = Math.abs(diff).toFixed(1)
+    const shortfallAtRet = projectedAtRetirement.atAssumption - projectedAtRetirement.atActual
+    let tone: StripTone
+    if (diff >= 0.5) tone = 'good'
+    else if (diff >= -0.5) tone = 'neutral'
+    else if (diff >= -2) tone = 'warn'
+    else tone = 'bad'
+    narrativeStrip = {
+      tone,
+      text: (
+        <>
+          Your portfolio is returning{' '}
+          <strong style={{ color: tone === 'good' ? '#4A9E8A' : tone === 'warn' ? '#A8834A' : tone === 'bad' ? '#E08080' : 'var(--ink)' }}>
+            {blendedXIRR.toFixed(1)}%
+          </strong>
+          {' — '}that&apos;s {diff >= 0 ? <strong style={{ color: '#4A9E8A' }}>{diffAbs}% above</strong> : <strong style={{ color: tone === 'bad' ? '#E08080' : '#A8834A' }}>{diffAbs}% below</strong>} your{' '}
+          <strong>{settings.expectedReturn}%</strong> assumption. At this pace, you&apos;ll reach{' '}
+          <strong>{fmt(projectedAtRetirement.atActual)}</strong> by age {retirementAge}
+          {Math.abs(shortfallAtRet) > 1000 && (
+            <>
+              {' '}instead of <strong>{fmt(projectedAtRetirement.atAssumption)}</strong>
+              {shortfallAtRet > 0 ? ` (a ${fmt(shortfallAtRet)} shortfall)` : ` (a ${fmt(-shortfallAtRet)} surplus)`}
+            </>
+          )}.
+        </>
+      ),
+    }
+  }
+
+  const stripBg = narrativeStrip?.tone === 'good' ? 'rgba(74,158,138,0.08)'
+    : narrativeStrip?.tone === 'warn' ? 'rgba(168,131,74,0.08)'
+    : narrativeStrip?.tone === 'bad' ? 'rgba(224,128,128,0.08)'
+    : 'var(--cream2)'
+  const stripBorder = narrativeStrip?.tone === 'good' ? '#4A9E8A'
+    : narrativeStrip?.tone === 'warn' ? '#A8834A'
+    : narrativeStrip?.tone === 'bad' ? '#E08080'
+    : 'var(--line)'
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
 
-      {/* ── HERO BAND ── */}
+      {/* ── HERO BAND (no person toggle) ── */}
       <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '28px 0 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 20 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 30, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.1 }}>Capital Mandate</div>
-            <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>{personLabel} · {filteredGoals.length} goal{filteredGoals.length !== 1 ? 's' : ''}</div>
-          </div>
-          {planMode === 'couple' && (
-            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 8, padding: 3 }}>
-              {([{ val: 'combined' as ActivePerson, label: 'Combined' }, { val: 'client' as ActivePerson, label: clientName }, { val: 'spouse' as ActivePerson, label: spouseName }]).map(opt => (
-                <button key={opt.val} onClick={() => setActivePerson(opt.val)} style={{ padding: '7px 18px', border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s', background: activePerson === opt.val ? 'rgba(255,255,255,0.15)' : 'transparent', color: activePerson === opt.val ? '#F0EDE8' : 'rgba(255,255,255,0.4)' }}>
-                  {opt.label}
-                </button>
-              ))}
+            <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 4 }}>
+              {personLabel} · {filteredGoals.length} goal{filteredGoals.length !== 1 ? 's' : ''} · {planMode === 'couple' ? 'Joint planning' : 'Individual planning'}
             </div>
-          )}
+          </div>
         </div>
 
         {/* KPI strip */}
@@ -1152,7 +1243,11 @@ const projectedLine = ages.map(a => {
             <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 500, color: 'var(--ink)', background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 38, textAlign: 'center' }}>{settings[s.key]}%</span>
           </div>
         ))}
-        {/* Legacy amount */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>Post-Ret. Return</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 500, color: 'var(--ink)', background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 38, textAlign: 'center' }}>{postRetirementReturn}%</span>
+          <span style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', fontStyle: 'italic' }}>(from Retirement)</span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>Legacy Floor</span>
           <div style={{ display: 'flex', alignItems: 'center', background: 'white', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden' }}>
@@ -1160,7 +1255,6 @@ const projectedLine = ages.map(a => {
             <input type="number" value={settings.legacyAmount || ''} onChange={e => updateSettings({ ...settings, legacyAmount: parseFloat(e.target.value) || 0 })} placeholder="0" style={{ border: 'none', outline: 'none', padding: '4px 8px', fontFamily: 'DM Mono, monospace', fontSize: 12, width: 90, color: 'var(--ink)' }} />
           </div>
         </div>
-        {/* Drawdown mode */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>In Retirement</span>
           <div style={{ display: 'flex', background: 'white', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden' }}>
@@ -1174,7 +1268,7 @@ const projectedLine = ages.map(a => {
       {/* ── BODY ── */}
       <div style={{ padding: '32px 48px', flex: 1, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
-        {/* ── 1. GOALS (horizontal cards, full-width) ── */}
+        {/* ── 1. GOALS ── */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
             <div>
@@ -1193,12 +1287,11 @@ const projectedLine = ages.map(a => {
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(filteredGoals.length, 4)}, 1fr)`, gap: 12 }}>
               {filteredGoals.map(g => (
                 <div key={g.id} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, padding: '16px 18px', position: 'relative', overflow: 'hidden' }}>
-                  {/* Accent stripe */}
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: g.source === 'retirement' ? '#6B5B8B' : g.source === 'education' ? '#5E8A6A' : g.source === 'wealth' ? '#4A7C9E' : '#A8834A' }} />
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <SourceBadge source={g.source} />
-                      {planMode === 'couple' && activePerson === 'combined' && <OwnerBadge owner={g.owner} clientName={clientName} spouseName={spouseName} />}
+                      {planMode === 'couple' && <OwnerBadge owner={g.owner} clientName={clientName} spouseName={spouseName} />}
                     </div>
                     {g.source === 'custom' && (
                       <button onClick={() => removeGoal(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
@@ -1215,7 +1308,19 @@ const projectedLine = ages.map(a => {
           )}
         </div>
 
-        {/* ── 2. CHART (full-width) ── */}
+        {/* ── 2. NARRATIVE COMPARISON STRIP ── */}
+        {narrativeStrip && (
+          <div style={{ background: stripBg, border: `1px solid ${stripBorder}`, borderLeft: `4px solid ${stripBorder}`, borderRadius: 8, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ fontSize: 20, flexShrink: 0 }}>
+              {narrativeStrip.tone === 'good' ? '✓' : narrativeStrip.tone === 'warn' ? '!' : narrativeStrip.tone === 'bad' ? '⚠' : 'ℹ'}
+            </div>
+            <div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', lineHeight: 1.5, flex: 1 }}>
+              {narrativeStrip.text}
+            </div>
+          </div>
+        )}
+
+        {/* ── 3. CHART ── */}
         <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
@@ -1224,7 +1329,6 @@ const projectedLine = ages.map(a => {
                 Accumulation → Retirement {lifeExpectancy > 0 ? `→ Age ${lifeExpectancy}` : ''}
               </div>
             </div>
-            {/* Income source toggle */}
             {(desiredMonthlyIncome > 0 || currentExpenses > 0) && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>Retirement Income:</span>
@@ -1238,15 +1342,14 @@ const projectedLine = ages.map(a => {
               </div>
             )}
           </div>
-          <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 300 }}>
-            <canvas key={`chart-${activePerson}-${filteredGoals.length}-${filteredPortfolio.length}`} ref={chartRef} />
+          <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 360 }}>
+            <canvas key={`chart-${filteredGoals.length}-${filteredPortfolio.length}-${settings.drawdownMode}-${settings.legacyAmount}`} ref={chartRef} />
           </div>
         </div>
 
-        {/* ── 3. TWO COLUMNS: Portfolio + Notes ── */}
+        {/* ── 4. TWO COLUMNS: Portfolio + Notes ── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 28 }}>
 
-          {/* LEFT — Funding Vehicles */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
               <div>
@@ -1273,7 +1376,7 @@ const projectedLine = ages.map(a => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                           <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
                           <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '2px 6px', borderRadius: 4 }}>{p.vehicleType?.replace('_', ' ')}</span>
-                          {planMode === 'couple' && activePerson === 'combined' && <OwnerBadge owner={p.owner} clientName={clientName} spouseName={spouseName} />}
+                          {planMode === 'couple' && <OwnerBadge owner={p.owner} clientName={clientName} spouseName={spouseName} />}
                           {xr !== null && <XIRRBadge rate={xr} />}
                         </div>
                         <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
@@ -1296,8 +1399,7 @@ const projectedLine = ages.map(a => {
                   )
                 })}
 
-                {/* Summary strip */}
-                <div style={{ marginTop: 4, background: 'var(--charcoal)', borderRadius: 12, padding: '18px 24px', display: 'flex', gap: 32 }}>
+                <div style={{ marginTop: 4, background: 'var(--charcoal)', borderRadius: 12, padding: '18px 24px', display: 'flex', gap: 32, flexWrap: 'wrap' }}>
                   <div>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Portfolio Value</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: '#80B4C4' }}>{fmt(totalCurrentValue)}</div>
@@ -1312,12 +1414,19 @@ const projectedLine = ages.map(a => {
                       {monthlyGap > 0 ? `−${fmtMo(monthlyGap)}` : 'On Track'}
                     </div>
                   </div>
+                  {blendedXIRR !== null && (
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Blended XIRR</div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: blendedXIRR >= settings.expectedReturn ? '#80C4A0' : '#E08080' }}>
+                        {blendedXIRR.toFixed(1)}%
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
 
-          {/* RIGHT — Notes */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Advisor Notes</div>
