@@ -793,10 +793,40 @@ export default function CapitalMandatePage() {
 
   const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
 
+  // Back-solve annual retirement withdrawal from the stored retirement corpus.
+  // This matches the growing-annuity formula used in RetirementSection:
+  //   corpus = A × (1 − ((1+g)/(1+r))^n) / (r − g)
+  // so:
+  //   A = corpus × (r − g) / (1 − ((1+g)/(1+r))^n)
+  // where A is the annual withdrawal at retirement (year 0).
+  const derivedAnnualWithdrawal = useMemo(() => {
+    const retGoal = goals.find(g => g.source === 'retirement')
+    if (!retGoal || retGoal.targetCorpus <= 0) return 0
+    const r = postRetirementReturn / 100
+    const g = settings.inflation / 100
+    const n = Math.max(1, lifeExpectancy - retirementAge)
+    if (Math.abs(r - g) < 0.0001) {
+      return retGoal.targetCorpus * (1 + r) / n
+    }
+    const ratio = Math.pow((1 + g) / (1 + r), n)
+    const denom = 1 - ratio
+    if (denom <= 0) return 0
+    return retGoal.targetCorpus * (r - g) / denom
+  }, [goals, settings.inflation, postRetirementReturn, lifeExpectancy, retirementAge])
+
   const effectiveRetirementIncome = useMemo(() => {
     if (settings.incomeSource === 'desired' && desiredMonthlyIncome > 0) return desiredMonthlyIncome
-    return currentExpenses || desiredMonthlyIncome
-  }, [settings.incomeSource, desiredMonthlyIncome, currentExpenses])
+    if (currentExpenses > 0) return currentExpenses
+    // Fallback: back-solve from corpus (today's dollars equivalent)
+    // The derived value is the annual withdrawal AT retirement. Convert to
+    // today's-dollars monthly by dividing by 12 and deflating by inflation.
+    if (derivedAnnualWithdrawal > 0) {
+      const yearsToRet = Math.max(0, retirementAge - clientAge)
+      const inflationFactor = Math.pow(1 + settings.inflation / 100, yearsToRet)
+      return (derivedAnnualWithdrawal / 12) / inflationFactor
+    }
+    return 0
+  }, [settings.incomeSource, desiredMonthlyIncome, currentExpenses, derivedAnnualWithdrawal, retirementAge, clientAge, settings.inflation])
 
   // ── XIRR per vehicle ──────────────────────────────────────────────────────
   const xirrMap = useMemo(() => {
