@@ -565,6 +565,8 @@ export default function CapitalMandatePage() {
 
   const [retirementAge, setRetirementAge] = useState(65)
   const [lifeExpectancy, setLifeExpectancy] = useState(85)
+  const [spouseRetirementAge, setSpouseRetirementAge] = useState(65)
+  const [spouseLifeExpectancy, setSpouseLifeExpectancy] = useState(85)
   const [desiredMonthlyIncome, setDesiredMonthlyIncome] = useState(0)
   const [currentExpenses, setCurrentExpenses] = useState(0)
   const [postRetirementReturn, setPostRetirementReturn] = useState(3)
@@ -620,8 +622,11 @@ export default function CapitalMandatePage() {
     const retRow = by['retirement'] || {}
     const retNested = retRow?.ret || {}
     const retClientData = retNested?.client || {}
+    const retSpouseData = retNested?.spouse || {}
     setRetirementAge(retClientData?.retirementAge || retRow?.retirementAge || 65)
     setLifeExpectancy(retClientData?.lifeExpectancy || retRow?.lifeExpectancy || 85)
+    setSpouseRetirementAge(retSpouseData?.retirementAge || 65)
+    setSpouseLifeExpectancy(retSpouseData?.lifeExpectancy || 85)
     setDesiredMonthlyIncome(retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
     setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
     setPostRetirementReturn(retClientData?.postRetirementReturn || retRow?.postRetirementReturn || 3)
@@ -867,22 +872,20 @@ export default function CapitalMandatePage() {
       const inflationRate = settings.inflation / 100
 
       // ── REQUIRED INVESTMENTS LINE ───────────────────────────────────────
-      // Concept: At each age `a`, line value = capital needed at age `a` to fund
-      // ALL remaining future obligations from age `a` onwards.
-      //   - Accumulation phase: PV of each non-retirement goal's targetCorpus
-      //     (discounted at preRetRate) + PV of retirement need at retirementAge
-      //     (discounted back at preRetRate).
-      //   - Retirement phase: PV of remaining withdrawals from age `a` to
-      //     lifeExpectancy at postRetRate, net of guaranteed income, plus
-      //     legacy floor discounted back.
-      // This produces: smooth climb in accumulation, step-down when each
-      // non-retirement goal is paid, peak at retirementAge, smooth decline
-      // through retirement, landing at legacy (or zero) at lifeExpectancy.
+      // Forward simulation: starting at clientAge with $0, invest the total
+      // monthly contribution needed across all goals, growing at preRet.
+      // At each goal's targetAge, deduct that goal's targetCorpus and remove
+      // its monthly requirement from the running contribution.
+      // In retirement, withdraw annual income (inflated, net of guaranteed
+      // income); halve withdrawal once the earlier-deceased spouse hits
+      // their life expectancy. Stop at later life expectancy or depletion.
 
       const goalsForLine = filteredGoals.slice()
       const retGoal = goalsForLine.find(g => g.source === 'retirement') || null
-      const nonRetGoals = goalsForLine.filter(g => g.source !== 'retirement')
-      const retYears = Math.max(0, lifeExpectancy - retirementAge)
+      // Non-retirement goals, sorted by target age (earliest first)
+      const nonRetGoals = goalsForLine
+        .filter(g => g.source !== 'retirement')
+        .sort((a, b) => a.targetAge - b.targetAge)
       const legacyAmt = settings.legacyAmount || 0
 
       // Total guaranteed monthly income at a given age (CPF / Annuity / Rental)
@@ -895,81 +898,131 @@ export default function CapitalMandatePage() {
         }, 0)
       }
 
-      // PV at retirementAge of all remaining retirement-phase obligations.
-      // Withdrawals are NET of guaranteed income at each future age.
-      // Year y after retirement corresponds to (retirementAge + y).
-      // effectiveRetirementIncome is the monthly need AT retirement age (already
-      // inflated from today to retirement by RetirementSection's own math).
-      function corpusNeededAtRetirement(): number {
-        let pv = 0
-        // Inflated withdrawals over retYears, discounted at postRetRate.
-        // If drawdownMode is 'cash', we model PV at 0% return (the corpus literally pays out without growth).
-        const discRate = settings.drawdownMode === 'invested' ? postRetRate : 0
-        for (let y = 0; y < retYears; y++) {
-          const ageY = retirementAge + y
-          const monthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
-          const netMonthly = Math.max(0, monthlyNeed - guaranteedMonthlyAt(ageY))
-          const annualNet = netMonthly * 12
-          pv += annualNet / Math.pow(1 + discRate, y)
+      // Earlier life expectancy (when withdrawal halves on first death)
+      const firstDeathAge = planMode === 'couple'
+        ? Math.min(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+        : lifeExpectancy
+      // Note: spouseLifeExpectancy is spouse's age at death; converted to
+      // client-age timeline by adding (clientAge - spouseAge) offset.
+      // Final death age (when sim ends)
+      const finalDeathAge = planMode === 'couple'
+        ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+        : lifeExpectancy
+
+      // Total starting monthly contribution = sum of all goals' monthly required
+      const initialMonthly = (retGoal?.monthlyRequired || 0) + nonRetGoals.reduce((s, g) => s + g.monthlyRequired, 0)
+
+      // Milestone metadata for tooltips: age -> { label, amount }
+      const milestonesByAge: Record<number, { label: string; amount: number }> = {}
+
+      // Forward simulation
+      const requiredLine: (number | null)[] = []
+      let corpus = 0
+      let runningMonthly = initialMonthly
+      const goalQueue = nonRetGoals.map(g => ({ ...g }))  // mutable copy
+      const rmMonthly = preRetRate / 12
+      const rmPostMonthly = postRetRate / 12
+
+      for (let i = 0; i < ages.length; i++) {
+        const a = ages[i]
+
+        if (a < retirementAge) {
+          // Accumulation: 12 months of annuity-due growth
+          for (let m = 0; m < 12; m++) {
+            corpus = (corpus + runningMonthly) * (1 + rmMonthly)
+          }
+          // After this year, age is now (a + 1). Check if any goal hits at age (a+1)
+          const newAge = a + 1
+          while (goalQueue.length > 0 && goalQueue[0].targetAge === newAge) {
+            const g = goalQueue.shift()!
+            corpus = Math.max(0, corpus - g.targetCorpus)
+            runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
+            milestonesByAge[newAge] = { label: g.label, amount: g.targetCorpus }
+          }
+        } else if (a === retirementAge) {
+          // Just reached retirement — no growth or withdrawal yet at this point,
+          // corpus is the accumulated value. The withdrawal happens over the
+          // following year.
+        } else {
+          // Retirement: withdraw at start of year (annuity-due), then grow
+          const yearsIntoRet = a - retirementAge - 1  // year just completed
+          let annualWithdrawal = effectiveRetirementIncome * 12 * Math.pow(1 + inflationRate, yearsIntoRet)
+          // Halve withdrawal if past first death age
+          if (a > firstDeathAge) {
+            annualWithdrawal = annualWithdrawal / 2
+          }
+          // Subtract guaranteed income (using prior age since withdrawal is for year just completed)
+          const annualGuaranteed = guaranteedMonthlyAt(a - 1) * 12
+          const netAnnual = Math.max(0, annualWithdrawal - annualGuaranteed)
+          // Withdraw at start of year
+          corpus = corpus - netAnnual
+          if (corpus < 0) corpus = 0
+          // Grow remaining at post-ret rate for the year (monthly compounding)
+          if (settings.drawdownMode === 'invested') {
+            for (let m = 0; m < 12; m++) {
+              corpus = corpus * (1 + rmPostMonthly)
+            }
+          }
+          // Stop sim once past final death age
+          if (a >= finalDeathAge) {
+            // Floor at legacy amount
+            corpus = Math.max(corpus, legacyAmt)
+          }
         }
-        // Add legacy floor (paid at end of life expectancy)
-        if (legacyAmt > 0 && retYears > 0) {
-          pv += legacyAmt / Math.pow(1 + discRate, retYears)
-        }
-        return pv
+
+        // Record corpus AT age `a` (end of this iteration represents value at age `a`)
+        // For accumulation: we just grew through year (a -> a+1), so what we have
+        // is value at age (a+1). To align, shift: record BEFORE growing for next year.
+        // Simpler: record corpus state at start of each age, so push BEFORE this iteration's growth.
+        requiredLine.push(corpus)
       }
 
-      // PV at age `a` (where a >= retirementAge) of remaining retirement obligations
-      function pvRetirementAt(a: number): number {
-        if (a >= lifeExpectancy) return legacyAmt
-        const discRate = settings.drawdownMode === 'invested' ? postRetRate : 0
-        let pv = 0
-        const yearsIntoRet = a - retirementAge
-        for (let y = yearsIntoRet; y < retYears; y++) {
-          const ageY = retirementAge + y
-          const monthlyNeed = effectiveRetirementIncome * Math.pow(1 + inflationRate, y)
-          const netMonthly = Math.max(0, monthlyNeed - guaranteedMonthlyAt(ageY))
-          const annualNet = netMonthly * 12
-          const yearsFromA = y - yearsIntoRet
-          pv += annualNet / Math.pow(1 + discRate, yearsFromA)
+      // The above pushes corpus AFTER each year's growth/withdrawal. That means
+      // requiredLine[0] = corpus at age (clientAge + 1). We want requiredLine[0]
+      // = corpus at clientAge = 0. Re-run with start-of-year recording:
+      requiredLine.length = 0
+      corpus = 0
+      runningMonthly = initialMonthly
+      const goalQueue2 = nonRetGoals.map(g => ({ ...g }))
+      for (let i = 0; i < ages.length; i++) {
+        const a = ages[i]
+        // Record corpus at START of age `a` (before this year's activity)
+        requiredLine.push(corpus)
+
+        if (a < retirementAge) {
+          // Grow through this year of accumulation
+          for (let m = 0; m < 12; m++) {
+            corpus = (corpus + runningMonthly) * (1 + rmMonthly)
+          }
+          // After year ends, age is now (a+1). Check goals hitting at (a+1).
+          const newAge = a + 1
+          while (goalQueue2.length > 0 && goalQueue2[0].targetAge === newAge) {
+            const g = goalQueue2.shift()!
+            corpus = Math.max(0, corpus - g.targetCorpus)
+            runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
+            milestonesByAge[newAge] = { label: g.label, amount: g.targetCorpus }
+          }
+        } else if (a >= retirementAge) {
+          // Retirement year: withdraw then grow
+          const yearsIntoRet = a - retirementAge
+          let annualWithdrawal = effectiveRetirementIncome * 12 * Math.pow(1 + inflationRate, yearsIntoRet)
+          if (a >= firstDeathAge) {
+            annualWithdrawal = annualWithdrawal / 2
+          }
+          const annualGuaranteed = guaranteedMonthlyAt(a) * 12
+          const netAnnual = Math.max(0, annualWithdrawal - annualGuaranteed)
+          corpus = corpus - netAnnual
+          if (corpus < 0) corpus = 0
+          if (settings.drawdownMode === 'invested') {
+            for (let m = 0; m < 12; m++) {
+              corpus = corpus * (1 + rmPostMonthly)
+            }
+          }
+          if (a >= finalDeathAge && legacyAmt > 0) {
+            corpus = Math.max(corpus, legacyAmt)
+          }
         }
-        if (legacyAmt > 0) {
-          pv += legacyAmt / Math.pow(1 + discRate, lifeExpectancy - a)
-        }
-        return pv
       }
-
-      // Pre-compute the retirement corpus once
-      const corpusAtRet = retGoal ? corpusNeededAtRetirement() : 0
-
-      // Required line at age `a`
-      const requiredLine: (number | null)[] = ages.map(a => {
-        let value = 0
-
-        // 1. Non-retirement goals: PV of each goal still in the future
-        nonRetGoals.forEach(g => {
-          if (g.targetAge > a) {
-            const yrs = g.targetAge - a
-            // Discount rate: preRet if still in accumulation, postRet if already retired
-            const r = a < retirementAge ? preRetRate : postRetRate
-            value += g.targetCorpus / Math.pow(1 + r, yrs)
-          }
-          // If g.targetAge <= a, the goal has been paid and contributes 0
-        })
-
-        // 2. Retirement obligation
-        if (retGoal) {
-          if (a < retirementAge) {
-            // Discount the retirement corpus back to age `a` at preRetRate
-            value += corpusAtRet / Math.pow(1 + preRetRate, retirementAge - a)
-          } else {
-            // PV of remaining withdrawals at age `a`
-            value += pvRetirementAt(a)
-          }
-        }
-
-        return value
-      })
 
       // ── EXISTING PORTFOLIO LINE ────────────────────────────────────────
       const portfolioLine: (number | null)[] = ages.map(a => {
@@ -1154,7 +1207,17 @@ export default function CapitalMandatePage() {
               legend: { labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20, filter: (item: any) => item.text !== 'null' } },
               tooltip: {
                 backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.7)', padding: 12,
-                callbacks: { label: (ctx: any) => ctx.parsed.y === null ? '' : ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y) }
+                callbacks: {
+                  label: (ctx: any) => ctx.parsed.y === null ? '' : ' ' + ctx.dataset.label + ': ' + fmt(ctx.parsed.y),
+                  afterBody: (ctxs: any[]) => {
+                    if (!ctxs.length) return ''
+                    const idx = ctxs[0].dataIndex
+                    const age = ages[idx]
+                    const ms = milestonesByAge[age]
+                    if (ms) return ['', '🎯 ' + ms.label + ': −' + fmt(ms.amount)]
+                    return ''
+                  }
+                }
               },
             },
             scales: {
