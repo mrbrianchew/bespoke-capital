@@ -1117,6 +1117,14 @@ export default function RetirementSection({
                   </div>
                 ))}
               </div>
+              <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: '10px 14px', borderLeft: '3px solid rgba(200,169,110,0.5)' }}>
+                <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
+                  {isCouple
+                    ? `This projection is computed from the earlier of the two retirement dates (age ${Math.min(data.client.retirementAge, data.spouse.retirementAge)}) through the later of the two life expectancies (age ${Math.max(data.client.lifeExpectancy, data.spouse.lifeExpectancy)}), ensuring the plan is fully funded for the duration of both lives.`
+                    : `This projection is computed from the stated retirement age (age ${data.client.retirementAge}) through the stated life expectancy (age ${data.client.lifeExpectancy}), ensuring the plan remains fully funded for the entire retirement horizon.`
+                  }
+                </span>
+              </div>
             </div>
           </div>
         </>
