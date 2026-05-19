@@ -192,12 +192,13 @@ function calcPhasedRetirement(
 
   // ── Couple ────────────────────────────────────────────────────────────────
   // Conservative approach: fund from the earlier retirement to the later death
-  const earliestRetirementAge = Math.min(clientRetirementAge, spouseRetirementAge)
+  const yearsToClientRetirementCalc = Math.max(0.5, clientRetirementAge - clientAge)
+  const yearsToSpouseRetirementCalc = Math.max(0.5, spouseRetirementAge - spouseAge)
 
-  const earliestRetirementPerson = clientRetirementAge <= spouseRetirementAge ? 'client' : 'spouse'
-  const earliestPersonCurrentAge = earliestRetirementPerson === 'client' ? clientAge : spouseAge
-
-  const yearsToEarliestRetirement = Math.max(0.5, earliestRetirementAge - earliestPersonCurrentAge)
+  const yearsToEarliestRetirement = Math.min(yearsToClientRetirementCalc, yearsToSpouseRetirementCalc)
+  const earliestRetirementAge = yearsToEarliestRetirement === yearsToClientRetirementCalc
+    ? clientRetirementAge
+    : spouseRetirementAge
 
   // Convert each life expectancy to the same age reference (client's age scale)
   // so we can correctly compare when the last person dies
