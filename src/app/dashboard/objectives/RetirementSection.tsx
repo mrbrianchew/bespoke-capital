@@ -935,7 +935,9 @@ export default function RetirementSection({
   const combinedExpAnnual = clientExpAnnual + spouseExpAnnual
 
   // ── Background calculation (feeds Capital Mandate via onCalculated) ────────
-  const combinedMonthlyNeedToday = combinedExpAnnual / 12
+  const combinedMonthlyNeedToday = mode === 'direct'
+  ? (isCouple ? es.combinedDesiredMonthly : data.client.desiredMonthlyIncome)
+  : combinedExpAnnual / 12
 
   const phasedResult = calcPhasedRetirement(
     clientAge,
@@ -1080,23 +1082,88 @@ export default function RetirementSection({
         </p>
       </div>
 
+      {/* ── SECTION 3B: AT RETIREMENT & CORPUS ── */}
+      {combinedMonthlyNeedToday > 0 && (
+        <>
+          <SubLabel color="var(--ink)">Retirement Projections</SubLabel>
+
+          {/* Card 1 — At Retirement */}
+          <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden', marginBottom: 12 }}>
+            <div style={{ padding: '13px 20px', borderBottom: '1px solid var(--line)', background: 'var(--cream)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 4, height: 18, background: 'var(--gold)', borderRadius: 2 }} />
+              <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink)' }}>
+                Expenses at Retirement
+              </span>
+              <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginLeft: 4 }}>
+                · inflated {Math.round(phasedResult.yearsToClientRetirement)}y at {data.inflationRate}%
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: '20px 24px', gap: 0 }}>
+              <div style={{ paddingRight: 24, borderRight: '1px solid var(--line)' }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Monthly</div>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 600, color: 'var(--gold)', lineHeight: 1 }}>
+                  ${Math.round(phasedResult.monthlyNeedAtClientRetirement).toLocaleString('en-SG')}
+                </div>
+                <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 6 }}>
+                  per month at age {data.client.retirementAge}
+                </div>
+              </div>
+              <div style={{ paddingLeft: 24 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Annual</div>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>
+                  ${Math.round(phasedResult.monthlyNeedAtClientRetirement * 12).toLocaleString('en-SG')}
+                </div>
+                <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 6 }}>
+                  per year · today's equivalent {fmt(combinedMonthlyNeedToday)}/mo
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2 — Corpus Required */}
+          <div style={{ background: '#1C1A17', borderRadius: 14, overflow: 'hidden', marginBottom: 8 }}>
+            <div style={{ padding: '13px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 4, height: 18, background: '#c8a96e', borderRadius: 2 }} />
+              <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, color: '#c8a96e' }}>
+                Retirement Fund Required
+              </span>
+            </div>
+            <div style={{ padding: '24px 24px 20px' }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 42, fontWeight: 600, color: '#F5F3EE', lineHeight: 1, marginBottom: 10 }}>
+                ${Math.round(phasedResult.totalCorpusNeeded).toLocaleString('en-SG')}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {[
+                  { label: 'Retirement years', value: `${Math.round(phasedResult.retirementYears)}y` },
+                  { label: 'Post-retirement return', value: `${data.postReturnRate}%` },
+                  { label: 'Inflation', value: `${data.inflationRate}%` },
+                ].map(pill => (
+                  <div key={pill.label} style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 20, padding: '4px 12px', display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{pill.label}</span>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#c8a96e' }}>{pill.value}</span>
+                  </div>
+                ))}
+              </div>
+              {isCouple && phasedResult.gapYears > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: '10px 14px', borderLeft: '3px solid #c8a96e' }}>
+                  <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                    Includes {phasedResult.gapYears}-year gap period — {clientName} retires at {phasedResult.clientRetirementAge}, {spouseName} at {phasedResult.spouseRetirementAge}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+      
       {/* ── SECTION 4: INCOME OFFSETS ── */}
       <SubLabel color="var(--emerald)">Income Offsets at Retirement</SubLabel>
       <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.6 }}>
-        These reduce the corpus needed. CPF LIFE provides a monthly payout for life; passive income covers rental, dividends, and annuities.
+        Passive income streams that reduce the corpus needed — rental, dividends, annuity payouts, etc.
       </p>
 
-      {/* CPF LIFE */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>CPF LIFE</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <CPFPanel person={data.client} onChange={updClient} name={clientName} color="var(--gold)" cpfOA={clientCPF_OA} cpfSA={clientCPF_SA} cpfRA={clientCPF_RA} />
-          {isCouple && <CPFPanel person={data.spouse} onChange={updSpouse} name={spouseName} color="#6B5B8B" cpfOA={spouseCPF_OA} cpfSA={spouseCPF_SA} cpfRA={spouseCPF_RA} />}
-        </div>
-      </div>
-
       {/* Passive Income */}
-      <div style={{ marginTop: 20 }}>
+      <div style={{ marginTop: 0 }}>
         <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Passive Income</div>
         <PassiveIncomeSection
           items={data.passiveIncome}
