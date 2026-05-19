@@ -37,10 +37,13 @@ export interface RetirementExpenseSelections {
   combinedDesiredHolidays: number
 }
 
+export type DrawdownMode = 'invested' | 'cash'
+
 export interface RetirementData {
   inflationRate: number
   postReturnRate: number
   preReturnRate: number
+  drawdownMode: DrawdownMode
   expenseSelections: RetirementExpenseSelections
   client: RetirementPersonData
   spouse: RetirementPersonData
@@ -152,6 +155,7 @@ function calcPhasedRetirement(
   inflationRate: number,
   postReturnRate: number,
   annualHolidayBudgetToday: number = 0,
+  drawdownMode: DrawdownMode = 'invested',
 ): PhasedRetirementResult {
   const g = inflationRate / 100
   const r = postReturnRate / 100
@@ -166,12 +170,16 @@ function calcPhasedRetirement(
     const totalAnnualNeed = monthlyNeedAtRetirement * 12 + holidaysAtRetirement
 
     let corpusNeeded = 0
-    if (Math.abs(r - g) < 0.0001) {
-      corpusNeeded = totalAnnualNeed * retirementYears
+    if (drawdownMode === 'cash') {
+      // No investment return: sum all inflation-adjusted withdrawals
+      for (let yr = 0; yr < retirementYears; yr++) {
+        corpusNeeded += totalAnnualNeed * Math.pow(1 + g, yr)
+      }
+    } else if (Math.abs(r - g) < 0.0001) {
+      corpusNeeded = totalAnnualNeed * retirementYears * (1 + r)
     } else {
-      corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+      corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g) * (1 + r)
     }
-    corpusNeeded = corpusNeeded * (1 + r)
 
     return {
       clientRetirementAge,
@@ -216,12 +224,15 @@ function calcPhasedRetirement(
   const totalAnnualNeed = monthlyNeedAtRetirement * 12 + holidaysAtRetirement
 
   let totalCorpusNeeded = 0
-  if (Math.abs(r - g) < 0.0001) {
-    totalCorpusNeeded = totalAnnualNeed * retirementYears
+  if (drawdownMode === 'cash') {
+    for (let yr = 0; yr < retirementYears; yr++) {
+      totalCorpusNeeded += totalAnnualNeed * Math.pow(1 + g, yr)
+    }
+  } else if (Math.abs(r - g) < 0.0001) {
+    totalCorpusNeeded = totalAnnualNeed * retirementYears * (1 + r)
   } else {
-    totalCorpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+    totalCorpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g) * (1 + r)
   }
-  totalCorpusNeeded = totalCorpusNeeded * (1 + r)
 
   return {
     clientRetirementAge,
@@ -377,6 +388,7 @@ export const DEFAULT_RETIREMENT_DATA: RetirementData = {
   inflationRate: 3,
   postReturnRate: 4,
   preReturnRate: 5,
+  drawdownMode: 'invested',
   expenseSelections: {
     mode: 'expense_based',
     coupleIncomeMode: 'combined',
@@ -939,6 +951,7 @@ export default function RetirementSection({
     data.inflationRate,
     data.postReturnRate,
     annualHolidayBudgetToday,
+    data.drawdownMode ?? 'invested',
   )
 
   useEffect(() => {
@@ -1065,6 +1078,26 @@ export default function RetirementSection({
           <RateSlider label="Inflation Rate" value={data.inflationRate} onChange={v => upd({ inflationRate: v })} min={0} max={8} step={0.25} color="var(--gold)" />
           <RateSlider label="Post-Retirement Return" value={data.postReturnRate} onChange={v => upd({ postReturnRate: v })} min={0} max={10} step={0.25} color="var(--emerald)" />
           <RateSlider label="Pre-Retirement Return" value={data.preReturnRate} onChange={v => upd({ preReturnRate: v })} min={0} max={15} step={0.25} color="var(--ink3)" />
+        </div>
+        {/* Drawdown Mode toggle */}
+        <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid #e8d9be' }}>
+          <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>Retirement Drawdown Mode</div>
+          <div style={{ display: 'flex', background: 'white', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
+            {([
+              { key: 'invested' as DrawdownMode, label: '📈  Invested', desc: 'Corpus remains invested and earns post-retirement return during drawdown' },
+              { key: 'cash' as DrawdownMode,     label: '🏦  Cash / Bank', desc: 'No investment return — full inflation-adjusted sum must be set aside upfront' },
+            ]).map(opt => (
+              <button key={opt.key} onClick={() => upd({ drawdownMode: opt.key })}
+                style={{ flex: 1, padding: '12px 16px', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                  background: (data.drawdownMode ?? 'invested') === opt.key ? 'var(--ink)' : 'white',
+                  borderRight: opt.key === 'invested' ? '1px solid var(--line)' : 'none' }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, marginBottom: 3,
+                  color: (data.drawdownMode ?? 'invested') === opt.key ? 'var(--gold)' : 'var(--ink)' }}>{opt.label}</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 11, lineHeight: 1.5,
+                  color: (data.drawdownMode ?? 'invested') === opt.key ? 'rgba(255,255,255,0.45)' : 'var(--ink3)' }}>{opt.desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
         <p style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--gold-tag)', marginTop: 12, marginBottom: 0 }}>
           Pre-retirement return is used to grow existing investable assets to retirement date. Post-retirement return is the drawdown rate on the corpus.
