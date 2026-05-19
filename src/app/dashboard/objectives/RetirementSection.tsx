@@ -151,6 +151,7 @@ function calcPhasedRetirement(
   combinedMonthlyNeed: number,
   inflationRate: number,
   postReturnRate: number,
+  annualHolidayBudgetToday: number = 0,
 ): PhasedRetirementResult {
   const g = inflationRate / 100
   const r = postReturnRate / 100
@@ -160,15 +161,17 @@ function calcPhasedRetirement(
   // ── Single person ─────────────────────────────────────────────────────────
   if (!spouseAge || !spouseRetirementAge || !spouseLifeExpectancy) {
     const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
+    const holidaysAtRetirement = annualHolidayBudgetToday * Math.pow(1 + g, yearsToClientRetirement)
     const retirementYears = clientLifeExpectancy - clientRetirementAge
-    const totalAnnualNeed = monthlyNeedAtRetirement * 12
+    const totalAnnualNeed = monthlyNeedAtRetirement * 12 + holidaysAtRetirement
 
     let corpusNeeded = 0
     if (Math.abs(r - g) < 0.0001) {
-      corpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
+      corpusNeeded = totalAnnualNeed * retirementYears
     } else {
       corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
     }
+    corpusNeeded = corpusNeeded * (1 + r)
 
     return {
       clientRetirementAge,
@@ -209,14 +212,16 @@ function calcPhasedRetirement(
 
   // Inflate combined expenses to the earlier retirement date
   const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToEarliestRetirement)
-  const totalAnnualNeed         = monthlyNeedAtRetirement * 12
+  const holidaysAtRetirement = annualHolidayBudgetToday * Math.pow(1 + g, yearsToEarliestRetirement)
+  const totalAnnualNeed = monthlyNeedAtRetirement * 12 + holidaysAtRetirement
 
   let totalCorpusNeeded = 0
   if (Math.abs(r - g) < 0.0001) {
-    totalCorpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
+    totalCorpusNeeded = totalAnnualNeed * retirementYears
   } else {
     totalCorpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
   }
+  totalCorpusNeeded = totalCorpusNeeded * (1 + r)
 
   return {
     clientRetirementAge,
@@ -918,6 +923,10 @@ export default function RetirementSection({
   ? (isCouple ? es.combinedDesiredMonthly : data.client.desiredMonthlyIncome)
   : combinedExpAnnual / 12
 
+  const annualHolidayBudgetToday = mode === 'direct'
+    ? (isCouple ? es.combinedDesiredHolidays : data.client.desiredAnnualHolidays)
+    : 0
+
   const phasedResult = calcPhasedRetirement(
     clientAge,
     data.client.retirementAge,
@@ -929,6 +938,7 @@ export default function RetirementSection({
     combinedMonthlyNeedToday,
     data.inflationRate,
     data.postReturnRate,
+    annualHolidayBudgetToday,
   )
 
   useEffect(() => {
