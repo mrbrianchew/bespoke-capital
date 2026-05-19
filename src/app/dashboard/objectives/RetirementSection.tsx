@@ -1111,7 +1111,7 @@ export default function RetirementSection({
               <div style={{ paddingLeft: 24 }}>
                 <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Annual</div>
                 <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>
-                  ${Math.round(phasedResult.monthlyNeedAtClientRetirement * 12).toLocaleString('en-SG')}
+                  ${Math.round(phasedResult.monthlyNeedAtClientRetirement * 12 + (mode === 'direct' ? (isCouple ? es.combinedDesiredHolidays : data.client.desiredAnnualHolidays) * Math.pow(1 + data.inflationRate / 100, phasedResult.yearsToClientRetirement) : 0)).toLocaleString('en-SG')}
                 </div>
                 <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 6 }}>
                   per year · today's equivalent {fmt(combinedMonthlyNeedToday)}/mo
@@ -1144,13 +1144,6 @@ export default function RetirementSection({
                   </div>
                 ))}
               </div>
-              {isCouple && phasedResult.gapYears > 0 && (
-                <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 8, padding: '10px 14px', borderLeft: '3px solid #c8a96e' }}>
-                  <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-                    Includes {phasedResult.gapYears}-year gap period — {clientName} retires at {phasedResult.clientRetirementAge}, {spouseName} at {phasedResult.spouseRetirementAge}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
         </>
