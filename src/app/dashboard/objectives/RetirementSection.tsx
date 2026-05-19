@@ -1068,7 +1068,7 @@ export default function RetirementSection({
                 Expenses at Retirement
               </span>
               <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginLeft: 4 }}>
-                · inflated {Math.round(phasedResult.yearsToClientRetirement)}y at {data.inflationRate}%
+                · inflated {Math.round(phasedResult.yearsToRetirement)}y at {data.inflationRate}%
               </span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: '20px 24px', gap: 0 }}>
