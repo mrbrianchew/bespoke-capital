@@ -21,14 +21,12 @@ export interface PassiveIncomeItem {
 export interface RetirementPersonData {
   retirementAge: number
   lifeExpectancy: number
-  // Direct income mode
   desiredMonthlyIncome: number
   desiredAnnualHolidays: number
-  // CPF LIFE
   includeCPF: boolean
   cpfRaPlan: CPFPlanType
-  cpfRaBalanceOverride: number   // manual RA balance override; 0 = use pulled data
-  cpfLifeOverride: number        // monthly payout override when plan === 'override'
+  cpfRaBalanceOverride: number
+  cpfLifeOverride: number
 }
 
 export interface RetirementExpenseSelections {
@@ -72,8 +70,6 @@ export interface RetirementProps {
 }
 
 // ─── CPF LIFE 2025 LOOKUP TABLE ──────────────────────────────────────────────
-// Source: CPF Board (cpf.gov.sg), DBS, OCBC — Standard Plan, payout starts age 65
-// BRS $106,500 → ~$900/mo | FRS $213,000 → ~$1,600/mo | ERS $426,000 → ~$3,300/mo
 
 const CPF_LIFE_2025 = {
   BRS: { balance: 106500, monthly: 900 },
@@ -107,6 +103,162 @@ function getCPFPlanPayout(plan: CPFPlanType, raBalance: number, override: number
   return estimateCPFLifePayout(raBalance)
 }
 
+// ─── CALC ENGINE (runs in background, feeds onCalculated) ────────────────────
+
+export interface RetirementCalcResult {
+  monthlyNeedAtRetirement: number
+  annualHolidaysAtRetirement: number
+  totalAnnualNeedAtRetirement: number
+  cpfLifeMonthly: number
+  cpfLifeAnnual: number
+  passiveAnnual: number
+  netAnnualGap: number
+  corpusNeeded: number
+  existingAssetsFV: number
+  savingsGap: number
+  monthlySavingsRequired: number
+  yearsToRetirement: number
+  retirementYears: number
+}
+
+export interface PhasedRetirementResult {
+  clientRetirementAge: number
+  yearsToClientRetirement: number
+  spouseRetirementAge: number
+  yearsToSpouseRetirement: number
+  gapYears: number
+  monthlyNeedAtClientRetirement: number
+  spouseMonthlyIncome: number
+  gapMonthlyShortfall: number
+  gapMonthlySurplus: number
+  gapFundNeeded: number
+  fullRetirementCorpusAtSpouseRetirement: number
+  fullRetirementCorpusPV: number
+  totalCorpusNeeded: number
+  corpusNeeded: number
+  yearsToRetirement: number
+  retirementYears: number
+}
+
+function calcPhasedRetirement(
+  clientAge: number,
+  clientRetirementAge: number,
+  clientLifeExpectancy: number,
+  spouseAge: number | undefined,
+  spouseRetirementAge: number | undefined,
+  spouseLifeExpectancy: number | undefined,
+  spouseMonthlyIncome: number,
+  combinedMonthlyNeed: number,
+  inflationRate: number,
+  postReturnRate: number,
+): PhasedRetirementResult {
+  const g = inflationRate / 100
+  const r = postReturnRate / 100
+
+  const yearsToClientRetirement = Math.max(0.5, clientRetirementAge - clientAge)
+
+  // ── Single person ─────────────────────────────────────────────────────────
+  if (!spouseAge || !spouseRetirementAge || !spouseLifeExpectancy) {
+    const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
+    const retirementYears = clientLifeExpectancy - clientRetirementAge
+    const totalAnnualNeed = monthlyNeedAtRetirement * 12
+
+    let corpusNeeded = 0
+    if (Math.abs(r - g) < 0.0001) {
+      corpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
+    } else {
+      corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+    }
+
+    return {
+      clientRetirementAge,
+      yearsToClientRetirement,
+      spouseRetirementAge: 0,
+      yearsToSpouseRetirement: 0,
+      gapYears: 0,
+      monthlyNeedAtClientRetirement: monthlyNeedAtRetirement,
+      spouseMonthlyIncome: 0,
+      gapMonthlyShortfall: 0,
+      gapMonthlySurplus: 0,
+      gapFundNeeded: 0,
+      fullRetirementCorpusAtSpouseRetirement: corpusNeeded,
+      fullRetirementCorpusPV: corpusNeeded,
+      totalCorpusNeeded: corpusNeeded,
+      corpusNeeded,
+      yearsToRetirement: yearsToClientRetirement,
+      retirementYears,
+    }
+  }
+
+  // ── Couple ────────────────────────────────────────────────────────────────
+  const yearsToSpouseRetirement = Math.max(0.5, spouseRetirementAge - spouseAge)
+  const gapYears = Math.max(0, yearsToSpouseRetirement - yearsToClientRetirement)
+
+  const monthlyNeedAtClientRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
+  const annualNeedAtClientRetirement = monthlyNeedAtClientRetirement * 12
+
+  const spouseMonthlyIncomeAtRetirement = spouseMonthlyIncome
+  const spouseAnnualIncomeAtRetirement = spouseMonthlyIncomeAtRetirement * 12
+
+  const annualShortfall = Math.max(0, annualNeedAtClientRetirement - spouseAnnualIncomeAtRetirement)
+  const annualSurplusIncome = Math.max(0, spouseAnnualIncomeAtRetirement - annualNeedAtClientRetirement)
+
+  // PV of gap shortfalls (discount only — no re-inflation)
+  let gapFundNeeded = 0
+  if (gapYears > 0 && annualShortfall > 0) {
+    if (r === 0) {
+      gapFundNeeded = annualShortfall * gapYears
+    } else {
+      gapFundNeeded = annualShortfall * (1 - Math.pow(1 / (1 + r), gapYears)) / r
+    }
+  }
+
+  // FV of gap surplus (no re-inflation)
+  let gapSurplusFV = 0
+  if (gapYears > 0 && annualSurplusIncome > 0) {
+    if (r === 0) {
+      gapSurplusFV = annualSurplusIncome * gapYears
+    } else {
+      gapSurplusFV = annualSurplusIncome * (Math.pow(1 + r, gapYears) - 1) / r
+    }
+  }
+
+  const monthlyNeedAtSpouseRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToSpouseRetirement)
+  const retirementYears = spouseLifeExpectancy - spouseRetirementAge
+  const totalAnnualNeedAtSpouseRetirement = monthlyNeedAtSpouseRetirement * 12
+
+  let fullRetirementCorpusAtSpouseRetirement = 0
+  if (Math.abs(r - g) < 0.0001) {
+    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * retirementYears / (1 + r)
+  } else {
+    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement *
+      (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+  }
+
+  const fullRetirementCorpusPV = fullRetirementCorpusAtSpouseRetirement / Math.pow(1 + r, gapYears)
+  const gapSurplusPV = gapSurplusFV / Math.pow(1 + r, gapYears)
+  const totalCorpusNeeded = Math.max(0, gapFundNeeded + fullRetirementCorpusPV - gapSurplusPV)
+
+  return {
+    clientRetirementAge,
+    yearsToClientRetirement,
+    spouseRetirementAge,
+    yearsToSpouseRetirement,
+    gapYears,
+    monthlyNeedAtClientRetirement,
+    spouseMonthlyIncome: spouseMonthlyIncomeAtRetirement,
+    gapMonthlyShortfall: annualShortfall / 12,
+    gapMonthlySurplus: annualSurplusIncome / 12,
+    gapFundNeeded,
+    fullRetirementCorpusAtSpouseRetirement,
+    fullRetirementCorpusPV,
+    totalCorpusNeeded,
+    corpusNeeded: totalCorpusNeeded,
+    yearsToRetirement: yearsToClientRetirement,
+    retirementYears,
+  }
+}
+
 // ─── EXPENSE CATALOGUE ───────────────────────────────────────────────────────
 
 interface ExpenseItem {
@@ -129,14 +281,14 @@ const RETIREMENT_EXPENSE_GROUPS: ExpenseGroup[] = [
     label: 'Financial Obligations',
     color: '#E08080',
     items: [
-      { key: 'd_mortgage_cpf',       label: 'Mortgage Loan (CPF OA)',       simpleKey: 's_cpf_oa',   detailedKey: 'd_mortgage_cpf' },
-      { key: 'd_mortgage_cash',      label: 'Mortgage Loan (Cash)',         simpleKey: 's_mortgage', detailedKey: 'd_mortgage_cash' },
-      { key: 'd_vehicle_repay',      label: 'Motor Vehicle Repayment',      detailedKey: 'd_vehicle_repay' },
-      { key: 'd_personal_loan_repay',label: 'Personal Loan Repayment',      detailedKey: 'd_personal_loan_repay' },
-      { key: 'd_rental_expense',     label: 'Rental Expenses',              detailedKey: 'd_rental_expense' },
-      { key: 'd_income_tax',         label: 'Income Tax',                   simpleKey: 's_financial', detailedKey: 'd_income_tax' },
-      { key: 'd_insurance',          label: 'Insurance Payments',           simpleKey: 's_financial', detailedKey: 'd_insurance' },
-      { key: 'd_regular_savings',    label: 'Regular Savings / Investments',simpleKey: 's_financial', detailedKey: 'd_regular_savings' },
+      { key: 'd_mortgage_cpf',        label: 'Mortgage Loan (CPF OA)',        simpleKey: 's_cpf_oa',   detailedKey: 'd_mortgage_cpf' },
+      { key: 'd_mortgage_cash',       label: 'Mortgage Loan (Cash)',          simpleKey: 's_mortgage', detailedKey: 'd_mortgage_cash' },
+      { key: 'd_vehicle_repay',       label: 'Motor Vehicle Repayment',       detailedKey: 'd_vehicle_repay' },
+      { key: 'd_personal_loan_repay', label: 'Personal Loan Repayment',       detailedKey: 'd_personal_loan_repay' },
+      { key: 'd_rental_expense',      label: 'Rental Expenses',               detailedKey: 'd_rental_expense' },
+      { key: 'd_income_tax',          label: 'Income Tax',                    simpleKey: 's_financial', detailedKey: 'd_income_tax' },
+      { key: 'd_insurance',           label: 'Insurance Payments',            simpleKey: 's_financial', detailedKey: 'd_insurance' },
+      { key: 'd_regular_savings',     label: 'Regular Savings / Investments', simpleKey: 's_financial', detailedKey: 'd_regular_savings' },
     ],
   },
   {
@@ -156,10 +308,10 @@ const RETIREMENT_EXPENSE_GROUPS: ExpenseGroup[] = [
     label: 'Personal Expenses',
     color: '#7A6AAA',
     items: [
-      { key: 'd_personal_food', label: 'Personal Food & Dining',      simpleKey: 's_personal', detailedKey: 'd_personal_food' },
-      { key: 'd_transport',     label: 'Public Transport',            simpleKey: 's_personal', detailedKey: 'd_transport' },
-      { key: 'd_car_petrol',    label: 'Car Petrol / Parking / Tax',  simpleKey: 's_personal', detailedKey: 'd_car_petrol' },
-      { key: 'd_car_insurance', label: 'Car Insurance',               simpleKey: 's_personal', detailedKey: 'd_car_insurance' },
+      { key: 'd_personal_food', label: 'Personal Food & Dining',     simpleKey: 's_personal', detailedKey: 'd_personal_food' },
+      { key: 'd_transport',     label: 'Public Transport',           simpleKey: 's_personal', detailedKey: 'd_transport' },
+      { key: 'd_car_petrol',    label: 'Car Petrol / Parking / Tax', simpleKey: 's_personal', detailedKey: 'd_car_petrol' },
+      { key: 'd_car_insurance', label: 'Car Insurance',              simpleKey: 's_personal', detailedKey: 'd_car_insurance' },
     ],
   },
   {
@@ -167,11 +319,11 @@ const RETIREMENT_EXPENSE_GROUPS: ExpenseGroup[] = [
     label: 'Children Expenses',
     color: '#2D5A4E',
     items: [
-      { key: 'd_childcare',          label: 'Childcare / DayCare',        simpleKey: 's_children', detailedKey: 'd_childcare' },
-      { key: 'd_school_fees',        label: 'School & Tuition Fees',      simpleKey: 's_children', detailedKey: 'd_school_fees' },
-      { key: 'd_school_transport',   label: 'School Transport',           simpleKey: 's_children', detailedKey: 'd_school_transport' },
-      { key: 'd_allowance_children', label: 'Allowance / Pocket Money',   simpleKey: 's_children', detailedKey: 'd_allowance_children' },
-      { key: 'd_other_children',     label: 'Other Children Expenses',    simpleKey: 's_children', detailedKey: 'd_other_children' },
+      { key: 'd_childcare',          label: 'Childcare / DayCare',      simpleKey: 's_children', detailedKey: 'd_childcare' },
+      { key: 'd_school_fees',        label: 'School & Tuition Fees',    simpleKey: 's_children', detailedKey: 'd_school_fees' },
+      { key: 'd_school_transport',   label: 'School Transport',         simpleKey: 's_children', detailedKey: 'd_school_transport' },
+      { key: 'd_allowance_children', label: 'Allowance / Pocket Money', simpleKey: 's_children', detailedKey: 'd_allowance_children' },
+      { key: 'd_other_children',     label: 'Other Children Expenses',  simpleKey: 's_children', detailedKey: 'd_other_children' },
     ],
   },
   {
@@ -187,255 +339,13 @@ const RETIREMENT_EXPENSE_GROUPS: ExpenseGroup[] = [
   },
 ]
 
-// ─── CALC ENGINE ──────────────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-export interface RetirementCalcResult {
-  monthlyNeedAtRetirement: number
-  annualHolidaysAtRetirement: number
-  totalAnnualNeedAtRetirement: number
-  cpfLifeMonthly: number
-  cpfLifeAnnual: number
-  passiveAnnual: number
-  netAnnualGap: number
-  corpusNeeded: number
-  existingAssetsFV: number
-  savingsGap: number
-  monthlySavingsRequired: number
-  yearsToRetirement: number
-  retirementYears: number
-}
-
-interface PhasedRetirementResult {
-  // Client (first to retire)
-  clientRetirementAge: number
-  yearsToClientRetirement: number
-  
-  // Spouse (second to retire, if applicable)
-  spouseRetirementAge: number
-  yearsToSpouseRetirement: number
-  gapYears: number  // Years between client and spouse retirement
-  
-  // Monthly needs (inflated to client's retirement date)
-  monthlyNeedAtClientRetirement: number
-  spouseMonthlyIncome: number  // Flat (no inflation growth)
-  gapMonthlyShortfall: number  // Expenses - spouse income (min 0)
-  gapMonthlySurplus: number    // Spouse income - expenses (min 0)
-  
-  // Corpus calculations
-  gapFundNeeded: number        // PV of gap shortfalls
-  fullRetirementCorpusAtSpouseRetirement: number  // Corpus needed when both retired
-  fullRetirementCorpusPV: number  // PV of above at client's retirement
-  totalCorpusNeeded: number    // gapFundNeeded + fullRetirementCorpusPV
-  
-  // Legacy fields for compatibility
-  corpusNeeded: number
-  yearsToRetirement: number
-  retirementYears: number
-}
-
-function calcPhasedRetirement(
-  clientAge: number,
-  clientRetirementAge: number,
-  clientLifeExpectancy: number,
-  spouseAge: number | undefined,
-  spouseRetirementAge: number | undefined,
-  spouseLifeExpectancy: number | undefined,
-  spouseMonthlyIncome: number,
-  combinedMonthlyNeed: number,
-  inflationRate: number,
-  postReturnRate: number,
-): PhasedRetirementResult {
-  const g = inflationRate / 100
-  const r = postReturnRate / 100
-  
-  const yearsToClientRetirement = Math.max(0.5, clientRetirementAge - clientAge)
-  
-  // Default for single person
-  if (!spouseAge || !spouseRetirementAge || !spouseLifeExpectancy) {
-    const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
-    const retirementYears = clientLifeExpectancy - clientRetirementAge
-    const totalAnnualNeed = monthlyNeedAtRetirement * 12
-    
-    let corpusNeeded = 0
-    if (Math.abs(r - g) < 0.0001) {
-      corpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
-    } else {
-      corpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
-    }
-    
-    return {
-      clientRetirementAge,
-      yearsToClientRetirement,
-      spouseRetirementAge: 0,
-      yearsToSpouseRetirement: 0,
-      gapYears: 0,
-      monthlyNeedAtClientRetirement: monthlyNeedAtRetirement,
-      spouseMonthlyIncome: 0,
-      gapMonthlyShortfall: 0,
-      gapMonthlySurplus: 0,
-      gapFundNeeded: 0,
-      fullRetirementCorpusAtSpouseRetirement: corpusNeeded,
-      fullRetirementCorpusPV: corpusNeeded,
-      totalCorpusNeeded: corpusNeeded,
-      corpusNeeded,
-      yearsToRetirement: yearsToClientRetirement,
-      retirementYears,
-    }
-  }
-  
-  // Couple calculation
-  const yearsToSpouseRetirement = Math.max(0.5, spouseRetirementAge - spouseAge)
-  const gapYears = Math.max(0, yearsToSpouseRetirement - yearsToClientRetirement)
-  
-  // Inflate expenses to client's retirement date
-  const monthlyNeedAtClientRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
-  
-  // Spouse income stays flat (conservative - 0% real growth)
-  const spouseMonthlyIncomeAtRetirement = spouseMonthlyIncome
-  
-  // Gap calculations
-  const gapMonthlyShortfall = Math.max(0, monthlyNeedAtClientRetirement - spouseMonthlyIncomeAtRetirement)
-  const gapMonthlySurplus = Math.max(0, spouseMonthlyIncomeAtRetirement - monthlyNeedAtClientRetirement)
-  
-  // Calculate PV of gap years (if any)
-  let gapFundNeeded = 0
-  if (gapYears > 0 && gapMonthlyShortfall > 0) {
-    const annualShortfall = gapMonthlyShortfall * 12
-    for (let year = 0; year < gapYears; year++) {
-      const inflatedShortfall = annualShortfall * Math.pow(1 + g, year)
-      gapFundNeeded += inflatedShortfall / Math.pow(1 + r, year)
-    }
-  }
-  
-  // If there's a surplus during gap years, it gets added to the portfolio
-  let gapSurplusFV = 0
-  if (gapYears > 0 && gapMonthlySurplus > 0) {
-    const annualSurplus = gapMonthlySurplus * 12
-    for (let year = 0; year < gapYears; year++) {
-      const inflatedSurplus = annualSurplus * Math.pow(1 + g, year)
-      const yearsRemaining = gapYears - year - 1
-      gapSurplusFV += inflatedSurplus * Math.pow(1 + r, yearsRemaining)
-    }
-  }
-  
-  // Calculate corpus needed at spouse's retirement date
-  const monthlyNeedAtSpouseRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToSpouseRetirement)
-  const retirementYears = spouseLifeExpectancy - spouseRetirementAge
-  const totalAnnualNeedAtSpouseRetirement = monthlyNeedAtSpouseRetirement * 12
-  
-  let fullRetirementCorpusAtSpouseRetirement = 0
-  if (Math.abs(r - g) < 0.0001) {
-    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * retirementYears / (1 + r)
-  } else {
-    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * 
-      (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
-  }
-  
-  // Discount back to client's retirement date
-  const fullRetirementCorpusPV = fullRetirementCorpusAtSpouseRetirement / Math.pow(1 + r, gapYears)
-  
-  // Total corpus needed at client's retirement
-  const totalCorpusNeeded = gapFundNeeded + fullRetirementCorpusPV - gapSurplusFV
-  
-  return {
-    clientRetirementAge,
-    yearsToClientRetirement,
-    spouseRetirementAge,
-    yearsToSpouseRetirement,
-    gapYears,
-    monthlyNeedAtClientRetirement,
-    spouseMonthlyIncome: spouseMonthlyIncomeAtRetirement,
-    gapMonthlyShortfall,
-    gapMonthlySurplus,
-    gapFundNeeded,
-    fullRetirementCorpusAtSpouseRetirement,
-    fullRetirementCorpusPV,
-    totalCorpusNeeded: Math.max(0, totalCorpusNeeded),
-    corpusNeeded: Math.max(0, totalCorpusNeeded),
-    yearsToRetirement: yearsToClientRetirement,
-    retirementYears,
-  }
-}
-
-function calcRetirement(
-  person: RetirementPersonData,
-  currentAge: number,
-  inflationRate: number,
-  postReturnRate: number,
-  preReturnRate: number,
-  passiveItems: PassiveIncomeItem[],
-  who: 'client' | 'spouse',
-  liquidAssets: number,
-  monthlyNeed: number,
-  annualHolidays: number,
-): RetirementCalcResult {
-  const g = inflationRate / 100
-  const r = postReturnRate / 100
-  const rPre = preReturnRate / 100
-  const yearsToRetirement = Math.max(0.5, person.retirementAge - currentAge)
-  const retirementYears = Math.max(1, person.lifeExpectancy - person.retirementAge)
-
-  const monthlyNeedAtRetirement = monthlyNeed * Math.pow(1 + g, yearsToRetirement)
-  const annualHolidaysAtRetirement = annualHolidays * Math.pow(1 + g, yearsToRetirement)
-  const totalAnnualNeedAtRetirement = monthlyNeedAtRetirement * 12 + annualHolidaysAtRetirement
-
-  const cpfLifeMonthly = person.includeCPF
-    ? getCPFPlanPayout(person.cpfRaPlan, person.cpfRaBalanceOverride, person.cpfLifeOverride)
-    : 0
-  const cpfLifeAnnual = cpfLifeMonthly * 12
-
-  const passiveAnnual = passiveItems
-    .filter(p => {
-      const ownerMatch = p.owner === who || p.owner === 'joint'
-      const active = p.startAge <= person.retirementAge && (p.endAge === 0 || p.endAge > person.retirementAge)
-      return ownerMatch && active
-    })
-    .reduce((s, p) => s + (p.owner === 'joint' ? p.monthlyAmount * 6 : p.monthlyAmount * 12), 0)
-
-  const netAnnualGap = Math.max(0, totalAnnualNeedAtRetirement - cpfLifeAnnual - passiveAnnual)
-
-  // Corpus = PV of growing annuity
-  let corpusNeeded = 0
-  if (netAnnualGap > 0 && retirementYears > 0) {
-    if (Math.abs(r - g) < 0.0001) {
-      corpusNeeded = netAnnualGap * retirementYears / (1 + r)
-    } else {
-      corpusNeeded = netAnnualGap * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
-    }
-  }
-
-  const existingAssetsFV = liquidAssets * Math.pow(1 + rPre, yearsToRetirement)
-  const savingsGap = Math.max(0, corpusNeeded - existingAssetsFV)
-
-  const rPreM = rPre / 12
-  const preMo = yearsToRetirement * 12
-  let monthlySavingsRequired = 0
-  if (savingsGap > 0 && preMo > 0) {
-    if (rPreM === 0) {
-      monthlySavingsRequired = savingsGap / preMo
-    } else {
-      monthlySavingsRequired = savingsGap * rPreM / ((Math.pow(1 + rPreM, preMo) - 1) * (1 + rPreM))
-    }
-  }
-
-  return {
-    monthlyNeedAtRetirement, annualHolidaysAtRetirement, totalAnnualNeedAtRetirement,
-    cpfLifeMonthly, cpfLifeAnnual, passiveAnnual, netAnnualGap,
-    corpusNeeded, existingAssetsFV, savingsGap, monthlySavingsRequired,
-    yearsToRetirement, retirementYears,
-  }
-}
-
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-function fmtSGD(n: number) {
-  if (!n || isNaN(n)) return 'SGD 0'
-  return `SGD ${Math.round(n).toLocaleString('en-SG')}`
-}
 function fmt(n: number) {
   if (!n || isNaN(n)) return '$0'
   return '$' + Math.round(n).toLocaleString('en-SG')
 }
+
 function newId() { return 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5) }
 
 function readExpenseValue(ff: Record<string, unknown>, item: ExpenseItem, expenseMode: 'simple' | 'detailed', who: 'client' | 'spouse'): number {
@@ -446,25 +356,21 @@ function readExpenseValue(ff: Record<string, unknown>, item: ExpenseItem, expens
       return (ff[key] as number) || 0
     }
   }
-  // Simplified mode mapping
   const simpleMap: Record<string, string> = {
     's_financial': 'd_income_tax',
-    's_cpf_oa': 'd_mortgage_cpf',
-    's_mortgage': 'd_mortgage_cash',
+    's_cpf_oa':    'd_mortgage_cpf',
+    's_mortgage':  'd_mortgage_cash',
     's_household': 'd_conservancy',
-    's_personal': 'd_personal_food',
-    's_children': 'd_childcare',
+    's_personal':  'd_personal_food',
+    's_children':  'd_childcare',
     's_lifestyle': 'd_holidays',
   }
   const base = item.simpleKey
   if (base) {
     const key = who === 'spouse' ? base.replace('s_', 's2_') : base
     const val = (ff[key] as number) || 0
-    
     const mappedDetailedKey = simpleMap[base]
-    if (mappedDetailedKey && item.detailedKey === mappedDetailedKey) {
-      return val
-    }
+    if (mappedDetailedKey && item.detailedKey === mappedDetailedKey) return val
     return 0
   }
   return 0
@@ -473,9 +379,7 @@ function readExpenseValue(ff: Record<string, unknown>, item: ExpenseItem, expens
 function sumSelectedExpenses(ff: Record<string, unknown>, selectedKeys: Record<string, boolean>, expenseMode: 'simple' | 'detailed', who: 'client' | 'spouse'): number {
   let total = 0
   for (const group of RETIREMENT_EXPENSE_GROUPS) {
-    // Check if category is selected
     if (selectedKeys[group.id] === false) continue
-    
     for (const item of group.items) {
       total += readExpenseValue(ff, item, expenseMode, who)
     }
@@ -490,18 +394,18 @@ export const DEFAULT_RETIREMENT_DATA: RetirementData = {
   postReturnRate: 4,
   preReturnRate: 5,
   expenseSelections: {
-  mode: 'expense_based',
-  coupleIncomeMode: 'combined',
-  selectedExpenseKeys: {
-    financial: true,
-    household: true,
-    personal: true,
-    children: true,
-    lifestyle: true,
+    mode: 'expense_based',
+    coupleIncomeMode: 'combined',
+    selectedExpenseKeys: {
+      financial: true,
+      household: true,
+      personal: true,
+      children: true,
+      lifestyle: true,
+    },
+    combinedDesiredMonthly: 0,
+    combinedDesiredHolidays: 0,
   },
-  combinedDesiredMonthly: 0,
-  combinedDesiredHolidays: 0,
-},
   client: {
     retirementAge: 65, lifeExpectancy: 85,
     desiredMonthlyIncome: 0, desiredAnnualHolidays: 0,
@@ -546,172 +450,210 @@ function RateSlider({ label, value, onChange, min = 0, max = 15, step = 0.25, co
   )
 }
 
-function PillSelect<T extends string>({ options, value, onChange }: {
-  options: { value: T; label: string }[]; value: T; onChange: (v: T) => void
+// ─── SECTION 1: RETIREMENT AGE & LONGEVITY ───────────────────────────────────
+
+function AgePanel({ person, onChange, name, color, currentAge }: {
+  person: RetirementPersonData
+  onChange: (c: Partial<RetirementPersonData>) => void
+  name: string
+  color: string
+  currentAge: number
 }) {
+  const yearsToRetirement = Math.max(0, person.retirementAge - currentAge)
+  const retirementYears = Math.max(0, person.lifeExpectancy - person.retirementAge)
+
   return (
-    <div style={{ display: 'flex', background: 'white', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-      {options.map(opt => (
-        <button key={opt.value} onClick={() => onChange(opt.value)}
-          style={{ flex: 1, padding: '9px 4px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', transition: 'all 0.15s',
-            background: value === opt.value ? 'var(--ink)' : 'white',
-            color: value === opt.value ? 'white' : 'var(--ink3)',
-          }}>
-          {opt.label}
-        </button>
-      ))}
+    <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '13px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--cream)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 4, height: 20, background: color, borderRadius: 2 }} />
+          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{name}</span>
+          <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>· Age {currentAge}</span>
+        </div>
+        {/* Summary pills */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ background: color + '18', border: `1px solid ${color}40`, borderRadius: 20, padding: '3px 12px' }}>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: color, fontWeight: 600 }}>
+              Retire {person.retirementAge}
+            </span>
+          </div>
+          <div style={{ background: 'var(--cream)', border: '1px solid var(--line)', borderRadius: 20, padding: '3px 12px' }}>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
+              {retirementYears}y in retirement
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+        {/* Retirement Age */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)' }}>
+              Retirement Age
+            </span>
+            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: color }}>
+              {person.retirementAge}
+              <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginLeft: 6 }}>
+                ({yearsToRetirement}y away)
+              </span>
+            </span>
+          </div>
+          <input type="range" min={50} max={75} step={1} value={person.retirementAge}
+            onChange={e => onChange({ retirementAge: parseInt(e.target.value) })}
+            style={{ width: '100%', accentColor: color, cursor: 'pointer' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>50</span>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>75</span>
+          </div>
+        </div>
+
+        {/* Life Expectancy */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)' }}>
+              Life Expectancy
+            </span>
+            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: 'var(--ink)' }}>
+              {person.lifeExpectancy}
+            </span>
+          </div>
+          <input type="range" min={75} max={100} step={1} value={person.lifeExpectancy}
+            onChange={e => onChange({ lifeExpectancy: parseInt(e.target.value) })}
+            style={{ width: '100%', accentColor: 'var(--ink3)', cursor: 'pointer' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>75</span>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>100</span>
+          </div>
+        </div>
+
+        {/* Visual timeline bar */}
+        <div>
+          <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+            Life Timeline
+          </div>
+          <div style={{ display: 'flex', height: 22, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--line)' }}>
+            <div style={{
+              width: `${(yearsToRetirement / (person.lifeExpectancy - currentAge)) * 100}%`,
+              background: color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, color: 'white', whiteSpace: 'nowrap', padding: '0 6px' }}>
+                Working · {yearsToRetirement}y
+              </span>
+            </div>
+            <div style={{
+              flex: 1,
+              background: 'var(--cream)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', whiteSpace: 'nowrap', padding: '0 6px' }}>
+                Retirement · {retirementYears}y
+              </span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>Now ({currentAge})</span>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, color, fontWeight: 600 }}>Retire ({person.retirementAge})</span>
+            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{person.lifeExpectancy}</span>
+          </div>
+        </div>
+
+      </div>
     </div>
   )
 }
 
-// ─── EXPENSE PICKER ───────────────────────────────────────────────────────────
+// ─── SECTION 2: EXPENSE PICKER ────────────────────────────────────────────────
 
-function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected, setEditModal }: {
-  ff: Record<string, unknown>; expenseMode: 'simple' | 'detailed'
-  selectedKeys: Record<string, boolean>; onChange: (keys: Record<string, boolean>) => void
+function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, clientName, spouseName, clientTotalSelected, spouseTotalSelected }: {
+  ff: Record<string, unknown>
+  expenseMode: 'simple' | 'detailed'
+  selectedKeys: Record<string, boolean>
+  onChange: (keys: Record<string, boolean>) => void
   showSpouse: boolean
-  clientName: string; spouseName: string
-  clientTotalSelected: number; spouseTotalSelected: number
-  setEditModal: (v: { open: boolean; category: string }) => void
+  clientName: string
+  spouseName: string
+  clientTotalSelected: number
+  spouseTotalSelected: number
 }) {
-  const cats = selectedKeys
-  
   function toggleCat(cat: string) {
-    // Toggle all items in this category
     const newKeys = { ...selectedKeys }
     const group = RETIREMENT_EXPENSE_GROUPS.find(g => g.id === cat)
     if (group) {
-      const newValue = !cats[cat]
-      group.items.forEach(item => {
-        newKeys[item.key] = newValue
-      })
+      const newValue = !(selectedKeys[cat] !== false)
+      group.items.forEach(item => { newKeys[item.key] = newValue })
       newKeys[cat] = newValue
     }
     onChange(newKeys)
   }
 
-  // Calculate category totals
   const getCategoryTotal = (groupId: string, who: 'client' | 'spouse') => {
     const group = RETIREMENT_EXPENSE_GROUPS.find(g => g.id === groupId)
     if (!group) return 0
-    return group.items.reduce((sum, item) => {
-      return sum + readExpenseValue(ff, item, expenseMode, who)
-    }, 0)
+    return group.items.reduce((sum, item) => sum + readExpenseValue(ff, item, expenseMode, who), 0)
   }
 
   return (
     <div>
       <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.6 }}>
-        Select which expense categories to include in retirement planning.
+        Select which current expense categories to carry into retirement.
       </p>
 
-            {/* Column headers */}
-      {showSpouse ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 110px 110px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
-          <div />
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>
-          <div />
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 100px 80px', gap: 8, padding: '0 12px 6px', alignItems: 'center' }}>
-          <div />
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>Annual</div>
-          <div />
-        </div>
-      )}
+      {/* Column headers */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: showSpouse ? '24px 1fr 110px 110px' : '24px 1fr 110px',
+        gap: 8, padding: '0 12px 6px'
+      }}>
+        <div />
+        <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category</div>
+        <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{clientName}</div>
+        {showSpouse && <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }}>{spouseName}</div>}
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {RETIREMENT_EXPENSE_GROUPS.map(group => {
           const clientAmt = getCategoryTotal(group.id, 'client')
           const spouseAmt = showSpouse ? getCategoryTotal(group.id, 'spouse') : 0
-          const catTotal = clientAmt + spouseAmt
-          const clientPct = catTotal > 0 ? Math.round(clientAmt / catTotal * 100) : 0
-          const spousePct = catTotal > 0 ? Math.round(spouseAmt / catTotal * 100) : 0
-          const isSelected = cats[group.id] !== false
+          const isSelected = selectedKeys[group.id] !== false
 
           return (
             <div key={group.id}
-              style={{ 
-                display: 'grid',
-                gridTemplateColumns: showSpouse ? '24px 1fr 110px 110px 80px' : '24px 1fr 100px 80px',
-                gap: 8, 
-                padding: '9px 12px', 
-                alignItems: 'center',
-                background: isSelected ? '#F5F0E8' : 'transparent',
-                borderRadius: 4, 
-                cursor: 'pointer', 
-                transition: 'background 0.12s',
-              }}
               onClick={() => toggleCat(group.id)}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: showSpouse ? '24px 1fr 110px 110px' : '24px 1fr 110px',
+                gap: 8, padding: '10px 12px', alignItems: 'center',
+                background: isSelected ? '#F5F0E8' : 'transparent',
+                borderRadius: 4, cursor: 'pointer', transition: 'background 0.12s',
+              }}
             >
-              {/* Checkbox */}
-              <div style={{ 
-                width: 16, 
-                height: 16, 
-                borderRadius: 3, 
-                flexShrink: 0,
+              <div style={{
+                width: 16, height: 16, borderRadius: 3, flexShrink: 0,
                 background: isSelected ? group.color : 'transparent',
                 border: `1.5px solid ${isSelected ? group.color : '#ccc'}`,
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center' 
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}>
                 {isSelected && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
               </div>
-              
-              {/* Label */}
               <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{group.label}</span>
-              
-              {/* Client amount + % */}
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(clientAmt)}</div>
-                {showSpouse && catTotal > 0 && (
-                  <div style={{ fontSize: 10, color: group.color, fontFamily: 'Inter' }}>{clientPct}%</div>
-                )}
+              <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>
+                {fmt(clientAmt)}
               </div>
-              
-              {/* Spouse amount + % */}
               {showSpouse && (
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(spouseAmt)}</div>
-                  {catTotal > 0 && (
-                    <div style={{ fontSize: 10, color: '#2D5A4E', fontFamily: 'Inter' }}>{spousePct}%</div>
-                  )}
+                <div style={{ textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>
+                  {fmt(spouseAmt)}
                 </div>
               )}
-              
-                           {/* Edit button */}
-              <div style={{ textAlign: 'right' }}>
-                {expenseMode === 'detailed' && (
-                  <button 
-                    onClick={(e) => { 
-                      e.stopPropagation()
-                      setEditModal({ open: true, category: group.id })
-                    }}
-                    style={{ 
-                      fontSize: 10, 
-                      color: 'var(--gold)', 
-                      background: 'none', 
-                      border: '1px solid var(--gold)',
-                      borderRadius: 3, 
-                      padding: '2px 8px', 
-                      cursor: 'pointer', 
-                      fontFamily: 'Inter' 
-                    }}
-                  >
-                    Edit
-                  </button>
-                )}
-              </div>
             </div>
           )
         })}
       </div>
 
-                 {/* Totals row */}
+      {/* Totals row */}
       <div style={{ marginTop: 16, padding: '12px 16px', background: '#1C1A17', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Selected Annual Expenses</span>
         {showSpouse ? (
@@ -731,265 +673,134 @@ function ExpensePicker({ ff, expenseMode, selectedKeys, onChange, showSpouse, cl
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(clientTotalSelected)}/yr</div>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--gold)' }}>{fmt(clientTotalSelected / 12)}/mo</div>
-           </div>
+          </div>
         )}
       </div>
     </div>
   )
 }
 
-// ─── EXPECTATION COMPARISON ───────────────────────────────────────────────────
+// ─── SECTION 3: CPF LIFE PANEL ────────────────────────────────────────────────
 
-function ExpectationComparison({ currentAnnual, wishAnnual, personName, color }: {
-  currentAnnual: number; wishAnnual: number; personName: string; color: string
+function CPFPanel({ person, onChange, name, color, cpfOA, cpfSA, cpfRA }: {
+  person: RetirementPersonData
+  onChange: (c: Partial<RetirementPersonData>) => void
+  name: string
+  color: string
+  cpfOA: number
+  cpfSA: number
+  cpfRA: number
 }) {
-  if (!currentAnnual || !wishAnnual) return null
-  const ratio = wishAnnual / currentAnnual
-  const pctDiff = Math.round((ratio - 1) * 100)
+  const projectedRA = person.cpfRaBalanceOverride > 0
+    ? person.cpfRaBalanceOverride
+    : cpfRA > 0 ? cpfRA : Math.min(cpfOA + cpfSA, CPF_LIFE_2025.FRS.balance)
 
-  let statusColor: string, icon: string, message: string
-  if (ratio < 0.7) {
-    statusColor = '#C0392B'; icon = '⚠'
-    message = `Retirement wish is ${Math.abs(pctDiff)}% below current spending (only ${Math.round(ratio * 100)}% of today's lifestyle). Worth discussing whether this is intentional.`
-  } else if (ratio <= 1.15) {
-    statusColor = '#2D5A4E'; icon = '✓'
-    message = `Retirement wish aligns closely with current spending (${pctDiff >= 0 ? '+' : ''}${pctDiff}%). Realistic and well-calibrated.`
-  } else {
-    statusColor = '#A8834A'; icon = '↑'
-    message = `Retirement wish is ${pctDiff}% above current spending. Ensure sufficient corpus is planned to support this lifestyle.`
-  }
+  const displayedPayout = person.includeCPF
+    ? getCPFPlanPayout(person.cpfRaPlan, projectedRA, person.cpfLifeOverride)
+    : 0
 
-  const barMax = Math.max(currentAnnual, wishAnnual)
+  const CPF_PLANS = [
+    { key: 'brs' as CPFPlanType, label: 'BRS',      payout: CPF_LIFE_2025.BRS.monthly },
+    { key: 'frs' as CPFPlanType, label: 'FRS',      payout: CPF_LIFE_2025.FRS.monthly },
+    { key: 'ers' as CPFPlanType, label: 'ERS',      payout: CPF_LIFE_2025.ERS.monthly },
+    { key: 'override' as CPFPlanType, label: 'Manual', payout: person.cpfLifeOverride },
+  ]
 
-  return (
-    <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
-      <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--cream)' }}>
-        <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink3)' }}>Expectation Check · {personName}</span>
-        <span style={{ fontFamily: 'Inter', fontSize: 11, color: statusColor, fontWeight: 700 }}>{icon} {pctDiff >= 0 ? '+' : ''}{pctDiff}% vs current spending</span>
-      </div>
-      <div style={{ padding: '16px' }}>
-        {[
-          { label: 'Current spending (selected items)', value: currentAnnual, col: 'var(--ink3)' },
-          { label: 'Retirement wish (stated)', value: wishAnnual, col: color },
-        ].map((row, i) => (
-          <div key={i} style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{row.label}</span>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: row.col, fontWeight: 600 }}>{fmt(row.value)}/yr · {fmt(row.value / 12)}/mo</span>
-            </div>
-            <div style={{ height: 8, background: 'var(--cream)', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--line)' }}>
-              <div style={{ height: '100%', width: `${(row.value / barMax) * 100}%`, background: row.col, borderRadius: 4, transition: 'width 0.4s' }} />
-            </div>
-          </div>
-        ))}
-        <div style={{ padding: '10px 12px', background: ratio < 0.7 ? '#FEF3F2' : ratio > 1.15 ? '#FDF8F0' : '#EFF7F3', borderRadius: 8, borderLeft: `3px solid ${statusColor}` }}>
-          <p style={{ fontFamily: 'Inter', fontSize: 11, color: statusColor, margin: 0, lineHeight: 1.5 }}>{message}</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── PERSON PANEL ─────────────────────────────────────────────────────────────
-
-function PersonPanel({ person, onChange, name, color, currentAge, cpfOA, cpfSA, cpfRA }: {
-  person: RetirementPersonData; onChange: (c: Partial<RetirementPersonData>) => void
-  name: string; color: string; currentAge: number
-  cpfOA: number; cpfSA: number; cpfRA: number
-}) {
   const inp: React.CSSProperties = {
     background: 'white', border: '1px solid var(--line)', borderRadius: 8,
     padding: '9px 12px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)',
     outline: 'none', width: '100%', boxSizing: 'border-box' as const,
   }
 
-  const projectedRA = person.cpfRaBalanceOverride > 0
-    ? person.cpfRaBalanceOverride
-    : cpfRA > 0 ? cpfRA : Math.min(cpfOA + cpfSA, CPF_LIFE_2025.FRS.balance)
-
-  const estimatedPayout = estimateCPFLifePayout(projectedRA)
-  const displayedPayout = person.includeCPF
-    ? getCPFPlanPayout(person.cpfRaPlan, projectedRA, person.cpfLifeOverride)
-    : 0
-
-  const CPF_PLANS = [
-    { key: 'brs' as CPFPlanType, label: 'BRS',     payout: CPF_LIFE_2025.BRS.monthly, balance: CPF_LIFE_2025.BRS.balance },
-    { key: 'frs' as CPFPlanType, label: 'FRS',     payout: CPF_LIFE_2025.FRS.monthly, balance: CPF_LIFE_2025.FRS.balance },
-    { key: 'ers' as CPFPlanType, label: 'ERS',     payout: CPF_LIFE_2025.ERS.monthly, balance: CPF_LIFE_2025.ERS.balance },
-    { key: 'override' as CPFPlanType, label: 'Override', payout: person.cpfLifeOverride, balance: 0 },
-  ]
-
-  const AgeSlider = ({ label, value, onChange, min, max }: { label: string; value: number; onChange: (v: number) => void; min: number; max: number }) => (
-  <div>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-      <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{label}</span>
-      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: color, fontWeight: 600 }}>{value}</span>
-    </div>
-    <input 
-      type="range" 
-      min={min} 
-      max={max} 
-      step={1} 
-      value={value}
-      onChange={e => onChange(parseInt(e.target.value))}
-      style={{ width: '100%', accentColor: color }}
-    />
-  </div>
-)
-
-  return (
-    <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
-      <div style={{ padding: '13px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--cream)' }}>
-        <div style={{ width: 4, height: 20, background: color, borderRadius: 2 }} />
-        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>{name}</span>
-        <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>· Age {currentAge}</span>
-      </div>
-
-      <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-
-        {/* Retirement & life expectancy */}
-       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
-  <div>
-    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 7 }}>Retirement Age</div>
-    <AgeSlider label="Age" value={person.retirementAge} onChange={v => onChange({ retirementAge: v })} min={50} max={75} />
-  </div>
-  <div>
-    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 7 }}>Life Expectancy</div>
-    <AgeSlider label="Age" value={person.lifeExpectancy} onChange={v => onChange({ lifeExpectancy: v })} min={75} max={100} />
-  </div>
-</div>
-
-      </div>
-    </div>
-  )
-}
-
-// ─── KPI STRIP ────────────────────────────────────────────────────────────────
-
-function KPIStrip({ result, name }: { result: RetirementCalcResult; name: string }) {
-  const hasGap = result.savingsGap > 0
-  const kpis = [
-    { label: 'Monthly Need at Retirement', value: fmtSGD(result.monthlyNeedAtRetirement), sub: 'Inflation-adjusted', hi: false, alert: false },
-    { label: 'Financial Independence Capital', value: fmtSGD(result.corpusNeeded), sub: `${Math.round(result.retirementYears)}y retirement`, hi: true, alert: false },
-    { label: 'Annual Needs (incl. Holidays)', value: fmtSGD(result.totalAnnualNeedAtRetirement), sub: 'At retirement age', hi: false, alert: false },
-  ]
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-      {kpis.map((kpi, i) => (
-        <div key={i} style={{ padding: '14px 16px', borderRight: i < 2 ? '1px solid var(--line)' : 'none', background: kpi.hi ? 'var(--gold-l)' : 'white' }}>
-          <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>{kpi.label}</div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, fontWeight: 600, marginBottom: 2, color: kpi.hi ? 'var(--gold-tag)' : 'var(--ink)' }}>{kpi.value}</div>
-          <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{kpi.sub}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── RETIREMENT CHART ─────────────────────────────────────────────────────────
-
-function RetirementChart({ result, personName, currentAge, color }: {
-  result: RetirementCalcResult; personName: string; currentAge: number; color: string
-}) {
-  const retirementAge = Math.round(currentAge + result.yearsToRetirement)
-  const lifeExpectancy = Math.round(retirementAge + result.retirementYears)
-  const totalYears = result.yearsToRetirement + result.retirementYears
-  const workPct = totalYears > 0 ? (result.yearsToRetirement / totalYears) * 100 : 60
-  const hasGap = result.savingsGap > 0
-  const barMax = Math.max(result.corpusNeeded, result.existingAssetsFV, 1)
-
   return (
     <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--cream)' }}>
-        <span style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink)' }}>{personName}</span>
-        <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
-          {Math.round(result.yearsToRetirement)}y to retire · {Math.round(result.retirementYears)}y in retirement
-        </span>
-      </div>
-      <div style={{ padding: '16px' }}>
-
-        {/* Timeline bar */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Life Timeline</div>
-          <div style={{ display: 'flex', height: 26, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--line)' }}>
-            <div style={{ width: `${workPct}%`, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, color: 'white', padding: '0 8px', whiteSpace: 'nowrap' }}>Working · {Math.round(result.yearsToRetirement)}y</span>
-            </div>
-            <div style={{ flex: 1, background: hasGap ? '#FEF3F2' : '#EFF7F3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, color: hasGap ? 'var(--rouge)' : 'var(--emerald)', padding: '0 8px', whiteSpace: 'nowrap' }}>Retirement · {Math.round(result.retirementYears)}y</span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
-            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>Now ({currentAge})</span>
-            <span style={{ fontFamily: 'Inter', fontSize: 10, color, fontWeight: 600 }}>Retire ({retirementAge})</span>
-            <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{lifeExpectancy}</span>
-          </div>
+      {/* Header with toggle */}
+      <div style={{ padding: '13px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--cream)', borderBottom: person.includeCPF ? '1px solid var(--line)' : 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 4, height: 18, background: color, borderRadius: 2 }} />
+          <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{name}</span>
         </div>
-
-        {/* Corpus bars */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Corpus vs Investable Assets (FV at Retirement)</div>
-          {[
-            { label: 'Corpus Needed', val: result.corpusNeeded, col: hasGap ? 'var(--rouge)' : 'var(--emerald)' },
-            { label: 'Investable Assets (FV)', val: result.existingAssetsFV, col: color },
-          ].map((row, i) => (
-            <div key={i} style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{row.label}</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: row.col, fontWeight: 600 }}>{fmtSGD(row.val)}</span>
-              </div>
-              <div style={{ height: 9, background: 'var(--cream)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--line)' }}>
-                <div style={{ height: '100%', width: `${Math.min(100, (row.val / barMax) * 100)}%`, background: row.col, borderRadius: 5 }} />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Income waterfall at retirement */}
-        <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
-          <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Monthly Income at Retirement (Inflated)</div>
-          {[
-            { label: 'Monthly Need', val: result.monthlyNeedAtRetirement, col: 'var(--ink)', show: true },
-            { label: '+ Holidays (÷12)', val: result.annualHolidaysAtRetirement / 12, col: 'var(--ink3)', show: result.annualHolidaysAtRetirement > 0 },
-            { label: '− CPF LIFE', val: result.cpfLifeMonthly, col: 'var(--emerald)', neg: true, show: result.cpfLifeMonthly > 0 },
-            { label: '− Passive Income (÷12)', val: result.passiveAnnual / 12, col: 'var(--emerald)', neg: true, show: result.passiveAnnual > 0 },
-          ].filter(r => r.show).map((row, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{row.label}</span>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: row.col }}>{fmt(row.val)}/mo</span>
-            </div>
-          ))}
-          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 6, marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>Net Monthly Drawdown Gap</span>
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 700, color: result.netAnnualGap > 0 ? 'var(--rouge)' : 'var(--emerald)' }}>
-              {fmt(result.netAnnualGap / 12)}/mo
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {person.includeCPF && displayedPayout > 0 && (
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--emerald)', fontWeight: 600 }}>
+              ${displayedPayout.toLocaleString('en-SG')}/mo
             </span>
+          )}
+          {/* Toggle */}
+          <div onClick={() => onChange({ includeCPF: !person.includeCPF })}
+            style={{ width: 40, height: 22, borderRadius: 11, cursor: 'pointer', transition: 'background 0.2s', position: 'relative',
+              background: person.includeCPF ? 'var(--emerald)' : '#ccc' }}>
+            <div style={{ position: 'absolute', top: 3, left: person.includeCPF ? 21 : 3, width: 16, height: 16, borderRadius: 8, background: 'white', transition: 'left 0.2s' }} />
           </div>
         </div>
-
-        {/* Gap indicator */}
-        {hasGap ? (
-          <div style={{ background: '#FEF3F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--rouge)', fontWeight: 500 }}>Savings Gap</span>
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: 'var(--rouge)', fontWeight: 700 }}>{fmtSGD(result.savingsGap)}</span>
-          </div>
-        ) : (
-          <div style={{ background: 'var(--emerald-l)', border: '1px solid #d0e8da', borderRadius: 8, padding: '10px 14px' }}>
-            <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--emerald)', fontWeight: 500 }}>
-              ✓ On track — surplus {fmtSGD(result.existingAssetsFV - result.corpusNeeded)}
-            </span>
-          </div>
-        )}
       </div>
+
+      {/* Expanded content */}
+      {person.includeCPF && (
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Plan selector */}
+          <div>
+            <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>CPF LIFE Plan</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
+              {CPF_PLANS.map(plan => (
+                <button key={plan.key} onClick={() => onChange({ cpfRaPlan: plan.key })}
+                  style={{ padding: '8px 4px', border: `1px solid ${person.cpfRaPlan === plan.key ? color : 'var(--line)'}`, borderRadius: 8, cursor: 'pointer', transition: 'all 0.15s', textAlign: 'center',
+                    background: person.cpfRaPlan === plan.key ? color + '15' : 'white' }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: person.cpfRaPlan === plan.key ? color : 'var(--ink)' }}>{plan.label}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
+                    {plan.key !== 'override' ? `$${plan.payout.toLocaleString()}/mo` : 'Custom'}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Manual override */}
+          {person.cpfRaPlan === 'override' && (
+            <div>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Payout Override (SGD)</div>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>$</span>
+                <input type="number" min={0} value={person.cpfLifeOverride || ''}
+                  onChange={e => onChange({ cpfLifeOverride: parseFloat(e.target.value) || 0 })}
+                  placeholder="e.g. 1200" style={{ ...inp, paddingLeft: 28 }} />
+              </div>
+            </div>
+          )}
+
+          {/* RA balance note */}
+          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>CPF Balances on File</div>
+            <div style={{ display: 'flex', gap: 20 }}>
+              {[{ l: 'OA', v: cpfOA }, { l: 'SA', v: cpfSA }, { l: 'RA', v: cpfRA }].map(b => (
+                <div key={b.l}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)' }}>{b.l}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink)' }}>{fmt(b.v)}</div>
+                </div>
+              ))}
+            </div>
+            {cpfOA === 0 && cpfSA === 0 && cpfRA === 0 && (
+              <p style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 6, marginBottom: 0 }}>
+                No CPF data found — enter figures in Financial Profile first.
+              </p>
+            )}
+          </div>
+
+        </div>
+      )}
     </div>
   )
 }
 
-// ─── PASSIVE INCOME ───────────────────────────────────────────────────────────
+// ─── SECTION 3: PASSIVE INCOME ────────────────────────────────────────────────
 
 function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseName }: {
-  items: PassiveIncomeItem[]; onChange: (items: PassiveIncomeItem[]) => void
-  isCouple: boolean; clientName: string; spouseName: string
+  items: PassiveIncomeItem[]
+  onChange: (items: PassiveIncomeItem[]) => void
+  isCouple: boolean
+  clientName: string
+  spouseName: string
 }) {
   const inp: React.CSSProperties = {
     background: 'white', border: '1px solid var(--line)', borderRadius: 6,
@@ -998,12 +809,14 @@ function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseNam
   }
 
   const TYPES: { key: PassiveIncomeItem['type']; label: string }[] = [
-    { key: 'rental', label: 'Rental Income' },
+    { key: 'rental',   label: 'Rental Income' },
     { key: 'dividend', label: 'Dividend / Investment' },
-    { key: 'annuity', label: 'Annuity / Endowment' },
-    { key: 'other', label: 'Other' },
+    { key: 'annuity',  label: 'Annuity / Endowment' },
+    { key: 'other',    label: 'Other' },
   ]
-  const TYPE_COLORS: Record<string, string> = { rental: 'var(--gold)', dividend: 'var(--emerald)', annuity: '#6B5B8B', other: 'var(--ink3)' }
+  const TYPE_COLORS: Record<string, string> = {
+    rental: 'var(--gold)', dividend: 'var(--emerald)', annuity: '#6B5B8B', other: 'var(--ink3)'
+  }
 
   function add() {
     onChange([...items, { id: newId(), label: '', type: 'rental', monthlyAmount: 0, startAge: 65, endAge: 0, owner: 'client' }])
@@ -1017,7 +830,8 @@ function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseNam
         <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', margin: 0 }}>
           Income streams active during retirement — rental, dividends, annuity payouts, etc.
         </p>
-        <button onClick={add} style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--gold)', background: 'transparent', border: '1px solid var(--gold)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: 12 }}>
+        <button onClick={add}
+          style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--gold)', background: 'transparent', border: '1px solid var(--gold)', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: 12 }}>
           + Add Income
         </button>
       </div>
@@ -1035,7 +849,10 @@ function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseNam
                   style={{ border: 'none', background: 'transparent', fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: TYPE_COLORS[item.type], cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.06em', outline: 'none' }}>
                   {TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
-                <button onClick={() => remove(item.id)} style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', background: 'none', border: 'none', cursor: 'pointer' }}>Remove</button>
+                <button onClick={() => remove(item.id)}
+                  style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  Remove
+                </button>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 10 }}>
@@ -1058,11 +875,13 @@ function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseNam
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 <div>
                   <div style={{ fontFamily: 'Inter', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink3)', marginBottom: 4 }}>Start Age</div>
-                  <input type="number" min={50} max={100} value={item.startAge} onChange={e => update(item.id, { startAge: parseInt(e.target.value) || 65 })} style={inp} />
+                  <input type="number" min={50} max={100} value={item.startAge}
+                    onChange={e => update(item.id, { startAge: parseInt(e.target.value) || 65 })} style={inp} />
                 </div>
                 <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink3)', marginBottom: 4 }}>End Age (0=lifelong)</div>
-                  <input type="number" min={0} max={120} value={item.endAge} onChange={e => update(item.id, { endAge: parseInt(e.target.value) || 0 })} style={inp} />
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink3)', marginBottom: 4 }}>End Age (0 = lifelong)</div>
+                  <input type="number" min={0} max={120} value={item.endAge}
+                    onChange={e => update(item.id, { endAge: parseInt(e.target.value) || 0 })} style={inp} />
                 </div>
                 <div>
                   <div style={{ fontFamily: 'Inter', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink3)', marginBottom: 4 }}>Owner</div>
@@ -1074,8 +893,7 @@ function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseNam
                       <button key={opt.v} onClick={() => update(item.id, { owner: opt.v })}
                         style={{ flex: 1, padding: '7px 2px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, transition: 'all 0.12s',
                           background: item.owner === opt.v ? 'var(--ink)' : 'white',
-                          color: item.owner === opt.v ? 'white' : 'var(--ink3)',
-                        }}>
+                          color: item.owner === opt.v ? 'white' : 'var(--ink3)' }}>
                         {opt.l}
                       </button>
                     ))}
@@ -1086,352 +904,6 @@ function PassiveIncomeSection({ items, onChange, isCouple, clientName, spouseNam
           ))}
         </div>
       )}
-    </div>
-  )
-}
-// ─── EDIT EXPENSE ITEMS MODAL ─────────────────────────────────────────────────
-
-function EditExpenseItemsModal({ category, ff, expenseMode, selectedKeys, onChange, onClose, isCouple, clientName, spouseName }: {
-  category: string
-  ff: Record<string, unknown>
-  expenseMode: 'simple' | 'detailed'
-  selectedKeys: Record<string, boolean>
-  onChange: (keys: Record<string, boolean>) => void
-  onClose: () => void
-  isCouple: boolean
-  clientName: string
-  spouseName: string
-}) {
-  const group = RETIREMENT_EXPENSE_GROUPS.find(g => g.id === category)
-  if (!group) return null
-
-  function isClientIncluded(key: string) { 
-    return selectedKeys[key + '_c'] !== false 
-  }
-  
-  function isSpouseIncluded(key: string) { 
-    return selectedKeys[key + '_s'] !== false 
-  }
-  
-  function toggleClient(key: string) { 
-    const newKeys = { ...selectedKeys }
-    newKeys[key + '_c'] = !isClientIncluded(key)
-    onChange(newKeys)
-  }
-  
-  function toggleSpouse(key: string) { 
-    const newKeys = { ...selectedKeys }
-    newKeys[key + '_s'] = !isSpouseIncluded(key)
-    onChange(newKeys)
-  }
-  
-  function toggleItem(key: string) {
-    const newKeys = { ...selectedKeys }
-    newKeys[key] = !(selectedKeys[key] !== false)
-    onChange(newKeys)
-  }
-
-  // Calculate selected totals
-  const selectedClientTotal = group.items.filter(k => isCouple ? isClientIncluded(k.key) : selectedKeys[k.key] !== false)
-    .reduce((s, item) => s + readExpenseValue(ff, item, expenseMode, 'client'), 0)
-  const selectedSpouseTotal = group.items.filter(k => isSpouseIncluded(k.key))
-    .reduce((s, item) => s + readExpenseValue(ff, item, expenseMode, 'spouse'), 0)
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#fff', borderRadius: 10, padding: '28px 32px', minWidth: 550, maxWidth: 650, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', maxHeight: '82vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17', margin: 0 }}>
-            {group.label}
-          </h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }}>×</button>
-        </div>
-        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>
-          {isCouple ? 'Tick under each person to include that expense in their retirement calculation.' : 'Select which line items to include in the retirement calculation.'}
-        </p>
-
-        {/* Column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
-          <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
-          <div style={{ fontSize: 9, color: group.color, fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{clientName}</div>
-          {isCouple && <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{spouseName}</div>}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {group.items.map(item => {
-            const clientVal = readExpenseValue(ff, item, expenseMode, 'client')
-            const spouseVal = isCouple ? readExpenseValue(ff, item, expenseMode, 'spouse') : 0
-            const total = clientVal + spouseVal
-            const clientPct = total > 0 ? Math.round(clientVal / total * 100) : 0
-            const spousePct = total > 0 ? Math.round(spouseVal / total * 100) : 0
-            const clientOn = isCouple ? isClientIncluded(item.key) : selectedKeys[item.key] !== false
-            const spouseOn = isSpouseIncluded(item.key)
-            const rowActive = isCouple ? (clientOn || spouseOn) : clientOn
-
-            return (
-              <div key={item.key}
-                style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px',
-                  gap: 8, 
-                  padding: '10px 10px', 
-                  borderRadius: 6,
-                  background: rowActive ? '#F5F0E8' : 'transparent', 
-                  alignItems: 'center',
-                  borderBottom: '1px solid #F0EDE8' 
-                }}
-              >
-                {/* Item name + amounts */}
-                <div>
-                  <div style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17', marginBottom: 2 }}>{item.label}</div>
-                  {total > 0 && (
-                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'DM Mono, monospace' }}>
-                      {isCouple
-                        ? `${fmt(clientVal)} (${clientPct}%) · ${fmt(spouseVal)} (${spousePct}%)`
-                        : `${fmt(clientVal)}/yr`}
-                    </div>
-                  )}
-                </div>
-
-                {/* Client checkbox */}
-                {isCouple ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
-                    onClick={() => toggleClient(item.key)}>
-                    <div style={{ 
-                      width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
-                      background: clientOn ? group.color : 'transparent',
-                      border: `2px solid ${clientOn ? group.color : '#ccc'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                    }}>
-                      {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
-                    </div>
-                    {clientVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: group.color }}>{fmt(clientVal)}</div>}
-                  </div>
-                ) : (
-                  <div style={{ 
-                    width: 20, height: 20, borderRadius: 4, cursor: 'pointer', margin: '0 auto',
-                    background: clientOn ? group.color : 'transparent',
-                    border: `2px solid ${clientOn ? group.color : '#ccc'}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                  }}
-                    onClick={() => toggleItem(item.key)}>
-                    {clientOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
-                  </div>
-                )}
-
-                {/* Spouse checkbox (couple only) */}
-                {isCouple && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
-                    onClick={() => toggleSpouse(item.key)}>
-                    <div style={{ 
-                      width: 20, height: 20, borderRadius: 4, cursor: 'pointer',
-                      background: spouseOn ? '#2D5A4E' : 'transparent',
-                      border: `2px solid ${spouseOn ? '#2D5A4E' : '#ccc'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                    }}>
-                      {spouseOn && <span style={{ color: '#fff', fontSize: 11, lineHeight: 1 }}>✓</span>}
-                    </div>
-                    {spouseVal > 0 && <div style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: '#2D5A4E' }}>{fmt(spouseVal)}</div>}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Selected totals */}
-        <div style={{ marginTop: 16, padding: '12px 14px', background: '#1C1A17', borderRadius: 6 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
-            {isCouple ? (
-              <div style={{ display: 'flex', gap: 20 }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 9, color: group.color, fontFamily: 'Inter', marginBottom: 2 }}>{clientName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', marginBottom: 2 }}>{spouseName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#F5F0E8' }}>{fmt(selectedSpouseTotal)}/yr</div>
-                </div>
-              </div>
-            ) : (
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#F5F0E8' }}>{fmt(selectedClientTotal)}/yr</span>
-            )}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={onClose}
-            style={{ padding: '9px 24px', background: '#1C1A17', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.06em' }}>
-            Done
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── INVESTMENT MIX CALCULATOR ────────────────────────────────────────────────
-
-function InvestmentMixCalculator({ corpusNeeded, yearsToRetirement, preReturnRate }: {
-  corpusNeeded: number
-  yearsToRetirement: number
-  preReturnRate: number
-}) {
-  const [mixPct, setMixPct] = useState(50) // 0 = all monthly, 100 = all lump sum
-  
-  const r = preReturnRate / 100
-  const months = Math.max(1, yearsToRetirement * 12)
-  const rMo = r / 12
-  
-  // Calculate required lump sum for the selected portion
-  const lumpSumPortion = corpusNeeded * (mixPct / 100)
-  const lumpSumToday = lumpSumPortion / Math.pow(1 + r, yearsToRetirement)
-  
-  // Calculate required monthly for the remaining portion
-  const monthlyPortion = corpusNeeded * ((100 - mixPct) / 100)
-  let monthlyRequired = 0
-  if (monthlyPortion > 0 && months > 0) {
-    if (rMo === 0) {
-      monthlyRequired = monthlyPortion / months
-    } else {
-      monthlyRequired = monthlyPortion * rMo / (Math.pow(1 + rMo, months) - 1)
-    }
-  }
-  
-  return (
-    <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, padding: '24px', marginTop: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-        <div style={{ width: 3, height: 16, background: 'var(--gold)', borderRadius: 2 }} />
-        <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>
-          Investment Mix to Achieve Financial Independence
-        </span>
-      </div>
-      
-      <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 20, lineHeight: 1.6 }}>
-        Adjust the slider to see how much you need as a lump sum today versus regular monthly investments.
-      </p>
-      
-      {/* Slider */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Lump Sum Today</span>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--gold)' }}>{mixPct}%</span>
-          <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Monthly Investment</span>
-        </div>
-        <input 
-          type="range" 
-          min={0} 
-          max={100} 
-          step={5} 
-          value={mixPct}
-          onChange={e => setMixPct(parseInt(e.target.value))}
-          style={{ width: '100%', accentColor: 'var(--gold)' }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-          <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{100 - mixPct}%</span>
-          <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}></span>
-        </div>
-      </div>
-      
-      {/* Results */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div style={{ background: 'var(--gold-l)', border: '1px solid #e8d9be', borderRadius: 8, padding: '16px' }}>
-          <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 8 }}>
-            Lump Sum Investment Today
-          </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, fontWeight: 600, color: 'var(--gold-tag)' }}>
-            {fmtSGD(lumpSumToday)}
-          </div>
-          <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
-            Grows to {fmtSGD(lumpSumPortion)} at retirement
-          </div>
-        </div>
-        
-        <div style={{ background: 'var(--emerald-l)', border: '1px solid #d0e8da', borderRadius: 8, padding: '16px' }}>
-          <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--emerald)', marginBottom: 8 }}>
-            Regular Monthly Investment
-          </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, fontWeight: 600, color: 'var(--emerald)' }}>
-            {fmtSGD(monthlyRequired)}/mo
-          </div>
-          <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
-            For {Math.round(yearsToRetirement)} years until retirement
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── EXPECTATION DIFFERENCE ──────────────────────────────────────────────────
-
-function ExpectationDifference({ currentAnnual, desiredAnnual }: {
-  currentAnnual: number
-  desiredAnnual: number
-}) {
-  if (!currentAnnual || !desiredAnnual) return null
-  
-  const difference = desiredAnnual - currentAnnual
-  const pctDiff = Math.round((difference / currentAnnual) * 100)
-  const isHigher = difference > 0
-  
-  return (
-    <div style={{ 
-      background: isHigher ? '#FDF8F0' : '#EFF7F3', 
-      border: `1px solid ${isHigher ? '#e8d9be' : '#d0e8da'}`, 
-      borderRadius: 8, 
-      padding: '12px 16px',
-      marginTop: 16
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 16 }}>{isHigher ? '↑' : '↓'}</span>
-        <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink)' }}>
-          Desired retirement income is <strong>{fmtSGD(Math.abs(difference))}/yr</strong> ({pctDiff > 0 ? '+' : ''}{pctDiff}%) 
-          {isHigher ? ' above' : ' below'} current expenses
-        </span>
-      </div>
-    </div>
-  )
-}
-
-// ─── GAP EXPLANATION ─────────────────────────────────────────────────────────
-
-function GapExplanation({ phasedResult, clientName, spouseName }: { 
-  phasedResult: PhasedRetirementResult
-  clientName: string
-  spouseName: string 
-}) {
-  if (phasedResult.gapYears === 0) return null
-  
-  return (
-    <div style={{ 
-      background: 'var(--cream)', 
-      border: '1px solid var(--line)', 
-      borderRadius: 8, 
-      padding: '16px', 
-      marginTop: 16 
-    }}>
-      <div style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>
-        📅 Gap Period: {phasedResult.gapYears} {phasedResult.gapYears === 1 ? 'year' : 'years'}
-      </div>
-      <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', lineHeight: 1.6, margin: 0 }}>
-        {clientName} retires first at age {phasedResult.clientRetirementAge}. 
-        {spouseName} continues working for {phasedResult.gapYears} more {phasedResult.gapYears === 1 ? 'year' : 'years'} until age {phasedResult.spouseRetirementAge}.
-      </p>
-      {phasedResult.gapMonthlyShortfall > 0 ? (
-        <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--rouge)', marginTop: 8, marginBottom: 0 }}>
-          ⚠️ Monthly shortfall during gap: {fmtSGD(phasedResult.gapMonthlyShortfall)}/mo
-          <br />
-          <span style={{ fontSize: 11 }}>Additional corpus needed for gap: {fmtSGD(phasedResult.gapFundNeeded)}</span>
-        </p>
-      ) : phasedResult.gapMonthlySurplus > 0 ? (
-        <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--emerald)', marginTop: 8, marginBottom: 0 }}>
-          ✓ Monthly surplus during gap: {fmtSGD(phasedResult.gapMonthlySurplus)}/mo
-          <br />
-          <span style={{ fontSize: 11 }}>This surplus reduces the required corpus</span>
-        </p>
-      ) : null}
     </div>
   )
 }
@@ -1453,52 +925,18 @@ export default function RetirementSection({
   function updClient(c: Partial<RetirementPersonData>) { upd({ client: { ...data.client, ...c } }) }
   function updSpouse(c: Partial<RetirementPersonData>) { upd({ spouse: { ...data.spouse, ...c } }) }
   function updExp(c: Partial<RetirementExpenseSelections>) { upd({ expenseSelections: { ...data.expenseSelections, ...c } }) }
-  
-  const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
+
   const es = data.expenseSelections
   const mode = es.mode
-  const coupleMode = es.coupleIncomeMode
 
-  // ── Resolve income needs per person ─────────────────────────────────────
-
-    const clientExpAnnual = sumSelectedExpenses(factFinding, es.selectedExpenseKeys, expenseMode, 'client')
-  const spouseExpAnnual = isCouple ? sumSelectedExpenses(factFinding, es.selectedExpenseKeys, expenseMode, 'spouse') : 0
+  // ── Expense totals ─────────────────────────────────────────────────────────
+  const clientExpAnnual  = sumSelectedExpenses(factFinding, es.selectedExpenseKeys, expenseMode, 'client')
+  const spouseExpAnnual  = isCouple ? sumSelectedExpenses(factFinding, es.selectedExpenseKeys, expenseMode, 'spouse') : 0
   const combinedExpAnnual = clientExpAnnual + spouseExpAnnual
 
-  let clientMonthly = 0, clientHolidays = 0, spouseMonthly = 0, spouseHolidays = 0
+  // ── Background calculation (feeds Capital Mandate via onCalculated) ────────
+  const combinedMonthlyNeedToday = combinedExpAnnual / 12
 
-  if (mode === 'expense_based') {
-    if (!isCouple) {
-      clientMonthly = clientExpAnnual / 12
-      spouseMonthly = 0
-    } else {
-      // For couples, split the combined total equally
-      clientMonthly = combinedExpAnnual / 2 / 12
-      spouseMonthly = combinedExpAnnual / 2 / 12
-    }
-  } else {
-    if (!isCouple) {
-      clientMonthly = data.client.desiredMonthlyIncome
-      clientHolidays = data.client.desiredAnnualHolidays
-      spouseMonthly = 0
-      spouseHolidays = 0
-    } else {
-      // For couples, use the combined desired amounts split equally
-      clientMonthly = es.combinedDesiredMonthly / 2
-      clientHolidays = es.combinedDesiredHolidays / 2
-      spouseMonthly = es.combinedDesiredMonthly / 2
-      spouseHolidays = es.combinedDesiredHolidays / 2
-    }
-  }
-
-    // Get spouse monthly income from fact finding (conservative - no growth assumed)
-  const spouseGrossMonthly = (factFinding?.person2 as any)?.gross_monthly || 0
-  const spouseTakeHome = spouseGrossMonthly * 0.8  // Approximate after CPF
-  
-  // Combined monthly need in today's dollars
-  const combinedMonthlyNeedToday = (clientExpAnnual + (isCouple ? spouseExpAnnual : 0)) / 12
-  
-  // Use phased retirement calculation
   const phasedResult = calcPhasedRetirement(
     clientAge,
     data.client.retirementAge,
@@ -1506,16 +944,18 @@ export default function RetirementSection({
     isCouple ? spouseAge : undefined,
     isCouple ? data.spouse.retirementAge : undefined,
     isCouple ? data.spouse.lifeExpectancy : undefined,
-    isCouple ? spouseTakeHome : 0,
+    0,
     combinedMonthlyNeedToday,
     data.inflationRate,
     data.postReturnRate,
   )
-useEffect(() => {
-  if (onCalculated && phasedResult.totalCorpusNeeded > 0) {
+
+  useEffect(() => {
+    if (!onCalculated) return
+    const corpus = phasedResult.totalCorpusNeeded
+    if (corpus <= 0) return
     const existingFV = clientLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement)
-    const gap = Math.max(0, phasedResult.totalCorpusNeeded - existingFV)
-    
+    const gap = Math.max(0, corpus - existingFV)
     const rMo = data.preReturnRate / 100 / 12
     const preMo = phasedResult.yearsToClientRetirement * 12
     let monthly = 0
@@ -1524,49 +964,8 @@ useEffect(() => {
         ? gap / preMo
         : gap * rMo / ((Math.pow(1 + rMo, preMo) - 1) * (1 + rMo))
     }
-    
-    onCalculated(phasedResult.totalCorpusNeeded, gap, monthly)
-  }
-}, [phasedResult.totalCorpusNeeded, data.preReturnRate, phasedResult.yearsToClientRetirement, clientLiquid, onCalculated])
-  // For backward compatibility with existing components
-  const clientResult: RetirementCalcResult = {
-    monthlyNeedAtRetirement: phasedResult.monthlyNeedAtClientRetirement,
-    annualHolidaysAtRetirement: clientHolidays * Math.pow(1 + data.inflationRate / 100, phasedResult.yearsToClientRetirement),
-    totalAnnualNeedAtRetirement: phasedResult.monthlyNeedAtClientRetirement * 12 + 
-      (clientHolidays * Math.pow(1 + data.inflationRate / 100, phasedResult.yearsToClientRetirement)),
-    cpfLifeMonthly: 0,
-    cpfLifeAnnual: 0,
-    passiveAnnual: 0,
-    netAnnualGap: phasedResult.monthlyNeedAtClientRetirement * 12,
-    corpusNeeded: phasedResult.totalCorpusNeeded,
-    existingAssetsFV: clientLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement),
-    savingsGap: Math.max(0, phasedResult.totalCorpusNeeded - clientLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement)),
-    monthlySavingsRequired: 0,
-    yearsToRetirement: phasedResult.yearsToClientRetirement,
-    retirementYears: phasedResult.retirementYears,
-  }
-  
-  const spouseResult: RetirementCalcResult = {
-    monthlyNeedAtRetirement: 0,
-    annualHolidaysAtRetirement: 0,
-    totalAnnualNeedAtRetirement: 0,
-    cpfLifeMonthly: 0,
-    cpfLifeAnnual: 0,
-    passiveAnnual: 0,
-    netAnnualGap: 0,
-    corpusNeeded: 0,
-    existingAssetsFV: 0,
-    savingsGap: 0,
-    monthlySavingsRequired: 0,
-    yearsToRetirement: phasedResult.yearsToSpouseRetirement,
-    retirementYears: 0,
-  }
-
-  // Expectation comparison (only meaningful in direct mode when we also have expense data)
-  const clientWishAnnual = data.client.desiredMonthlyIncome * 12 + data.client.desiredAnnualHolidays
-  const spouseWishAnnual = data.spouse.desiredMonthlyIncome * 12 + data.spouse.desiredAnnualHolidays
-  const combinedWishAnnual = es.combinedDesiredMonthly * 12 + es.combinedDesiredHolidays
-  const showExpectationCheck = mode === 'direct' && combinedExpAnnual > 0
+    onCalculated(corpus, gap, monthly)
+  }, [phasedResult.totalCorpusNeeded, data.preReturnRate, phasedResult.yearsToClientRetirement, clientLiquid, onCalculated])
 
   const inp: React.CSSProperties = {
     background: 'white', border: '1px solid var(--line)', borderRadius: 8,
@@ -1576,42 +975,36 @@ useEffect(() => {
 
   return (
     <div>
+
       {/* Intro */}
       <div style={{ marginBottom: 32 }}>
         <p style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8, fontWeight: 500 }}>Section 3 · Retirement Planning</p>
         <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, fontWeight: 400, color: 'var(--ink)', marginBottom: 8 }}>Planning for Retirement</h2>
         <p style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', lineHeight: 1.6 }}>
-          How much will your client need to retire comfortably? Let's work out the corpus, identify the gap, and determine the monthly savings required.
+          Capture the client's retirement intentions — age, lifestyle, and income offsets. Projections and gap analysis are shown in Capital Mandate.
         </p>
       </div>
 
-      {/* ── ASSUMPTIONS ── */}
-      <SubLabel color="var(--gold)">Global Assumptions</SubLabel>
-      <div style={{ background: 'var(--gold-l)', border: '1px solid #e8d9be', borderRadius: 12, padding: '20px 24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 28 }}>
-          <RateSlider label="Retirement Inflation Rate" value={data.inflationRate} onChange={v => upd({ inflationRate: v })} min={0} max={8} step={0.25} color="var(--gold)" />
-          <RateSlider label="Post-Retirement Return Rate" value={data.postReturnRate} onChange={v => upd({ postReturnRate: v })} min={0} max={10} step={0.25} color="var(--emerald)" />
-          <RateSlider label="Pre-Retirement Return Rate" value={data.preReturnRate} onChange={v => upd({ preReturnRate: v })} min={0} max={15} step={0.25} color="var(--ink3)" />
-        </div>
-        <p style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--gold-tag)', marginTop: 12 }}>
-          Pre-retirement: used to grow existing investable assets to retirement date. Post-retirement: drawdown return on the corpus.
-        </p>
+      {/* ── SECTION 1: AGES ── */}
+      <SubLabel color="var(--gold)">Retirement Age & Longevity</SubLabel>
+      <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 8 }}>
+        <AgePanel person={data.client} onChange={updClient} name={clientName} color="var(--gold)" currentAge={clientAge} />
+        {isCouple && <AgePanel person={data.spouse} onChange={updSpouse} name={spouseName} color="#6B5B8B" currentAge={spouseAge} />}
       </div>
 
-      {/* ── INCOME NEED INPUT ── */}
-      <SubLabel color="var(--ink)">Retirement Income Need</SubLabel>
+      {/* ── SECTION 2: RETIREMENT LIFESTYLE ── */}
+      <SubLabel color="var(--ink)">Retirement Lifestyle</SubLabel>
       <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
 
         {/* Mode tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--line)' }}>
           {([
-            { key: 'expense_based' as IncomeInputMode, label: '✦  Pick from Current Expenses', desc: "Select which current expenses the client wants to maintain in retirement" },
-            { key: 'direct' as IncomeInputMode, label: '⟶  State a Desired Amount', desc: 'Client states a specific monthly income and holiday budget' },
+            { key: 'expense_based' as IncomeInputMode, label: '✦  Pick from Current Expenses', desc: 'Select which current expenses to carry into retirement' },
+            { key: 'direct' as IncomeInputMode,        label: '⟶  State a Desired Amount',    desc: 'Client states a specific monthly income and holiday budget' },
           ]).map(opt => (
             <button key={opt.key} onClick={() => updExp({ mode: opt.key })}
               style={{ flex: 1, padding: '15px 20px', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
-                background: mode === opt.key ? 'var(--ink)' : 'white',
-              }}>
+                background: mode === opt.key ? 'var(--ink)' : 'white' }}>
               <div style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, marginBottom: 3, color: mode === opt.key ? 'var(--gold)' : 'var(--ink)' }}>{opt.label}</div>
               <div style={{ fontFamily: 'Inter', fontSize: 11, color: mode === opt.key ? 'rgba(255,255,255,0.45)' : 'var(--ink3)' }}>{opt.desc}</div>
             </button>
@@ -1620,8 +1013,8 @@ useEffect(() => {
 
         <div style={{ padding: '22px 24px' }}>
 
-          {/* ── EXPENSE-BASED ── */}
-           {mode === 'expense_based' && (
+          {/* Expense-based */}
+          {mode === 'expense_based' && (
             <ExpensePicker
               ff={factFinding} expenseMode={expenseMode}
               selectedKeys={es.selectedExpenseKeys}
@@ -1629,203 +1022,98 @@ useEffect(() => {
               showSpouse={isCouple}
               clientName={clientName} spouseName={spouseName}
               clientTotalSelected={clientExpAnnual} spouseTotalSelected={spouseExpAnnual}
-              setEditModal={setEditModal}
             />
           )}
 
-          {/* ── DIRECT INPUT ── */}
+          {/* Direct input */}
           {mode === 'direct' && (
-            <>
-              {(!isCouple || coupleMode === 'combined') ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
-                      {isCouple ? "Combined Monthly Income" : "Desired Monthly Income"} <span style={{ color: 'var(--ink3)', fontSize: 9 }}>(today's $)</span>
-                    </div>
-                    <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>SGD</span>
-                      <input type="number" min={0} value={isCouple ? es.combinedDesiredMonthly || '' : data.client.desiredMonthlyIncome || ''}
-                        onChange={e => isCouple ? updExp({ combinedDesiredMonthly: parseFloat(e.target.value) || 0 }) : updClient({ desiredMonthlyIncome: parseFloat(e.target.value) || 0 })}
-                        placeholder="e.g. 6000" style={{ ...inp, paddingLeft: 48 }} />
-                    </div>
-                    <p style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>Today's dollars — will be inflated to retirement age.</p>
-                  </div>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
-                      {isCouple ? "Combined Annual Holidays" : "Annual Holiday Budget"} <span style={{ color: 'var(--ink3)', fontSize: 9 }}>(today's $)</span>
-                    </div>
-                    <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>SGD</span>
-                      <input type="number" min={0} value={isCouple ? es.combinedDesiredHolidays || '' : data.client.desiredAnnualHolidays || ''}
-                        onChange={e => isCouple ? updExp({ combinedDesiredHolidays: parseFloat(e.target.value) || 0 }) : updClient({ desiredAnnualHolidays: parseFloat(e.target.value) || 0 })}
-                        placeholder="e.g. 10000" style={{ ...inp, paddingLeft: 48 }} />
-                    </div>
-                  </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+                  {isCouple ? 'Combined Monthly Income' : 'Desired Monthly Income'}
+                  <span style={{ color: 'var(--ink3)', fontSize: 9, marginLeft: 4 }}>(today's $)</span>
                 </div>
-              ) : (
-                /* Separate per person */
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {[
-                    { label: clientName, pd: data.client, updFn: updClient, col: 'var(--gold)' },
-                    { label: spouseName, pd: data.spouse, updFn: updSpouse, col: '#6B5B8B' },
-                  ].map(({ label, pd, updFn, col }) => (
-                    <div key={label} style={{ background: 'var(--cream)', borderRadius: 10, padding: '16px', borderLeft: `3px solid ${col}` }}>
-                      <div style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 12 }}>{label}</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <div>
-                          <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 5 }}>Monthly Income (today's $)</div>
-                          <div style={{ position: 'relative' }}>
-                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>SGD</span>
-                            <input type="number" min={0} value={pd.desiredMonthlyIncome || ''}
-                              onChange={e => updFn({ desiredMonthlyIncome: parseFloat(e.target.value) || 0 })}
-                              placeholder="e.g. 3000" style={{ ...inp, paddingLeft: 48 }} />
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 5 }}>Annual Holidays (today's $)</div>
-                          <div style={{ position: 'relative' }}>
-                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>SGD</span>
-                            <input type="number" min={0} value={pd.desiredAnnualHolidays || ''}
-                              onChange={e => updFn({ desiredAnnualHolidays: parseFloat(e.target.value) || 0 })}
-                              placeholder="e.g. 8000" style={{ ...inp, paddingLeft: 48 }} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>SGD</span>
+                  <input type="number" min={0}
+                    value={isCouple ? es.combinedDesiredMonthly || '' : data.client.desiredMonthlyIncome || ''}
+                    onChange={e => isCouple
+                      ? updExp({ combinedDesiredMonthly: parseFloat(e.target.value) || 0 })
+                      : updClient({ desiredMonthlyIncome: parseFloat(e.target.value) || 0 })}
+                    placeholder="e.g. 6000" style={{ ...inp, paddingLeft: 48 }} />
                 </div>
-              )}
-            </>
+                <p style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+                  Today's dollars — will be inflated to retirement date.
+                </p>
+              </div>
+              <div>
+                <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+                  {isCouple ? 'Combined Annual Holidays' : 'Annual Holiday Budget'}
+                  <span style={{ color: 'var(--ink3)', fontSize: 9, marginLeft: 4 }}>(today's $)</span>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>SGD</span>
+                  <input type="number" min={0}
+                    value={isCouple ? es.combinedDesiredHolidays || '' : data.client.desiredAnnualHolidays || ''}
+                    onChange={e => isCouple
+                      ? updExp({ combinedDesiredHolidays: parseFloat(e.target.value) || 0 })
+                      : updClient({ desiredAnnualHolidays: parseFloat(e.target.value) || 0 })}
+                    placeholder="e.g. 10000" style={{ ...inp, paddingLeft: 48 }} />
+                </div>
+              </div>
+            </div>
           )}
 
         </div>
       </div>
 
-      {/* ── EXPECTATION CHECK (direct mode only, when FF expense data exists) ── */}
-      {showExpectationCheck && (
-        <>
-          <SubLabel color="var(--ink3)">Expectation Check</SubLabel>
-          <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 12, lineHeight: 1.6 }}>
-            Comparing retirement wish against current spending from Financial Profile — helps anchor the conversation.
-          </p>
-          {(!isCouple || coupleMode === 'combined') && combinedWishAnnual > 0 && combinedExpAnnual > 0 && (
-            <ExpectationComparison
-              currentAnnual={combinedExpAnnual}
-              wishAnnual={combinedWishAnnual}
-              personName={isCouple ? `${clientName} & ${spouseName}` : clientName}
-              color="var(--gold)"
-            />
-          )}
-          {isCouple && coupleMode === 'separate' && (
-            <>
-              {clientWishAnnual > 0 && clientExpAnnual > 0 && <ExpectationComparison currentAnnual={clientExpAnnual} wishAnnual={clientWishAnnual} personName={clientName} color="var(--gold)" />}
-              {spouseWishAnnual > 0 && spouseExpAnnual > 0 && <ExpectationComparison currentAnnual={spouseExpAnnual} wishAnnual={spouseWishAnnual} personName={spouseName} color="#6B5B8B" />}
-            </>
-          )}
-        </>
-      )}
-
-      {/* ── RETIREMENT PARAMETERS (ages + CPF) ── */}
-      <SubLabel color="var(--gold)">Retirement Parameters</SubLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 20 }}>
-        <PersonPanel person={data.client} onChange={updClient} name={clientName} color="var(--gold)" currentAge={clientAge} cpfOA={clientCPF_OA} cpfSA={clientCPF_SA} cpfRA={clientCPF_RA} />
-        {isCouple && <PersonPanel person={data.spouse} onChange={updSpouse} name={spouseName} color="#6B5B8B" currentAge={spouseAge} cpfOA={spouseCPF_OA} cpfSA={spouseCPF_SA} cpfRA={spouseCPF_RA} />}
+      {/* ── SECTION 3: ASSUMPTIONS ── */}
+      <SubLabel color="var(--gold)">Planning Assumptions</SubLabel>
+      <div style={{ background: 'var(--gold-l)', border: '1px solid #e8d9be', borderRadius: 12, padding: '20px 24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 28 }}>
+          <RateSlider label="Inflation Rate" value={data.inflationRate} onChange={v => upd({ inflationRate: v })} min={0} max={8} step={0.25} color="var(--gold)" />
+          <RateSlider label="Post-Retirement Return" value={data.postReturnRate} onChange={v => upd({ postReturnRate: v })} min={0} max={10} step={0.25} color="var(--emerald)" />
+          <RateSlider label="Pre-Retirement Return" value={data.preReturnRate} onChange={v => upd({ preReturnRate: v })} min={0} max={15} step={0.25} color="var(--ink3)" />
+        </div>
+        <p style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--gold-tag)', marginTop: 12, marginBottom: 0 }}>
+          Pre-retirement return is used to grow existing investable assets to retirement date. Post-retirement return is the drawdown rate on the corpus.
+        </p>
       </div>
 
-            {/* ── KPI RESULTS ── */}
-      {isCouple ? (
-        <>
-          <SubLabel color="var(--gold)">Results — {clientName} & {spouseName}</SubLabel>
-          <KPIStrip 
-            result={{
-              monthlyNeedAtRetirement: phasedResult.monthlyNeedAtClientRetirement,
-              corpusNeeded: phasedResult.totalCorpusNeeded,
-              totalAnnualNeedAtRetirement: clientResult.totalAnnualNeedAtRetirement + spouseResult.totalAnnualNeedAtRetirement,
-              retirementYears: Math.max(clientResult.retirementYears, spouseResult.retirementYears),
-              yearsToRetirement: Math.max(clientResult.yearsToRetirement, spouseResult.yearsToRetirement),
-              annualHolidaysAtRetirement: 0,
-              cpfLifeMonthly: 0,
-              cpfLifeAnnual: 0,
-              passiveAnnual: 0,
-              netAnnualGap: 0,
-              existingAssetsFV: 0,
-              savingsGap: 0,
-              monthlySavingsRequired: 0,
-            }} 
-            name={`${clientName} & ${spouseName}`} 
-          />
-          
-                    {/* Gap Explanation */}
-          <GapExplanation 
-            phasedResult={phasedResult}
-            clientName={clientName}
-            spouseName={spouseName}
-          />
-          
-          <InvestmentMixCalculator 
-            corpusNeeded={phasedResult.totalCorpusNeeded}
-            yearsToRetirement={phasedResult.yearsToClientRetirement}
-            preReturnRate={data.preReturnRate}
-          />
-          
-          {mode === 'expense_based' && (
-            <ExpectationDifference 
-              currentAnnual={combinedExpAnnual}
-              desiredAnnual={clientResult.totalAnnualNeedAtRetirement + spouseResult.totalAnnualNeedAtRetirement}
-            />
-          )}
-        </>
-      ) : (
-        <>
-          <SubLabel color="var(--gold)">Results — {clientName}</SubLabel>
-          <KPIStrip result={clientResult} name={clientName} />
-          
-            <InvestmentMixCalculator 
-            corpusNeeded={phasedResult.totalCorpusNeeded}
-            yearsToRetirement={phasedResult.yearsToClientRetirement}
-            preReturnRate={data.preReturnRate}
-          />
-          
-          {mode === 'expense_based' && (
-            <ExpectationDifference 
-              currentAnnual={clientExpAnnual}
-              desiredAnnual={clientResult.totalAnnualNeedAtRetirement}
-            />
-          )}
-        </>
-      )}
+      {/* ── SECTION 4: INCOME OFFSETS ── */}
+      <SubLabel color="var(--emerald)">Income Offsets at Retirement</SubLabel>
+      <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.6 }}>
+        These reduce the corpus needed. CPF LIFE provides a monthly payout for life; passive income covers rental, dividends, and annuities.
+      </p>
 
-            {/* ── TIMELINE CHARTS ── */}
-      <SubLabel>Retirement Timeline</SubLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-        <RetirementChart result={clientResult} personName={isCouple ? `${clientName} & ${spouseName}` : clientName} currentAge={clientAge} color="var(--gold)" />
+      {/* CPF LIFE */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>CPF LIFE</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <CPFPanel person={data.client} onChange={updClient} name={clientName} color="var(--gold)" cpfOA={clientCPF_OA} cpfSA={clientCPF_SA} cpfRA={clientCPF_RA} />
+          {isCouple && <CPFPanel person={data.spouse} onChange={updSpouse} name={spouseName} color="#6B5B8B" cpfOA={spouseCPF_OA} cpfSA={spouseCPF_SA} cpfRA={spouseCPF_RA} />}
+        </div>
       </div>
-      
-      {/* ── PASSIVE INCOME ── */}
-      <SubLabel color="var(--emerald)">Passive Income at Retirement</SubLabel>
-      <PassiveIncomeSection items={data.passiveIncome} onChange={items => upd({ passiveIncome: items })} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
 
+      {/* Passive Income */}
+      <div style={{ marginTop: 20 }}>
+        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Passive Income</div>
+        <PassiveIncomeSection
+          items={data.passiveIncome}
+          onChange={items => upd({ passiveIncome: items })}
+          isCouple={isCouple}
+          clientName={clientName}
+          spouseName={spouseName}
+        />
+      </div>
 
-      {/* ── ADVISOR NOTES ── */}
+      {/* ── SECTION 5: ADVISOR NOTES ── */}
       <SubLabel>Advisor Notes</SubLabel>
       <textarea rows={3} value={data.advisorNotes} onChange={e => upd({ advisorNotes: e.target.value })}
         placeholder="Document key assumptions, client preferences, or discussion points from this session…"
         style={{ width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 10, padding: '14px 16px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', resize: 'vertical', lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
       />
-         {/* EDIT MODAL */}
-      {editModal.open && (
-        <EditExpenseItemsModal
-          category={editModal.category}
-          ff={factFinding}
-          expenseMode={expenseMode}
-          selectedKeys={es.selectedExpenseKeys}
-          onChange={keys => updExp({ selectedExpenseKeys: keys })}
-          onClose={() => setEditModal({ open: false, category: '' })}
-          isCouple={isCouple}
-          clientName={clientName}
-          spouseName={spouseName}
-        />
-      )}
+
     </div>
   )
 }
