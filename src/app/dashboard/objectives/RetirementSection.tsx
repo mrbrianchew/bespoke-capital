@@ -191,70 +191,43 @@ function calcPhasedRetirement(
   }
 
   // ── Couple ────────────────────────────────────────────────────────────────
-  const yearsToSpouseRetirement = Math.max(0.5, spouseRetirementAge - spouseAge)
-  const gapYears = Math.max(0, yearsToSpouseRetirement - yearsToClientRetirement)
+  // Conservative approach: fund from the earlier retirement to the later death
+  const earliestRetirementAge = Math.min(clientRetirementAge, spouseRetirementAge)
+  const latestLifeExpectancy  = Math.max(clientLifeExpectancy, spouseLifeExpectancy)
 
-  const monthlyNeedAtClientRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToClientRetirement)
-  const annualNeedAtClientRetirement = monthlyNeedAtClientRetirement * 12
+  const earliestRetirementPerson = clientRetirementAge <= spouseRetirementAge ? 'client' : 'spouse'
+  const earliestPersonCurrentAge = earliestRetirementPerson === 'client' ? clientAge : spouseAge
 
-  const spouseMonthlyIncomeAtRetirement = spouseMonthlyIncome
-  const spouseAnnualIncomeAtRetirement = spouseMonthlyIncomeAtRetirement * 12
+  const yearsToEarliestRetirement = Math.max(0.5, earliestRetirementAge - earliestPersonCurrentAge)
+  const retirementYears           = Math.max(1, latestLifeExpectancy - earliestRetirementAge)
 
-  const annualShortfall = Math.max(0, annualNeedAtClientRetirement - spouseAnnualIncomeAtRetirement)
-  const annualSurplusIncome = Math.max(0, spouseAnnualIncomeAtRetirement - annualNeedAtClientRetirement)
+  // Inflate combined expenses to the earlier retirement date
+  const monthlyNeedAtRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToEarliestRetirement)
+  const totalAnnualNeed         = monthlyNeedAtRetirement * 12
 
-  // PV of gap shortfalls (discount only — no re-inflation)
-  let gapFundNeeded = 0
-  if (gapYears > 0 && annualShortfall > 0) {
-    if (r === 0) {
-      gapFundNeeded = annualShortfall * gapYears
-    } else {
-      gapFundNeeded = annualShortfall * (1 - Math.pow(1 / (1 + r), gapYears)) / r
-    }
-  }
-
-  // FV of gap surplus (no re-inflation)
-  let gapSurplusFV = 0
-  if (gapYears > 0 && annualSurplusIncome > 0) {
-    if (r === 0) {
-      gapSurplusFV = annualSurplusIncome * gapYears
-    } else {
-      gapSurplusFV = annualSurplusIncome * (Math.pow(1 + r, gapYears) - 1) / r
-    }
-  }
-
-  const monthlyNeedAtSpouseRetirement = combinedMonthlyNeed * Math.pow(1 + g, yearsToSpouseRetirement)
-  const retirementYears = spouseLifeExpectancy - spouseRetirementAge
-  const totalAnnualNeedAtSpouseRetirement = monthlyNeedAtSpouseRetirement * 12
-
-  let fullRetirementCorpusAtSpouseRetirement = 0
+  let totalCorpusNeeded = 0
   if (Math.abs(r - g) < 0.0001) {
-    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement * retirementYears / (1 + r)
+    totalCorpusNeeded = totalAnnualNeed * retirementYears / (1 + r)
   } else {
-    fullRetirementCorpusAtSpouseRetirement = totalAnnualNeedAtSpouseRetirement *
-      (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
+    totalCorpusNeeded = totalAnnualNeed * (1 - Math.pow((1 + g) / (1 + r), retirementYears)) / (r - g)
   }
-
-  const fullRetirementCorpusPV = fullRetirementCorpusAtSpouseRetirement / Math.pow(1 + r, gapYears)
-  const gapSurplusPV = gapSurplusFV / Math.pow(1 + r, gapYears)
-  const totalCorpusNeeded = Math.max(0, gapFundNeeded + fullRetirementCorpusPV - gapSurplusPV)
 
   return {
     clientRetirementAge,
     yearsToClientRetirement,
     spouseRetirementAge,
-    yearsToSpouseRetirement,
-    gapYears,
-    monthlyNeedAtClientRetirement,
-    spouseMonthlyIncome: spouseMonthlyIncomeAtRetirement,
-    gapMonthlyShortfall: annualShortfall / 12,
-    gapMonthlySurplus: annualSurplusIncome / 12,
-    gapFundNeeded,
-    fullRetirementCorpusAtSpouseRetirement,
-    fullRetirementCorpusPV,
+    yearsToSpouseRetirement: Math.max(0.5, spouseRetirementAge - spouseAge),
+    gapYears: 0,
+    monthlyNeedAtClientRetirement: monthlyNeedAtRetirement,
+    spouseMonthlyIncome: 0,
+    gapMonthlyShortfall: 0,
+    gapMonthlySurplus: 0,
+    gapFundNeeded: 0,
+    fullRetirementCorpusAtSpouseRetirement: totalCorpusNeeded,
+    fullRetirementCorpusPV: totalCorpusNeeded,
     totalCorpusNeeded,
     corpusNeeded: totalCorpusNeeded,
-    yearsToRetirement: yearsToClientRetirement,
+    yearsToRetirement: yearsToEarliestRetirement,
     retirementYears,
   }
 }
