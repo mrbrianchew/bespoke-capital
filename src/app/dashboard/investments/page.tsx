@@ -842,7 +842,7 @@ export default function CapitalMandatePage() {
     const denom = 1 - ratio
     if (denom <= 0) return 0
     return retGoal.targetCorpus * (r - g) / denom
-  }, [goals, settings.inflation, postRetirementReturn, lifeExpectancy, retirementAge])
+  }, [goals, retirementInflation, postRetirementReturn, lifeExpectancy, retirementAge])
 
   const effectiveRetirementIncome = useMemo(() => {
     if (settings.incomeSource === 'desired' && desiredMonthlyIncome > 0) return desiredMonthlyIncome
