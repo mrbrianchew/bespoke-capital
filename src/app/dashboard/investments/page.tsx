@@ -653,7 +653,8 @@ export default function CapitalMandatePage() {
     setDesiredMonthlyIncome(retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
     setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
     setPostRetirementReturn(retClientData?.postRetirementReturn || retRow?.postRetirementReturn || 3)
-    setRetirementInflation(retClientData?.inflation || retRow?.inflation || 3)
+    const inflationVal = retClientData?.inflation || retRow?.inflation || 3
+    setRetirementInflation(inflationVal)
 
     const cmData = by['capital_mandate'] || {}
     const savedSettings: CMSettings = {
@@ -682,7 +683,7 @@ export default function CapitalMandatePage() {
     ;(acc?.goals || []).forEach((g: any) => {
       if (!g.targetAmount) return
       const yearsLeft = Math.max(1, g.yearsToGoal || 10)
-      const corpus = g.amountType === 'pv' ? g.targetAmount * Math.pow(1 + savedSettings.inflation / 100, yearsLeft) : g.targetAmount
+      const corpus = g.amountType === 'pv' ? g.targetAmount * Math.pow(1 + inflationVal / 100, yearsLeft) : g.targetAmount
       const owner: 'client' | 'spouse' | 'joint' = g.owner === 'spouse' ? 'spouse' : g.owner === 'joint' ? 'joint' : 'client'
       const goalMonthly = (g.monthlyRequired != null) ? g.monthlyRequired : calcMonthlyRequired(corpus, yearsLeft, savedSettings.expectedReturn)
       builtGoals.push({ id: 'acc_' + g.id, source: 'wealth', label: g.label || 'Wealth Goal', icon: '🏠', targetCorpus: corpus, monthlyRequired: goalMonthly, targetAge: age + yearsLeft, yearsAway: Math.max(0, yearsLeft), owner })
