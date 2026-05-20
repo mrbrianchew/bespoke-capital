@@ -1181,7 +1181,7 @@ export default function CapitalMandatePage() {
                 titleColor: 'rgba(196,164,100,0.9)',
                 bodyColor: 'rgba(240,237,232,0.85)',
                 padding: 14,
-                titleFont: { size: 12, weight: '600' },
+                titleFont: { size: 12, weight: 'bold' },
                 bodyFont: { size: 11 },
                 callbacks: {
                   title: (ctxs: any[]) => {
