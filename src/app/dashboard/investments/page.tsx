@@ -602,7 +602,10 @@ export default function CapitalMandatePage() {
     if (rows) rows.forEach((r: any) => { by[r.section] = r.data })
 
     const fin = by['financials'] || by['factfinding'] || {}
-    const age = fin?.client?.currentAge || fin?.client?.age || c.age || 40
+    const dob = fin?.client?.dateOfBirth || fin?.client?.dob || c.date_of_birth
+    const age = dob
+      ? Math.floor((new Date().getTime() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000))
+      : fin?.client?.currentAge || fin?.client?.age || c.age || 40
     const sage = fin?.spouse?.age || 38
     const cName = fin?.client?.firstName ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim() : c.name || 'Client'
     const sName = fin?.spouse?.firstName ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim() : 'Spouse'
@@ -770,7 +773,7 @@ export default function CapitalMandatePage() {
   const filteredGoals = useMemo(() => goals
     .filter(g => matchesPerson(g.owner))
     .map(g => {
-      if (g.source === 'custom' || g.source === 'retirement') return g
+      if (g.source === 'custom') return g
       const monthly = g.yearsAway > 0
         ? calcMonthlyRequired(g.targetCorpus, g.yearsAway, settings.expectedReturn)
         : g.monthlyRequired
