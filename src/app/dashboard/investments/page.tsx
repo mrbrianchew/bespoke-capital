@@ -645,7 +645,7 @@ export default function CapitalMandatePage() {
         label: mode === 'couple' ? `${cName} & ${sName} — Retirement` : `${cName} — Retirement`,
         icon: '🏖', targetCorpus: totalCorpusNeeded,
         monthlyRequired: totalMonthlyRet > 0 ? totalMonthlyRet : calcMonthlyRequired(totalCorpusNeeded, Math.max(1, retAge - age), savedSettings.expectedReturn),
-        targetAge: retAge, owner: mode === 'couple' ? 'joint' : 'client',
+        targetAge: retAge, yearsAway: Math.max(0, retAge - age), owner: mode === 'couple' ? 'joint' : 'client',
       })
     }
 
@@ -656,7 +656,7 @@ export default function CapitalMandatePage() {
       const corpus = g.amountType === 'pv' ? g.targetAmount * Math.pow(1 + savedSettings.inflation / 100, yearsLeft) : g.targetAmount
       const owner: 'client' | 'spouse' | 'joint' = g.owner === 'spouse' ? 'spouse' : g.owner === 'joint' ? 'joint' : 'client'
       const goalMonthly = (g.monthlyRequired != null) ? g.monthlyRequired : calcMonthlyRequired(corpus, yearsLeft, savedSettings.expectedReturn)
-      builtGoals.push({ id: 'acc_' + g.id, source: 'wealth', label: g.label || 'Wealth Goal', icon: '🏠', targetCorpus: corpus, monthlyRequired: goalMonthly, targetAge: age + yearsLeft, owner })
+      builtGoals.push({ id: 'acc_' + g.id, source: 'wealth', label: g.label || 'Wealth Goal', icon: '🏠', targetCorpus: corpus, monthlyRequired: goalMonthly, targetAge: age + yearsLeft, yearsAway: Math.max(0, yearsLeft), owner })
     })
 
     const edu = by['education']?.edu || by['education'] || {}
@@ -687,7 +687,7 @@ export default function CapitalMandatePage() {
       const fvLiving = (child.annualLiving || 0) * Math.pow(1 + eduLivingInf, yearsUntilUni) * duration
       const corpus = Math.max(0, fvTuition + fvLiving - ((child.existingSavings || 0) * Math.pow(1 + eduReturnRate / 100, yearsUntilUni)))
       if (!corpus) return
-      builtGoals.push({ id: 'edu_' + (child.childId || child.name), source: 'education', label: `${child.name}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, yearsUntilUni), eduReturnRate), targetAge: age + yearsUntilUni, owner: 'joint' })
+      builtGoals.push({ id: 'edu_' + (child.childId || child.name), source: 'education', label: `${child.name}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, yearsUntilUni), eduReturnRate), targetAge: child.uniEntryAge, yearsAway: Math.max(0, yearsUntilUni), owner: 'joint' })
     })
 
     ;(cmData?.customGoals || []).forEach((g: CapitalGoal) => builtGoals.push({ ...g, source: 'custom' }))
