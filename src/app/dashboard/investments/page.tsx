@@ -52,6 +52,7 @@ interface CapitalGoal {
   targetCorpus: number
   monthlyRequired: number
   targetAge: number
+  yearsAway: number
   icon: string
   owner: 'client' | 'spouse' | 'joint'
 }
