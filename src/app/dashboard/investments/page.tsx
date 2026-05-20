@@ -611,7 +611,9 @@ export default function CapitalMandatePage() {
       ? Math.floor((new Date().getTime() - new Date(spouseMember.dob).getTime()) / (365.25 * 24 * 3600 * 1000))
       : fin?.spouse?.age || 38
     const cName = fin?.client?.firstName ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim() : c.name || 'Client'
-    const sName = fin?.spouse?.firstName ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim() : 'Spouse'
+    const sName = fin?.spouse?.firstName
+      ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim()
+      : spouseMember?.name || 'Spouse'
     setClientAge(age); setSpouseAge(sage); setClientName(cName); setSpouseName(sName)
 
     const protData = by['protection_needs']?.protection
