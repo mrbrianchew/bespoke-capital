@@ -648,7 +648,7 @@ export default function CapitalMandatePage() {
         label: mode === 'couple' ? `${cName} & ${sName} — Retirement` : `${cName} — Retirement`,
         icon: '🏖', targetCorpus: totalCorpusNeeded,
         monthlyRequired: totalMonthlyRet > 0 ? totalMonthlyRet : calcMonthlyRequired(totalCorpusNeeded, Math.max(1, retAge - age), savedSettings.expectedReturn),
-        targetAge: retAge, yearsAway: Math.max(0, retAge - age - (new Date().getMonth() >= 6 ? 1 : 0)), owner: mode === 'couple' ? 'joint' : 'client',
+        targetAge: retAge, yearsAway: Math.max(0, retAge - age), owner: mode === 'couple' ? 'joint' : 'client',
       })
     }
 
