@@ -455,21 +455,35 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
 
 // ─── CUSTOM GOAL MODAL ────────────────────────────────────────────────────────
 
-function CustomGoalModal({ onSave, onClose, clientAge, isCouple, clientName, spouseName }: {
-  onSave: (g: CapitalGoal) => void; onClose: () => void; clientAge: number
-  isCouple: boolean; clientName: string; spouseName: string
+function CustomGoalModal({ onSave, onClose, clientAge, spouseAge, isCouple, clientName, spouseName, expectedReturn }: {
+  onSave: (g: CapitalGoal) => void; onClose: () => void; clientAge: number; spouseAge: number
+  isCouple: boolean; clientName: string; spouseName: string; expectedReturn: number
 }) {
   const [label, setLabel] = useState('')
   const [corpus, setCorpus] = useState('')
-  const [monthly, setMonthly] = useState('')
-  const [targetAge, setTargetAge] = useState(clientAge + 10)
   const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>('client')
+  const [targetAge, setTargetAge] = useState(clientAge + 10)
   const inp: React.CSSProperties = { width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }
   const ownerOpts = [{ value: 'client' as const, label: clientName }, ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, { value: 'joint' as const, label: 'Joint' }] : [])]
+
+  // When owner changes, reset target age to the relevant person's age + 10
+  function handleOwnerChange(o: 'client' | 'spouse' | 'joint') {
+    setOwner(o)
+    if (o === 'spouse') setTargetAge(spouseAge + 10)
+    else if (o === 'joint') setTargetAge(Math.max(clientAge, spouseAge) + 10)
+    else setTargetAge(clientAge + 10)
+  }
+
+  const ownerBaseAge = owner === 'spouse' ? spouseAge : clientAge
+  const yearsAway = Math.max(0, targetAge - ownerBaseAge)
+  const corpusNum = parseFloat(corpus) || 0
+  const autoMonthly = calcMonthlyRequired(corpusNum, Math.max(1, yearsAway), expectedReturn)
+
   function save() {
     if (!label.trim()) return
-    onSave({ id: newId(), source: 'custom', label: label.trim(), icon: '✦', targetCorpus: parseFloat(corpus) || 0, monthlyRequired: parseFloat(monthly) || 0, targetAge, yearsAway: Math.max(0, targetAge - clientAge), owner })
+    onSave({ id: newId(), source: 'custom', label: label.trim(), icon: '✦', targetCorpus: corpusNum, monthlyRequired: autoMonthly, targetAge, yearsAway, owner })
   }
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ background: 'var(--cream)', borderRadius: 16, width: 440, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.22)' }}>
@@ -486,23 +500,30 @@ function CustomGoalModal({ onSave, onClose, clientAge, isCouple, clientName, spo
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>For</div>
               <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-                {ownerOpts.map(o => <button key={o.value} onClick={() => setOwner(o.value)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: owner === o.value ? 'var(--ink)' : 'white', color: owner === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.label}</button>)}
+                {ownerOpts.map(o => <button key={o.value} onClick={() => handleOwnerChange(o.value)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: owner === o.value ? 'var(--ink)' : 'white', color: owner === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.label}</button>)}
               </div>
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Target Corpus (S$)</div>
-              <input type="number" style={inp} value={corpus} onChange={e => setCorpus(e.target.value)} placeholder="0" />
-            </div>
-            <div>
-              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Required (S$)</div>
-              <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
-            </div>
-          </div>
           <div>
-            <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Target Age</div>
-            <input type="number" style={inp} value={targetAge} onChange={e => setTargetAge(parseInt(e.target.value) || clientAge + 10)} />
+            <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Target Corpus (S$)</div>
+            <input type="number" style={inp} value={corpus} onChange={e => setCorpus(e.target.value)} placeholder="0" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
+            <div>
+              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+                Target Age {owner === 'joint' ? `(${clientAge > spouseAge ? clientName : spouseName})` : ''}
+              </div>
+              <input type="number" style={inp} value={targetAge} onChange={e => setTargetAge(parseInt(e.target.value) || ownerBaseAge + 10)} />
+            </div>
+            <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Monthly Required</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: corpusNum > 0 ? 'var(--ink)' : 'var(--ink3)' }}>
+                {corpusNum > 0 && yearsAway > 0 ? fmtMo(autoMonthly) : '—'}
+              </div>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>
+                {yearsAway > 0 ? `${yearsAway} yrs · ${expectedReturn}% p.a.` : 'Set corpus & age'}
+              </div>
+            </div>
           </div>
         </div>
         <div style={{ padding: '16px 28px', borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -1555,7 +1576,7 @@ export default function CapitalMandatePage() {
 
       {vehicleModal.open && <VehicleModal item={vehicleModal.item} onSave={saveVehicle} onClose={() => setVehicleModal({ open: false })} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} clientAge={clientAge} />}
       {cashflowModal && <CashflowModal vehicle={cashflowModal} onSave={(flows) => saveCashflows(cashflowModal.id, flows)} onClose={() => setCashflowModal(null)} />}
-      {customGoalModal && <CustomGoalModal onSave={addCustomGoal} onClose={() => setCustomGoalModal(false)} clientAge={clientAge} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} />}
+      {customGoalModal && <CustomGoalModal onSave={addCustomGoal} onClose={() => setCustomGoalModal(false)} clientAge={clientAge} spouseAge={spouseAge} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} expectedReturn={settings.expectedReturn} />}
     </div>
   )
 }
