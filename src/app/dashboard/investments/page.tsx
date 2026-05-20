@@ -606,7 +606,10 @@ export default function CapitalMandatePage() {
     const age = dob
       ? Math.floor((new Date().getTime() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000))
       : fin?.client?.currentAge || fin?.client?.age || c.age || 40
-    const sage = fin?.spouse?.age || 38
+    const spouseMember = (familyMembers || []).find((m: any) => m.relationship?.toLowerCase() === 'spouse')
+    const sage = spouseMember?.dob
+      ? Math.floor((new Date().getTime() - new Date(spouseMember.dob).getTime()) / (365.25 * 24 * 3600 * 1000))
+      : fin?.spouse?.age || 38
     const cName = fin?.client?.firstName ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim() : c.name || 'Client'
     const sName = fin?.spouse?.firstName ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim() : 'Spouse'
     setClientAge(age); setSpouseAge(sage); setClientName(cName); setSpouseName(sName)
