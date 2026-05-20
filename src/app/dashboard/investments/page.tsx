@@ -853,7 +853,7 @@ export default function CapitalMandatePage() {
       return (derivedAnnualWithdrawal / 12) / inflationFactor
     }
     return 0
-  }, [settings.incomeSource, desiredMonthlyIncome, currentExpenses, derivedAnnualWithdrawal, retirementAge, clientAge, settings.inflation])
+  }, [settings.incomeSource, desiredMonthlyIncome, currentExpenses, derivedAnnualWithdrawal, retirementAge, clientAge, retirementInflation])
 
   const xirrMap = useMemo(() => {
     const m: Record<string, number | null> = {}
@@ -1313,10 +1313,10 @@ export default function CapitalMandatePage() {
   // Chart canvas key: include all values that affect chart shape so canvas remounts properly
   const chartKey = [
     filteredGoals.length, filteredPortfolio.length,
-   settings.legacyAmount,
+    settings.legacyAmount,
     settings.expectedReturn, settings.incomeSource,
     retirementInflation, postRetirementReturn,
-    retirementAge, lifeExpectancy, postRetirementReturn,
+    retirementAge, lifeExpectancy,
   ].join('-')
 
   return (
