@@ -84,7 +84,7 @@ function calcMonthlyRequired(corpus: number, yearsLeft: number, annualReturn: nu
   const r = annualReturn / 100
   const rm = r / 12
   const nm = yearsLeft * 12
-  return rm > 0 ? corpus * rm / ((Math.pow(1 + rm, nm) - 1) * (1 + rm)) : corpus / nm
+  return rm > 0 ? corpus * rm / (Math.pow(1 + rm, nm) - 1) : corpus / nm
 }
 
 // FV of an annuity-due stream of monthly payments
@@ -645,7 +645,7 @@ export default function CapitalMandatePage() {
         label: mode === 'couple' ? `${cName} & ${sName} — Retirement` : `${cName} — Retirement`,
         icon: '🏖', targetCorpus: totalCorpusNeeded,
         monthlyRequired: totalMonthlyRet > 0 ? totalMonthlyRet : calcMonthlyRequired(totalCorpusNeeded, Math.max(1, retAge - age), savedSettings.expectedReturn),
-        targetAge: retAge, yearsAway: Math.max(0, retAge - age), owner: mode === 'couple' ? 'joint' : 'client',
+        targetAge: retAge, yearsAway: Math.max(0, retAge - age - (new Date().getMonth() >= 6 ? 1 : 0)), owner: mode === 'couple' ? 'joint' : 'client',
       })
     }
 
@@ -770,7 +770,7 @@ export default function CapitalMandatePage() {
   const filteredGoals = useMemo(() => goals
     .filter(g => matchesPerson(g.owner))
     .map(g => {
-      if (g.source === 'custom') return g
+      if (g.source === 'custom' || g.source === 'retirement') return g
       const monthly = g.yearsAway > 0
         ? calcMonthlyRequired(g.targetCorpus, g.yearsAway, settings.expectedReturn)
         : g.monthlyRequired
