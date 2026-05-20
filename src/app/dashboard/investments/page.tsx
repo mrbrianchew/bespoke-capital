@@ -455,14 +455,14 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
 
 // ─── CUSTOM GOAL MODAL ────────────────────────────────────────────────────────
 
-function CustomGoalModal({ onSave, onClose, clientAge, spouseAge, isCouple, clientName, spouseName, expectedReturn }: {
+function CustomGoalModal({ onSave, onClose, clientAge, spouseAge, isCouple, clientName, spouseName, expectedReturn, existing }: {
   onSave: (g: CapitalGoal) => void; onClose: () => void; clientAge: number; spouseAge: number
-  isCouple: boolean; clientName: string; spouseName: string; expectedReturn: number
+  isCouple: boolean; clientName: string; spouseName: string; expectedReturn: number; existing?: CapitalGoal
 }) {
-  const [label, setLabel] = useState('')
-  const [corpus, setCorpus] = useState('')
-  const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>('client')
-  const [targetAge, setTargetAge] = useState(clientAge + 10)
+  const [label, setLabel] = useState(existing?.label ?? '')
+  const [corpus, setCorpus] = useState(existing?.targetCorpus ? String(existing.targetCorpus) : '')
+  const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>(existing?.owner ?? 'client')
+  const [targetAge, setTargetAge] = useState(existing?.targetAge ?? clientAge + 10)
   const inp: React.CSSProperties = { width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }
   const ownerOpts = [{ value: 'client' as const, label: clientName }, ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, { value: 'joint' as const, label: 'Joint' }] : [])]
 
@@ -481,7 +481,7 @@ function CustomGoalModal({ onSave, onClose, clientAge, spouseAge, isCouple, clie
 
   function save() {
     if (!label.trim()) return
-    onSave({ id: newId(), source: 'custom', label: label.trim(), icon: '✦', targetCorpus: corpusNum, monthlyRequired: autoMonthly, targetAge, yearsAway, owner })
+    onSave({ id: existing?.id ?? newId(), source: 'custom', label: label.trim(), icon: '✦', targetCorpus: corpusNum, monthlyRequired: autoMonthly, targetAge, yearsAway, owner })
   }
 
   return (
@@ -592,6 +592,7 @@ export default function CapitalMandatePage() {
 
   const [goals, setGoals] = useState<CapitalGoal[]>([])
   const [customGoalModal, setCustomGoalModal] = useState(false)
+  const [editingGoal, setEditingGoal] = useState<CapitalGoal | null>(null)
   const [portfolio, setPortfolio] = useState<FundingVehicle[]>([])
   const [vehicleModal, setVehicleModal] = useState<{ open: boolean; item?: FundingVehicle }>({ open: false })
   const [cashflowModal, setCashflowModal] = useState<FundingVehicle | null>(null)
@@ -769,6 +770,14 @@ export default function CapitalMandatePage() {
     setGoals(updGoals)
     await saveData(portfolio, settings, updGoals.filter(x => x.source === 'custom'), notes)
     setCustomGoalModal(false)
+  }
+
+  async function editCustomGoal(g: CapitalGoal) {
+    const updGoals = goals.map(x => x.id === g.id ? g : x)
+    setGoals(updGoals)
+    await saveData(portfolio, settings, updGoals.filter(x => x.source === 'custom'), notes)
+    setCustomGoalModal(false)
+    setEditingGoal(null)
   }
 
   async function removeGoal(id: string) {
@@ -1400,7 +1409,10 @@ export default function CapitalMandatePage() {
                       {planMode === 'couple' && <OwnerBadge owner={g.owner} clientName={clientName} spouseName={spouseName} />}
                     </div>
                     {g.source === 'custom' && (
-                      <button onClick={() => removeGoal(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => { setEditingGoal(g); setCustomGoalModal(true) }} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink3)', fontFamily: 'Inter', fontSize: 10, padding: '2px 8px' }}>Edit</button>
+                        <button onClick={() => removeGoal(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+                      </div>
                     )}
                   </div>
                   <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)', marginBottom: 4, lineHeight: 1.3 }}>{g.label}</div>
@@ -1576,7 +1588,7 @@ export default function CapitalMandatePage() {
 
       {vehicleModal.open && <VehicleModal item={vehicleModal.item} onSave={saveVehicle} onClose={() => setVehicleModal({ open: false })} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} clientAge={clientAge} />}
       {cashflowModal && <CashflowModal vehicle={cashflowModal} onSave={(flows) => saveCashflows(cashflowModal.id, flows)} onClose={() => setCashflowModal(null)} />}
-      {customGoalModal && <CustomGoalModal onSave={addCustomGoal} onClose={() => setCustomGoalModal(false)} clientAge={clientAge} spouseAge={spouseAge} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} expectedReturn={settings.expectedReturn} />}
+      {customGoalModal && <CustomGoalModal onSave={editingGoal ? editCustomGoal : addCustomGoal} onClose={() => { setCustomGoalModal(false); setEditingGoal(null) }} clientAge={clientAge} spouseAge={spouseAge} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} expectedReturn={settings.expectedReturn} existing={editingGoal ?? undefined} />}
     </div>
   )
 }
