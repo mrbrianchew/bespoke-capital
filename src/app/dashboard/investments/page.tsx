@@ -1384,9 +1384,11 @@ export default function CapitalMandatePage() {
                   <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginBottom: 12 }}>
                     {g.source === 'retirement'
                       ? (() => {
-                          const firstRetirer = planMode === 'couple' && spouseRetirementAge < retirementAge
-                            ? { name: spouseName, age: spouseRetirementAge, yrs: Math.max(0, spouseRetirementAge - spouseAge) }
-                            : { name: clientName, age: retirementAge, yrs: Math.max(0, retirementAge - clientAge) }
+                          const clientYrsAway = Math.max(0, retirementAge - clientAge)
+                          const spouseYrsAway = Math.max(0, spouseRetirementAge - spouseAge)
+                          const firstRetirer = planMode === 'couple' && spouseYrsAway < clientYrsAway
+                            ? { name: spouseName, age: spouseRetirementAge, yrs: spouseYrsAway }
+                            : { name: clientName, age: retirementAge, yrs: clientYrsAway }
                           return `Target age ${firstRetirer.age} of ${firstRetirer.name} · ${firstRetirer.yrs} yrs away`
                         })()
                       : `Target age ${g.targetAge} · ${g.yearsAway} yrs away`
