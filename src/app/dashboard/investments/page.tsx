@@ -602,7 +602,7 @@ export default function CapitalMandatePage() {
     if (rows) rows.forEach((r: any) => { by[r.section] = r.data })
 
     const fin = by['financials'] || by['factfinding'] || {}
-    const age = fin?.client?.age || c.age || 40
+    const age = fin?.client?.currentAge || fin?.client?.age || c.age || 40
     const sage = fin?.spouse?.age || 38
     const cName = fin?.client?.firstName ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim() : c.name || 'Client'
     const sName = fin?.spouse?.firstName ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim() : 'Spouse'
