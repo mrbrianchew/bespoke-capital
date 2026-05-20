@@ -10,7 +10,6 @@ Chart.register(...registerables)
 type PlanMode = 'couple' | 'individual'
 type ActivePerson = 'client' | 'spouse' | 'combined'
 type IncomeSource = 'desired' | 'current'
-type DrawdownMode = 'invested' | 'cash'
 type VehicleType = 'investment' | 'cpf_life' | 'endowment' | 'annuity' | 'rental' | 'other'
 
 interface CashflowEvent {
@@ -62,7 +61,6 @@ interface CMSettings {
   inflation: number
   legacyAmount: number
   incomeSource: IncomeSource
-  drawdownMode: DrawdownMode
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -596,7 +594,7 @@ export default function CapitalMandatePage() {
   const [portfolio, setPortfolio] = useState<FundingVehicle[]>([])
   const [vehicleModal, setVehicleModal] = useState<{ open: boolean; item?: FundingVehicle }>({ open: false })
   const [cashflowModal, setCashflowModal] = useState<FundingVehicle | null>(null)
-  const [settings, setSettings] = useState<CMSettings>({ expectedReturn: 6, inflation: 3, legacyAmount: 0, incomeSource: 'desired', drawdownMode: 'invested' })
+  const [settings, setSettings] = useState<CMSettings>({ expectedReturn: 6, inflation: 3, legacyAmount: 0, incomeSource: 'desired' })
 
   const [notes, setNotes] = useState('')
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -658,7 +656,7 @@ export default function CapitalMandatePage() {
 
     const cmData = by['capital_mandate'] || {}
     const savedSettings: CMSettings = {
-      expectedReturn: 6, inflation: 3, legacyAmount: 0, incomeSource: 'desired', drawdownMode: 'invested',
+      expectedReturn: 6, inflation: 3, legacyAmount: 0, incomeSource: 'desired',
       ...(cmData?.settings || {})
     }
     setSettings(savedSettings)
@@ -1004,7 +1002,7 @@ export default function CapitalMandatePage() {
 
           // Withdraw at start of retirement year, then grow
           corpus = Math.max(0, corpus - netAnnual)
-          if (settings.drawdownMode === 'invested' && corpus > 0) {
+          if (corpus > 0) {
             for (let m = 0; m < 12; m++) {
               corpus = corpus * (1 + rmPost)
             }
@@ -1060,7 +1058,7 @@ export default function CapitalMandatePage() {
           const annualGuaranteed = guaranteedMonthlyAt(a) * 12
           const netAnnual = Math.max(0, annualWithdrawal - annualGuaranteed)
           fundValue = Math.max(0, fundValue - netAnnual)
-          if (settings.drawdownMode === 'invested' && fundValue > 0) {
+          if (fundValue > 0) {
             for (let m = 0; m < 12; m++) {
               fundValue = fundValue * (1 + rmPost)
             }
@@ -1171,7 +1169,7 @@ export default function CapitalMandatePage() {
       })
 
       datasets.push({
-        label: settings.drawdownMode === 'invested' ? 'Existing Portfolio (Remain Invested)' : 'Existing Portfolio (Cash Drawdown)',
+        label: 'Existing Portfolio',
         data: portfolioLine,
         borderColor: '#4A9E8A',
         backgroundColor: 'rgba(74,158,138,0.04)',
@@ -1313,7 +1311,7 @@ export default function CapitalMandatePage() {
   // Chart canvas key: include all values that affect chart shape so canvas remounts properly
   const chartKey = [
     filteredGoals.length, filteredPortfolio.length,
-    settings.drawdownMode, settings.legacyAmount,
+    settings.legacyAmount,
     settings.expectedReturn, settings.inflation, settings.incomeSource,
     retirementAge, lifeExpectancy, postRetirementReturn,
   ].join('-')
@@ -1368,14 +1366,6 @@ export default function CapitalMandatePage() {
           <div style={{ display: 'flex', alignItems: 'center', background: 'white', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden' }}>
             <span style={{ padding: '4px 8px', fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', borderRight: '1px solid var(--line)' }}>S$</span>
             <input type="number" value={settings.legacyAmount || ''} onChange={e => updateSettings({ ...settings, legacyAmount: parseFloat(e.target.value) || 0 })} placeholder="0" style={{ border: 'none', outline: 'none', padding: '4px 8px', fontFamily: 'DM Mono, monospace', fontSize: 12, width: 90, color: 'var(--ink)' }} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>In Retirement</span>
-          <div style={{ display: 'flex', background: 'white', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden' }}>
-            {([{ v: 'invested' as DrawdownMode, l: 'Remain Invested' }, { v: 'cash' as DrawdownMode, l: 'Cash Drawdown' }]).map(o => (
-              <button key={o.v} onClick={() => updateSettings({ ...settings, drawdownMode: o.v })} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 10, fontWeight: 500, background: settings.drawdownMode === o.v ? 'var(--ink)' : 'white', color: settings.drawdownMode === o.v ? 'white' : 'var(--ink3)', transition: 'all 0.15s', whiteSpace: 'nowrap' }}>{o.l}</button>
-            ))}
           </div>
         </div>
       </div>
