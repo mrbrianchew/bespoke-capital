@@ -1366,7 +1366,17 @@ export default function CapitalMandatePage() {
                     )}
                   </div>
                   <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)', marginBottom: 4, lineHeight: 1.3 }}>{g.label}</div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginBottom: 12 }}>Target age {g.targetAge}</div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginBottom: 12 }}>
+                    {g.source === 'retirement'
+                      ? (() => {
+                          const firstRetirer = planMode === 'couple' && spouseRetirementAge < retirementAge
+                            ? { name: spouseName, age: spouseRetirementAge, yrs: Math.max(0, spouseRetirementAge - spouseAge) }
+                            : { name: clientName, age: retirementAge, yrs: Math.max(0, retirementAge - clientAge) }
+                          return `Target age ${firstRetirer.age} of ${firstRetirer.name} · ${firstRetirer.yrs} yrs away`
+                        })()
+                      : `Target age ${g.targetAge} · ${g.yearsAway} yrs away`
+                    }
+                  </div>
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{fmtMo(g.monthlyRequired)}</div>
                   <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginBottom: 8 }}>monthly required</div>
                   <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink2)' }}>{fmt(g.targetCorpus)} corpus</div>
