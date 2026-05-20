@@ -58,7 +58,6 @@ interface CapitalGoal {
 
 interface CMSettings {
   expectedReturn: number
-  inflation: number
   legacyAmount: number
   incomeSource: IncomeSource
 }
@@ -584,6 +583,7 @@ export default function CapitalMandatePage() {
   const [desiredMonthlyIncome, setDesiredMonthlyIncome] = useState(0)
   const [currentExpenses, setCurrentExpenses] = useState(0)
   const [postRetirementReturn, setPostRetirementReturn] = useState(3)
+  const [retirementInflation, setRetirementInflation] = useState(3)
 
   const [planMode, setPlanMode] = useState<PlanMode>('individual')
   const [activePerson, setActivePerson] = useState<ActivePerson>('client')
@@ -594,7 +594,7 @@ export default function CapitalMandatePage() {
   const [portfolio, setPortfolio] = useState<FundingVehicle[]>([])
   const [vehicleModal, setVehicleModal] = useState<{ open: boolean; item?: FundingVehicle }>({ open: false })
   const [cashflowModal, setCashflowModal] = useState<FundingVehicle | null>(null)
-  const [settings, setSettings] = useState<CMSettings>({ expectedReturn: 6, inflation: 3, legacyAmount: 0, incomeSource: 'desired' })
+  const [settings, setSettings] = useState<CMSettings>({ expectedReturn: 6, legacyAmount: 0, incomeSource: 'desired' })
 
   const [notes, setNotes] = useState('')
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -653,10 +653,11 @@ export default function CapitalMandatePage() {
     setDesiredMonthlyIncome(retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
     setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
     setPostRetirementReturn(retClientData?.postRetirementReturn || retRow?.postRetirementReturn || 3)
+    setRetirementInflation(retClientData?.inflation || retRow?.inflation || 3)
 
     const cmData = by['capital_mandate'] || {}
     const savedSettings: CMSettings = {
-      expectedReturn: 6, inflation: 3, legacyAmount: 0, incomeSource: 'desired',
+      expectedReturn: 6, legacyAmount: 0, incomeSource: 'desired',
       ...(cmData?.settings || {})
     }
     setSettings(savedSettings)
@@ -831,7 +832,7 @@ export default function CapitalMandatePage() {
     const retGoal = goals.find(g => g.source === 'retirement')
     if (!retGoal || retGoal.targetCorpus <= 0) return 0
     const r = postRetirementReturn / 100
-    const g = settings.inflation / 100
+    const g = retirementInflation / 100
     const n = Math.max(1, lifeExpectancy - retirementAge)
     if (Math.abs(r - g) < 0.0001) {
       return retGoal.targetCorpus * (1 + r) / n
@@ -847,7 +848,7 @@ export default function CapitalMandatePage() {
     if (currentExpenses > 0) return currentExpenses
     if (derivedAnnualWithdrawal > 0) {
       const yearsToRet = Math.max(0, retirementAge - clientAge)
-      const inflationFactor = Math.pow(1 + settings.inflation / 100, yearsToRet)
+      const inflationFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
       return (derivedAnnualWithdrawal / 12) / inflationFactor
     }
     return 0
@@ -919,7 +920,7 @@ export default function CapitalMandatePage() {
 
       const preRetRate = settings.expectedReturn / 100
       const postRetRate = postRetirementReturn / 100
-      const inflationRate = settings.inflation / 100
+      const inflationRate = retirementInflation / 100
       const rmPre = preRetRate / 12
       const rmPost = postRetRate / 12
       const legacyAmt = settings.legacyAmount || 0
@@ -1255,7 +1256,7 @@ export default function CapitalMandatePage() {
   }, [
     loading, filteredGoals, filteredPortfolio, settings,
     clientAge, spouseAge, retirementAge, lifeExpectancy, spouseLifeExpectancy,
-    effectiveRetirementIncome, postRetirementReturn, planMode,
+    effectiveRetirementIncome, postRetirementReturn, retirementInflation, planMode,
   ])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
@@ -1311,8 +1312,9 @@ export default function CapitalMandatePage() {
   // Chart canvas key: include all values that affect chart shape so canvas remounts properly
   const chartKey = [
     filteredGoals.length, filteredPortfolio.length,
-    settings.legacyAmount,
-    settings.expectedReturn, settings.inflation, settings.incomeSource,
+   settings.legacyAmount,
+    settings.expectedReturn, settings.incomeSource,
+    retirementInflation, postRetirementReturn,
     retirementAge, lifeExpectancy, postRetirementReturn,
   ].join('-')
 
@@ -1349,17 +1351,10 @@ export default function CapitalMandatePage() {
       {/* ── SETTINGS BAR ── */}
       <div style={{ background: 'var(--cream2)', borderBottom: '1px solid var(--line)', padding: '10px 48px', display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)', flexShrink: 0 }}>Assumptions</span>
-        {([{ label: 'Pre-Ret. Return', key: 'expectedReturn' as const, min: 1, max: 15, step: 0.5 }, { label: 'Inflation', key: 'inflation' as const, min: 1, max: 8, step: 0.5 }]).map(s => (
-          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>{s.label}</span>
-            <input type="range" min={s.min} max={s.max} step={s.step} value={settings[s.key]} onChange={e => updateSettings({ ...settings, [s.key]: parseFloat(e.target.value) })} style={{ width: 80, accentColor: 'var(--gold)' }} />
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 500, color: 'var(--ink)', background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 38, textAlign: 'center' }}>{settings[s.key]}%</span>
-          </div>
-        ))}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>Post-Ret. Return</span>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 500, color: 'var(--ink)', background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 38, textAlign: 'center' }}>{postRetirementReturn}%</span>
-          <span style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', fontStyle: 'italic' }}>(from Retirement)</span>
+          <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>Pre-Ret. Return</span>
+          <input type="range" min={1} max={15} step={0.5} value={settings.expectedReturn} onChange={e => updateSettings({ ...settings, expectedReturn: parseFloat(e.target.value) })} style={{ width: 80, accentColor: 'var(--gold)' }} />
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 500, color: 'var(--ink)', background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 38, textAlign: 'center' }}>{settings.expectedReturn}%</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>Legacy Floor</span>
