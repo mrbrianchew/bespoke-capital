@@ -767,7 +767,15 @@ export default function CapitalMandatePage() {
 
   const matchesPerson = useCallback((_owner: 'client' | 'spouse' | 'joint'): boolean => true, [])
 
-  const filteredGoals = useMemo(() => goals.filter(g => matchesPerson(g.owner)), [goals, matchesPerson])
+  const filteredGoals = useMemo(() => goals
+    .filter(g => matchesPerson(g.owner))
+    .map(g => {
+      if (g.source === 'custom') return g
+      const monthly = g.yearsAway > 0
+        ? calcMonthlyRequired(g.targetCorpus, g.yearsAway, settings.expectedReturn)
+        : g.monthlyRequired
+      return { ...g, monthlyRequired: monthly }
+    }), [goals, matchesPerson, settings.expectedReturn])
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
 
   const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
