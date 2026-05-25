@@ -1187,23 +1187,18 @@ export default function CapitalMandatePage() {
           ctx.lineWidth = 2
           ctx.stroke()
 
-          // Label pill box — anchored near bottom so it never clashes with top milestone labels
-          const label = `Retirement · Age ${retirementAge}`
-          ctx.font = 'bold 11px Inter, sans-serif'
-          const textW = ctx.measureText(label).width
-          const pillW = textW + 20
-          const pillH = 24
-          const pillX = x - pillW / 2
-          const pillY = bottom - 36
+          // Retirement label — sits just right of the line, vertically centred in chart
+          const label = `Age ${retirementAge}`
+          const subLabel = 'Retirement'
+          ctx.font = 'bold 10px Inter, sans-serif'
+          const midY = top + (bottom - top) * 0.42
 
+          ctx.textAlign = 'left'
           ctx.fillStyle = '#A8834A'
-          ctx.beginPath()
-          ctx.roundRect(pillX, pillY, pillW, pillH, 6)
-          ctx.fill()
-
-          ctx.fillStyle = 'white'
-          ctx.textAlign = 'center'
-          ctx.fillText(label, x, pillY + 16)
+          ctx.font = '600 11px Inter, sans-serif'
+          ctx.fillText(subLabel, x + 8, midY - 4)
+          ctx.font = 'bold 13px Inter, sans-serif'
+          ctx.fillText(label, x + 8, midY + 10)
 
           ctx.restore()
         }
