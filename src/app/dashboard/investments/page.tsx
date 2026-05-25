@@ -1077,32 +1077,50 @@ export default function CapitalMandatePage() {
             ctx.strokeStyle = 'white'
             ctx.lineWidth = 2
             ctx.stroke()
-            // Label above — with background pill to avoid bleeding into line
-            const shortLabel = ms.label.length > 18 ? ms.label.slice(0, 16) + '…' : ms.label
-            const labelY = y - 28
-            const amountY = y - 16
+            // Floating label — positioned well above the dot with a connector stem
+            const shortLabel = ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label
+            const amountText = '−' + fmt(ms.amount)
+            const floatY = Math.max(yAxis.top + 48, y - 52)
 
-            // Draw pill background
-            const labelWidth = ctx.measureText(shortLabel).width + 12
-            ctx.fillStyle = 'rgba(255,255,255,0.88)'
+            // Connector stem from dot up to label box
             ctx.beginPath()
-            ctx.roundRect(x - labelWidth / 2, labelY - 11, labelWidth, 14, 3)
-            ctx.fill()
+            ctx.moveTo(x, y - 7)
+            ctx.lineTo(x, floatY + 4)
+            ctx.strokeStyle = 'rgba(94,138,106,0.4)'
+            ctx.lineWidth = 1
+            ctx.setLineDash([2, 3])
+            ctx.stroke()
+            ctx.setLineDash([])
 
+            // Measure text for box sizing
+            ctx.font = '600 10px Inter, sans-serif'
+            const lw = ctx.measureText(shortLabel).width
+            ctx.font = '9px Inter, sans-serif'
+            const aw = ctx.measureText(amountText).width
+            const boxW = Math.max(lw, aw) + 16
+            const boxH = 30
+            const boxX = x - boxW / 2
+            const boxY = floatY - 26
+
+            // Label box background
+            ctx.fillStyle = 'rgba(255,255,255,0.96)'
+            ctx.strokeStyle = 'rgba(94,138,106,0.25)'
+            ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.roundRect(boxX, boxY, boxW, boxH, 5)
+            ctx.fill()
+            ctx.stroke()
+
+            // Label text
             ctx.fillStyle = '#5E8A6A'
             ctx.font = '600 10px Inter, sans-serif'
             ctx.textAlign = 'center'
-            ctx.fillText(shortLabel, x, labelY)
+            ctx.fillText(shortLabel, x, boxY + 12)
 
-            const amountWidth = ctx.measureText('−' + fmt(ms.amount)).width + 10
-            ctx.fillStyle = 'rgba(255,255,255,0.88)'
-            ctx.beginPath()
-            ctx.roundRect(x - amountWidth / 2, amountY - 10, amountWidth, 13, 3)
-            ctx.fill()
-
+            // Amount text
             ctx.fillStyle = '#9A9690'
             ctx.font = '9px Inter, sans-serif'
-            ctx.fillText('−' + fmt(ms.amount), x, amountY)
+            ctx.fillText(amountText, x, boxY + 24)
             ctx.restore()
           })
         }
