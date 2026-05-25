@@ -1051,24 +1051,90 @@ export default function CapitalMandatePage() {
           const yAxis = chart.scales.y
           if (!xAxis || !yAxis) return
           const ctx = chart.ctx
-          Object.entries(milestonesByAge).forEach(([ageStr, ms]) => {
-            const age = parseInt(ageStr)
-            const idx = ages.indexOf(age)
-            if (idx < 0) return
-            const x = xAxis.getPixelForValue(idx)
-            const corpusVal = corpusAtAge[age] ?? 0
-            const y = yAxis.getPixelForValue(corpusVal)
-            // Vertical tick line
+
+          // Sort milestones by x position so we can stagger overlapping labels
+          const entries = Object.entries(milestonesByAge)
+            .map(([ageStr, ms]) => {
+              const age = parseInt(ageStr)
+              const idx = ages.indexOf(age)
+              if (idx < 0) return null
+              const x = xAxis.getPixelForValue(idx)
+              const corpusVal = corpusAtAge[age] ?? 0
+              const y = yAxis.getPixelForValue(corpusVal)
+              return { age, ms, x, y }
+            })
+            .filter(Boolean) as { age: number; ms: { label: string; amount: number }; x: number; y: number }[]
+
+          // Assign staggered vertical rows to avoid label overlap
+          // Each entry gets a row (0 = highest, 1 = lower, etc.)
+          const BOX_H = 32
+          const BOX_GAP = 6
+          const MIN_STEM = 14
+          const placedBoxes: { x1: number; x2: number; row: number }[] = []
+
+          const rows = entries.map(entry => {
+            ctx.font = '600 10px Inter, sans-serif'
+            const lw = ctx.measureText(entry.ms.label.length > 20 ? entry.ms.label.slice(0, 18) + '…' : entry.ms.label).width
+            ctx.font = '9px Inter, sans-serif'
+            const aw = ctx.measureText('−' + fmt(entry.ms.amount)).width
+            const boxW = Math.max(lw, aw) + 16
+            const x1 = entry.x - boxW / 2 - 4
+            const x2 = entry.x + boxW / 2 + 4
+
+            // Find lowest row that doesn't overlap any placed box horizontally
+            let row = 0
+            let conflict = true
+            while (conflict) {
+              conflict = placedBoxes.some(b => b.row === row && !(x2 < b.x1 || x1 > b.x2))
+              if (conflict) row++
+            }
+            placedBoxes.push({ x1, x2, row })
+            return row
+          })
+
+          entries.forEach((entry, i) => {
+            const { ms, x, y } = entry
+            const row = rows[i]
+            const shortLabel = ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label
+            const amountText = '−' + fmt(ms.amount)
+
+            ctx.font = '600 10px Inter, sans-serif'
+            const lw = ctx.measureText(shortLabel).width
+            ctx.font = '9px Inter, sans-serif'
+            const aw = ctx.measureText(amountText).width
+            const boxW = Math.max(lw, aw) + 16
+            const boxX = x - boxW / 2
+
+            // Stack boxes from top: row 0 = topmost
+            const baseY = yAxis.top + 8
+            const boxY = baseY + row * (BOX_H + BOX_GAP)
+            const stemEndY = boxY + BOX_H
+
             ctx.save()
+
+            // Vertical dashed guide line
             ctx.beginPath()
             ctx.setLineDash([4, 4])
             ctx.moveTo(x, yAxis.top)
             ctx.lineTo(x, yAxis.bottom)
-            ctx.strokeStyle = 'rgba(94,138,106,0.35)'
+            ctx.strokeStyle = 'rgba(94,138,106,0.25)'
             ctx.lineWidth = 1
             ctx.stroke()
             ctx.setLineDash([])
-            // Circle
+
+            // Connector stem from box bottom to dot
+            if (y - stemEndY > MIN_STEM) {
+              ctx.beginPath()
+              ctx.moveTo(x, stemEndY + 2)
+              ctx.lineTo(x, y - 8)
+              ctx.strokeStyle = 'rgba(94,138,106,0.45)'
+              ctx.lineWidth = 1
+              ctx.setLineDash([2, 3])
+              ctx.stroke()
+              ctx.setLineDash([])
+            }
+
+            // Dot on line
             ctx.beginPath()
             ctx.arc(x, y, 6, 0, Math.PI * 2)
             ctx.fillStyle = '#5E8A6A'
@@ -1076,50 +1142,25 @@ export default function CapitalMandatePage() {
             ctx.strokeStyle = 'white'
             ctx.lineWidth = 2
             ctx.stroke()
-            // Floating label — positioned well above the dot with a connector stem
-            const shortLabel = ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label
-            const amountText = '−' + fmt(ms.amount)
-            const floatY = Math.max(yAxis.top + 48, y - 52)
 
-            // Connector stem from dot up to label box
-            ctx.beginPath()
-            ctx.moveTo(x, y - 7)
-            ctx.lineTo(x, floatY + 4)
-            ctx.strokeStyle = 'rgba(94,138,106,0.4)'
-            ctx.lineWidth = 1
-            ctx.setLineDash([2, 3])
-            ctx.stroke()
-            ctx.setLineDash([])
-
-            // Measure text for box sizing
-            ctx.font = '600 10px Inter, sans-serif'
-            const lw = ctx.measureText(shortLabel).width
-            ctx.font = '9px Inter, sans-serif'
-            const aw = ctx.measureText(amountText).width
-            const boxW = Math.max(lw, aw) + 16
-            const boxH = 30
-            const boxX = x - boxW / 2
-            const boxY = floatY - 26
-
-            // Label box background
-            ctx.fillStyle = 'rgba(255,255,255,0.96)'
-            ctx.strokeStyle = 'rgba(94,138,106,0.25)'
+            // Label box
+            ctx.fillStyle = 'rgba(255,255,255,0.97)'
+            ctx.strokeStyle = 'rgba(94,138,106,0.3)'
             ctx.lineWidth = 1
             ctx.beginPath()
-            ctx.roundRect(boxX, boxY, boxW, boxH, 5)
+            ctx.roundRect(boxX, boxY, boxW, BOX_H, 5)
             ctx.fill()
             ctx.stroke()
 
-            // Label text
             ctx.fillStyle = '#5E8A6A'
             ctx.font = '600 10px Inter, sans-serif'
             ctx.textAlign = 'center'
             ctx.fillText(shortLabel, x, boxY + 12)
 
-            // Amount text
             ctx.fillStyle = '#9A9690'
             ctx.font = '9px Inter, sans-serif'
-            ctx.fillText(amountText, x, boxY + 24)
+            ctx.fillText(amountText, x, boxY + 25)
+
             ctx.restore()
           })
         }
@@ -1137,17 +1178,33 @@ export default function CapitalMandatePage() {
           const bottom = yAxis.bottom
           const ctx = chart.ctx
           ctx.save()
+
+          // Solid prominent vertical line
           ctx.beginPath()
-          ctx.setLineDash([5, 5])
           ctx.moveTo(x, top)
           ctx.lineTo(x, bottom)
-          ctx.strokeStyle = 'rgba(168,131,74,0.5)'
-          ctx.lineWidth = 1.5
+          ctx.strokeStyle = 'rgba(168,131,74,0.7)'
+          ctx.lineWidth = 2
           ctx.stroke()
-          ctx.setLineDash([])
-          ctx.fillStyle = 'rgba(168,131,74,0.75)'
-          ctx.font = '10px Inter, sans-serif'
-          ctx.fillText('Retirement ' + retirementAge, x + 6, top + 14)
+
+          // Label pill box
+          const label = `Retirement · Age ${retirementAge}`
+          ctx.font = 'bold 11px Inter, sans-serif'
+          const textW = ctx.measureText(label).width
+          const pillW = textW + 20
+          const pillH = 24
+          const pillX = x - pillW / 2
+          const pillY = top + 10
+
+          ctx.fillStyle = '#A8834A'
+          ctx.beginPath()
+          ctx.roundRect(pillX, pillY, pillW, pillH, 6)
+          ctx.fill()
+
+          ctx.fillStyle = 'white'
+          ctx.textAlign = 'center'
+          ctx.fillText(label, x, pillY + 16)
+
           ctx.restore()
         }
       }
