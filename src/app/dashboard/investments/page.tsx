@@ -1052,7 +1052,7 @@ export default function CapitalMandatePage() {
           if (!xAxis || !yAxis) return
           const ctx = chart.ctx
 
-          // Sort milestones by x position so we can stagger overlapping labels
+         // Sort milestones by x position so we can stagger overlapping labels
           const entries = Object.entries(milestonesByAge)
             .map(([ageStr, ms]) => {
               const age = parseInt(ageStr)
@@ -1065,11 +1065,21 @@ export default function CapitalMandatePage() {
             })
             .filter(Boolean) as { age: number; ms: { label: string; amount: number }; x: number; y: number }[]
 
-          // Assign staggered vertical rows to avoid label overlap
-          // Each entry gets a row (0 = highest, 1 = lower, etc.)
           const BOX_H = 32
           const BOX_GAP = 6
           const MIN_STEM = 14
+
+          // Find the highest point on the line (lowest pixel y) across ALL ages — boxes must sit above this
+          const highestLineY = ages.reduce((minY, a) => {
+            const val = corpusAtAge[a] ?? 0
+            const py = yAxis.getPixelForValue(val)
+            return py < minY ? py : minY
+          }, yAxis.bottom)
+
+          // Reserve space above the highest line point, with a comfortable margin
+          const BOX_ZONE_BOTTOM = highestLineY - 12
+
+          // Stack rows upward from BOX_ZONE_BOTTOM
           const placedBoxes: { x1: number; x2: number; row: number }[] = []
 
           const rows = entries.map(entry => {
@@ -1081,7 +1091,7 @@ export default function CapitalMandatePage() {
             const x1 = entry.x - boxW / 2 - 4
             const x2 = entry.x + boxW / 2 + 4
 
-            // Find lowest row that doesn't overlap any placed box horizontally
+            // Find first row with no horizontal overlap
             let row = 0
             let conflict = true
             while (conflict) {
@@ -1105,9 +1115,8 @@ export default function CapitalMandatePage() {
             const boxW = Math.max(lw, aw) + 16
             const boxX = x - boxW / 2
 
-            // Stack boxes from top: row 0 = topmost
-            const baseY = yAxis.top + 8
-            const boxY = baseY + row * (BOX_H + BOX_GAP)
+            // Stack boxes upward from the highest line point: row 0 = closest to line
+            const boxY = BOX_ZONE_BOTTOM - (row + 1) * (BOX_H + BOX_GAP)
             const stemEndY = boxY + BOX_H
 
             ctx.save()
