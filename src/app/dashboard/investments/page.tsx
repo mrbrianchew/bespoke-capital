@@ -717,7 +717,8 @@ export default function CapitalMandatePage() {
       const fvLiving = (child.annualLiving || 0) * Math.pow(1 + eduLivingInf, yearsUntilUni) * duration
       const corpus = Math.max(0, fvTuition + fvLiving - ((child.existingSavings || 0) * Math.pow(1 + eduReturnRate / 100, yearsUntilUni)))
       if (!corpus) return
-      builtGoals.push({ id: 'edu_' + (child.childId || child.name), source: 'education', label: `${child.name}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, yearsUntilUni), savedSettings.expectedReturn), targetAge: child.uniEntryAge, yearsAway: Math.max(0, yearsUntilUni), owner: 'joint' })
+      const clientAgeAtUni = age + yearsUntilUni       
+      builtGoals.push({ id: 'edu_' + (child.childId || child.name), source: 'education', label: `${child.name}'s Education`, icon: '🎓', targetCorpus: corpus, monthlyRequired: calcMonthlyRequired(corpus, Math.max(1, yearsUntilUni), savedSettings.expectedReturn), targetAge: clientAgeAtUni, yearsAway: Math.max(0, yearsUntilUni), owner: 'joint' })
     })
 
     ;(cmData?.customGoals || []).forEach((g: CapitalGoal) => builtGoals.push({ ...g, source: 'custom' }))
