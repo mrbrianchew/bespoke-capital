@@ -1187,18 +1187,17 @@ export default function CapitalMandatePage() {
           ctx.lineWidth = 2
           ctx.stroke()
 
-          // Retirement label — sits just right of the line, vertically centred in chart
-          const label = `Age ${retirementAge}`
-          const subLabel = 'Retirement'
-          ctx.font = 'bold 10px Inter, sans-serif'
-          const midY = top + (bottom - top) * 0.42
-
-          ctx.textAlign = 'left'
-          ctx.fillStyle = '#A8834A'
-          ctx.font = '600 11px Inter, sans-serif'
-          ctx.fillText(subLabel, x + 8, midY - 4)
-          ctx.font = 'bold 13px Inter, sans-serif'
-          ctx.fillText(label, x + 8, midY + 10)
+          // Retirement label — rotated vertically along the line, elegant and unobtrusive
+          const label = `Retirement  ·  Age ${retirementAge}`
+          ctx.save()
+          ctx.translate(x - 10, top + (bottom - top) * 0.5)
+          ctx.rotate(-Math.PI / 2)
+          ctx.textAlign = 'center'
+          ctx.fillStyle = 'rgba(168,131,74,0.85)'
+          ctx.font = '500 11px Inter, sans-serif'
+          ctx.letterSpacing = '0.05em'
+          ctx.fillText(label, 0, 0)
+          ctx.restore()
 
           ctx.restore()
         }
