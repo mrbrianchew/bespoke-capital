@@ -1077,15 +1077,32 @@ export default function CapitalMandatePage() {
             ctx.strokeStyle = 'white'
             ctx.lineWidth = 2
             ctx.stroke()
-            // Label above
+            // Label above — with background pill to avoid bleeding into line
             const shortLabel = ms.label.length > 18 ? ms.label.slice(0, 16) + '…' : ms.label
+            const labelY = y - 28
+            const amountY = y - 16
+
+            // Draw pill background
+            const labelWidth = ctx.measureText(shortLabel).width + 12
+            ctx.fillStyle = 'rgba(255,255,255,0.88)'
+            ctx.beginPath()
+            ctx.roundRect(x - labelWidth / 2, labelY - 11, labelWidth, 14, 3)
+            ctx.fill()
+
             ctx.fillStyle = '#5E8A6A'
             ctx.font = '600 10px Inter, sans-serif'
             ctx.textAlign = 'center'
-            ctx.fillText(shortLabel, x, y - 14)
+            ctx.fillText(shortLabel, x, labelY)
+
+            const amountWidth = ctx.measureText('−' + fmt(ms.amount)).width + 10
+            ctx.fillStyle = 'rgba(255,255,255,0.88)'
+            ctx.beginPath()
+            ctx.roundRect(x - amountWidth / 2, amountY - 10, amountWidth, 13, 3)
+            ctx.fill()
+
             ctx.fillStyle = '#9A9690'
             ctx.font = '9px Inter, sans-serif'
-            ctx.fillText('−' + fmt(ms.amount), x, y - 4)
+            ctx.fillText('−' + fmt(ms.amount), x, amountY)
             ctx.restore()
           })
         }
