@@ -899,7 +899,7 @@ export default function CapitalMandatePage() {
     return { atAssumption, atActual }
   }, [filteredPortfolio, settings.expectedReturn, blendedXIRR, retirementAge, clientAge])
 
-  // ── CHART ─────────────────────────────────────────────────────────────────
+ // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (loading) return
     if (!chartRef.current) return
@@ -916,73 +916,43 @@ export default function CapitalMandatePage() {
       const canvasCtx = chartRef.current.getContext('2d')
       if (!canvasCtx) return
 
-      const lifeEnd = Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge), clientAge + 35, 85)
-      const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
-
       const preRetRate = settings.expectedReturn / 100
       const postRetRate = postRetirementReturn / 100
       const inflationRate = retirementInflation / 100
       const rmPre = preRetRate / 12
       const rmPost = postRetRate / 12
       const legacyAmt = settings.legacyAmount || 0
-
-      // ── Guaranteed monthly income from portfolio vehicles ─────────────
-      function guaranteedMonthlyAt(age: number): number {
-        return filteredPortfolio.reduce((sum, p) => {
-          if (p.vehicleType === 'cpf_life' && age >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
-          if (p.vehicleType === 'annuity' && age >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
-          if (p.vehicleType === 'rental' && age <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
-          return sum
-        }, 0)
-      }
-
-      // ── Survivor timing (couple mode) ──────────────────────────────────
-      // Convert spouse life expectancy to client-age timeline.
-      // e.g. client age 46, spouse age 44, spouse LE 83 → client is 48 when spouse dies.
-      const spouseDeathInClientYears = spouseLifeExpectancy + (clientAge - spouseAge)
-      // First death age (client-age timeline): when the first person dies, income need halves.
-      const firstDeathAge = planMode === 'couple'
-        ? Math.min(lifeExpectancy, spouseDeathInClientYears)
-        : lifeExpectancy + 1  // individual: never halves (set beyond range)
-      // Final death age: simulation end
       const finalDeathAge = planMode === 'couple'
-        ? Math.max(lifeExpectancy, spouseDeathInClientYears)
+        ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
         : lifeExpectancy
 
-      // ── Sort non-retirement goals by targetAge ascending ───────────────
-      const retGoal = filteredGoals.find(g => g.source === 'retirement') || null
+      // ── Build milestone ages for sparse x-axis ────────────────────────
       const nonRetGoals = filteredGoals
         .filter(g => g.source !== 'retirement')
         .sort((a, b) => a.targetAge - b.targetAge)
+      const retGoal = filteredGoals.find(g => g.source === 'retirement') || null
 
-      // Milestone metadata for tooltip annotations
+      // Key ages: current, each non-ret goal, retirement, life end
+      const keyAgesSet = new Set<number>([clientAge, retirementAge, finalDeathAge])
+      nonRetGoals.forEach(g => keyAgesSet.add(g.targetAge))
+      const keyAges = Array.from(keyAgesSet).filter(a => a >= clientAge && a <= finalDeathAge).sort((a, b) => a - b)
+
+      // Full age range for simulation (every year), sparse labels for display
+      const fullAges = Array.from({ length: finalDeathAge - clientAge + 1 }, (_, i) => clientAge + i)
+
+      // ── Simulate corpus year-by-year ──────────────────────────────────
+      const corpusAtAge: Record<number, number> = {}
       const milestonesByAge: Record<number, { label: string; amount: number }> = {}
-
-// ── REQUIRED INVESTMENTS LINE ─────────────────────────────────────
-      // Accumulation: invest sum of all goal monthlies, compound monthly at preRetRate.
-      // At each non-retirement goal's targetAge: drop corpus by that goal's corpus,
-      //   remove its monthly from the running total, record as milestone.
-      // At retirementAge: corpus peaks. Then deplete linearly (inflation-adjusted)
-      //   to exactly $0 (or legacyAmt) at lifeExpectancy.
-
-      const requiredLine: number[] = []
-      const corpusAtAge: Record<number, number> = {}  // for tooltip lookup
       let corpus = 0
       let runningMonthly = filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0)
       const goalQueue = nonRetGoals.map(g => ({ ...g })).sort((a, b) => a.targetAge - b.targetAge)
 
-      // First pass: accumulation only — record corpus at each age
-      for (let i = 0; i < ages.length; i++) {
-        const a = ages[i]
-        requiredLine.push(Math.max(0, corpus))
+      for (let i = 0; i < fullAges.length; i++) {
+        const a = fullAges[i]
         corpusAtAge[a] = Math.max(0, corpus)
 
         if (a < retirementAge) {
-          // Grow with monthly contributions (annuity-due: contribute then compound)
-          for (let m = 0; m < 12; m++) {
-            corpus = (corpus + runningMonthly) * (1 + rmPre)
-          }
-          // Deduct goals that mature at end of this year (nextAge)
+          for (let m = 0; m < 12; m++) corpus = (corpus + runningMonthly) * (1 + rmPre)
           const nextAge = a + 1
           while (goalQueue.length > 0 && goalQueue[0].targetAge <= nextAge) {
             const g = goalQueue.shift()!
@@ -991,24 +961,9 @@ export default function CapitalMandatePage() {
             milestonesByAge[g.targetAge] = { label: g.label, amount: g.targetCorpus }
           }
         } else {
-          // ── Retirement drawdown ──────────────────────────────────────
-          // Deplete corpus from retirementAge to finalDeathAge.
-          // If legacyAmt = 0, target is $0 at finalDeathAge.
-          // Use inflation-adjusted annual withdrawal that exactly depletes the corpus.
           const retirementCorpus = corpusAtAge[retirementAge] ?? corpus
           const retYears = Math.max(1, finalDeathAge - retirementAge)
-
-          // Compute annual withdrawal at retirement age (real terms), inflation-adjusted each year
-          // We solve for W such that sum of PV of inflation-adjusted withdrawals = retirementCorpus - PV(legacyAmt)
-          // For display simplicity: use straight-line depletion adjusted by inflation factor
           const yearsIntoRet = a - retirementAge
-          if (yearsIntoRet === 0) {
-            // At retirement age, corpus is already recorded; just compute next year
-          }
-
-          // Annual withdrawal: inflation-escalating annuity that depletes corpus to legacyAmt over retYears
-          // W * Σ[(1+g)^t / (1+r)^t] for t=0..n-1 = corpus - legacyAmt/(1+r)^n
-          // Simplification: use the corpus at retirement age divided by years, inflation-scaled
           const annualBase = (() => {
             if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
               return Math.max(0, retirementCorpus - legacyAmt) / retYears
@@ -1019,139 +974,253 @@ export default function CapitalMandatePage() {
             const sumPV = ratio === 1 ? retYears : (1 - Math.pow(ratio, retYears)) / (1 - ratio)
             return Math.max(0, retirementCorpus - legacyAmt / Math.pow(1 + r, retYears)) / sumPV
           })()
-
-          // Annual withdrawal in year `a` (inflation-adjusted from retirement)
           const annualWithdrawal = annualBase * Math.pow(1 + inflationRate, yearsIntoRet)
-          const annualGuaranteed = guaranteedMonthlyAt(a) * 12
+          const annualGuaranteed = filteredPortfolio.reduce((sum, p) => {
+            if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0) * 12
+            if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0) * 12
+            if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0) * 12
+            return sum
+          }, 0)
           const netAnnual = Math.max(0, annualWithdrawal - annualGuaranteed)
-
           corpus = Math.max(legacyAmt, corpus - netAnnual)
-          if (corpus > legacyAmt) {
-            for (let m = 0; m < 12; m++) {
-              corpus = corpus * (1 + rmPost)
-            }
-          }
-          // Floor at legacy
+          if (corpus > legacyAmt) for (let m = 0; m < 12; m++) corpus = corpus * (1 + rmPost)
           if (legacyAmt > 0) corpus = Math.max(corpus, legacyAmt)
         }
       }
 
-      const legacyLine: (number | null)[] | null = legacyAmt > 0
-        ? ages.map(a => a >= retirementAge ? legacyAmt : null)
-        : null
+      // ── Current projection corpus (from portfolio FV) at each key age ─
+      const projCorpusAtAge: Record<number, number> = {}
+      const ytr = retirementAge - clientAge
+      fullAges.forEach(a => {
+        const yearsLeft = a - clientAge
+        if (yearsLeft < 0) { projCorpusAtAge[a] = totalCurrentValue; return }
+        let fv = 0
+        filteredPortfolio.forEach(p => {
+          if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
+          const r = (p.expectedReturn || settings.expectedReturn) / 100
+          const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
+            : p.vehicleType === 'annuity' ? p.monthlyContribution : p.monthlyContribution
+          fv += (p.currentValue || 0) * Math.pow(1 + r, yearsLeft)
+          fv += fvAnnuityDue(monthly, r, yearsLeft)
+        })
+        projCorpusAtAge[a] = Math.max(0, fv)
+      })
 
-      const retireIdx = ages.indexOf(retirementAge)
+      // Target projection: what you need to be on track (straight line from 0 → retirementCorpus over accumulation years, then follows needs curve)
+      const retirementCorpusNeeded = corpusAtAge[retirementAge] ?? 0
+      const targetCorpusAtAge: Record<number, number> = {}
+      fullAges.forEach(a => {
+        if (a <= retirementAge) {
+          const progress = (a - clientAge) / Math.max(1, retirementAge - clientAge)
+          // Exponential target: what you should have saved by now at the expected return
+          const monthly = retGoal ? retGoal.monthlyRequired : 0
+          const yearsElapsed = a - clientAge
+          targetCorpusAtAge[a] = fvAnnuityDue(monthly, settings.expectedReturn / 100, yearsElapsed)
+        } else {
+          targetCorpusAtAge[a] = corpusAtAge[a] ?? 0
+        }
+      })
 
-      // ── Milestone dot plugin ───────────────────────────────────────────
-      // Draws a circle + label at each non-retirement goal's targetAge on the line
-      const milestonePlugin = {
-        id: 'milestones',
+      // ── Build sparse chart data (key ages only) ───────────────────────
+      const labels = keyAges.map(a => String(a))
+      const needsData = keyAges.map(a => corpusAtAge[a] ?? 0)
+      const projData = keyAges.map(a => Math.min(projCorpusAtAge[a] ?? 0, (corpusAtAge[a] ?? 0) * 2))
+      const targetData = keyAges.map(a => targetCorpusAtAge[a] ?? 0)
+
+      // ── Floating annotation plugin ────────────────────────────────────
+      const annotationPlugin = {
+        id: 'floatingLabels',
         afterDatasetsDraw(chart: any) {
           const xAxis = chart.scales.x
           const yAxis = chart.scales.y
           if (!xAxis || !yAxis) return
           const ctx = chart.ctx
-          Object.entries(milestonesByAge).forEach(([ageStr, ms]) => {
-            const age = parseInt(ageStr)
-            const idx = ages.indexOf(age)
-            if (idx < 0) return
-            const x = xAxis.getPixelForValue(idx)
-            const corpusVal = corpusAtAge[age] ?? 0
-            const y = yAxis.getPixelForValue(corpusVal)
-            // Vertical tick line
+          const chartWidth = chart.chartArea.right - chart.chartArea.left
+
+          keyAges.forEach((age, i) => {
+            const x = xAxis.getPixelForValue(i)
+            const isRetirement = age === retirementAge
+            const isFinalAge = age === finalDeathAge
+            const milestone = milestonesByAge[age]
+
+            // ── Vertical tick mark on x-axis ──────────────────────────
             ctx.save()
             ctx.beginPath()
-            ctx.setLineDash([4, 4])
-            ctx.moveTo(x, yAxis.top)
-            ctx.lineTo(x, yAxis.bottom)
-            ctx.strokeStyle = 'rgba(94,138,106,0.35)'
-            ctx.lineWidth = 1
+            ctx.moveTo(x, yAxis.bottom)
+            ctx.lineTo(x, yAxis.bottom + 6)
+            ctx.strokeStyle = '#9A9690'
+            ctx.lineWidth = 1.5
             ctx.stroke()
-            ctx.setLineDash([])
-            // Circle
-            ctx.beginPath()
-            ctx.arc(x, y, 6, 0, Math.PI * 2)
-            ctx.fillStyle = '#5E8A6A'
-            ctx.fill()
-            ctx.strokeStyle = 'white'
-            ctx.lineWidth = 2
-            ctx.stroke()
-            // Label above
-            const shortLabel = ms.label.length > 18 ? ms.label.slice(0, 16) + '…' : ms.label
-            ctx.fillStyle = '#5E8A6A'
-            ctx.font = '600 10px Inter, sans-serif'
-            ctx.textAlign = 'center'
-            ctx.fillText(shortLabel, x, y - 14)
-            ctx.fillStyle = '#9A9690'
-            ctx.font = '9px Inter, sans-serif'
-            ctx.fillText('−' + fmt(ms.amount), x, y - 4)
             ctx.restore()
+
+            // ── Vertical dashed guide line at milestone ages ───────────
+            if (milestone || isRetirement) {
+              ctx.save()
+              ctx.beginPath()
+              ctx.setLineDash([3, 4])
+              ctx.moveTo(x, yAxis.top)
+              ctx.lineTo(x, yAxis.bottom)
+              ctx.strokeStyle = isRetirement ? 'rgba(168,131,74,0.3)' : 'rgba(94,138,106,0.3)'
+              ctx.lineWidth = 1
+              ctx.stroke()
+              ctx.setLineDash([])
+              ctx.restore()
+            }
+
+            // ── Retirement Goal label (top right, needs line endpoint) ─
+            if (isRetirement || isFinalAge) {
+              const corpusVal = needsData[i]
+              const y = yAxis.getPixelForValue(corpusVal)
+              if (corpusVal > 0) {
+                const label = isRetirement ? 'Retirement Goal' : 'End of Plan'
+                const valStr = fmt(corpusVal)
+                ctx.save()
+                // Leader dot
+                ctx.beginPath()
+                ctx.arc(x, y, 4, 0, Math.PI * 2)
+                ctx.fillStyle = '#A8834A'
+                ctx.fill()
+                // Label box — position to the right if space, else left
+                const boxX = i === keyAges.length - 1 ? x - 8 : x + 8
+                const textAlign = i === keyAges.length - 1 ? 'right' : 'left'
+                ctx.fillStyle = '#1C1A17'
+                ctx.font = '500 10px Inter, sans-serif'
+                ctx.textAlign = textAlign as CanvasTextAlign
+                ctx.fillText(label, boxX, y - 14)
+                ctx.fillStyle = '#A8834A'
+                ctx.font = '600 11px Cormorant Garamond, serif'
+                ctx.fillText('= ' + valStr, boxX, y - 2)
+                ctx.restore()
+              }
+            }
+
+            // ── Education / milestone label ────────────────────────────
+            if (milestone) {
+              const projVal = projData[i]
+              const y = yAxis.getPixelForValue(projVal)
+              ctx.save()
+              // Bracket — vertical drop indicator
+              const needsY = yAxis.getPixelForValue(needsData[i])
+              ctx.beginPath()
+              ctx.moveTo(x + 12, needsY + 8)
+              ctx.lineTo(x + 12, y - 8)
+              ctx.strokeStyle = 'rgba(94,138,106,0.5)'
+              ctx.lineWidth = 1
+              ctx.stroke()
+              // Arrow tips
+              ctx.beginPath()
+              ctx.moveTo(x + 9, needsY + 12)
+              ctx.lineTo(x + 12, needsY + 8)
+              ctx.lineTo(x + 15, needsY + 12)
+              ctx.strokeStyle = 'rgba(94,138,106,0.6)'
+              ctx.lineWidth = 1
+              ctx.stroke()
+              ctx.beginPath()
+              ctx.moveTo(x + 9, y - 12)
+              ctx.lineTo(x + 12, y - 8)
+              ctx.lineTo(x + 15, y - 12)
+              ctx.stroke()
+              // Label
+              const shortLabel = milestone.label.length > 22 ? milestone.label.slice(0, 20) + '…' : milestone.label
+              const lx = x + 20
+              ctx.fillStyle = '#1C1A17'
+              ctx.font = '500 10px Inter, sans-serif'
+              ctx.textAlign = 'left'
+              ctx.fillText(shortLabel, lx, needsY - (needsY - y) / 2 - 8)
+              ctx.fillStyle = '#5E8A6A'
+              ctx.font = '600 11px Cormorant Garamond, serif'
+              ctx.fillText('= ' + fmt(milestone.amount), lx, needsY - (needsY - y) / 2 + 4)
+              ctx.restore()
+            }
+
+            // ── Current Projection label (at current portfolio value) ──
+            if (i === 0 && totalCurrentValue > 0) {
+              const y = yAxis.getPixelForValue(totalCurrentValue)
+              ctx.save()
+              ctx.beginPath()
+              ctx.arc(x, y, 4, 0, Math.PI * 2)
+              ctx.fillStyle = '#4A7C9E'
+              ctx.fill()
+              ctx.fillStyle = '#1C1A17'
+              ctx.font = '500 10px Inter, sans-serif'
+              ctx.textAlign = 'left'
+              ctx.fillText('Actual Current Value', x + 10, y - 4)
+              ctx.fillStyle = '#4A7C9E'
+              ctx.font = '600 11px Cormorant Garamond, serif'
+              ctx.fillText('= ' + fmt(totalCurrentValue), x + 10, y + 8)
+              ctx.restore()
+            }
+
+            // ── Target Projection label (at first key age after start) ─
+            if (i === 1 && targetData[i] > 0) {
+              const y = yAxis.getPixelForValue(targetData[i])
+              ctx.save()
+              ctx.beginPath()
+              ctx.arc(x, y, 4, 0, Math.PI * 2)
+              ctx.fillStyle = '#4A9E8A'
+              ctx.fill()
+              ctx.fillStyle = '#1C1A17'
+              ctx.font = '500 10px Inter, sans-serif'
+              ctx.textAlign = 'left'
+              ctx.fillText(`Target Projection @ ${settings.expectedReturn}% p.a.`, x + 10, y - 4)
+              ctx.fillStyle = '#4A9E8A'
+              ctx.font = '600 11px Cormorant Garamond, serif'
+              ctx.fillText('= ' + fmt(targetData[i]), x + 10, y + 8)
+              ctx.restore()
+            }
           })
         }
       }
 
-      const retireLinePlugin = {
-        id: 'retireLine',
-        afterDraw(chart: any) {
-          if (retireIdx < 0) return
-          const xAxis = chart.scales.x
-          const yAxis = chart.scales.y
-          if (!xAxis || !yAxis) return
-          const x = xAxis.getPixelForValue(retireIdx)
-          const top = yAxis.top
-          const bottom = yAxis.bottom
-          const ctx = chart.ctx
-          ctx.save()
-          ctx.beginPath()
-          ctx.setLineDash([5, 5])
-          ctx.moveTo(x, top)
-          ctx.lineTo(x, bottom)
-          ctx.strokeStyle = 'rgba(168,131,74,0.5)'
-          ctx.lineWidth = 1.5
-          ctx.stroke()
-          ctx.setLineDash([])
-          ctx.fillStyle = 'rgba(168,131,74,0.75)'
-          ctx.font = '10px Inter, sans-serif'
-          ctx.fillText('Retirement ' + retirementAge, x + 6, top + 14)
-          ctx.restore()
-        }
-      }
-
-      const datasets: any[] = []
-
-      datasets.push({
-        label: 'Capital Required',
-        data: requiredLine,
-        borderColor: '#A8834A',
-        backgroundColor: (context: any) => {
-          const chart = context.chart
-          const { ctx: c, chartArea } = chart
-          if (!chartArea) return 'rgba(168,131,74,0.05)'
-          const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
-          gradient.addColorStop(0, 'rgba(168,131,74,0.12)')
-          gradient.addColorStop(1, 'rgba(168,131,74,0.01)')
-          return gradient
+      const datasets: any[] = [
+        {
+          label: 'Retirement Needs',
+          data: needsData,
+          borderColor: '#1C1A17',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          tension: 0,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#1C1A17',
+          fill: false,
         },
-        borderWidth: 2.5,
-        tension: 0.35,
-        pointRadius: 0,
-        pointHoverRadius: 6,
-        pointHoverBackgroundColor: '#A8834A',
-        pointHoverBorderColor: 'white',
-        pointHoverBorderWidth: 2,
-        fill: true,
-      })
+        {
+          label: 'Current Projection',
+          data: projData,
+          borderColor: '#4A7C9E',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          tension: 0,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#4A7C9E',
+          fill: false,
+          borderDash: filteredPortfolio.length === 0 ? [4, 4] : [],
+        },
+        {
+          label: 'Target Projection',
+          data: targetData,
+          borderColor: '#4A9E8A',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          tension: 0,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#4A9E8A',
+          fill: false,
+        },
+      ]
 
-      if (legacyLine) {
+      if (legacyAmt > 0) {
         datasets.push({
           label: 'Legacy Floor',
-          data: legacyLine,
+          data: keyAges.map(a => a >= retirementAge ? legacyAmt : null),
           borderColor: 'rgba(196,164,100,0.5)',
-          backgroundColor: 'rgba(196,164,100,0.03)',
+          backgroundColor: 'transparent',
           borderDash: [3, 3],
           borderWidth: 1.5,
           pointRadius: 0,
-          pointHoverRadius: 4,
           fill: false,
           tension: 0,
           spanGaps: false,
@@ -1161,20 +1230,25 @@ export default function CapitalMandatePage() {
       try {
         chartInstance.current = new Chart(canvasCtx, {
           type: 'line',
-          plugins: [retireLinePlugin, milestonePlugin],
-          data: {
-            labels: ages.map(a => 'Age ' + a),
-            datasets,
-          },
+          plugins: [annotationPlugin],
+          data: { labels, datasets },
           options: {
-            responsive: true, maintainAspectRatio: false,
+            responsive: true,
+            maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
+            layout: { padding: { top: 40, right: 120, bottom: 10, left: 10 } },
             plugins: {
               legend: {
+                position: 'top',
+                align: 'start',
                 labels: {
-                  color: '#9A9690', font: { size: 11 }, boxWidth: 20,
-                  filter: (item: any) => item.text !== 'null'
-                }
+                  color: '#9A9690',
+                  font: { size: 10, family: 'Inter' },
+                  boxWidth: 24,
+                  boxHeight: 2,
+                  padding: 16,
+                  usePointStyle: false,
+                },
               },
               tooltip: {
                 backgroundColor: 'rgba(26,24,22,0.95)',
@@ -1187,7 +1261,7 @@ export default function CapitalMandatePage() {
                   title: (ctxs: any[]) => {
                     if (!ctxs.length) return ''
                     const idx = ctxs[0].dataIndex
-                    const a = ages[idx]
+                    const a = keyAges[idx]
                     const phase = a < retirementAge ? 'Accumulation' : a === retirementAge ? 'Retirement Begins' : 'Retirement'
                     return `Age ${a}  ·  ${phase}`
                   },
@@ -1198,46 +1272,35 @@ export default function CapitalMandatePage() {
                   afterBody: (ctxs: any[]) => {
                     if (!ctxs.length) return []
                     const idx = ctxs[0].dataIndex
-                    const a = ages[idx]
+                    const a = keyAges[idx]
                     const lines: string[] = []
-                    // Show milestone if this age has a goal deduction
                     if (milestonesByAge[a]) {
                       lines.push('')
                       lines.push(`  🎯  ${milestonesByAge[a].label}`)
-                      lines.push(`       Corpus released: −${fmt(milestonesByAge[a].amount)}`)
+                      lines.push(`       Corpus: ${fmt(milestonesByAge[a].amount)}`)
                     }
-                    // Show retirement corpus at retirement age
                     if (a === retirementAge && corpusAtAge[retirementAge]) {
                       lines.push('')
                       lines.push(`  🏖  Corpus at retirement: ${fmt(corpusAtAge[retirementAge])}`)
                     }
-                    // Show monthly contributions still running
-                    const activeGoals = filteredGoals.filter(g => g.source !== 'retirement' && g.targetAge > a)
-                    if (a < retirementAge && activeGoals.length > 0) {
-                      const mo = activeGoals.reduce((s, g) => s + g.monthlyRequired, 0) + (filteredGoals.find(g => g.source === 'retirement')?.monthlyRequired ?? 0)
-                      lines.push('')
-                      lines.push(`  📅  Saving: ${fmtMo(mo)}`)
-                    }
                     return lines
-                  },
-                  footer: (ctxs: any[]) => {
-                    if (!ctxs.length) return []
-                    const idx = ctxs[0].dataIndex
-                    const a = ages[idx]
-                    if (a >= retirementAge && a < finalDeathAge) {
-                      const yrsLeft = finalDeathAge - a
-                      return [`  ${yrsLeft} yrs to life expectancy (Age ${finalDeathAge})`]
-                    }
-                    return []
                   },
                 },
               },
             },
             scales: {
-              x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
+              x: {
+                type: 'category',
+                ticks: {
+                  color: '#9A9690',
+                  font: { size: 11, family: 'Inter' },
+                },
+                grid: { display: false },
+                border: { color: 'rgba(26,24,22,0.15)', width: 1.5 },
+              },
               y: {
-                ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
-                grid: { color: 'rgba(26,24,22,0.04)' }, min: 0
+                display: false,
+                min: 0,
               },
             },
           },
@@ -1255,9 +1318,9 @@ export default function CapitalMandatePage() {
       }
     }
   }, [
-    loading, filteredGoals, settings,
+    loading, filteredGoals, filteredPortfolio, settings,
     clientAge, spouseAge, retirementAge, lifeExpectancy, spouseLifeExpectancy,
-    effectiveRetirementIncome, postRetirementReturn, retirementInflation, planMode,
+    postRetirementReturn, retirementInflation, planMode, totalCurrentValue,
   ])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
