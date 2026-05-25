@@ -979,17 +979,16 @@ export default function CapitalMandatePage() {
         corpusAtAge[a] = Math.max(0, corpus)
 
         if (a < retirementAge) {
-          // Grow with monthly contributions (annuity-due: contribute then compound)
-          for (let m = 0; m < 12; m++) {
-            corpus = (corpus + runningMonthly) * (1 + rmPre)
-          }
-          // Deduct goals that mature at end of this year (nextAge)
-          const nextAge = a + 1
-          while (goalQueue.length > 0 && goalQueue[0].targetAge <= nextAge) {
+          // Deduct goals that mature THIS year BEFORE growing — so drop shows at correct age
+          while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
             const g = goalQueue.shift()!
             corpus = Math.max(0, corpus - g.targetCorpus)
             runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
-            milestonesByAge[g.targetAge] = { label: g.label, amount: g.targetCorpus }
+            milestonesByAge[a] = { label: g.label, amount: g.targetCorpus }
+          }
+          // Then grow with monthly contributions (annuity-due: contribute then compound)
+          for (let m = 0; m < 12; m++) {
+            corpus = (corpus + runningMonthly) * (1 + rmPre)
           }
         } else {
           // ── Retirement drawdown ──────────────────────────────────────
