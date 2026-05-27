@@ -1129,129 +1129,7 @@ export default function CapitalMandatePage() {
         }
       }
 
-     // ── Timeline strip plugin — draws below x-axis, collision-aware ──
-      const timelinePlugin = {
-        id: 'timelineStrip',
-        afterDraw(chart: any) {
-          const xAxis = chart.scales.x
-          const yAxis = chart.scales.y
-          if (!xAxis || !yAxis) return
-          const ctx = chart.ctx
-
-          // Strip baseline sits just below the x-axis tick labels
-          const stripY = yAxis.bottom + 30
-          const MIN_GAP = 90  // min px between label centres before staggering rows
-
-          // ── Build retirement sub-label showing both ages ──────────────
-          // At earliestRetAge (client-age), what is the spouse's age?
-          const spouseAgeAtRetirement = earliestRetAge - (clientAge - spouseAge)
-          const retSubLabel = planMode === 'couple'
-            ? `Age ${earliestRetAge} / ${spouseAgeAtRetirement}`
-            : `Age ${earliestRetAge}`
-
-          // Build all strip items sorted by x position
-          type StripItem = {
-            x: number
-            label: string
-            sub: string
-            color: string
-            subColor: string
-          }
-          const items: StripItem[] = []
-
-          Object.entries(milestonesByAge).forEach(([ageStr, msArr]) => {
-            const age = parseInt(ageStr)
-            const idx = ages.indexOf(age)
-            if (idx < 0) return
-            const x = xAxis.getPixelForValue(idx)
-            msArr.forEach(ms => {
-              items.push({
-                x,
-                label: ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label,
-                sub: '−' + fmt(ms.amount),
-                color: '#5E8A6A',
-                subColor: '#9A9690',
-              })
-            })
-          })
-
-          if (retireIdx >= 0) {
-            items.push({
-              x: xAxis.getPixelForValue(retireIdx),
-              label: 'Retirement',
-              sub: retSubLabel,
-              color: '#A8834A',
-              subColor: 'rgba(168,131,74,0.75)',
-            })
-          }
-
-          items.sort((a, b) => a.x - b.x)
-
-          // ── Assign rows greedily left-to-right ────────────────────────
-          // Each item gets row 0 unless it would collide with the previous
-          // item in the same row, in which case it goes to row 1.
-          // Row 1 items sit lower so their text doesn't touch row 0 text.
-          const rows: number[] = new Array(items.length).fill(0)
-          for (let i = 1; i < items.length; i++) {
-            let conflictsWithPrev = false
-            for (let j = i - 1; j >= 0; j--) {
-              if (rows[j] === (rows[i] ?? 0) && Math.abs(items[i].x - items[j].x) < MIN_GAP) {
-                conflictsWithPrev = true
-                break
-              }
-            }
-            if (conflictsWithPrev) {
-              rows[i] = rows[i - 1] === 0 ? 1 : 0
-            }
-          }
-
-          // Row vertical offsets: row 0 is baseline, row 1 is 22px lower
-          const ROW_OFFSETS = [0, 22]
-
-          ctx.save()
-          ctx.textAlign = 'center'
-
-          items.forEach((item, i) => {
-            const rowOff = ROW_OFFSETS[rows[i]] ?? 0
-            const labelY = stripY + rowOff          // where the label name sits (top line)
-            const subY = labelY + 12                // amount/age sits 12px below label
-
-            // Thin vertical tick at x-axis level (no dot)
-            ctx.beginPath()
-            ctx.moveTo(item.x, yAxis.bottom + 4)
-            ctx.lineTo(item.x, yAxis.bottom + 10)
-            ctx.strokeStyle = item.color + 'AA'
-            ctx.lineWidth = 1
-            ctx.stroke()
-
-            // If row 1, draw a small leader line from tick bottom down to label
-            if (rows[i] === 1) {
-              ctx.beginPath()
-              ctx.moveTo(item.x, yAxis.bottom + 10)
-              ctx.lineTo(item.x, labelY - 3)
-              ctx.strokeStyle = item.color + '55'
-              ctx.lineWidth = 1
-              ctx.setLineDash([2, 2])
-              ctx.stroke()
-              ctx.setLineDash([])
-            }
-
-            // Label (bold, coloured)
-            ctx.fillStyle = item.color
-            ctx.font = '600 9px Inter, sans-serif'
-            ctx.fillText(item.label, item.x, labelY)
-
-            // Sub-label (amount or age, muted)
-            ctx.fillStyle = item.subColor
-            ctx.font = '9px Inter, sans-serif'
-            ctx.fillText(item.sub, item.x, subY)
-          })
-
-          ctx.restore()
-        }
-      }
-
-      const datasets: any[] = []
+     const datasets: any[] = []
 
       datasets.push({
         label: 'Capital Required',
@@ -1295,7 +1173,7 @@ export default function CapitalMandatePage() {
       try {
         chartInstance.current = new Chart(canvasCtx, {
           type: 'line',
-          plugins: [retireLinePlugin, milestonePlugin, timelinePlugin],
+          plugins: [retireLinePlugin, milestonePlugin],
           data: {
             labels: ages.map(a => 'Age ' + a),
             datasets,
@@ -1303,7 +1181,7 @@ export default function CapitalMandatePage() {
           options: {
               responsive: true, maintainAspectRatio: false,
               interaction: { mode: 'index', intersect: false },
-              layout: { padding: { bottom: 48 } },
+              layout: { padding: { bottom: 0 } },
             plugins: {
               legend: {
                 labels: {
@@ -1375,7 +1253,7 @@ export default function CapitalMandatePage() {
              y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
                 grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
-                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.2,
+                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.15,
               },
             },
           },
@@ -1594,6 +1472,54 @@ export default function CapitalMandatePage() {
                 </div>
               </div>
             )}
+          </div>
+          {/* Milestone legend — HTML, zero collision risk */}
+          <div style={{ padding: '10px 24px 0', background: 'var(--cream)', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+            {Object.entries(
+              (() => {
+                const items: { label: string; age: number; amount: number; color: string }[] = []
+                goals.filter(g => g.source === 'education').forEach(g => {
+                  items.push({ label: g.label, age: g.targetAge, amount: g.targetCorpus, color: '#5E8A6A' })
+                })
+                const retGoal = goals.find(g => g.source === 'retirement')
+                if (retGoal) {
+                  const spouseAgeAtRet = retirementAge - (clientAge - spouseAge)
+                  const retAgeLabel = planMode === 'couple' ? `${retirementAge} / ${spouseAgeAtRet}` : `${retirementAge}`
+                  items.push({ label: 'Retirement', age: retirementAge, amount: retGoal.targetCorpus, color: '#A8834A' })
+                }
+                return items
+              })()
+            ).map(([, item]) => null).filter(Boolean)}
+            {(() => {
+              const items: { label: string; ageLine: string; sub: string; color: string }[] = []
+              goals.filter(g => g.source === 'education').forEach(g => {
+                items.push({
+                  label: g.label,
+                  ageLine: `Age ${g.targetAge}`,
+                  sub: '−' + fmt(g.targetCorpus),
+                  color: '#5E8A6A',
+                })
+              })
+              const retGoal = goals.find(g => g.source === 'retirement')
+              if (retGoal) {
+                const spouseAgeAtRet = retirementAge - (clientAge - spouseAge)
+                const retAgeLabel = planMode === 'couple' ? `Age ${retirementAge} / ${spouseAgeAtRet}` : `Age ${retirementAge}`
+                items.push({
+                  label: 'Retirement',
+                  ageLine: retAgeLabel,
+                  sub: fmt(retGoal.targetCorpus) + ' corpus',
+                  color: '#A8834A',
+                })
+              }
+              return items.map((item, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                  <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, color: item.color }}>{item.label}</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--ink3)' }}>{item.ageLine}</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--ink3)' }}>{item.sub}</span>
+                </div>
+              ))
+            })()}
           </div>
           <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 400 }}>
             <canvas key={chartKey} ref={chartRef} />
