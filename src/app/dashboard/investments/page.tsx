@@ -1497,12 +1497,17 @@ export default function CapitalMandatePage() {
             ).map(([, item]) => null).filter(Boolean)}
             {(() => {
               const items: { label: string; ageLine: string; sub: string; color: string }[] = []
-              goals.filter(g => g.source === 'education').forEach(g => {
+              const sourceColor: Record<string, string> = {
+                education: '#5E8A6A',
+                wealth: '#4A7C9E',
+                custom: '#A8834A',
+              }
+              goals.filter(g => g.source !== 'retirement').forEach(g => {
                 items.push({
                   label: g.label,
                   ageLine: `Age ${g.targetAge}`,
                   sub: '−' + fmt(g.targetCorpus),
-                  color: '#5E8A6A',
+                  color: sourceColor[g.source] ?? '#9A9690',
                 })
               })
               const retGoal = goals.find(g => g.source === 'retirement')
