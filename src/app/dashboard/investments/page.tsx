@@ -271,8 +271,15 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
 
   const ownerOpts = [
     { value: 'client' as const, label: clientName },
-    ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, { value: 'joint' as const, label: 'Joint' }] : []),
+    ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, ...(vehicleType !== 'srs' ? [{ value: 'joint' as const, label: 'Joint' }] : [])] : []),
   ]
+
+  // If SRS is selected and owner is joint, reset to client (SRS accounts are always individual)
+  useEffect(() => {
+    if (vehicleType === 'srs' && owner === 'joint') {
+      setOwner('client')
+    }
+  }, [vehicleType])
 
   function save() {
     if (!name.trim()) return
