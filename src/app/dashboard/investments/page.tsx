@@ -988,15 +988,16 @@ export default function CapitalMandatePage() {
         requiredLine.push(Math.max(0, corpus))
         corpusAtAge[a] = Math.max(0, corpus)
 
+        // Process any goals maturing this year — record milestone regardless of phase
+        while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
+          const g = goalQueue.shift()!
+          corpus = Math.max(0, corpus - g.targetCorpus)
+          runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
+          if (!milestonesByAge[a]) milestonesByAge[a] = []
+          milestonesByAge[a].push({ label: g.label, amount: g.targetCorpus })
+        }
+
         if (a < earliestRetAge) {
-          // Deduct goals that mature THIS year BEFORE growing — so drop shows at correct age
-          while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
-            const g = goalQueue.shift()!
-            corpus = Math.max(0, corpus - g.targetCorpus)
-            runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
-            if (!milestonesByAge[a]) milestonesByAge[a] = []
-            milestonesByAge[a].push({ label: g.label, amount: g.targetCorpus })
-          }
           // Then grow with monthly contributions (annuity-due: contribute then compound)
           for (let m = 0; m < 12; m++) {
             corpus = (corpus + runningMonthly) * (1 + rmPre)
