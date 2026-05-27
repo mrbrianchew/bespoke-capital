@@ -1158,6 +1158,11 @@ export default function CapitalMandatePage() {
           const ctx = chart.ctx
           ctx.save()
 
+                    // Get the actual position of the line at retirement age
+          const retirementMeta = chart.getDatasetMeta(0)
+          const retirePoint = retirementMeta?.data?.[retireIdx]
+          const lineY = retirePoint ? retirePoint.y : top + 60
+
           // Subtle dashed vertical line — only draw down to the line
           ctx.beginPath()
           ctx.setLineDash([4, 4])
