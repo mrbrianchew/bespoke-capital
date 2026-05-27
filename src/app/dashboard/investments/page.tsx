@@ -15,7 +15,7 @@ type VehicleType = 'investment' | 'cpf_life' | 'srs' | 'endowment' | 'annuity' |
 interface CashflowEvent {
   id: string
   date: string        // YYYY-MM
-  type: 'contribution' | 'withdrawal' | 'top_up' | 'premium_holiday'
+  type: 'contribution' | 'withdrawal' | 'top_up' | 'premium_holiday' | 'contribution_change' | 'end_contributions'
   amount: number
   note?: string
 }
@@ -29,7 +29,9 @@ interface FundingVehicle {
   monthlyContribution: number
   expectedReturn: number
   startYear: number
-  mode: 'Regular' | 'Lump Sum' | 'Mixed'
+  mode: 'Regular' | 'Lump Sum'
+  startMonth?: string   // YYYY-MM
+  endMonth?: string     // YYYY-MM
   cpfScheme?: 'BRS' | 'FRS' | 'ERS'
   cpfMonthlyPayout?: number
   cpfPayoutStartAge?: number
@@ -173,11 +175,13 @@ function CashflowModal({ vehicle, onSave, onClose }: {
     setDate(''); setAmount(''); setNote('')
   }
 
-  const typeColors: Record<CashflowEvent['type'], string> = {
-    contribution: '#4A9E8A', withdrawal: '#E08080', top_up: '#A8834A', premium_holiday: '#9A9690'
+ const typeColors: Record<CashflowEvent['type'], string> = {
+    contribution: '#4A9E8A', withdrawal: '#E08080', top_up: '#A8834A', premium_holiday: '#9A9690',
+    contribution_change: '#4A7C9E', end_contributions: '#6B5B8B'
   }
   const typeLabels: Record<CashflowEvent['type'], string> = {
-    contribution: 'Contribution', withdrawal: 'Withdrawal', top_up: 'Top-Up', premium_holiday: 'Premium Holiday'
+    contribution: 'Contribution', withdrawal: 'Withdrawal', top_up: 'Top-Up', premium_holiday: 'Premium Holiday',
+    contribution_change: 'Contribution Change', end_contributions: 'End Contributions'
   }
 
   return (
@@ -242,7 +246,9 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [monthly, setMonthly] = useState(String(item?.monthlyContribution ?? ''))
   const [ret, setRet] = useState(item?.expectedReturn ?? 6)
   const [startYear, setStartYear] = useState(item?.startYear ?? new Date().getFullYear())
-  const [mode, setMode] = useState<'Regular' | 'Lump Sum' | 'Mixed'>(item?.mode ?? 'Regular')
+const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode === 'Mixed' ? 'Regular' : (item?.mode ?? 'Regular'))
+  const [startMonth, setStartMonth] = useState(item?.startMonth ?? '')
+  const [endMonth, setEndMonth] = useState(item?.endMonth ?? '')
   const [cpfScheme, setCpfScheme] = useState<'BRS' | 'FRS' | 'ERS'>(item?.cpfScheme ?? 'FRS')
   const [cpfPayout, setCpfPayout] = useState(String(item?.cpfMonthlyPayout ?? ''))
   const [cpfStartAge, setCpfStartAge] = useState(item?.cpfPayoutStartAge ?? 65)
@@ -292,6 +298,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       currentValue: parseFloat(curVal) || 0,
       monthlyContribution: parseFloat(monthly) || 0,
       expectedReturn: ret, startYear,
+      startMonth, endMonth,
       cpfScheme, cpfMonthlyPayout: parseFloat(cpfPayout) || 0, cpfPayoutStartAge: cpfStartAge,
       endowmentMaturityValue: parseFloat(endMatVal) || 0, endowmentMaturityYear: endMatYear, endowmentPremium: parseFloat(endPremium) || 0,
       annuityMonthlyIncome: parseFloat(annuityIncome) || 0, annuityStartAge, annuityGuaranteeYears: annuityGuarantee,
@@ -607,40 +614,119 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
             )
           })()}
 
-          {(vehicleType === 'investment' || vehicleType === 'other') && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {(vehicleType === 'investment' || vehicleType === 'other') && (() => {
+            const currentYearMonth = new Date().toISOString().slice(0, 7)
+            const startDate = startMonth ? new Date(startMonth + '-01') : null
+            const now = new Date()
+            const monthsHeld = startDate
+              ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth())
+              : 0
+            const yearsHeld = monthsHeld / 12
+            const currentValNum = parseFloat(curVal) || 0
+            const monthlyNum = parseFloat(monthly) || 0
+
+            // Annualized performance from start to now
+            let annualizedReturn: number | null = null
+            let totalContributed = 0
+            if (yearsHeld > 0 && currentValNum > 0 && startDate) {
+              if (mode === 'Regular' && monthlyNum > 0) {
+                totalContributed = monthlyNum * monthsHeld
+              } else if (mode === 'Lump Sum') {
+                totalContributed = monthlyNum || currentValNum
+              }
+              if (totalContributed > 0 && currentValNum > 0) {
+                annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+              }
+            }
+
+            return (
+              <>
                 <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Value (S$)</div>
-                  <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Mode</div>
+                  <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+                    {(['Regular', 'Lump Sum'] as const).map(m => (
+                      <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: mode === m ? 'var(--ink)' : 'white', color: mode === m ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{m}</button>
+                    ))}
+                  </div>
                 </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Month / Year</div>
+                    <input type="month" style={inp} value={startMonth} onChange={e => setStartMonth(e.target.value)} max={currentYearMonth} />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Value (S$)</div>
+                    <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                  </div>
+                </div>
+
+                {mode === 'Regular' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Contribution (S$)</div>
+                      <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>End Month / Year</div>
+                      <input type="month" style={inp} value={endMonth} onChange={e => setEndMonth(e.target.value)} min={startMonth || undefined} />
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>After this date, portfolio compounds at expected return only</div>
+                    </div>
+                  </div>
+                )}
+
+                {mode === 'Lump Sum' && (
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Initial Lump Sum (S$)</div>
+                    <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>Use Cashflows to record top-ups and withdrawals</div>
+                  </div>
+                )}
+
                 <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Contribution (S$)</div>
-                  <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Mode</div>
-                <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-                  {(['Regular', 'Lump Sum', 'Mixed'] as const).map(m => <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: mode === m ? 'var(--ink)' : 'white', color: mode === m ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{m}</button>)}
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return %</div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return % p.a.</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <input type="range" min={0} max={15} step={0.5} value={ret} onChange={e => setRet(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--gold)' }} />
                     <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 44, textAlign: 'center' }}>{ret}%</span>
                   </div>
                 </div>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Year</div>
-                  <input type="number" style={inp} value={startYear} onChange={e => setStartYear(parseInt(e.target.value) || new Date().getFullYear())} />
+
+                {/* Performance panel — only if start month is in the past and current value exists */}
+                {yearsHeld > 0 && currentValNum > 0 && (
+                  <div style={{ background: '#F5F0E8', border: '1px solid rgba(168,131,74,0.2)', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 10 }}>
+                      Portfolio Performance · {monthsHeld} month{monthsHeld !== 1 ? 's' : ''} · {startMonth}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
+                          {totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Current Value</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
+                          {currentValNum >= 1_000_000 ? 'S$' + (currentValNum / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(currentValNum).toLocaleString('en-SG')}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
+                          {annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}
+                        </div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>Simple annualized · refine via Cashflows</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
+                  💡 Use the <strong>Cashflows</strong> button on the vehicle card to record premium holidays, withdrawals, contribution changes, and get a precise XIRR.
                 </div>
-              </div>
-            </>
-          )}
-        </div>
+              </>
+            )
+          })()}
 
         <div style={{ padding: '16px 28px', borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', fontFamily: 'Inter', fontSize: 12, border: '1px solid var(--line)', borderRadius: 8, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>Cancel</button>
