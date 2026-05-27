@@ -1116,7 +1116,8 @@ export default function CapitalMandatePage() {
             const boxX = x - boxW / 2
 
             // Stack boxes upward from the highest line point: row 0 = closest to line
-            const boxY = BOX_ZONE_BOTTOM - (row + 1) * (BOX_H + BOX_GAP)
+            const rawBoxY = BOX_ZONE_BOTTOM - (row + 1) * (BOX_H + BOX_GAP)
+            const boxY = Math.max(yAxis.top + 48, rawBoxY)  // 48px = retirement box height + gap
             const stemEndY = boxY + BOX_H
 
             ctx.save()
@@ -1196,16 +1197,35 @@ export default function CapitalMandatePage() {
           ctx.lineWidth = 2
           ctx.stroke()
 
-          // Retirement label — rotated vertically along the line, elegant and unobtrusive
-          const label = `Retirement  ·  Age ${retirementAge}`
+          // Retirement label — same box style as milestones, anchored just below the top
+          const retLabel = 'Retirement'
+          const retAmountLabel = `Age ${retirementAge}`
           ctx.save()
-          ctx.translate(x - 10, top + (bottom - top) * 0.5)
-          ctx.rotate(-Math.PI / 2)
+          ctx.font = '600 10px Inter, sans-serif'
+          const retLw = ctx.measureText(retLabel).width
+          ctx.font = '9px Inter, sans-serif'
+          const retAw = ctx.measureText(retAmountLabel).width
+          const retBoxW = Math.max(retLw, retAw) + 16
+          const retBoxH = 32
+          const retBoxX = x - retBoxW / 2
+          const retBoxY = top + 8
+
+          ctx.fillStyle = 'rgba(255,248,235,0.97)'
+          ctx.strokeStyle = 'rgba(168,131,74,0.5)'
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.roundRect(retBoxX, retBoxY, retBoxW, retBoxH, 5)
+          ctx.fill()
+          ctx.stroke()
+
+          ctx.fillStyle = '#A8834A'
+          ctx.font = '600 10px Inter, sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillStyle = 'rgba(168,131,74,0.85)'
-          ctx.font = '500 11px Inter, sans-serif'
-          ctx.letterSpacing = '0.05em'
-          ctx.fillText(label, 0, 0)
+          ctx.fillText(retLabel, x, retBoxY + 12)
+
+          ctx.fillStyle = 'rgba(168,131,74,0.65)'
+          ctx.font = '9px Inter, sans-serif'
+          ctx.fillText(retAmountLabel, x, retBoxY + 25)
           ctx.restore()
 
           ctx.restore()
