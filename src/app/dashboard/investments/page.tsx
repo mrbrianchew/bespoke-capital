@@ -1077,11 +1077,8 @@ export default function CapitalMandatePage() {
           // Sort by x so we process left-to-right
           entries.sort((a, b) => a.x - b.x)
 
-          // Assign each milestone its own row from the top, left to right
-          const boxYs = entries.map((_entry, i) => BOX_TOP_LIMIT + i * (BOX_H + BOX_GAP))
-
-          // Compute retirement x so milestone boxes can avoid it
-          const retX = retireIdx >= 0 ? xAxis.getPixelForValue(retireIdx) : -999
+          // Milestone boxes start at row 1 — row 0 is reserved for Retirement
+          const boxYs = entries.map((_entry, i) => BOX_TOP_LIMIT + (i + 1) * (BOX_H + BOX_GAP))
 
           // Draw each milestone
           entries.forEach((entry, i) => {
@@ -1089,7 +1086,7 @@ export default function CapitalMandatePage() {
             const boxY = boxYs[i]
             const shortLabel = ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label
             const amountText = '−' + fmt(ms.amount)
-            const boxX = Math.abs(x - retX) < boxW ? x - boxW - 8 : x - boxW / 2
+           const boxX = x - boxW / 2
 
             ctx.save()
 
