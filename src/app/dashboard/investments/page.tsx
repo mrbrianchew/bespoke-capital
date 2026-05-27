@@ -702,9 +702,52 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
                   if (cf.type === 'withdrawal') totalContributed -= cf.amount
                 })
               }
-              totalContributed = Math.max(0, totalContributed)
+             totalContributed = Math.max(0, totalContributed)
               if (totalContributed > 0 && currentValNum > 0) {
-                annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                // Use XIRR for accurate annualized return on regular contributions
+                // Simple formula understates return because it ignores timing of cashflows
+                if (mode === 'Regular' && startDate && monthsHeld > 1) {
+                  try {
+                    const xirrFlows: { amount: number; date: Date }[] = []
+                    // Reconstruct monthly outflows using same rate logic as totalContributed
+                    let xirrRate = monthlyNum
+                    let xirrRateIdx = 0
+                    const sortedChangesX = [...(item?.cashflows || [])
+                      .filter(cf => cf.type === 'contribution_change')
+                      .sort((a, b) => a.date.localeCompare(b.date))]
+                    const xirrIter = new Date(startDate)
+                    const xirrNow = new Date()
+                    while (xirrIter <= xirrNow) {
+                      const ym = xirrIter.toISOString().slice(0, 7)
+                      while (xirrRateIdx < sortedChangesX.length && sortedChangesX[xirrRateIdx].date <= ym) {
+                        xirrRate = sortedChangesX[xirrRateIdx].amount
+                        xirrRateIdx++
+                      }
+                      if (xirrRate > 0) xirrFlows.push({ amount: -xirrRate, date: new Date(xirrIter) })
+                      xirrIter.setMonth(xirrIter.getMonth() + 1)
+                    }
+                    // Add top-ups as outflows, withdrawals as inflows
+                    ;(item?.cashflows || []).forEach(cf => {
+                      const [yr, mo] = cf.date.split('-').map(Number)
+                      if (cf.type === 'top_up') xirrFlows.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) })
+                      if (cf.type === 'withdrawal') xirrFlows.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) })
+                    })
+                    // Current value as final inflow
+                    xirrFlows.push({ amount: currentValNum, date: new Date() })
+                    xirrFlows.sort((a, b) => a.date.getTime() - b.date.getTime())
+                    const xirrResult = xirr(xirrFlows)
+                    if (xirrResult !== null) {
+                      annualizedReturn = xirrResult / 100
+                    } else {
+                      annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                    }
+                  } catch {
+                    annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                  }
+                } else {
+                  // Lump sum: simple annualized is correct
+                  annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                }
               }
             }
 
@@ -784,7 +827,7 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
                         <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
                           {annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}
                         </div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>Simple annualized · refine via Cashflows</div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>{mode === 'Regular' && monthsHeld > 1 ? 'XIRR · time-weighted' : 'Simple annualized'}</div>
                       </div>
                     </div>
                   </div>
