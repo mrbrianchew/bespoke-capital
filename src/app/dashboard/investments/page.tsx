@@ -1052,6 +1052,134 @@ export default function CapitalMandatePage() {
           if (!xAxis || !yAxis) return
           const ctx = chart.ctx
 
+          const BOX_H = 32
+          const BOX_GAP = 4
+          const BOX_TOP_LIMIT = yAxis.top + 48  // reserve space below retirement box
+
+          // Build entries with pixel positions
+          const entries = Object.entries(milestonesByAge)
+            .map(([ageStr, ms]) => {
+              const age = parseInt(ageStr)
+              const idx = ages.indexOf(age)
+              if (idx < 0) return null
+              const x = xAxis.getPixelForValue(idx)
+              const corpusVal = corpusAtAge[age] ?? 0
+              const dotY = yAxis.getPixelForValue(corpusVal)
+              ctx.font = '600 10px Inter, sans-serif'
+              const lw = ctx.measureText(ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label).width
+              ctx.font = '9px Inter, sans-serif'
+              const aw = ctx.measureText('−' + fmt(ms.amount)).width
+              const boxW = Math.max(lw, aw) + 16
+              return { age, ms, x, dotY, boxW }
+            })
+            .filter(Boolean) as { age: number; ms: { label: string; amount: number }; x: number; dotY: number; boxW: number }[]
+
+          // Sort by x so we process left-to-right
+          entries.sort((a, b) => a.x - b.x)
+
+          // For each entry, find the ideal boxY = dotY - gap - BOX_H (just above its own dot)
+          // Then push up if it overlaps any already-placed box
+          type Placed = { x: number; boxW: number; boxY: number }
+          const placed: Placed[] = []
+
+          const boxYs = entries.map(entry => {
+            // Ideal position: just above this entry's own dot
+            let idealY = entry.dotY - 20 - BOX_H
+
+            // Check overlap with already placed boxes
+            let changed = true
+            while (changed) {
+              changed = false
+              for (const p of placed) {
+                const myX1 = entry.x - entry.boxW / 2 - 4
+                const myX2 = entry.x + entry.boxW / 2 + 4
+                const pX1 = p.x - p.boxW / 2 - 4
+                const pX2 = p.x + p.boxW / 2 + 4
+                const xOverlap = !(myX2 < pX1 || myX1 > pX2)
+                const yOverlap = !(idealY > p.boxY + BOX_H + BOX_GAP || idealY + BOX_H < p.boxY - BOX_GAP)
+                if (xOverlap && yOverlap) {
+                  // Push this box above the conflicting one
+                  idealY = p.boxY - BOX_H - BOX_GAP
+                  changed = true
+                }
+              }
+            }
+
+            // Clamp so box never goes above the reserved top limit
+            idealY = Math.max(BOX_TOP_LIMIT, idealY)
+            placed.push({ x: entry.x, boxW: entry.boxW, boxY: idealY })
+            return idealY
+          })
+
+          // Draw each milestone
+          entries.forEach((entry, i) => {
+            const { ms, x, dotY, boxW } = entry
+            const boxY = boxYs[i]
+            const shortLabel = ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label
+            const amountText = '−' + fmt(ms.amount)
+            const boxX = x - boxW / 2
+
+            ctx.save()
+
+            // Vertical dashed guide line
+            ctx.beginPath()
+            ctx.setLineDash([4, 4])
+            ctx.moveTo(x, yAxis.top)
+            ctx.lineTo(x, yAxis.bottom)
+            ctx.strokeStyle = 'rgba(94,138,106,0.2)'
+            ctx.lineWidth = 1
+            ctx.stroke()
+            ctx.setLineDash([])
+
+            // Connector stem from box bottom to dot
+            const stemStart = boxY + BOX_H + 2
+            if (dotY - stemStart > 6) {
+              ctx.beginPath()
+              ctx.moveTo(x, stemStart)
+              ctx.lineTo(x, dotY - 8)
+              ctx.strokeStyle = 'rgba(94,138,106,0.4)'
+              ctx.lineWidth = 1
+              ctx.setLineDash([2, 3])
+              ctx.stroke()
+              ctx.setLineDash([])
+            }
+
+            // Dot on line
+            ctx.beginPath()
+            ctx.arc(x, dotY, 6, 0, Math.PI * 2)
+            ctx.fillStyle = '#5E8A6A'
+            ctx.fill()
+            ctx.strokeStyle = 'white'
+            ctx.lineWidth = 2
+            ctx.stroke()
+
+            // Label box
+            ctx.fillStyle = 'rgba(255,255,255,0.97)'
+            ctx.strokeStyle = 'rgba(94,138,106,0.3)'
+            ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.roundRect(boxX, boxY, boxW, BOX_H, 5)
+            ctx.fill()
+            ctx.stroke()
+
+            ctx.fillStyle = '#5E8A6A'
+            ctx.font = '600 10px Inter, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(shortLabel, x, boxY + 12)
+
+            ctx.fillStyle = '#9A9690'
+            ctx.font = '9px Inter, sans-serif'
+            ctx.fillText(amountText, x, boxY + 25)
+
+            ctx.restore()
+          })
+        }
+      }
+          const xAxis = chart.scales.x
+          const yAxis = chart.scales.y
+          if (!xAxis || !yAxis) return
+          const ctx = chart.ctx
+
          // Sort milestones by x position so we can stagger overlapping labels
           const entries = Object.entries(milestonesByAge)
             .map(([ageStr, ms]) => {
