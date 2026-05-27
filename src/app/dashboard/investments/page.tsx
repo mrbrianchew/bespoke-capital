@@ -1462,6 +1462,7 @@ export default function CapitalMandatePage() {
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Capital Journey · {personLabel}</div>
+            </div>
             {(desiredMonthlyIncome > 0 || currentExpenses > 0) && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>Retirement Income:</span>
