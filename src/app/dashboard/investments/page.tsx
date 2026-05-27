@@ -1351,7 +1351,8 @@ export default function CapitalMandatePage() {
               x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
               y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
-                grid: { color: 'rgba(26,24,22,0.04)' }, min: 0
+                grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
+                afterFit(scale: any) { scale.paddingTop = 80 },
               },
             },
           },
@@ -1571,7 +1572,7 @@ export default function CapitalMandatePage() {
               </div>
             )}
           </div>
-          <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 360 }}>
+          <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 400 }}>
             <canvas key={chartKey} ref={chartRef} />
           </div>
         </div>
