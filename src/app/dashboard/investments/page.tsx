@@ -10,7 +10,7 @@ Chart.register(...registerables)
 type PlanMode = 'couple' | 'individual'
 type ActivePerson = 'client' | 'spouse' | 'combined'
 type IncomeSource = 'desired' | 'current'
-type VehicleType = 'investment' | 'cpf_life' | 'endowment' | 'annuity' | 'rental' | 'other'
+type VehicleType = 'investment' | 'cpf_life' | 'srs' | 'endowment' | 'annuity' | 'rental' | 'other'
 
 interface CashflowEvent {
   id: string
@@ -41,6 +41,10 @@ interface FundingVehicle {
   annuityGuaranteeYears?: number
   rentalMonthlyNet?: number
   rentalStopAge?: number
+  srsAnnualContribution?: number
+  srsContributionMode?: 'monthly' | 'annual'
+  srsWithdrawalStartAge?: number
+  srsWithdrawalDuration?: number
   cashflows: CashflowEvent[]
 }
 
@@ -248,12 +252,17 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [annuityGuarantee, setAnnuityGuarantee] = useState(item?.annuityGuaranteeYears ?? 10)
   const [rentalNet, setRentalNet] = useState(String(item?.rentalMonthlyNet ?? ''))
   const [rentalStop, setRentalStop] = useState(item?.rentalStopAge ?? 75)
+  const [srsAnnual, setSrsAnnual] = useState(String(item?.srsAnnualContribution ?? ''))
+  const [srsMode, setSrsMode] = useState<'monthly' | 'annual'>(item?.srsContributionMode ?? 'annual')
+  const [srsWithdrawalAge, setSrsWithdrawalAge] = useState(item?.srsWithdrawalStartAge ?? 63)
+  const [srsDuration, setSrsDuration] = useState(item?.srsWithdrawalDuration ?? 10)
 
   const inp: React.CSSProperties = { width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }
 
   const vehicleOpts: { value: VehicleType; label: string; icon: string }[] = [
     { value: 'investment', label: 'Investment', icon: '📈' },
     { value: 'cpf_life', label: 'CPF Life', icon: '🇸🇬' },
+    { value: 'srs', label: 'SRS', icon: '🏦' },
     { value: 'endowment', label: 'Endowment', icon: '📋' },
     { value: 'annuity', label: 'Annuity', icon: '🔄' },
     { value: 'rental', label: 'Rental Income', icon: '🏠' },
@@ -277,6 +286,8 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       endowmentMaturityValue: parseFloat(endMatVal) || 0, endowmentMaturityYear: endMatYear, endowmentPremium: parseFloat(endPremium) || 0,
       annuityMonthlyIncome: parseFloat(annuityIncome) || 0, annuityStartAge, annuityGuaranteeYears: annuityGuarantee,
       rentalMonthlyNet: parseFloat(rentalNet) || 0, rentalStopAge: rentalStop,
+      srsAnnualContribution: parseFloat(srsAnnual) || 0, srsContributionMode: srsMode,
+      srsWithdrawalStartAge: srsWithdrawalAge, srsWithdrawalDuration: srsDuration,
       cashflows: item?.cashflows || [],
     })
   }
@@ -405,6 +416,101 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
               </div>
             </div>
           )}
+
+         {vehicleType === 'srs' && (() => {
+            const annualAmt = parseFloat(srsAnnual) || 0
+            const monthlyEquiv = srsMode === 'monthly' ? annualAmt / 12 : annualAmt / 12
+            const yearsToWithdrawal = Math.max(1, srsWithdrawalAge - clientAge)
+            const rm = ret / 100 / 12
+            const nm = yearsToWithdrawal * 12
+            const projectedBalance = (parseFloat(curVal) || 0) * Math.pow(1 + ret / 100, yearsToWithdrawal)
+              + (annualAmt > 0 ? (rm > 0
+                ? (annualAmt / 12) * ((Math.pow(1 + rm, nm) - 1) / rm) * (1 + rm)
+                : (annualAmt / 12) * nm) : 0)
+            const annualWithdrawal = srsDuration > 0 ? projectedBalance / srsDuration : 0
+            const monthlyWithdrawal = annualWithdrawal / 12
+            const taxableMonthly = monthlyWithdrawal * 0.5
+
+            return (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current SRS Balance (S$)</div>
+                    <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Contribution Mode</div>
+                    <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+                      {([{ v: 'monthly' as const, l: 'Monthly' }, { v: 'annual' as const, l: 'Annual' }]).map(o => (
+                        <button key={o.v} onClick={() => setSrsMode(o.v)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: srsMode === o.v ? 'var(--ink)' : 'white', color: srsMode === o.v ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.l}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+                      {srsMode === 'monthly' ? 'Monthly Contribution (S$)' : 'Annual Contribution (S$)'}
+                    </div>
+                    <input type="number" style={inp} value={srsAnnual} onChange={e => setSrsAnnual(e.target.value)}
+                      placeholder={srsMode === 'monthly' ? 'e.g. 1275 (max S$15,300/yr)' : 'e.g. 15300 (max for SC/PR)'} />
+                    {srsMode === 'monthly' && annualAmt * 12 > 15300 && (
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Exceeds S$15,300/yr limit for SC/PR</div>
+                    )}
+                    {srsMode === 'annual' && annualAmt > 15300 && (
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Exceeds S$15,300/yr limit for SC/PR</div>
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return %</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input type="range" min={0} max={12} step={0.5} value={ret} onChange={e => setRet(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--gold)' }} />
+                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 44, textAlign: 'center' }}>{ret}%</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Start Age</div>
+                    <input type="number" style={inp} value={srsWithdrawalAge} onChange={e => setSrsWithdrawalAge(parseInt(e.target.value) || 63)} />
+                    {srsWithdrawalAge < 63 && <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Early withdrawal incurs 5% penalty + full tax</div>}
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Duration (years, max 10)</div>
+                    <input type="number" style={inp} value={srsDuration} min={1} max={10} onChange={e => setSrsDuration(Math.min(10, parseInt(e.target.value) || 10))} />
+                  </div>
+                </div>
+                {annualAmt > 0 && projectedBalance > 0 && (
+                  <div style={{ background: '#EBF5EE', border: '1px solid rgba(74,158,138,0.2)', borderRadius: 10, padding: '14px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Projected Balance</div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
+                        {projectedBalance >= 1_000_000 ? 'S$' + (projectedBalance / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(projectedBalance).toLocaleString('en-SG')}
+                      </div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>at age {srsWithdrawalAge}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Monthly Income</div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
+                        S${Math.round(monthlyWithdrawal).toLocaleString('en-SG')}/mo
+                      </div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>over {srsDuration} yrs</div>
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Taxable Portion</div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
+                        S${Math.round(taxableMonthly).toLocaleString('en-SG')}/mo
+                      </div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>50% concession applies</div>
+                    </div>
+                  </div>
+                )}
+                <div style={{ background: '#EBF2F8', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#4A7C9E' }}>
+                  💡 Only 50% of SRS withdrawals are taxable from statutory retirement age (currently 63). Spread over 10 years to minimise tax impact.
+                </div>
+              </>
+            )
+          })()}
 
           {(vehicleType === 'investment' || vehicleType === 'other') && (
             <>
@@ -559,7 +665,7 @@ function XIRRBadge({ rate }: { rate: number | null }) {
 }
 
 function vehicleIcon(t: VehicleType) {
-  return { investment: '📈', cpf_life: '🇸🇬', endowment: '📋', annuity: '🔄', rental: '🏠', other: '✦' }[t]
+  return { investment: '📈', cpf_life: '🇸🇬', srs: '🏦', endowment: '📋', annuity: '🔄', rental: '🏠', other: '✦' }[t]
 }
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
@@ -1287,7 +1393,7 @@ export default function CapitalMandatePage() {
   if (!client) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}><div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)' }}>No client selected.</div></div>
 
   const vehicleTypeColors: Record<VehicleType, string> = {
-    investment: '#4A9E8A', cpf_life: '#4A7C9E', endowment: '#A8834A', annuity: '#6B5B8B', rental: '#5E8A6A', other: '#9A9690'
+    investment: '#4A9E8A', cpf_life: '#4A7C9E', srs: '#2D5A4E', endowment: '#A8834A', annuity: '#6B5B8B', rental: '#5E8A6A', other: '#9A9690'
   }
 
   type StripTone = 'good' | 'warn' | 'bad' | 'neutral'
@@ -1575,6 +1681,12 @@ export default function CapitalMandatePage() {
                           {p.vehicleType === 'endowment' && `Premium S$${(p.endowmentPremium || 0).toLocaleString('en-SG')}/mo · Maturity ${p.endowmentMaturityYear}: ${fmt(p.endowmentMaturityValue || 0)}`}
                           {p.vehicleType === 'annuity' && `S$${(p.annuityMonthlyIncome || 0).toLocaleString('en-SG')}/mo from age ${p.annuityStartAge} · ${p.annuityGuaranteeYears}yr guarantee`}
                           {p.vehicleType === 'rental' && `Net S$${(p.rentalMonthlyNet || 0).toLocaleString('en-SG')}/mo until age ${p.rentalStopAge}`}
+                          {p.vehicleType === 'srs' && (() => {
+                            const annual = p.srsAnnualContribution || 0
+                            const mode = p.srsContributionMode || 'annual'
+                            const contribStr = annual > 0 ? (mode === 'monthly' ? `S$${Math.round(annual).toLocaleString('en-SG')}/mo` : `S$${Math.round(annual).toLocaleString('en-SG')}/yr`) : '—'
+                            return `${contribStr} · ${fmt(p.currentValue)} · Withdraw age ${p.srsWithdrawalStartAge || 63} over ${p.srsWithdrawalDuration || 10}yrs`
+                          })()}
                           {(p.vehicleType === 'investment' || p.vehicleType === 'other') && `${p.monthlyContribution > 0 ? fmtMo(p.monthlyContribution) : '—'} · ${fmt(p.currentValue)} · ${p.expectedReturn}% p.a.`}
                         </div>
                         {(p.cashflows?.length || 0) > 0 && (
