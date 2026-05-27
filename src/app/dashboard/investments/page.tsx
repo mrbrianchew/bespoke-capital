@@ -1127,7 +1127,7 @@ export default function CapitalMandatePage() {
             ctx.strokeStyle = 'rgba(94,138,106,0.3)'
             ctx.lineWidth = 1
             ctx.beginPath()
-            ctx.roundRect(boxX, boxY, boxW, BOX_H, 5)
+          ctx.roundRect(retBoxXOffset, retBoxY, retBoxW, retBoxH, 5)
             ctx.fill()
             ctx.stroke()
 
@@ -1171,21 +1171,15 @@ export default function CapitalMandatePage() {
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
 
-         // Place retirement box at top, but shift down if a milestone box overlaps horizontally
-          const BOX_TOP_LIMIT = yAxis.top + 8
+         // Pin retirement box just above the dot, offset to the right to avoid milestone overlap
           const BOX_H = 32
-          const BOX_GAP = 4
-          let retBoxY = BOX_TOP_LIMIT
-          Object.keys(milestonesByAge).map(Number).forEach((msAge, i) => {
-            const msIdx = ages.indexOf(msAge)
-            if (msIdx < 0) return
-            const msX = xAxis.getPixelForValue(msIdx)
-            const msBoxY = BOX_TOP_LIMIT + i * (BOX_H + BOX_GAP)
-            // If horizontally close (within 90px) and vertically overlapping, push retirement down
-            if (Math.abs(msX - x) < 90 && msBoxY + BOX_H > retBoxY && msBoxY < retBoxY + BOX_H) {
-              retBoxY = msBoxY + BOX_H + BOX_GAP
-            }
-          })
+          const DOT_OFFSET = 14
+          // Default: position box just above and centred on the dot
+          let retBoxY = lineY - BOX_H - DOT_OFFSET
+          // Clamp so it never goes above the chart top
+          if (retBoxY < yAxis.top + 8) retBoxY = yAxis.top + 8
+          // Shift box to the right of the dot so it doesn't overlap milestone boxes on the left
+          const retBoxXOffset = x + 10
 
           ctx.save()
 
@@ -1208,20 +1202,20 @@ export default function CapitalMandatePage() {
           ctx.fill()
           ctx.stroke()
 
-          ctx.fillStyle = '#A8834A'
+         ctx.fillStyle = '#A8834A'
           ctx.font = '600 10px Inter, sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillText(retLabel, x, retBoxY + 12)
+          ctx.fillText(retLabel, retBoxXOffset + retBoxW / 2, retBoxY + 12)
 
           ctx.fillStyle = 'rgba(168,131,74,0.65)'
           ctx.font = '9px Inter, sans-serif'
-          ctx.fillText(retAmountLabel, x, retBoxY + 25)
+          ctx.fillText(retAmountLabel, retBoxXOffset + retBoxW / 2, retBoxY + 25)
 
-          // Dashed stem from bottom of box to just above the dot
+          // Dashed stem from bottom-left corner of box to dot
           const stemStart = retBoxY + retBoxH + 2
           if (lineY - stemStart > 10) {
             ctx.beginPath()
-            ctx.moveTo(x, stemStart)
+            ctx.moveTo(retBoxXOffset, stemStart)
             ctx.lineTo(x, lineY - 8)
             ctx.strokeStyle = 'rgba(168,131,74,0.4)'
             ctx.lineWidth = 1
