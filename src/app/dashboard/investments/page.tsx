@@ -1176,7 +1176,8 @@ export default function CapitalMandatePage() {
           const retBoxW = Math.max(retLw, retAw) + 16
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
-          const milestoneStackHeight = entries.length > 0 ? entries.length * (BOX_H + BOX_GAP) + 8 : 8
+          const milestoneCount = nonRetGoals.filter(g => g.targetAge <= lifeEnd).length
+          const milestoneStackHeight = milestoneCount > 0 ? milestoneCount * (BOX_H + BOX_GAP) + 8 : 8
           const retBoxY = top + milestoneStackHeight
 
           ctx.fillStyle = 'rgba(255,248,235,0.97)'
