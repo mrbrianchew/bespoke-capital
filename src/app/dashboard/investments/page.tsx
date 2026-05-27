@@ -1153,6 +1153,92 @@ export default function CapitalMandatePage() {
           const yAxis = chart.scales.y
           if (!xAxis || !yAxis) return
           const x = xAxis.getPixelForValue(retireIdx)
+          const ctx = chart.ctx
+
+          // Get Y position of the corpus line at retirement age
+          const retirementMeta = chart.getDatasetMeta(0)
+          const retirePoint = retirementMeta?.data?.[retireIdx]
+          const lineY = retirePoint ? retirePoint.y : yAxis.top + 60
+
+          // Build the label box
+          const retLabel = 'Retirement'
+          const retAmountLabel = `Age ${retirementAge}`
+          ctx.font = '600 10px Inter, sans-serif'
+          const retLw = ctx.measureText(retLabel).width
+          ctx.font = '9px Inter, sans-serif'
+          const retAw = ctx.measureText(retAmountLabel).width
+          const retBoxW = Math.max(retLw, retAw) + 16
+          const retBoxH = 32
+          const retBoxX = x - retBoxW / 2
+
+          // Stack the retirement box after all milestone boxes (top-down, same system)
+          const BOX_TOP_LIMIT = yAxis.top + 8
+          const BOX_GAP = 4
+          const milestonesBeforeRetirement = Object.keys(milestonesByAge)
+            .map(Number)
+            .filter(age => age < retirementAge).length
+          const retBoxY = BOX_TOP_LIMIT + milestonesBeforeRetirement * (retBoxH + BOX_GAP)
+
+          ctx.save()
+
+          // Dashed vertical line from top of chart down to the corpus line
+          ctx.beginPath()
+          ctx.setLineDash([4, 4])
+          ctx.moveTo(x, yAxis.top)
+          ctx.lineTo(x, lineY)
+          ctx.strokeStyle = 'rgba(168,131,74,0.25)'
+          ctx.lineWidth = 1
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          // Draw the label box
+          ctx.fillStyle = 'rgba(255,248,235,0.97)'
+          ctx.strokeStyle = 'rgba(168,131,74,0.5)'
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.roundRect(retBoxX, retBoxY, retBoxW, retBoxH, 5)
+          ctx.fill()
+          ctx.stroke()
+
+          ctx.fillStyle = '#A8834A'
+          ctx.font = '600 10px Inter, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText(retLabel, x, retBoxY + 12)
+
+          ctx.fillStyle = 'rgba(168,131,74,0.65)'
+          ctx.font = '9px Inter, sans-serif'
+          ctx.fillText(retAmountLabel, x, retBoxY + 25)
+
+          // Dashed stem from bottom of box to just above the dot
+          const stemStart = retBoxY + retBoxH + 2
+          if (lineY - stemStart > 10) {
+            ctx.beginPath()
+            ctx.moveTo(x, stemStart)
+            ctx.lineTo(x, lineY - 8)
+            ctx.strokeStyle = 'rgba(168,131,74,0.4)'
+            ctx.lineWidth = 1
+            ctx.setLineDash([2, 3])
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
+
+          // Gold dot on the corpus line at retirement age
+          ctx.beginPath()
+          ctx.arc(x, lineY, 6, 0, Math.PI * 2)
+          ctx.fillStyle = '#A8834A'
+          ctx.fill()
+          ctx.strokeStyle = 'white'
+          ctx.lineWidth = 2
+          ctx.stroke()
+
+          ctx.restore()
+        }
+      }
+          if (retireIdx < 0) return
+          const xAxis = chart.scales.x
+          const yAxis = chart.scales.y
+          if (!xAxis || !yAxis) return
+          const x = xAxis.getPixelForValue(retireIdx)
           const top = yAxis.top
           const bottom = yAxis.bottom
           const ctx = chart.ctx
