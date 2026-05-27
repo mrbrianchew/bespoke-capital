@@ -963,6 +963,9 @@ export default function CapitalMandatePage() {
         .filter(g => g.source !== 'retirement')
         .sort((a, b) => a.targetAge - b.targetAge)
 
+      const earliestRetAge = earliestRetirementAge
+      const retireIdx = ages.indexOf(earliestRetAge)
+
       // Milestone metadata for tooltip annotations (array to handle multiple goals at same age)
       const milestonesByAge: Record<number, { label: string; amount: number }[]> = {}
 
@@ -1045,11 +1048,8 @@ export default function CapitalMandatePage() {
       }
 
       const legacyLine: (number | null)[] | null = legacyAmt > 0
-        ? ages.map(a => a >= earliestRetirementAge ? legacyAmt : null)
+        ? ages.map(a => a >= earliestRetAge ? legacyAmt : null)
         : null
-
-      const earliestRetAge = earliestRetirementAge
-      const retireIdx = ages.indexOf(earliestRetAge)
 
       // ── Milestone dot plugin ───────────────────────────────────────────
       // Draws a circle + label at each non-retirement goal's targetAge on the line
