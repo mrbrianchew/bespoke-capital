@@ -1181,7 +1181,7 @@ export default function CapitalMandatePage() {
           const retirementMeta = chart.getDatasetMeta(0)
           const retirePoint = retirementMeta?.data?.[retireIdx]
           const lineY = retirePoint ? retirePoint.y : top + 60
-          const retBoxY = Math.max(top + 8, lineY - retBoxH - 28)
+          const retBoxY = Math.max(top + 8, lineY - retBoxH - 52)
 
           ctx.fillStyle = 'rgba(255,248,235,0.97)'
           ctx.strokeStyle = 'rgba(168,131,74,0.5)'
@@ -1199,6 +1199,28 @@ export default function CapitalMandatePage() {
           ctx.fillStyle = 'rgba(168,131,74,0.65)'
           ctx.font = '9px Inter, sans-serif'
           ctx.fillText(retAmountLabel, x, retBoxY + 25)
+
+          // Stem from box bottom to dot
+          const stemStart = retBoxY + retBoxH + 2
+          if (lineY - stemStart > 6) {
+            ctx.beginPath()
+            ctx.moveTo(x, stemStart)
+            ctx.lineTo(x, lineY - 8)
+            ctx.strokeStyle = 'rgba(168,131,74,0.4)'
+            ctx.lineWidth = 1
+            ctx.setLineDash([2, 3])
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
+
+          // Gold dot on line at retirement
+          ctx.beginPath()
+          ctx.arc(x, lineY, 6, 0, Math.PI * 2)
+          ctx.fillStyle = '#A8834A'
+          ctx.fill()
+          ctx.strokeStyle = 'white'
+          ctx.lineWidth = 2
+          ctx.stroke()
 
           ctx.restore()
         }
