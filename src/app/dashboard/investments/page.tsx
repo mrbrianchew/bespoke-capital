@@ -1129,7 +1129,7 @@ export default function CapitalMandatePage() {
         }
       }
 
-      // ── Timeline strip plugin — draws below x-axis, no collision risk ──
+     // ── Timeline strip plugin — draws below x-axis, collision-aware ──
       const timelinePlugin = {
         id: 'timelineStrip',
         afterDraw(chart: any) {
@@ -1138,76 +1138,100 @@ export default function CapitalMandatePage() {
           if (!xAxis || !yAxis) return
           const ctx = chart.ctx
 
-          // Strip sits below the x-axis tick labels
-          const stripY = yAxis.bottom + 36
-          const tickH = 6        // height of the tick mark
-          const dotR = 4         // radius of the coloured dot in strip
+          const stripY = yAxis.bottom + 34
+          const dotR = 4
+          const MIN_GAP = 70  // minimum px between label centres before we use two rows
 
-          ctx.save()
-          ctx.textAlign = 'center'
+          // Build all items: education + retirement, sorted by x
+          type StripItem = {
+            x: number
+            label: string
+            sub: string
+            color: string
+            subColor: string
+          }
+          const items: StripItem[] = []
 
-          // ── Education milestones ───────────────────────────────────────
           Object.entries(milestonesByAge).forEach(([ageStr, msArr]) => {
             const age = parseInt(ageStr)
             const idx = ages.indexOf(age)
             if (idx < 0) return
             const x = xAxis.getPixelForValue(idx)
-
-            msArr.forEach((ms, i) => {
-              const offsetX = i === 0 ? 0 : (i % 2 === 1 ? 14 : -14)  // stagger if same age
-              const cx = x + offsetX
-
-              // Tick mark up from strip line
-              ctx.beginPath()
-              ctx.moveTo(cx, stripY - tickH)
-              ctx.lineTo(cx, stripY + tickH)
-              ctx.strokeStyle = 'rgba(94,138,106,0.5)'
-              ctx.lineWidth = 1
-              ctx.stroke()
-
-              // Coloured dot
-              ctx.beginPath()
-              ctx.arc(cx, stripY, dotR, 0, Math.PI * 2)
-              ctx.fillStyle = '#5E8A6A'
-              ctx.fill()
-
-              // Label line 1: name
-              const shortLabel = ms.label.length > 22 ? ms.label.slice(0, 20) + '…' : ms.label
-              ctx.fillStyle = '#5E8A6A'
-              ctx.font = '600 9px Inter, sans-serif'
-              ctx.fillText(shortLabel, cx, stripY - tickH - 4)
-
-              // Label line 2: amount (below strip)
-              ctx.fillStyle = '#9A9690'
-              ctx.font = '9px Inter, sans-serif'
-              ctx.fillText('−' + fmt(ms.amount), cx, stripY + tickH + 11)
+            msArr.forEach(ms => {
+              items.push({
+                x,
+                label: ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label,
+                sub: '−' + fmt(ms.amount),
+                color: '#5E8A6A',
+                subColor: '#9A9690',
+              })
             })
           })
 
-          // ── Retirement milestone ───────────────────────────────────────
           if (retireIdx >= 0) {
-            const x = xAxis.getPixelForValue(retireIdx)
+            items.push({
+              x: xAxis.getPixelForValue(retireIdx),
+              label: 'Retirement',
+              sub: `Age ${earliestRetAge}`,
+              color: '#A8834A',
+              subColor: 'rgba(168,131,74,0.7)',
+            })
+          }
 
-            ctx.beginPath()
-            ctx.moveTo(x, stripY - tickH)
-            ctx.lineTo(x, stripY + tickH)
-            ctx.strokeStyle = 'rgba(168,131,74,0.5)'
-            ctx.lineWidth = 1
-            ctx.stroke()
+          items.sort((a, b) => a.x - b.x)
 
+          // Assign rows: if two items are closer than MIN_GAP, alternate rows 0 and 1
+          const rows: number[] = []
+          items.forEach((item, i) => {
+            if (i === 0) { rows.push(0); return }
+            const prev = items[i - 1]
+            const prevRow = rows[i - 1]
+            if (Math.abs(item.x - prev.x) < MIN_GAP) {
+              rows.push(prevRow === 0 ? 1 : 0)
+            } else {
+              rows.push(0)
+            }
+          })
+
+          // Row 0 = closer to axis, Row 1 = further out (staggered down)
+          const ROW_OFFSET = 18
+
+          ctx.save()
+          ctx.textAlign = 'center'
+
+          items.forEach((item, i) => {
+            const row = rows[i]
+            const rowY = stripY + row * ROW_OFFSET
+            const isEdu = item.color === '#5E8A6A'
+
+            // Dot on the baseline (always at stripY)
             ctx.beginPath()
-            ctx.arc(x, stripY, dotR, 0, Math.PI * 2)
-            ctx.fillStyle = '#A8834A'
+            ctx.arc(item.x, stripY, dotR, 0, Math.PI * 2)
+            ctx.fillStyle = item.color
             ctx.fill()
 
-            ctx.fillStyle = '#A8834A'
-            ctx.font = '600 9px Inter, sans-serif'
-            ctx.fillText('Retirement', x, stripY - tickH - 4)
+            // Short vertical connector if row 1 (dot stays at stripY, label is lower)
+            if (row === 1) {
+              ctx.beginPath()
+              ctx.moveTo(item.x, stripY + dotR + 1)
+              ctx.lineTo(item.x, rowY + 2)
+              ctx.strokeStyle = item.color + '60'
+              ctx.lineWidth = 1
+              ctx.setLineDash([2, 2])
+              ctx.stroke()
+              ctx.setLineDash([])
+            }
 
-            ctx.fillStyle = '#9A9690'
+            // Label above dot (name)
+            ctx.fillStyle = item.color
+            ctx.font = `600 9px Inter, sans-serif`
+            ctx.fillText(item.label, item.x, rowY - dotR - 5)
+
+            // Sub label below dot (amount / age)
+            ctx.fillStyle = item.subColor
             ctx.font = '9px Inter, sans-serif'
-            ctx.fillText(`Age ${earliestRetAge}`, x, stripY + tickH + 11)
-          }
+            ctx.fillText(item.sub, item.x, rowY + dotR + 10)
+          })
 
           ctx.restore()
         }
@@ -1337,7 +1361,7 @@ export default function CapitalMandatePage() {
              y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
                 grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
-                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.6,
+                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.2,
               },
             },
           },
