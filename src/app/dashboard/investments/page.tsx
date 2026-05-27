@@ -1054,7 +1054,7 @@ export default function CapitalMandatePage() {
 
           const BOX_H = 32
           const BOX_GAP = 4
-          const BOX_TOP_LIMIT = yAxis.top + 48  // reserve space below retirement box
+          const BOX_TOP_LIMIT = yAxis.top + 8
 
           // Build entries with pixel positions
           const entries = Object.entries(milestonesByAge)
@@ -1077,36 +1077,8 @@ export default function CapitalMandatePage() {
           // Sort by x so we process left-to-right
           entries.sort((a, b) => a.x - b.x)
 
-          // For each entry, find the ideal boxY = dotY - gap - BOX_H (just above its own dot)
-          // Then push up if it overlaps any already-placed box
-          type Placed = { x: number; boxW: number; boxY: number }
-          const placed: Placed[] = []
-
-          const boxYs = entries.map(entry => {
-            // Ideal position: just above this entry's own dot
-            let idealY = entry.dotY - 20 - BOX_H
-
-            // Push up past any horizontally-overlapping already-placed boxes
-            // Max iterations = number of placed boxes (no infinite loop)
-            for (let attempt = 0; attempt < placed.length; attempt++) {
-              for (const p of placed) {
-                const myX1 = entry.x - entry.boxW / 2 - 4
-                const myX2 = entry.x + entry.boxW / 2 + 4
-                const pX1 = p.x - p.boxW / 2 - 4
-                const pX2 = p.x + p.boxW / 2 + 4
-                const xOverlap = !(myX2 < pX1 || myX1 > pX2)
-                const yOverlap = !(idealY > p.boxY + BOX_H + BOX_GAP || idealY + BOX_H < p.boxY - BOX_GAP)
-                if (xOverlap && yOverlap) {
-                  idealY = p.boxY - BOX_H - BOX_GAP
-                }
-              }
-            }
-
-            // Clamp so box never goes above the reserved top limit
-            idealY = Math.max(BOX_TOP_LIMIT, idealY)
-            placed.push({ x: entry.x, boxW: entry.boxW, boxY: idealY })
-            return idealY
-          })
+          // Assign each milestone its own row from the top, left to right
+          const boxYs = entries.map((_entry, i) => BOX_TOP_LIMIT + i * (BOX_H + BOX_GAP))
 
           // Draw each milestone
           entries.forEach((entry, i) => {
@@ -1204,7 +1176,8 @@ export default function CapitalMandatePage() {
           const retBoxW = Math.max(retLw, retAw) + 16
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
-          const retBoxY = top + 8
+          const milestoneStackHeight = entries.length > 0 ? entries.length * (BOX_H + BOX_GAP) + 8 : 8
+          const retBoxY = top + milestoneStackHeight
 
           ctx.fillStyle = 'rgba(255,248,235,0.97)'
           ctx.strokeStyle = 'rgba(168,131,74,0.5)'
