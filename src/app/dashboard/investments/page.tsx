@@ -1154,13 +1154,9 @@ export default function CapitalMandatePage() {
           if (!xAxis || !yAxis) return
           const x = xAxis.getPixelForValue(retireIdx)
           const ctx = chart.ctx
-
-          // Get Y position of the corpus line at retirement age
           const retirementMeta = chart.getDatasetMeta(0)
           const retirePoint = retirementMeta?.data?.[retireIdx]
           const lineY = retirePoint ? retirePoint.y : yAxis.top + 60
-
-          // Build the label box
           const retLabel = 'Retirement'
           const retAmountLabel = `Age ${retirementAge}`
           ctx.font = '600 10px Inter, sans-serif'
@@ -1170,19 +1166,8 @@ export default function CapitalMandatePage() {
           const retBoxW = Math.max(retLw, retAw) + 16
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
-
-         // Pin retirement box just above the dot, offset to the right to avoid milestone overlap
-          const BOX_H = 32
-          const DOT_OFFSET = 14
-          const retBoxXOffset = x + 10
-          // Default: position box just above and centred on the dot
-          let retBoxY = lineY - BOX_H - DOT_OFFSET
-          // Clamp so it never goes above the chart top
-          if (retBoxY < yAxis.top + 8) retBoxY = yAxis.top + 8
-
+          const retBoxY = yAxis.top + 8
           ctx.save()
-
-          // Dashed vertical line from top of chart down to the corpus line
           ctx.beginPath()
           ctx.setLineDash([4, 4])
           ctx.moveTo(x, yAxis.top)
@@ -1191,8 +1176,6 @@ export default function CapitalMandatePage() {
           ctx.lineWidth = 1
           ctx.stroke()
           ctx.setLineDash([])
-
-          // Draw the label box
           ctx.fillStyle = 'rgba(255,248,235,0.97)'
           ctx.strokeStyle = 'rgba(168,131,74,0.5)'
           ctx.lineWidth = 1
@@ -1200,21 +1183,17 @@ export default function CapitalMandatePage() {
           ctx.roundRect(retBoxX, retBoxY, retBoxW, retBoxH, 5)
           ctx.fill()
           ctx.stroke()
-
-         ctx.fillStyle = '#A8834A'
+          ctx.fillStyle = '#A8834A'
           ctx.font = '600 10px Inter, sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillText(retLabel, retBoxXOffset + retBoxW / 2, retBoxY + 12)
-
+          ctx.fillText(retLabel, x, retBoxY + 12)
           ctx.fillStyle = 'rgba(168,131,74,0.65)'
           ctx.font = '9px Inter, sans-serif'
-          ctx.fillText(retAmountLabel, retBoxXOffset + retBoxW / 2, retBoxY + 25)
-
-          // Dashed stem from bottom-left corner of box to dot
+          ctx.fillText(retAmountLabel, x, retBoxY + 25)
           const stemStart = retBoxY + retBoxH + 2
           if (lineY - stemStart > 10) {
             ctx.beginPath()
-            ctx.moveTo(retBoxXOffset, stemStart)
+            ctx.moveTo(x, stemStart)
             ctx.lineTo(x, lineY - 8)
             ctx.strokeStyle = 'rgba(168,131,74,0.4)'
             ctx.lineWidth = 1
@@ -1222,8 +1201,6 @@ export default function CapitalMandatePage() {
             ctx.stroke()
             ctx.setLineDash([])
           }
-
-          // Gold dot on the corpus line at retirement age
           ctx.beginPath()
           ctx.arc(x, lineY, 6, 0, Math.PI * 2)
           ctx.fillStyle = '#A8834A'
@@ -1231,7 +1208,6 @@ export default function CapitalMandatePage() {
           ctx.strokeStyle = 'white'
           ctx.lineWidth = 2
           ctx.stroke()
-
           ctx.restore()
         }
       }
