@@ -1171,13 +1171,9 @@ export default function CapitalMandatePage() {
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
 
-          // Stack the retirement box after all milestone boxes (top-down, same system)
+         // Always place retirement box at the top of the chart
           const BOX_TOP_LIMIT = yAxis.top + 8
-          const BOX_GAP = 4
-          const milestonesBeforeRetirement = Object.keys(milestonesByAge)
-            .map(Number)
-            .filter(age => age < retirementAge).length
-          const retBoxY = BOX_TOP_LIMIT + milestonesBeforeRetirement * (retBoxH + BOX_GAP)
+          const retBoxY = BOX_TOP_LIMIT
 
           ctx.save()
 
