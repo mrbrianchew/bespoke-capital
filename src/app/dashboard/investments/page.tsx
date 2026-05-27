@@ -246,7 +246,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [monthly, setMonthly] = useState(String(item?.monthlyContribution ?? ''))
   const [ret, setRet] = useState(item?.expectedReturn ?? 6)
   const [startYear, setStartYear] = useState(item?.startYear ?? new Date().getFullYear())
-const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode === 'Mixed' ? 'Regular' : (item?.mode ?? 'Regular'))
+const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular')
   const [startMonth, setStartMonth] = useState(item?.startMonth ?? '')
   const [endMonth, setEndMonth] = useState(item?.endMonth ?? '')
   const [cpfScheme, setCpfScheme] = useState<'BRS' | 'FRS' | 'ERS'>(item?.cpfScheme ?? 'FRS')
