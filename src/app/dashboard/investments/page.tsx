@@ -1187,7 +1187,7 @@ export default function CapitalMandatePage() {
           const top = yAxis.top
           const bottom = yAxis.bottom
           const ctx = chart.ctx
-          ctx.save()
+         ctx.save()
 
           // Solid prominent vertical line
           ctx.beginPath()
@@ -1200,7 +1200,6 @@ export default function CapitalMandatePage() {
           // Retirement label — same box style as milestones, anchored just below the top
           const retLabel = 'Retirement'
           const retAmountLabel = `Age ${retirementAge}`
-          ctx.save()
           ctx.font = '600 10px Inter, sans-serif'
           const retLw = ctx.measureText(retLabel).width
           ctx.font = '9px Inter, sans-serif'
@@ -1226,7 +1225,6 @@ export default function CapitalMandatePage() {
           ctx.fillStyle = 'rgba(168,131,74,0.65)'
           ctx.font = '9px Inter, sans-serif'
           ctx.fillText(retAmountLabel, x, retBoxY + 25)
-          ctx.restore()
 
           ctx.restore()
         }
