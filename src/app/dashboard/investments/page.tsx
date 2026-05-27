@@ -1174,12 +1174,11 @@ export default function CapitalMandatePage() {
          // Pin retirement box just above the dot, offset to the right to avoid milestone overlap
           const BOX_H = 32
           const DOT_OFFSET = 14
+          const retBoxXOffset = x + 10
           // Default: position box just above and centred on the dot
           let retBoxY = lineY - BOX_H - DOT_OFFSET
           // Clamp so it never goes above the chart top
           if (retBoxY < yAxis.top + 8) retBoxY = yAxis.top + 8
-          // Shift box to the right of the dot so it doesn't overlap milestone boxes on the left
-          const retBoxXOffset = x + 10
 
           ctx.save()
 
