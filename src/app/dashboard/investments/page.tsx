@@ -15,7 +15,8 @@ type VehicleType = 'investment' | 'cpf_life' | 'srs' | 'endowment' | 'annuity' |
 interface CashflowEvent {
   id: string
   date: string        // YYYY-MM
-  type: 'contribution' | 'withdrawal' | 'top_up' | 'premium_holiday' | 'contribution_change' | 'end_contributions'
+  endDate?: string    // YYYY-MM — used for premium_holiday ranges
+  type: 'contribution' | 'withdrawal' | 'top_up' | 'premium_holiday' | 'contribution_change' | 'end_contributions' | 'missed_premium'
   amount: number
   note?: string
 }
@@ -177,16 +178,18 @@ function CashflowModal({ vehicle, onSave, onClose }: {
 
  const typeColors: Record<CashflowEvent['type'], string> = {
     contribution: '#4A9E8A', withdrawal: '#E08080', top_up: '#A8834A', premium_holiday: '#9A9690',
-    contribution_change: '#4A7C9E', end_contributions: '#6B5B8B'
+    contribution_change: '#4A7C9E', end_contributions: '#6B5B8B', missed_premium: '#E0A080'
   }
   const typeLabels: Record<CashflowEvent['type'], string> = {
     contribution: 'Contribution', withdrawal: 'Withdrawal', top_up: 'Top-Up', premium_holiday: 'Premium Holiday',
-    contribution_change: 'Contribution Change', end_contributions: 'End Contributions'
-  }
+    contribution_change: 'Contribution Change', end_contributions: 'End Contributions', missed_premium: 'Missed Premium'
+  }const [endDate, setEndDate] = useState('')
+  const needsEndDate = type === 'premium_holiday'
+  const needsAmount = !['premium_holiday', 'end_contributions', 'missed_premium'].includes(type)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.7)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background: 'var(--cream)', borderRadius: 16, width: 600, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)' }}>
+      <div style={{ background: 'var(--cream)', borderRadius: 16, width: 620, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)' }}>
         <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20 }}>Cashflow History</div>
@@ -198,14 +201,51 @@ function CashflowModal({ vehicle, onSave, onClose }: {
         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', background: 'white' }}>
           <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>Add Event</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <input type="month" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, width: 140 }} />
-            <select value={type} onChange={e => setType(e.target.value as CashflowEvent['type'])} style={{ ...inp, width: 150 }}>
-              {(Object.keys(typeLabels) as CashflowEvent['type'][]).map(t => <option key={t} value={t}>{typeLabels[t]}</option>)}
-            </select>
-            <input type="number" placeholder="Amount (S$)" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inp, width: 130 }} />
-            <input placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} style={{ ...inp, flex: 1, minWidth: 100 }} />
-            <button onClick={addFlow} style={{ padding: '8px 16px', background: 'var(--ink)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>Add</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                {needsEndDate ? 'From' : 'Month'}
+              </div>
+              <input type="month" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, width: 130 }} />
+            </div>
+            {needsEndDate && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>To</div>
+                <input type="month" value={endDate} onChange={e => setEndDate(e.target.value)} min={date || undefined} style={{ ...inp, width: 130 }} />
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Type</div>
+              <select value={type} onChange={e => { setType(e.target.value as CashflowEvent['type']); setEndDate('') }} style={{ ...inp, width: 170 }}>
+                {(Object.keys(typeLabels) as CashflowEvent['type'][]).map(t => <option key={t} value={t}>{typeLabels[t]}</option>)}
+              </select>
+            </div>
+            {needsAmount && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Amount (S$)</div>
+                <input type="number" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inp, width: 110 }} />
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Note</div>
+              <input placeholder="Optional" value={note} onChange={e => setNote(e.target.value)} style={{ ...inp, width: 100 }} />
+            </div>
+            <button onClick={() => {
+              if (!date) return
+              if (needsAmount && !amount) return
+              setFlows(prev => [...prev, { id: newId(), date, endDate: needsEndDate ? endDate : undefined, type, amount: parseFloat(amount) || 0, note }])
+              setDate(''); setEndDate(''); setAmount(''); setNote('')
+            }} style={{ padding: '8px 16px', background: 'var(--ink)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', alignSelf: 'flex-end' }}>Add</button>
           </div>
+          {type === 'premium_holiday' && (
+            <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 8 }}>
+              💡 Set From and To months to define the holiday range. Leave To empty for a single month.
+            </div>
+          )}
+          {type === 'missed_premium' && (
+            <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 8 }}>
+              💡 Missed Premium records a single skipped month — no contribution was made that month.
+            </div>
+          )}
         </div>
 
         <div style={{ overflow: 'auto', flex: 1, padding: '8px 24px' }}>
@@ -214,9 +254,13 @@ function CashflowModal({ vehicle, onSave, onClose }: {
           ) : (
             [...flows].sort((a, b) => a.date.localeCompare(b.date)).map(f => (
               <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', minWidth: 70 }}>{f.date}</span>
+                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', minWidth: 120 }}>
+                  {f.date}{f.endDate ? ` → ${f.endDate}` : ''}
+                </span>
                 <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: typeColors[f.type] + '20', color: typeColors[f.type] }}>{typeLabels[f.type]}</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink)', flex: 1 }}>{f.type === 'premium_holiday' ? '—' : 'S$' + f.amount.toLocaleString('en-SG')}</span>
+                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink)', flex: 1 }}>
+                  {['premium_holiday', 'end_contributions', 'missed_premium'].includes(f.type) ? '—' : 'S$' + f.amount.toLocaleString('en-SG')}
+                </span>
                 {f.note && <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', fontStyle: 'italic' }}>{f.note}</span>}
                 <button onClick={() => setFlows(prev => prev.filter(x => x.id !== f.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 14 }}>×</button>
               </div>
@@ -667,21 +711,34 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
                   // Best practical approach: the advisor enters the ORIGINAL rate in
                   // monthlyContribution and records changes via change events.
                   // So: start with monthlyNum, apply changes at their dates.
+                  // Build holiday months set
+                  const holidayMonthsTC = new Set<string>()
+                  ;(item?.cashflows || [])
+                    .filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium')
+                    .forEach(cf => {
+                      const hDate = new Date(cf.date + '-01')
+                      const hEnd = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
+                      while (hDate <= hEnd) {
+                        holidayMonthsTC.add(hDate.toISOString().slice(0, 7))
+                        hDate.setMonth(hDate.getMonth() + 1)
+                      }
+                    })
+
                   activeRate = monthlyNum
                   let rateIdx = 0
                   totalContributed = 0
                   const iterDate = new Date(startDate)
                   while (iterDate <= now2) {
                     const ym = iterDate.toISOString().slice(0, 7)
-                    // Switch rate when a change event date is reached
                     while (rateIdx < sortedChanges.length && sortedChanges[rateIdx].date <= ym) {
                       activeRate = sortedChanges[rateIdx].amount
                       rateIdx++
                     }
-                    totalContributed += activeRate
+                    if (!holidayMonthsTC.has(ym)) {
+                      totalContributed += activeRate
+                    }
                     iterDate.setMonth(iterDate.getMonth() + 1)
                   }
-                  // Add any top-ups, subtract withdrawals
                   ;(item?.cashflows || []).forEach(cf => {
                     if (cf.type === 'top_up') totalContributed += cf.amount
                     if (cf.type === 'withdrawal') totalContributed -= cf.amount
@@ -715,6 +772,19 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
                     const sortedChangesX = [...(item?.cashflows || [])
                       .filter(cf => cf.type === 'contribution_change')
                       .sort((a, b) => a.date.localeCompare(b.date))]
+                    // Build holiday months set for XIRR
+                    const holidayMonthsXIRR = new Set<string>()
+                    ;(item?.cashflows || [])
+                      .filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium')
+                      .forEach(cf => {
+                        const hDate = new Date(cf.date + '-01')
+                        const hEnd = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
+                        while (hDate <= hEnd) {
+                          holidayMonthsXIRR.add(hDate.toISOString().slice(0, 7))
+                          hDate.setMonth(hDate.getMonth() + 1)
+                        }
+                      })
+
                     const xirrIter = new Date(startDate)
                     const xirrNow = new Date()
                     while (xirrIter <= xirrNow) {
@@ -723,7 +793,9 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
                         xirrRate = sortedChangesX[xirrRateIdx].amount
                         xirrRateIdx++
                       }
-                      if (xirrRate > 0) xirrFlows.push({ amount: -xirrRate, date: new Date(xirrIter) })
+                      if (xirrRate > 0 && !holidayMonthsXIRR.has(ym)) {
+                        xirrFlows.push({ amount: -xirrRate, date: new Date(xirrIter) })
+                      }
                       xirrIter.setMonth(xirrIter.getMonth() + 1)
                     }
                     // Add top-ups as outflows, withdrawals as inflows
