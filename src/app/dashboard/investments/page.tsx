@@ -629,11 +629,70 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
             let annualizedReturn: number | null = null
             let totalContributed = 0
             if (yearsHeld > 0 && currentValNum > 0 && startDate) {
-              if (mode === 'Regular' && monthlyNum > 0) {
-                totalContributed = monthlyNum * monthsHeld
+              if (mode === 'Regular') {
+                // Check if there are contribution_change events in cashflows
+                const cfEvents = (item?.cashflows || [])
+                  .filter(cf => cf.type === 'contribution' || cf.type === 'contribution_change' || cf.type === 'top_up' || cf.type === 'withdrawal')
+                  .sort((a, b) => a.date.localeCompare(b.date))
+                const changeEvents = (item?.cashflows || [])
+                  .filter(cf => cf.type === 'contribution_change')
+                  .sort((a, b) => a.date.localeCompare(b.date))
+
+                if (changeEvents.length > 0 && startDate) {
+                  // Reconstruct month-by-month contributions using rate changes
+                  let currentRate = monthlyNum  // current rate is the latest
+                  // Build a timeline of rates: work backwards from now
+                  // changeEvents: each says "from this month, rate became X"
+                  // We walk forward from startDate to now, switching rates at each change event
+                  const rateChanges: { yearMonth: string; amount: number }[] = [
+                    { yearMonth: startMonth, amount: changeEvents.length > 0 ? 0 : monthlyNum },
+                    ...changeEvents.map(cf => ({ yearMonth: cf.date, amount: cf.amount })),
+                  ]
+                  // Walk month by month from start to now
+                  let d = new Date(startDate)
+                  const now2 = new Date()
+                  let activeRate = monthlyNum  // fallback
+                  // Find the initial rate: the rate before the first change event
+                  // We can't know this without a starting contribution record
+                  // Best approach: use the first change event amount as the rate from start,
+                  // and the current monthlyNum as the rate after the last change
+                  const sortedChanges = [...changeEvents].sort((a, b) => a.date.localeCompare(b.date))
+                  let rateIdx = 0
+                  activeRate = sortedChanges[0]?.amount || monthlyNum
+                  totalContributed = 0
+                  const iterDate = new Date(startDate)
+                  while (iterDate <= now2) {
+                    const ym = iterDate.toISOString().slice(0, 7)
+                    // Check if a change event fires this month
+                    while (rateIdx < sortedChanges.length && sortedChanges[rateIdx].date <= ym) {
+                      activeRate = sortedChanges[rateIdx].amount
+                      rateIdx++
+                    }
+                    totalContributed += activeRate
+                    iterDate.setMonth(iterDate.getMonth() + 1)
+                  }
+                  // Add any top-ups, subtract withdrawals
+                  ;(item?.cashflows || []).forEach(cf => {
+                    if (cf.type === 'top_up') totalContributed += cf.amount
+                    if (cf.type === 'withdrawal') totalContributed -= cf.amount
+                  })
+                } else {
+                  // No change events — use current monthly × months held
+                  totalContributed = monthlyNum * monthsHeld
+                  // Adjust for top-ups and withdrawals
+                  ;(item?.cashflows || []).forEach(cf => {
+                    if (cf.type === 'top_up') totalContributed += cf.amount
+                    if (cf.type === 'withdrawal') totalContributed -= cf.amount
+                  })
+                }
               } else if (mode === 'Lump Sum') {
                 totalContributed = monthlyNum || currentValNum
+                ;(item?.cashflows || []).forEach(cf => {
+                  if (cf.type === 'top_up') totalContributed += cf.amount
+                  if (cf.type === 'withdrawal') totalContributed -= cf.amount
+                })
               }
+              totalContributed = Math.max(0, totalContributed)
               if (totalContributed > 0 && currentValNum > 0) {
                 annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
               }
