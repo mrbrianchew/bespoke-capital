@@ -721,12 +721,14 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode === 'Mixed' 
                   </div>
                 )}
 
-                <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
+               <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
                   💡 Use the <strong>Cashflows</strong> button on the vehicle card to record premium holidays, withdrawals, contribution changes, and get a precise XIRR.
                 </div>
               </>
             )
           })()}
+
+        </div>
 
         <div style={{ padding: '16px 28px', borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', fontFamily: 'Inter', fontSize: 12, border: '1px solid var(--line)', borderRadius: 8, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>Cancel</button>
