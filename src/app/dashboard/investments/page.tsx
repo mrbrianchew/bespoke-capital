@@ -1181,7 +1181,7 @@ export default function CapitalMandatePage() {
           const retirementMeta = chart.getDatasetMeta(0)
           const retirePoint = retirementMeta?.data?.[retireIdx]
           const lineY = retirePoint ? retirePoint.y : top + 60
-          const retBoxY = Math.max(top + 8, lineY - retBoxH - 14)
+          const retBoxY = Math.max(top + 8, lineY - retBoxH - 28)
 
           ctx.fillStyle = 'rgba(255,248,235,0.97)'
           ctx.strokeStyle = 'rgba(168,131,74,0.5)'
