@@ -1086,10 +1086,9 @@ export default function CapitalMandatePage() {
             // Ideal position: just above this entry's own dot
             let idealY = entry.dotY - 20 - BOX_H
 
-            // Check overlap with already placed boxes
-            let changed = true
-            while (changed) {
-              changed = false
+            // Push up past any horizontally-overlapping already-placed boxes
+            // Max iterations = number of placed boxes (no infinite loop)
+            for (let attempt = 0; attempt < placed.length; attempt++) {
               for (const p of placed) {
                 const myX1 = entry.x - entry.boxW / 2 - 4
                 const myX2 = entry.x + entry.boxW / 2 + 4
@@ -1098,9 +1097,7 @@ export default function CapitalMandatePage() {
                 const xOverlap = !(myX2 < pX1 || myX1 > pX2)
                 const yOverlap = !(idealY > p.boxY + BOX_H + BOX_GAP || idealY + BOX_H < p.boxY - BOX_GAP)
                 if (xOverlap && yOverlap) {
-                  // Push this box above the conflicting one
                   idealY = p.boxY - BOX_H - BOX_GAP
-                  changed = true
                 }
               }
             }
