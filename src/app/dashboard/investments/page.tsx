@@ -1234,6 +1234,7 @@ export default function CapitalMandatePage() {
           ctx.restore()
         }
       }
+    }
           if (retireIdx < 0) return
           const xAxis = chart.scales.x
           const yAxis = chart.scales.y
