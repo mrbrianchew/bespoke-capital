@@ -42,7 +42,9 @@ interface FundingVehicle {
   rentalMonthlyNet?: number
   rentalStopAge?: number
   srsAnnualContribution?: number
-  srsContributionMode?: 'monthly' | 'annual'
+  srsContributionMode?: 'regular' | 'lumpsum'
+  srsStartYear?: number
+  srsIsRegular?: boolean
   srsWithdrawalStartAge?: number
   srsWithdrawalDuration?: number
   cashflows: CashflowEvent[]
@@ -229,9 +231,9 @@ function CashflowModal({ vehicle, onSave, onClose }: {
 
 // ─── VEHICLE MODAL ────────────────────────────────────────────────────────────
 
-function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName, clientAge }: {
+function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName, clientAge, retirementAge }: {
   item?: FundingVehicle; onSave: (v: FundingVehicle) => void; onClose: () => void
-  isCouple: boolean; clientName: string; spouseName: string; clientAge: number
+  isCouple: boolean; clientName: string; spouseName: string; clientAge: number; retirementAge: number
 }) {
   const [name, setName] = useState(item?.name ?? '')
   const [vehicleType, setVehicleType] = useState<VehicleType>(item?.vehicleType ?? 'investment')
@@ -253,9 +255,10 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [rentalNet, setRentalNet] = useState(String(item?.rentalMonthlyNet ?? ''))
   const [rentalStop, setRentalStop] = useState(item?.rentalStopAge ?? 75)
   const [srsAnnual, setSrsAnnual] = useState(String(item?.srsAnnualContribution ?? ''))
-  const [srsMode, setSrsMode] = useState<'monthly' | 'annual'>(item?.srsContributionMode ?? 'annual')
+  const [srsIsRegular, setSrsIsRegular] = useState(item?.srsIsRegular ?? false)
   const [srsWithdrawalAge, setSrsWithdrawalAge] = useState(item?.srsWithdrawalStartAge ?? 63)
   const [srsDuration, setSrsDuration] = useState(item?.srsWithdrawalDuration ?? 10)
+  const [srsStartYear, setSrsStartYear] = useState(item?.srsStartYear ?? new Date().getFullYear())
 
   const inp: React.CSSProperties = { width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }
 
@@ -293,8 +296,10 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       endowmentMaturityValue: parseFloat(endMatVal) || 0, endowmentMaturityYear: endMatYear, endowmentPremium: parseFloat(endPremium) || 0,
       annuityMonthlyIncome: parseFloat(annuityIncome) || 0, annuityStartAge, annuityGuaranteeYears: annuityGuarantee,
       rentalMonthlyNet: parseFloat(rentalNet) || 0, rentalStopAge: rentalStop,
-      srsAnnualContribution: parseFloat(srsAnnual) || 0, srsContributionMode: srsMode,
+      srsAnnualContribution: parseFloat(srsAnnual) || 0, srsIsRegular,
+      srsContributionMode: srsIsRegular ? 'regular' : 'lumpsum',
       srsWithdrawalStartAge: srsWithdrawalAge, srsWithdrawalDuration: srsDuration,
+      srsStartYear,
       cashflows: item?.cashflows || [],
     })
   }
@@ -425,49 +430,96 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
           )}
 
          {vehicleType === 'srs' && (() => {
+            const currentYear = new Date().getFullYear()
             const annualAmt = parseFloat(srsAnnual) || 0
-            const monthlyEquiv = srsMode === 'monthly' ? annualAmt / 12 : annualAmt / 12
-            const yearsToWithdrawal = Math.max(1, srsWithdrawalAge - clientAge)
+            const currentValNum = parseFloat(curVal) || 0
+            const effectiveWithdrawalAge = Math.max(srsWithdrawalAge, retirementAge ?? 65)
+            const yearsToWithdrawal = Math.max(1, effectiveWithdrawalAge - clientAge)
             const rm = ret / 100 / 12
-            const nm = yearsToWithdrawal * 12
-            const projectedBalance = (parseFloat(curVal) || 0) * Math.pow(1 + ret / 100, yearsToWithdrawal)
-              + (annualAmt > 0 ? (rm > 0
-                ? (annualAmt / 12) * ((Math.pow(1 + rm, nm) - 1) / rm) * (1 + rm)
-                : (annualAmt / 12) * nm) : 0)
-            const annualWithdrawal = srsDuration > 0 ? projectedBalance / srsDuration : 0
-            const monthlyWithdrawal = annualWithdrawal / 12
-            const taxableMonthly = monthlyWithdrawal * 0.5
+
+            // Projection: current value compounds + regular annual contributions if ticked
+            let projectedBalance = currentValNum * Math.pow(1 + ret / 100, yearsToWithdrawal)
+            if (srsIsRegular && annualAmt > 0) {
+              // Add FV of annual contributions (annuity-due, annual compounding)
+              const r = ret / 100
+              if (r > 0) {
+                projectedBalance += annualAmt * ((Math.pow(1 + r, yearsToWithdrawal) - 1) / r) * (1 + r)
+              } else {
+                projectedBalance += annualAmt * yearsToWithdrawal
+              }
+            } else if (!srsIsRegular && annualAmt > 0 && currentValNum === 0) {
+              // Lump sum: treat as additional current value
+              projectedBalance = annualAmt * Math.pow(1 + ret / 100, yearsToWithdrawal)
+            }
+
+            // SRS drawdown: inflation-adjusted annuity
+            const r = ret / 100
+            const g = 0.03 // default inflation for drawdown
+            const n = srsDuration
+            let monthlyWithdrawalY1 = 0
+            if (projectedBalance > 0 && n > 0) {
+              const annualBase = Math.abs(r - g) < 0.0001
+                ? projectedBalance / n
+                : projectedBalance * (r - g) / (1 - Math.pow((1 + g) / (1 + r), n))
+              monthlyWithdrawalY1 = annualBase / 12
+            }
+            const taxableMonthly = monthlyWithdrawalY1 * 0.5
+
+            // Annualized performance: only if start year < current year and current value > 0
+            const yearsHeld = currentYear - srsStartYear
+            let annualizedReturn: number | null = null
+            if (yearsHeld > 0 && currentValNum > 0) {
+              if (srsIsRegular && annualAmt > 0) {
+                // Total contributed = annual amount × years held
+                const totalContributed = annualAmt * yearsHeld
+                if (totalContributed > 0 && currentValNum > totalContributed) {
+                  annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / yearsHeld) - 1
+                }
+              } else if (!srsIsRegular) {
+                // Lump sum: simple annualized from initial contribution
+                const initialAmt = annualAmt || currentValNum
+                if (initialAmt > 0) {
+                  annualizedReturn = Math.pow(currentValNum / initialAmt, 1 / yearsHeld) - 1
+                }
+              }
+            }
+            const totalContributed = srsIsRegular && annualAmt > 0
+              ? annualAmt * Math.max(1, yearsHeld)
+              : (annualAmt || currentValNum)
 
             return (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current SRS Balance (S$)</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Year</div>
+                    <input type="number" style={inp} value={srsStartYear} onChange={e => setSrsStartYear(parseInt(e.target.value) || currentYear)} placeholder={String(currentYear)} />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current SRS Value (S$)</div>
                     <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
                   </div>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Contribution Mode</div>
-                    <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-                      {([{ v: 'monthly' as const, l: 'Monthly' }, { v: 'annual' as const, l: 'Annual' }]).map(o => (
-                        <button key={o.v} onClick={() => setSrsMode(o.v)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: srsMode === o.v ? 'var(--ink)' : 'white', color: srsMode === o.v ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.l}</button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
-                      {srsMode === 'monthly' ? 'Monthly Contribution (S$)' : 'Annual Contribution (S$)'}
-                    </div>
-                    <input type="number" style={inp} value={srsAnnual} onChange={e => setSrsAnnual(e.target.value)}
-                      placeholder={srsMode === 'monthly' ? 'e.g. 1275 (max S$15,300/yr)' : 'e.g. 15300 (max for SC/PR)'} />
-                    {srsMode === 'monthly' && annualAmt * 12 > 15300 && (
-                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Exceeds S$15,300/yr limit for SC/PR</div>
-                    )}
-                    {srsMode === 'annual' && annualAmt > 15300 && (
-                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Exceeds S$15,300/yr limit for SC/PR</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Annual Contribution Amount (S$)</div>
+                    <input type="number" style={inp} value={srsAnnual} onChange={e => setSrsAnnual(e.target.value)} placeholder="e.g. 15,300" />
+                    {annualAmt > 15300 && (
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#A8834A', marginTop: 4 }}>💡 Check total SRS contributions across all vehicles don't exceed S$15,300/yr per person</div>
                     )}
                   </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 14px', background: srsIsRegular ? 'rgba(45,90,78,0.08)' : 'white', border: `1px solid ${srsIsRegular ? '#2D5A4E' : 'var(--line)'}`, borderRadius: 8, transition: 'all 0.15s' }}>
+                      <input type="checkbox" checked={srsIsRegular} onChange={e => setSrsIsRegular(e.target.checked)} style={{ accentColor: '#2D5A4E', width: 14, height: 14 }} />
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: srsIsRegular ? '#2D5A4E' : 'var(--ink3)' }}>Regular Annual</div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 1 }}>Contribute every year until withdrawal</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
                     <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return %</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -475,33 +527,68 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                       <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 44, textAlign: 'center' }}>{ret}%</span>
                     </div>
                   </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
                     <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Start Age</div>
                     <input type="number" style={inp} value={srsWithdrawalAge} onChange={e => setSrsWithdrawalAge(parseInt(e.target.value) || 63)} />
-                    {srsWithdrawalAge < 63 && <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Early withdrawal incurs 5% penalty + full tax</div>}
-                  </div>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Duration (years, max 10)</div>
-                    <input type="number" style={inp} value={srsDuration} min={1} max={10} onChange={e => setSrsDuration(Math.min(10, parseInt(e.target.value) || 10))} />
+                    {srsWithdrawalAge < 63 && <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Early withdrawal: 5% penalty + full tax</div>}
                   </div>
                 </div>
-                {annualAmt > 0 && projectedBalance > 0 && (
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Duration (yrs)</div>
+                    <input type="number" style={inp} value={srsDuration} min={1} max={20} onChange={e => setSrsDuration(Math.max(1, parseInt(e.target.value) || 10))} />
+                    {srsDuration <= 10 && <div style={{ fontFamily: 'Inter', fontSize: 9, color: '#4A9E8A', marginTop: 4 }}>✓ Within 10yr tax concession window</div>}
+                    {srsDuration > 10 && <div style={{ fontFamily: 'Inter', fontSize: 9, color: '#A8834A', marginTop: 4 }}>💡 Beyond 10yrs: remaining balance fully taxable</div>}
+                  </div>
+                  <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px' }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 2 }}>Effective Withdrawal Age</div>
+                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: 'var(--ink)' }}>Age {effectiveWithdrawalAge}</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>
+                      {effectiveWithdrawalAge > srsWithdrawalAge ? `Deferred from ${srsWithdrawalAge} (retirement later)` : 'At statutory retirement age'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Annualized performance — only if start year is in the past and current value exists */}
+                {yearsHeld > 0 && currentValNum > 0 && (
+                  <div style={{ background: '#F5F0E8', border: '1px solid rgba(168,131,74,0.2)', borderRadius: 10, padding: '14px 16px' }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 10 }}>Historical Performance · {yearsHeld} yr{yearsHeld !== 1 ? 's' : ''}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>{totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Current Value</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>{currentValNum >= 1_000_000 ? 'S$' + (currentValNum / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(currentValNum).toLocaleString('en-SG')}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
+                          {annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Forward projection */}
+                {projectedBalance > 0 && (
                   <div style={{ background: '#EBF5EE', border: '1px solid rgba(74,158,138,0.2)', borderRadius: 10, padding: '14px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                     <div>
                       <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Projected Balance</div>
                       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
                         {projectedBalance >= 1_000_000 ? 'S$' + (projectedBalance / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(projectedBalance).toLocaleString('en-SG')}
                       </div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>at age {srsWithdrawalAge}</div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>at age {effectiveWithdrawalAge} · {ret}% p.a.</div>
                     </div>
                     <div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Monthly Income</div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Monthly Income (Yr 1)</div>
                       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
-                        S${Math.round(monthlyWithdrawal).toLocaleString('en-SG')}/mo
+                        S${Math.round(monthlyWithdrawalY1).toLocaleString('en-SG')}/mo
                       </div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>over {srsDuration} yrs</div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>over {srsDuration} yrs · inflation-adj.</div>
                     </div>
                     <div>
                       <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Taxable Portion</div>
@@ -512,8 +599,9 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                     </div>
                   </div>
                 )}
+
                 <div style={{ background: '#EBF2F8', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#4A7C9E' }}>
-                  💡 Only 50% of SRS withdrawals are taxable from statutory retirement age (currently 63). Spread over 10 years to minimise tax impact.
+                  💡 Only 50% of SRS withdrawals are taxable from statutory retirement age (63). Spread over 10 years to minimise tax impact.
                 </div>
               </>
             )
@@ -950,6 +1038,38 @@ export default function CapitalMandatePage() {
 
   const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
 
+  // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
+  const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
+  const requiredCorpusAtRet = retGoalForSummary?.targetCorpus || 0
+  const corpusShortfall = requiredCorpusAtRet - projectedAtRetirement.atAssumption
+
+  // Guaranteed monthly retirement income from all income-stream vehicles
+  const guaranteedMonthlyRetirement = useMemo(() => filteredPortfolio.reduce((sum, p) => {
+    if (p.vehicleType === 'cpf_life') return sum + (p.cpfMonthlyPayout || 0)
+    if (p.vehicleType === 'annuity') return sum + (p.annuityMonthlyIncome || 0)
+    if (p.vehicleType === 'rental') return sum + (p.rentalMonthlyNet || 0)
+    if (p.vehicleType === 'srs') {
+      const effAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
+      const yearsToW = Math.max(1, effAge - clientAge)
+      const pRate = (p.expectedReturn || settings.expectedReturn) / 100
+      let bal = (p.currentValue || 0) * Math.pow(1 + pRate, yearsToW)
+      if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
+        bal += pRate > 0
+          ? (p.srsAnnualContribution || 0) * ((Math.pow(1 + pRate, yearsToW) - 1) / pRate) * (1 + pRate)
+          : (p.srsAnnualContribution || 0) * yearsToW
+      }
+      const dur = p.srsWithdrawalDuration || 10
+      const g = retirementInflation / 100
+      const annualBase = Math.abs(pRate - g) < 0.0001
+        ? bal / dur
+        : bal * (pRate - g) / (1 - Math.pow((1 + g) / (1 + pRate), dur))
+      return sum + annualBase / 12
+    }
+    return sum
+  }, 0), [filteredPortfolio, retirementAge, clientAge, settings.expectedReturn, retirementInflation])
+
+  const netMonthlyGapAfterIncome = Math.max(0, totalMonthlyNeeded - totalMonthlyInvesting - guaranteedMonthlyRetirement)
+
   const derivedAnnualWithdrawal = useMemo(() => {
     const retGoal = goals.find(g => g.source === 'retirement')
     if (!retGoal || retGoal.targetCorpus <= 0) return 0
@@ -1161,6 +1281,126 @@ export default function CapitalMandatePage() {
         }
       }
 
+      // ── PROJECTED PORTFOLIO LINE ──────────────────────────────────────
+      // Accumulates all investable vehicles pre-retirement, then depletes post-retirement
+      // offsetting withdrawals with guaranteed income streams.
+
+      const projectedLine: number[] = []
+      let portfolioCorpus = 0
+
+      // Initialise with current values of all accumulating vehicles
+      filteredPortfolio.forEach(p => {
+        if (p.vehicleType === 'cpf_life') return // income stream only
+        if (p.vehicleType === 'rental') return    // income stream only
+        portfolioCorpus += p.currentValue || 0
+      })
+
+      // Pre-compute SRS projected balance at each vehicle's effective withdrawal age
+      // so we can add it as a lump sum offset during drawdown
+      const srsVehicles = filteredPortfolio.filter(p => p.vehicleType === 'srs')
+
+      for (let i = 0; i < ages.length; i++) {
+        const a = ages[i]
+        projectedLine.push(Math.max(0, portfolioCorpus))
+
+        if (a < earliestRetAge) {
+          // ── Accumulation: grow each vehicle at its own rate ──────────
+          let annualGrowth = 0
+
+          filteredPortfolio.forEach(p => {
+            if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
+
+            const pRate = (p.expectedReturn || settings.expectedReturn) / 100
+
+            if (p.vehicleType === 'srs') {
+              // SRS: regular contributions until withdrawal age
+              const effWithdrawalAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
+              if (a < effWithdrawalAge && p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
+                annualGrowth += p.srsAnnualContribution || 0
+              }
+            } else if (p.vehicleType === 'endowment') {
+              annualGrowth += (p.endowmentPremium || 0) * 12
+            } else if (p.vehicleType === 'annuity') {
+              annualGrowth += p.monthlyContribution * 12
+            } else {
+              annualGrowth += p.monthlyContribution * 12
+            }
+          })
+
+          // Compound portfolio for this year
+          portfolioCorpus = portfolioCorpus * (1 + settings.expectedReturn / 100) + annualGrowth
+
+          // Endowment maturity: add lump sum at maturity year
+          filteredPortfolio.forEach(p => {
+            if (p.vehicleType === 'endowment') {
+              const maturityAge = clientAge + ((p.endowmentMaturityYear || currentYear) - currentYear)
+              if (a === maturityAge) {
+                portfolioCorpus += p.endowmentMaturityValue || 0
+              }
+            }
+          })
+
+        } else {
+          // ── Drawdown: deplete portfolio net of guaranteed income ──────
+          const retirementCorpusPF = projectedLine[ages.indexOf(earliestRetAge)] ?? portfolioCorpus
+          const retYearsPF = Math.max(1, finalDeathAge - earliestRetAge)
+
+          // Guaranteed monthly income at this age
+          let guaranteedAnnual = 0
+          filteredPortfolio.forEach(p => {
+            if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) {
+              guaranteedAnnual += (p.cpfMonthlyPayout || 0) * 12
+            }
+            if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) {
+              guaranteedAnnual += (p.annuityMonthlyIncome || 0) * 12
+            }
+            if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) {
+              guaranteedAnnual += (p.rentalMonthlyNet || 0) * 12
+            }
+            if (p.vehicleType === 'srs') {
+              const effWithdrawalAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
+              const endWithdrawalAge = effWithdrawalAge + (p.srsWithdrawalDuration || 10)
+              if (a >= effWithdrawalAge && a < endWithdrawalAge) {
+                const yearsToW = Math.max(1, effWithdrawalAge - clientAge)
+                const pRate = (p.expectedReturn || settings.expectedReturn) / 100
+                let srsBalAtWithdrawal = (p.currentValue || 0) * Math.pow(1 + pRate, yearsToW)
+                if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
+                  srsBalAtWithdrawal += pRate > 0
+                    ? (p.srsAnnualContribution || 0) * ((Math.pow(1 + pRate, yearsToW) - 1) / pRate) * (1 + pRate)
+                    : (p.srsAnnualContribution || 0) * yearsToW
+                }
+                const dur = p.srsWithdrawalDuration || 10
+                const g = inflationRate
+                const annualBase = Math.abs(pRate - g) < 0.0001
+                  ? srsBalAtWithdrawal / dur
+                  : srsBalAtWithdrawal * (pRate - g) / (1 - Math.pow((1 + g) / (1 + pRate), dur))
+                const yearsIntoW = a - effWithdrawalAge
+                guaranteedAnnual += annualBase * Math.pow(1 + g, yearsIntoW)
+              }
+            }
+          })
+
+          // Required annual withdrawal from the corpus (from required line logic)
+          const annualBaseW = (() => {
+            if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
+              return Math.max(0, retirementCorpusPF - legacyAmt) / retYearsPF
+            }
+            const rr = postRetirementReturn / 100
+            const gg = inflationRate
+            const ratio = (1 + gg) / (1 + rr)
+            const sumPV = ratio === 1 ? retYearsPF : (1 - Math.pow(ratio, retYearsPF)) / (1 - ratio)
+            return Math.max(0, retirementCorpusPF - legacyAmt / Math.pow(1 + rr, retYearsPF)) / sumPV
+          })()
+          const yearsIntoRetPF = a - earliestRetAge
+          const annualNeeded = annualBaseW * Math.pow(1 + inflationRate, yearsIntoRetPF)
+          const netDrawdown = Math.max(0, annualNeeded - guaranteedAnnual)
+
+          portfolioCorpus = Math.max(0, portfolioCorpus * (1 + postRetirementReturn / 100) - netDrawdown)
+        }
+      }
+
+      const currentYear = new Date().getFullYear()
+
       const legacyLine: (number | null)[] | null = legacyAmt > 0
         ? ages.map(a => a >= earliestRetAge ? legacyAmt : null)
         : null
@@ -1271,6 +1511,23 @@ export default function CapitalMandatePage() {
         pointHoverBorderWidth: 2,
         fill: true,
       })
+
+      if (projectedLine.some(v => v > 0)) {
+        datasets.push({
+          label: 'Projected Portfolio',
+          data: projectedLine,
+          borderColor: '#4A9E8A',
+          backgroundColor: 'rgba(74,158,138,0.04)',
+          borderWidth: 2,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: '#4A9E8A',
+          pointHoverBorderColor: 'white',
+          pointHoverBorderWidth: 2,
+          fill: false,
+        })
+      }
 
       if (legacyLine) {
         datasets.push({
@@ -1472,10 +1729,12 @@ export default function CapitalMandatePage() {
             { label: 'Total Capital Required', val: fmt(totalCorpus), color: '#C4A464' },
             { label: 'Monthly Savings Needed', val: fmtMo(totalMonthlyNeeded), color: '#F0EDE8' },
             { label: 'Currently Committing', val: fmtMo(totalMonthlyInvesting), color: '#F0EDE8' },
-            { label: 'Monthly Gap', val: monthlyGap > 0 ? '−' + fmtMo(monthlyGap) : 'On Track', color: monthlyGap > 0 ? '#E08080' : '#80C4A0' },
+            { label: 'Net Monthly Gap', val: netMonthlyGapAfterIncome > 0 ? '−' + fmtMo(netMonthlyGapAfterIncome) : 'On Track', color: netMonthlyGapAfterIncome > 0 ? '#E08080' : '#80C4A0' },
             { label: 'Portfolio Value', val: fmt(totalCurrentValue), color: '#80B4C4' },
+            { label: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? 'Corpus Shortfall' : 'Corpus Surplus') : 'Projected at Retirement', val: requiredCorpusAtRet > 0 ? fmt(Math.abs(corpusShortfall)) : fmt(projectedAtRetirement.atAssumption), color: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? '#E08080' : '#80C4A0') : '#80B4C4' },
+            { label: 'Guaranteed Retirement Income', val: guaranteedMonthlyRetirement > 0 ? fmtMo(guaranteedMonthlyRetirement) : 'None recorded', color: guaranteedMonthlyRetirement > 0 ? '#80C4A0' : 'rgba(255,255,255,0.28)' },
           ].map((s, i) => (
-            <div key={i} style={{ flex: 1, paddingRight: i < 4 ? 28 : 0, borderRight: i < 4 ? '1px solid rgba(255,255,255,0.06)' : 'none', marginRight: i < 4 ? 28 : 0 }}>
+            <div key={i} style={{ flex: 1, paddingRight: i < 6 ? 28 : 0, borderRight: i < 6 ? '1px solid rgba(255,255,255,0.06)' : 'none', marginRight: i < 6 ? 28 : 0 }}>
               <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>{s.label}</div>
               <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 300, color: s.color }}>{s.val}</div>
             </div>
@@ -1690,8 +1949,9 @@ export default function CapitalMandatePage() {
                           {p.vehicleType === 'rental' && `Net S$${(p.rentalMonthlyNet || 0).toLocaleString('en-SG')}/mo until age ${p.rentalStopAge}`}
                           {p.vehicleType === 'srs' && (() => {
                             const annual = p.srsAnnualContribution || 0
-                            const mode = p.srsContributionMode || 'annual'
-                            const contribStr = annual > 0 ? (mode === 'monthly' ? `S$${Math.round(annual).toLocaleString('en-SG')}/mo` : `S$${Math.round(annual).toLocaleString('en-SG')}/yr`) : '—'
+                            const contribStr = annual > 0
+                              ? `S$${Math.round(annual).toLocaleString('en-SG')}/yr${p.srsIsRegular ? ' (regular)' : ' (lump sum)'}`
+                              : '—'
                             return `${contribStr} · ${fmt(p.currentValue)} · Withdraw age ${p.srsWithdrawalStartAge || 63} over ${p.srsWithdrawalDuration || 10}yrs`
                           })()}
                           {(p.vehicleType === 'investment' || p.vehicleType === 'other') && `${p.monthlyContribution > 0 ? fmtMo(p.monthlyContribution) : '—'} · ${fmt(p.currentValue)} · ${p.expectedReturn}% p.a.`}
@@ -1766,7 +2026,7 @@ export default function CapitalMandatePage() {
         </div>
       </div>
 
-      {vehicleModal.open && <VehicleModal item={vehicleModal.item} onSave={saveVehicle} onClose={() => setVehicleModal({ open: false })} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} clientAge={clientAge} />}
+      {vehicleModal.open && <VehicleModal item={vehicleModal.item} onSave={saveVehicle} onClose={() => setVehicleModal({ open: false })} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} clientAge={clientAge} retirementAge={retirementAge} />}
       {cashflowModal && <CashflowModal vehicle={cashflowModal} onSave={(flows) => saveCashflows(cashflowModal.id, flows)} onClose={() => setCashflowModal(null)} />}
       {customGoalModal && <CustomGoalModal onSave={editingGoal ? editCustomGoal : addCustomGoal} onClose={() => { setCustomGoalModal(false); setEditingGoal(null) }} clientAge={clientAge} spouseAge={spouseAge} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} expectedReturn={settings.expectedReturn} existing={editingGoal ?? undefined} />}
     </div>
