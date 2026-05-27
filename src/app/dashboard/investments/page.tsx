@@ -1045,7 +1045,7 @@ export default function CapitalMandatePage() {
       }
 
       const legacyLine: (number | null)[] | null = legacyAmt > 0
-        ? ages.map(a => a >= retirementAge ? legacyAmt : null)
+        ? ages.map(a => a >= earliestRetirementAge ? legacyAmt : null)
         : null
 
       const earliestRetAge = earliestRetirementAge
@@ -1274,7 +1274,7 @@ export default function CapitalMandatePage() {
         chartInstance.current = null
       }
     }
-  ], [
+  }, [
     loading, filteredGoals, settings,
     clientAge, spouseAge, retirementAge, spouseRetirementAge, lifeExpectancy, spouseLifeExpectancy,
     effectiveRetirementIncome, postRetirementReturn, retirementInflation, planMode,
