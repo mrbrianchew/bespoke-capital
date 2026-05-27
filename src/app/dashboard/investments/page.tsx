@@ -1158,13 +1158,15 @@ export default function CapitalMandatePage() {
           const ctx = chart.ctx
          ctx.save()
 
-          // Solid prominent vertical line
+         // Subtle dashed vertical line (matching milestone style)
           ctx.beginPath()
+          ctx.setLineDash([4, 4])
           ctx.moveTo(x, top)
           ctx.lineTo(x, bottom)
-          ctx.strokeStyle = 'rgba(168,131,74,0.7)'
-          ctx.lineWidth = 2
+          ctx.strokeStyle = 'rgba(168,131,74,0.25)'
+          ctx.lineWidth = 1
           ctx.stroke()
+          ctx.setLineDash([])
 
           // Retirement label — same box style as milestones, anchored just below the top
           const retLabel = 'Retirement'
