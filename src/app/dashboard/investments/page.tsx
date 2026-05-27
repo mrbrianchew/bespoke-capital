@@ -1171,9 +1171,21 @@ export default function CapitalMandatePage() {
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
 
-         // Always place retirement box at the top of the chart
+         // Place retirement box at top, but shift down if a milestone box overlaps horizontally
           const BOX_TOP_LIMIT = yAxis.top + 8
-          const retBoxY = BOX_TOP_LIMIT
+          const BOX_H = 32
+          const BOX_GAP = 4
+          let retBoxY = BOX_TOP_LIMIT
+          Object.keys(milestonesByAge).map(Number).forEach((msAge, i) => {
+            const msIdx = ages.indexOf(msAge)
+            if (msIdx < 0) return
+            const msX = xAxis.getPixelForValue(msIdx)
+            const msBoxY = BOX_TOP_LIMIT + i * (BOX_H + BOX_GAP)
+            // If horizontally close (within 90px) and vertically overlapping, push retirement down
+            if (Math.abs(msX - x) < 90 && msBoxY + BOX_H > retBoxY && msBoxY < retBoxY + BOX_H) {
+              retBoxY = msBoxY + BOX_H + BOX_GAP
+            }
+          })
 
           ctx.save()
 
