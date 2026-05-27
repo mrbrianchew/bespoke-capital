@@ -1036,39 +1036,7 @@ export default function CapitalMandatePage() {
   const totalCurrentValue = useMemo(() => filteredPortfolio.reduce((s, p) => s + (p.currentValue || 0), 0), [filteredPortfolio])
   const monthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
 
-  const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
-
-  // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
-  const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
-  const requiredCorpusAtRet = retGoalForSummary?.targetCorpus || 0
-  const corpusShortfall = requiredCorpusAtRet - projectedAtRetirement.atAssumption
-
-  // Guaranteed monthly retirement income from all income-stream vehicles
-  const guaranteedMonthlyRetirement = useMemo(() => filteredPortfolio.reduce((sum, p) => {
-    if (p.vehicleType === 'cpf_life') return sum + (p.cpfMonthlyPayout || 0)
-    if (p.vehicleType === 'annuity') return sum + (p.annuityMonthlyIncome || 0)
-    if (p.vehicleType === 'rental') return sum + (p.rentalMonthlyNet || 0)
-    if (p.vehicleType === 'srs') {
-      const effAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
-      const yearsToW = Math.max(1, effAge - clientAge)
-      const pRate = (p.expectedReturn || settings.expectedReturn) / 100
-      let bal = (p.currentValue || 0) * Math.pow(1 + pRate, yearsToW)
-      if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
-        bal += pRate > 0
-          ? (p.srsAnnualContribution || 0) * ((Math.pow(1 + pRate, yearsToW) - 1) / pRate) * (1 + pRate)
-          : (p.srsAnnualContribution || 0) * yearsToW
-      }
-      const dur = p.srsWithdrawalDuration || 10
-      const g = retirementInflation / 100
-      const annualBase = Math.abs(pRate - g) < 0.0001
-        ? bal / dur
-        : bal * (pRate - g) / (1 - Math.pow((1 + g) / (1 + pRate), dur))
-      return sum + annualBase / 12
-    }
-    return sum
-  }, 0), [filteredPortfolio, retirementAge, clientAge, settings.expectedReturn, retirementInflation])
-
-  const netMonthlyGapAfterIncome = Math.max(0, totalMonthlyNeeded - totalMonthlyInvesting - guaranteedMonthlyRetirement)
+ const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
 
   const derivedAnnualWithdrawal = useMemo(() => {
     const retGoal = goals.find(g => g.source === 'retirement')
@@ -1139,6 +1107,38 @@ export default function CapitalMandatePage() {
     })
     return { atAssumption, atActual }
   }, [filteredPortfolio, settings.expectedReturn, blendedXIRR, retirementAge, clientAge])
+
+  // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
+  const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
+  const requiredCorpusAtRet = retGoalForSummary?.targetCorpus || 0
+  const corpusShortfall = requiredCorpusAtRet - projectedAtRetirement.atAssumption
+
+  // Guaranteed monthly retirement income from all income-stream vehicles
+  const guaranteedMonthlyRetirement = useMemo(() => filteredPortfolio.reduce((sum, p) => {
+    if (p.vehicleType === 'cpf_life') return sum + (p.cpfMonthlyPayout || 0)
+    if (p.vehicleType === 'annuity') return sum + (p.annuityMonthlyIncome || 0)
+    if (p.vehicleType === 'rental') return sum + (p.rentalMonthlyNet || 0)
+    if (p.vehicleType === 'srs') {
+      const effAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
+      const yearsToW = Math.max(1, effAge - clientAge)
+      const pRate = (p.expectedReturn || settings.expectedReturn) / 100
+      let bal = (p.currentValue || 0) * Math.pow(1 + pRate, yearsToW)
+      if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
+        bal += pRate > 0
+          ? (p.srsAnnualContribution || 0) * ((Math.pow(1 + pRate, yearsToW) - 1) / pRate) * (1 + pRate)
+          : (p.srsAnnualContribution || 0) * yearsToW
+      }
+      const dur = p.srsWithdrawalDuration || 10
+      const g = retirementInflation / 100
+      const annualBase = Math.abs(pRate - g) < 0.0001
+        ? bal / dur
+        : bal * (pRate - g) / (1 - Math.pow((1 + g) / (1 + pRate), dur))
+      return sum + annualBase / 12
+    }
+    return sum
+  }, 0), [filteredPortfolio, retirementAge, clientAge, settings.expectedReturn, retirementInflation])
+
+  const netMonthlyGapAfterIncome = Math.max(0, totalMonthlyNeeded - totalMonthlyInvesting - guaranteedMonthlyRetirement)
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
