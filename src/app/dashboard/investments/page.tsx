@@ -1102,17 +1102,16 @@ export default function CapitalMandatePage() {
 
             // Connector stem from box bottom to dot
             const stemStart = boxY + BOX_H + 2
-            if (dotY - stemStart > 6) {
+            if (dotY - stemStart > 2) {
               ctx.beginPath()
               ctx.moveTo(x, stemStart)
-              ctx.lineTo(x, dotY - 8)
+              ctx.lineTo(x, dotY - 6)
               ctx.strokeStyle = 'rgba(94,138,106,0.4)'
               ctx.lineWidth = 1
               ctx.setLineDash([2, 3])
               ctx.stroke()
               ctx.setLineDash([])
             }
-
             // Dot on line
             ctx.beginPath()
             ctx.arc(x, dotY, 6, 0, Math.PI * 2)
@@ -1333,7 +1332,7 @@ export default function CapitalMandatePage() {
              y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
                 grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
-                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.35,
+                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.45,
               },
             },
           },
