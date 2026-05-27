@@ -1184,7 +1184,7 @@ export default function CapitalMandatePage() {
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
 
-          // Count milestone boxes above retirement age for positioning
+                    // Count milestone boxes above retirement age for positioning
           const milestonesAbove = Object.keys(milestonesByAge)
             .map(Number)
             .filter(age => age < retirementAge).length
@@ -1193,10 +1193,15 @@ export default function CapitalMandatePage() {
           const BOX_GAP = 4
           let retBoxY = BOX_TOP_LIMIT + milestonesAbove * (retBoxH + BOX_GAP)
 
-          // If box overlaps or is too close to the line, push it below
+          // Always try to keep the box above the line, only fall back to below if it won't fit
           const minGap = 8
           if (lineY - (retBoxY + retBoxH) < minGap) {
-            retBoxY = lineY + 20
+            const aboveY = lineY - retBoxH - minGap
+            if (aboveY >= top) {
+              retBoxY = aboveY      // fits above
+            } else {
+              retBoxY = lineY + minGap // fallback below
+            }
           }
 
           // Draw the box
