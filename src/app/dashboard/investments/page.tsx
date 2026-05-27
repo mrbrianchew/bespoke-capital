@@ -1145,7 +1145,7 @@ export default function CapitalMandatePage() {
         }
       }
 
-            const retireLinePlugin = {
+      const retireLinePlugin = {
         id: 'retireLine',
         afterDraw(chart: any) {
           if (retireIdx < 0) return
