@@ -1234,7 +1234,6 @@ export default function CapitalMandatePage() {
           ctx.restore()
         }
       }
-    }
 
       const datasets: any[] = []
 
