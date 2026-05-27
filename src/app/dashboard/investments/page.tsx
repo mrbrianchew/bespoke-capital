@@ -1178,9 +1178,10 @@ export default function CapitalMandatePage() {
           const retBoxW = Math.max(retLw, retAw) + 16
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
-          const milestoneCount = nonRetGoals.filter(g => g.targetAge <= lifeEnd).length
-          const milestoneStackHeight = milestoneCount > 0 ? milestoneCount * (32 + 4) + 8 : 8
-          const retBoxY = top + milestoneStackHeight
+          const retirementMeta = chart.getDatasetMeta(0)
+          const retirePoint = retirementMeta?.data?.[retireIdx]
+          const lineY = retirePoint ? retirePoint.y : top + 60
+          const retBoxY = Math.max(top + 8, lineY - retBoxH - 14)
 
           ctx.fillStyle = 'rgba(255,248,235,0.97)'
           ctx.strokeStyle = 'rgba(168,131,74,0.5)'
