@@ -956,8 +956,8 @@ export default function CapitalMandatePage() {
         .filter(g => g.source !== 'retirement')
         .sort((a, b) => a.targetAge - b.targetAge)
 
-      // Milestone metadata for tooltip annotations
-      const milestonesByAge: Record<number, { label: string; amount: number }> = {}
+      // Milestone metadata for tooltip annotations (array to handle multiple goals at same age)
+      const milestonesByAge: Record<number, { label: string; amount: number }[]> = {}
 
 // ── REQUIRED INVESTMENTS LINE ─────────────────────────────────────
       // Accumulation: invest sum of all goal monthlies, compound monthly at preRetRate.
@@ -984,7 +984,8 @@ export default function CapitalMandatePage() {
             const g = goalQueue.shift()!
             corpus = Math.max(0, corpus - g.targetCorpus)
             runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
-            milestonesByAge[a] = { label: g.label, amount: g.targetCorpus }
+            if (!milestonesByAge[a]) milestonesByAge[a] = []
+            milestonesByAge[a].push({ label: g.label, amount: g.targetCorpus })
           }
           // Then grow with monthly contributions (annuity-due: contribute then compound)
           for (let m = 0; m < 12; m++) {
@@ -1040,7 +1041,11 @@ export default function CapitalMandatePage() {
         ? ages.map(a => a >= retirementAge ? legacyAmt : null)
         : null
 
-      const retireIdx = ages.indexOf(retirementAge)
+      // Use earliest retirement age (earlier of client or spouse, in client-age years)
+      const earliestRetAge = planMode === 'couple'
+        ? Math.min(retirementAge, spouseRetirementAge + (clientAge - spouseAge))
+        : retirementAge
+      const retireIdx = ages.indexOf(earliestRetAge)
 
       // ── Milestone dot plugin ───────────────────────────────────────────
       // Draws a circle + label at each non-retirement goal's targetAge on the line
@@ -1056,21 +1061,23 @@ export default function CapitalMandatePage() {
           const BOX_GAP = 4
           const BOX_TOP_LIMIT = yAxis.top + 8
 
-          // Build entries with pixel positions
+          // Build entries with pixel positions — flatten array so each goal is its own entry
           const entries = Object.entries(milestonesByAge)
-            .map(([ageStr, ms]) => {
+            .flatMap(([ageStr, msArr]) => {
               const age = parseInt(ageStr)
               const idx = ages.indexOf(age)
-              if (idx < 0) return null
+              if (idx < 0) return []
               const x = xAxis.getPixelForValue(idx)
               const corpusVal = corpusAtAge[age] ?? 0
               const dotY = yAxis.getPixelForValue(corpusVal)
-              ctx.font = '600 10px Inter, sans-serif'
-              const lw = ctx.measureText(ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label).width
-              ctx.font = '9px Inter, sans-serif'
-              const aw = ctx.measureText('−' + fmt(ms.amount)).width
-              const boxW = Math.max(lw, aw) + 16
-              return { age, ms, x, dotY, boxW }
+              return msArr.map(ms => {
+                ctx.font = '600 10px Inter, sans-serif'
+                const lw = ctx.measureText(ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label).width
+                ctx.font = '9px Inter, sans-serif'
+                const aw = ctx.measureText('−' + fmt(ms.amount)).width
+                const boxW = Math.max(lw, aw) + 16
+                return { age, ms, x, dotY, boxW }
+              })
             })
             .filter(Boolean) as { age: number; ms: { label: string; amount: number }; x: number; dotY: number; boxW: number }[]
 
@@ -1157,7 +1164,7 @@ export default function CapitalMandatePage() {
           const retirePoint = retirementMeta?.data?.[retireIdx]
           const lineY = retirePoint ? retirePoint.y : yAxis.top + 60
           const retLabel = 'Retirement'
-          const retAmountLabel = `Age ${retirementAge}`
+          const retAmountLabel = `Age ${earliestRetAge}`
           ctx.font = '600 10px Inter, sans-serif'
           const retLw = ctx.measureText(retLabel).width
           ctx.font = '9px Inter, sans-serif'
@@ -1295,10 +1302,12 @@ export default function CapitalMandatePage() {
                     const a = ages[idx]
                     const lines: string[] = []
                     // Show milestone if this age has a goal deduction
-                    if (milestonesByAge[a]) {
-                      lines.push('')
-                      lines.push(`  🎯  ${milestonesByAge[a].label}`)
-                      lines.push(`       Corpus released: −${fmt(milestonesByAge[a].amount)}`)
+                   if (milestonesByAge[a]?.length) {
+                      milestonesByAge[a].forEach(ms => {
+                        lines.push('')
+                        lines.push(`  🎯  ${ms.label}`)
+                        lines.push(`       Corpus released: −${fmt(ms.amount)}`)
+                      })
                     }
                     // Show retirement corpus at retirement age
                     if (a === retirementAge && corpusAtAge[retirementAge]) {
@@ -1332,7 +1341,7 @@ export default function CapitalMandatePage() {
              y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
                 grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
-                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.45,
+                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.6,
               },
             },
           },
