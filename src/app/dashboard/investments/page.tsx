@@ -1333,7 +1333,7 @@ export default function CapitalMandatePage() {
               y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
                 grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
-                afterFit(scale: any) { scale.paddingTop = 80 },
+                afterFit(scale: any) { scale.paddingTop = 120 },
               },
             },
           },
