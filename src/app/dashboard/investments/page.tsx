@@ -1330,10 +1330,10 @@ export default function CapitalMandatePage() {
             },
             scales: {
               x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
-              y: {
+             y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
                 grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
-                afterFit(scale: any) { scale.paddingTop = 120 },
+                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.35,
               },
             },
           },
