@@ -1057,43 +1057,13 @@ export default function CapitalMandatePage() {
           if (!xAxis || !yAxis) return
           const ctx = chart.ctx
 
-          const BOX_H = 32
-          const BOX_GAP = 4
-          const BOX_TOP_LIMIT = yAxis.top + 8
-
-          // Build entries with pixel positions — flatten array so each goal is its own entry
-          const entries = Object.entries(milestonesByAge)
-            .flatMap(([ageStr, msArr]) => {
-              const age = parseInt(ageStr)
-              const idx = ages.indexOf(age)
-              if (idx < 0) return []
-              const x = xAxis.getPixelForValue(idx)
-              const corpusVal = corpusAtAge[age] ?? 0
-              const dotY = yAxis.getPixelForValue(corpusVal)
-              return msArr.map(ms => {
-                ctx.font = '600 10px Inter, sans-serif'
-                const lw = ctx.measureText(ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label).width
-                ctx.font = '9px Inter, sans-serif'
-                const aw = ctx.measureText('−' + fmt(ms.amount)).width
-                const boxW = Math.max(lw, aw) + 16
-                return { age, ms, x, dotY, boxW }
-              })
-            })
-            .filter(Boolean) as { age: number; ms: { label: string; amount: number }; x: number; dotY: number; boxW: number }[]
-
-          // Sort by x so we process left-to-right
-          entries.sort((a, b) => a.x - b.x)
-
-          // Milestone boxes start at row 1 — row 0 is reserved for Retirement
-          const boxYs = entries.map((_entry, i) => BOX_TOP_LIMIT + (i + 1) * (BOX_H + BOX_GAP))
-
-          // Draw each milestone
-          entries.forEach((entry, i) => {
-            const { ms, x, dotY, boxW } = entry
-            const boxY = boxYs[i]
-            const shortLabel = ms.label.length > 20 ? ms.label.slice(0, 18) + '…' : ms.label
-            const amountText = '−' + fmt(ms.amount)
-           const boxX = x - boxW / 2
+          Object.entries(milestonesByAge).forEach(([ageStr, msArr]) => {
+            const age = parseInt(ageStr)
+            const idx = ages.indexOf(age)
+            if (idx < 0) return
+            const x = xAxis.getPixelForValue(idx)
+            const corpusVal = corpusAtAge[age] ?? 0
+            const dotY = yAxis.getPixelForValue(corpusVal)
 
             ctx.save()
 
@@ -1107,18 +1077,6 @@ export default function CapitalMandatePage() {
             ctx.stroke()
             ctx.setLineDash([])
 
-            // Connector stem from box bottom to dot
-            const stemStart = boxY + BOX_H + 2
-            if (dotY - stemStart > 2) {
-              ctx.beginPath()
-              ctx.moveTo(x, stemStart)
-              ctx.lineTo(x, dotY - 6)
-              ctx.strokeStyle = 'rgba(94,138,106,0.4)'
-              ctx.lineWidth = 1
-              ctx.setLineDash([2, 3])
-              ctx.stroke()
-              ctx.setLineDash([])
-            }
             // Dot on line
             ctx.beginPath()
             ctx.arc(x, dotY, 6, 0, Math.PI * 2)
@@ -1127,24 +1085,6 @@ export default function CapitalMandatePage() {
             ctx.strokeStyle = 'white'
             ctx.lineWidth = 2
             ctx.stroke()
-
-           // Label box
-            ctx.fillStyle = 'rgba(255,255,255,0.97)'
-            ctx.strokeStyle = 'rgba(94,138,106,0.3)'
-            ctx.lineWidth = 1
-            ctx.beginPath()
-            ctx.roundRect(boxX, boxY, boxW, BOX_H, 5)
-            ctx.fill()
-            ctx.stroke()
-
-            ctx.fillStyle = '#5E8A6A'
-            ctx.font = '600 10px Inter, sans-serif'
-            ctx.textAlign = 'center'
-            ctx.fillText(shortLabel, x, boxY + 12)
-
-            ctx.fillStyle = '#9A9690'
-            ctx.font = '9px Inter, sans-serif'
-            ctx.fillText(amountText, x, boxY + 25)
 
             ctx.restore()
           })
@@ -1163,50 +1103,20 @@ export default function CapitalMandatePage() {
           const retirementMeta = chart.getDatasetMeta(0)
           const retirePoint = retirementMeta?.data?.[retireIdx]
           const lineY = retirePoint ? retirePoint.y : yAxis.top + 60
-          const retLabel = 'Retirement'
-          const retAmountLabel = `Age ${earliestRetAge}`
-          ctx.font = '600 10px Inter, sans-serif'
-          const retLw = ctx.measureText(retLabel).width
-          ctx.font = '9px Inter, sans-serif'
-          const retAw = ctx.measureText(retAmountLabel).width
-          const retBoxW = Math.max(retLw, retAw) + 16
-          const retBoxH = 32
-          const retBoxX = x - retBoxW / 2
-          const retBoxY = yAxis.top + 8
+
           ctx.save()
+
+          // Vertical dashed guide
           ctx.beginPath()
           ctx.setLineDash([4, 4])
           ctx.moveTo(x, yAxis.top)
           ctx.lineTo(x, lineY)
-          ctx.strokeStyle = 'rgba(168,131,74,0.25)'
+          ctx.strokeStyle = 'rgba(168,131,74,0.3)'
           ctx.lineWidth = 1
           ctx.stroke()
           ctx.setLineDash([])
-          ctx.fillStyle = 'rgba(255,248,235,0.97)'
-          ctx.strokeStyle = 'rgba(168,131,74,0.5)'
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.roundRect(retBoxX, retBoxY, retBoxW, retBoxH, 5)
-          ctx.fill()
-          ctx.stroke()
-          ctx.fillStyle = '#A8834A'
-          ctx.font = '600 10px Inter, sans-serif'
-          ctx.textAlign = 'center'
-          ctx.fillText(retLabel, x, retBoxY + 12)
-          ctx.fillStyle = 'rgba(168,131,74,0.65)'
-          ctx.font = '9px Inter, sans-serif'
-          ctx.fillText(retAmountLabel, x, retBoxY + 25)
-          const stemStart = retBoxY + retBoxH + 2
-          if (lineY - stemStart > 10) {
-            ctx.beginPath()
-            ctx.moveTo(x, stemStart)
-            ctx.lineTo(x, lineY - 8)
-            ctx.strokeStyle = 'rgba(168,131,74,0.4)'
-            ctx.lineWidth = 1
-            ctx.setLineDash([2, 3])
-            ctx.stroke()
-            ctx.setLineDash([])
-          }
+
+          // Gold dot on line
           ctx.beginPath()
           ctx.arc(x, lineY, 6, 0, Math.PI * 2)
           ctx.fillStyle = '#A8834A'
@@ -1214,6 +1124,91 @@ export default function CapitalMandatePage() {
           ctx.strokeStyle = 'white'
           ctx.lineWidth = 2
           ctx.stroke()
+
+          ctx.restore()
+        }
+      }
+
+      // ── Timeline strip plugin — draws below x-axis, no collision risk ──
+      const timelinePlugin = {
+        id: 'timelineStrip',
+        afterDraw(chart: any) {
+          const xAxis = chart.scales.x
+          const yAxis = chart.scales.y
+          if (!xAxis || !yAxis) return
+          const ctx = chart.ctx
+
+          // Strip sits below the x-axis tick labels
+          const stripY = yAxis.bottom + 36
+          const tickH = 6        // height of the tick mark
+          const dotR = 4         // radius of the coloured dot in strip
+
+          ctx.save()
+          ctx.textAlign = 'center'
+
+          // ── Education milestones ───────────────────────────────────────
+          Object.entries(milestonesByAge).forEach(([ageStr, msArr]) => {
+            const age = parseInt(ageStr)
+            const idx = ages.indexOf(age)
+            if (idx < 0) return
+            const x = xAxis.getPixelForValue(idx)
+
+            msArr.forEach((ms, i) => {
+              const offsetX = i === 0 ? 0 : (i % 2 === 1 ? 14 : -14)  // stagger if same age
+              const cx = x + offsetX
+
+              // Tick mark up from strip line
+              ctx.beginPath()
+              ctx.moveTo(cx, stripY - tickH)
+              ctx.lineTo(cx, stripY + tickH)
+              ctx.strokeStyle = 'rgba(94,138,106,0.5)'
+              ctx.lineWidth = 1
+              ctx.stroke()
+
+              // Coloured dot
+              ctx.beginPath()
+              ctx.arc(cx, stripY, dotR, 0, Math.PI * 2)
+              ctx.fillStyle = '#5E8A6A'
+              ctx.fill()
+
+              // Label line 1: name
+              const shortLabel = ms.label.length > 22 ? ms.label.slice(0, 20) + '…' : ms.label
+              ctx.fillStyle = '#5E8A6A'
+              ctx.font = '600 9px Inter, sans-serif'
+              ctx.fillText(shortLabel, cx, stripY - tickH - 4)
+
+              // Label line 2: amount (below strip)
+              ctx.fillStyle = '#9A9690'
+              ctx.font = '9px Inter, sans-serif'
+              ctx.fillText('−' + fmt(ms.amount), cx, stripY + tickH + 11)
+            })
+          })
+
+          // ── Retirement milestone ───────────────────────────────────────
+          if (retireIdx >= 0) {
+            const x = xAxis.getPixelForValue(retireIdx)
+
+            ctx.beginPath()
+            ctx.moveTo(x, stripY - tickH)
+            ctx.lineTo(x, stripY + tickH)
+            ctx.strokeStyle = 'rgba(168,131,74,0.5)'
+            ctx.lineWidth = 1
+            ctx.stroke()
+
+            ctx.beginPath()
+            ctx.arc(x, stripY, dotR, 0, Math.PI * 2)
+            ctx.fillStyle = '#A8834A'
+            ctx.fill()
+
+            ctx.fillStyle = '#A8834A'
+            ctx.font = '600 9px Inter, sans-serif'
+            ctx.fillText('Retirement', x, stripY - tickH - 4)
+
+            ctx.fillStyle = '#9A9690'
+            ctx.font = '9px Inter, sans-serif'
+            ctx.fillText(`Age ${earliestRetAge}`, x, stripY + tickH + 11)
+          }
+
           ctx.restore()
         }
       }
@@ -1262,14 +1257,15 @@ export default function CapitalMandatePage() {
       try {
         chartInstance.current = new Chart(canvasCtx, {
           type: 'line',
-          plugins: [retireLinePlugin, milestonePlugin],
+          plugins: [retireLinePlugin, milestonePlugin, timelinePlugin],
           data: {
             labels: ages.map(a => 'Age ' + a),
             datasets,
           },
           options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
+              responsive: true, maintainAspectRatio: false,
+              interaction: { mode: 'index', intersect: false },
+              layout: { padding: { bottom: 48 } },
             plugins: {
               legend: {
                 labels: {
