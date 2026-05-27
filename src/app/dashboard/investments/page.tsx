@@ -1138,11 +1138,18 @@ export default function CapitalMandatePage() {
           if (!xAxis || !yAxis) return
           const ctx = chart.ctx
 
-          const stripY = yAxis.bottom + 34
-          const dotR = 4
-          const MIN_GAP = 70  // minimum px between label centres before we use two rows
+          // Strip baseline sits just below the x-axis tick labels
+          const stripY = yAxis.bottom + 30
+          const MIN_GAP = 90  // min px between label centres before staggering rows
 
-          // Build all items: education + retirement, sorted by x
+          // ── Build retirement sub-label showing both ages ──────────────
+          // At earliestRetAge (client-age), what is the spouse's age?
+          const spouseAgeAtRetirement = earliestRetAge - (clientAge - spouseAge)
+          const retSubLabel = planMode === 'couple'
+            ? `Age ${earliestRetAge} / ${spouseAgeAtRetirement}`
+            : `Age ${earliestRetAge}`
+
+          // Build all strip items sorted by x position
           type StripItem = {
             x: number
             label: string
@@ -1172,65 +1179,72 @@ export default function CapitalMandatePage() {
             items.push({
               x: xAxis.getPixelForValue(retireIdx),
               label: 'Retirement',
-              sub: `Age ${earliestRetAge}`,
+              sub: retSubLabel,
               color: '#A8834A',
-              subColor: 'rgba(168,131,74,0.7)',
+              subColor: 'rgba(168,131,74,0.75)',
             })
           }
 
           items.sort((a, b) => a.x - b.x)
 
-          // Assign rows: if two items are closer than MIN_GAP, alternate rows 0 and 1
-          const rows: number[] = []
-          items.forEach((item, i) => {
-            if (i === 0) { rows.push(0); return }
-            const prev = items[i - 1]
-            const prevRow = rows[i - 1]
-            if (Math.abs(item.x - prev.x) < MIN_GAP) {
-              rows.push(prevRow === 0 ? 1 : 0)
-            } else {
-              rows.push(0)
+          // ── Assign rows greedily left-to-right ────────────────────────
+          // Each item gets row 0 unless it would collide with the previous
+          // item in the same row, in which case it goes to row 1.
+          // Row 1 items sit lower so their text doesn't touch row 0 text.
+          const rows: number[] = new Array(items.length).fill(0)
+          for (let i = 1; i < items.length; i++) {
+            let conflictsWithPrev = false
+            for (let j = i - 1; j >= 0; j--) {
+              if (rows[j] === (rows[i] ?? 0) && Math.abs(items[i].x - items[j].x) < MIN_GAP) {
+                conflictsWithPrev = true
+                break
+              }
             }
-          })
+            if (conflictsWithPrev) {
+              rows[i] = rows[i - 1] === 0 ? 1 : 0
+            }
+          }
 
-          // Row 0 = closer to axis, Row 1 = further out (staggered down)
-          const ROW_OFFSET = 18
+          // Row vertical offsets: row 0 is baseline, row 1 is 22px lower
+          const ROW_OFFSETS = [0, 22]
 
           ctx.save()
           ctx.textAlign = 'center'
 
           items.forEach((item, i) => {
-            const row = rows[i]
-            const rowY = stripY + row * ROW_OFFSET
-            const isEdu = item.color === '#5E8A6A'
+            const rowOff = ROW_OFFSETS[rows[i]] ?? 0
+            const labelY = stripY + rowOff          // where the label name sits (top line)
+            const subY = labelY + 12                // amount/age sits 12px below label
 
-            // Dot on the baseline (always at stripY)
+            // Thin vertical tick at x-axis level (no dot)
             ctx.beginPath()
-            ctx.arc(item.x, stripY, dotR, 0, Math.PI * 2)
-            ctx.fillStyle = item.color
-            ctx.fill()
+            ctx.moveTo(item.x, yAxis.bottom + 4)
+            ctx.lineTo(item.x, yAxis.bottom + 10)
+            ctx.strokeStyle = item.color + 'AA'
+            ctx.lineWidth = 1
+            ctx.stroke()
 
-            // Short vertical connector if row 1 (dot stays at stripY, label is lower)
-            if (row === 1) {
+            // If row 1, draw a small leader line from tick bottom down to label
+            if (rows[i] === 1) {
               ctx.beginPath()
-              ctx.moveTo(item.x, stripY + dotR + 1)
-              ctx.lineTo(item.x, rowY + 2)
-              ctx.strokeStyle = item.color + '60'
+              ctx.moveTo(item.x, yAxis.bottom + 10)
+              ctx.lineTo(item.x, labelY - 3)
+              ctx.strokeStyle = item.color + '55'
               ctx.lineWidth = 1
               ctx.setLineDash([2, 2])
               ctx.stroke()
               ctx.setLineDash([])
             }
 
-            // Label above dot (name)
+            // Label (bold, coloured)
             ctx.fillStyle = item.color
-            ctx.font = `600 9px Inter, sans-serif`
-            ctx.fillText(item.label, item.x, rowY - dotR - 5)
+            ctx.font = '600 9px Inter, sans-serif'
+            ctx.fillText(item.label, item.x, labelY)
 
-            // Sub label below dot (amount / age)
+            // Sub-label (amount or age, muted)
             ctx.fillStyle = item.subColor
             ctx.font = '9px Inter, sans-serif'
-            ctx.fillText(item.sub, item.x, rowY + dotR + 10)
+            ctx.fillText(item.sub, item.x, subY)
           })
 
           ctx.restore()
