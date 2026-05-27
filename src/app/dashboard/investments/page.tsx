@@ -1127,9 +1127,9 @@ export default function CapitalMandatePage() {
             ctx.strokeStyle = 'rgba(94,138,106,0.3)'
             ctx.lineWidth = 1
             ctx.beginPath()
-          ctx.roundRect(retBoxXOffset, retBoxY, retBoxW, retBoxH, 5)
-          ctx.fill()
-          ctx.stroke()
+            ctx.roundRect(boxX, boxY, boxW, BOX_H, 5)
+            ctx.fill()
+            ctx.stroke()
 
             ctx.fillStyle = '#5E8A6A'
             ctx.font = '600 10px Inter, sans-serif'
