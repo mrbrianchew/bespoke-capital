@@ -183,7 +183,9 @@ function CashflowModal({ vehicle, onSave, onClose }: {
   const typeLabels: Record<CashflowEvent['type'], string> = {
     contribution: 'Contribution', withdrawal: 'Withdrawal', top_up: 'Top-Up', premium_holiday: 'Premium Holiday',
     contribution_change: 'Contribution Change', end_contributions: 'End Contributions', missed_premium: 'Missed Premium'
-  }const [endDate, setEndDate] = useState('')
+  }
+
+  const [endDate, setEndDate] = useState('')
   const needsEndDate = type === 'premium_holiday'
   const needsAmount = !['premium_holiday', 'end_contributions', 'missed_premium'].includes(type)
 
