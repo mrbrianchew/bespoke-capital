@@ -602,6 +602,13 @@ export default function CapitalMandatePage() {
   const chartRef = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<any>(null)
 
+  const earliestRetirementAge = useMemo(() => {
+    if (planMode === 'couple') {
+      return Math.min(retirementAge, spouseRetirementAge + (clientAge - spouseAge))
+    }
+    return retirementAge
+  }, [planMode, retirementAge, spouseRetirementAge, clientAge, spouseAge])
+
   useEffect(() => { load() }, [])
 
   async function load() {
@@ -978,7 +985,7 @@ export default function CapitalMandatePage() {
         requiredLine.push(Math.max(0, corpus))
         corpusAtAge[a] = Math.max(0, corpus)
 
-        if (a < retirementAge) {
+        if (a < earliestRetAge) {
           // Deduct goals that mature THIS year BEFORE growing — so drop shows at correct age
           while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
             const g = goalQueue.shift()!
@@ -996,13 +1003,13 @@ export default function CapitalMandatePage() {
           // Deplete corpus from retirementAge to finalDeathAge.
           // If legacyAmt = 0, target is $0 at finalDeathAge.
           // Use inflation-adjusted annual withdrawal that exactly depletes the corpus.
-          const retirementCorpus = corpusAtAge[retirementAge] ?? corpus
-          const retYears = Math.max(1, finalDeathAge - retirementAge)
+         const retirementCorpus = corpusAtAge[earliestRetAge] ?? corpus
+          const retYears = Math.max(1, finalDeathAge - earliestRetAge)
 
           // Compute annual withdrawal at retirement age (real terms), inflation-adjusted each year
           // We solve for W such that sum of PV of inflation-adjusted withdrawals = retirementCorpus - PV(legacyAmt)
           // For display simplicity: use straight-line depletion adjusted by inflation factor
-          const yearsIntoRet = a - retirementAge
+          const yearsIntoRet = a - earliestRetAge
           if (yearsIntoRet === 0) {
             // At retirement age, corpus is already recorded; just compute next year
           }
@@ -1041,10 +1048,7 @@ export default function CapitalMandatePage() {
         ? ages.map(a => a >= retirementAge ? legacyAmt : null)
         : null
 
-      // Use earliest retirement age (earlier of client or spouse, in client-age years)
-      const earliestRetAge = planMode === 'couple'
-        ? Math.min(retirementAge, spouseRetirementAge + (clientAge - spouseAge))
-        : retirementAge
+      const earliestRetAge = earliestRetirementAge
       const retireIdx = ages.indexOf(earliestRetAge)
 
       // ── Milestone dot plugin ───────────────────────────────────────────
@@ -1270,10 +1274,11 @@ export default function CapitalMandatePage() {
         chartInstance.current = null
       }
     }
-  }, [
+  ], [
     loading, filteredGoals, settings,
-    clientAge, spouseAge, retirementAge, lifeExpectancy, spouseLifeExpectancy,
+    clientAge, spouseAge, retirementAge, spouseRetirementAge, lifeExpectancy, spouseLifeExpectancy,
     effectiveRetirementIncome, postRetirementReturn, retirementInflation, planMode,
+    earliestRetirementAge,
   ])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
@@ -1502,8 +1507,12 @@ export default function CapitalMandatePage() {
               })
               const retGoal = goals.find(g => g.source === 'retirement')
               if (retGoal) {
-                const spouseAgeAtRet = retirementAge - (clientAge - spouseAge)
-                const retAgeLabel = planMode === 'couple' ? `Age ${retirementAge} / ${spouseAgeAtRet}` : `Age ${retirementAge}`
+                const earliestIsSpouse = planMode === 'couple' && spouseRetirementAge + (clientAge - spouseAge) < retirementAge
+                const retAgeLabel = planMode === 'couple'
+                  ? earliestIsSpouse
+                    ? `Age ${earliestRetirementAge} (${spouseName} retires first)`
+                    : `Age ${retirementAge} / ${spouseRetirementAge}`
+                  : `Age ${retirementAge}`
                 items.push({
                   label: 'Retirement',
                   ageLine: retAgeLabel,
