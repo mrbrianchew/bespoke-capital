@@ -657,13 +657,23 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
                   // Best approach: use the first change event amount as the rate from start,
                   // and the current monthlyNum as the rate after the last change
                   const sortedChanges = [...changeEvents].sort((a, b) => a.date.localeCompare(b.date))
-                  let rateIdx = 0
-                  activeRate = sortedChanges[0]?.amount || monthlyNum
+                  // Build rate segments: initial rate is monthlyNum (current field),
+                  // each change event sets a new rate from that date forward.
+                  // To find the initial rate: it's whatever was contributed before
+                  // the first change event. Since we only know the current rate and
+                  // change events, we treat monthlyNum as the rate AFTER the last change,
+                  // and work forwards — the initial rate is the first change event's
+                  // preceding rate, which we cannot know without a starting record.
+                  // Best practical approach: the advisor enters the ORIGINAL rate in
+                  // monthlyContribution and records changes via change events.
+                  // So: start with monthlyNum, apply changes at their dates.
+                  activeRate = monthlyNum
+                  rateIdx = 0
                   totalContributed = 0
                   const iterDate = new Date(startDate)
                   while (iterDate <= now2) {
                     const ym = iterDate.toISOString().slice(0, 7)
-                    // Check if a change event fires this month
+                    // Switch rate when a change event date is reached
                     while (rateIdx < sortedChanges.length && sortedChanges[rateIdx].date <= ym) {
                       activeRate = sortedChanges[rateIdx].amount
                       rateIdx++
