@@ -619,7 +619,7 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
             const startDate = startMonth ? new Date(startMonth + '-01') : null
             const now = new Date()
             const monthsHeld = startDate
-              ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth())
+              ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1
               : 0
             const yearsHeld = monthsHeld / 12
             const currentValNum = parseFloat(curVal) || 0
