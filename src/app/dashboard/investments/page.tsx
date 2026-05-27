@@ -668,7 +668,7 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
                   // monthlyContribution and records changes via change events.
                   // So: start with monthlyNum, apply changes at their dates.
                   activeRate = monthlyNum
-                  rateIdx = 0
+                  let rateIdx = 0
                   totalContributed = 0
                   const iterDate = new Date(startDate)
                   while (iterDate <= now2) {
