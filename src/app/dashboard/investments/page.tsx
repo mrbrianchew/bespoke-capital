@@ -1145,7 +1145,7 @@ export default function CapitalMandatePage() {
         }
       }
 
-      const retireLinePlugin = {
+            const retireLinePlugin = {
         id: 'retireLine',
         afterDraw(chart: any) {
           if (retireIdx < 0) return
@@ -1156,19 +1156,19 @@ export default function CapitalMandatePage() {
           const top = yAxis.top
           const bottom = yAxis.bottom
           const ctx = chart.ctx
-         ctx.save()
+          ctx.save()
 
-         // Subtle dashed vertical line (matching milestone style)
+          // Subtle dashed vertical line — only draw down to the line
           ctx.beginPath()
           ctx.setLineDash([4, 4])
           ctx.moveTo(x, top)
-          ctx.lineTo(x, bottom)
+          ctx.lineTo(x, lineY)
           ctx.strokeStyle = 'rgba(168,131,74,0.25)'
           ctx.lineWidth = 1
           ctx.stroke()
           ctx.setLineDash([])
 
-          // Retirement label — same box style as milestones, anchored just below the top
+          // Retirement label box
           const retLabel = 'Retirement'
           const retAmountLabel = `Age ${retirementAge}`
           ctx.font = '600 10px Inter, sans-serif'
@@ -1178,11 +1178,23 @@ export default function CapitalMandatePage() {
           const retBoxW = Math.max(retLw, retAw) + 16
           const retBoxH = 32
           const retBoxX = x - retBoxW / 2
-          const retirementMeta = chart.getDatasetMeta(0)
-          const retirePoint = retirementMeta?.data?.[retireIdx]
-          const lineY = retirePoint ? retirePoint.y : top + 60
-          const retBoxY = top + 8
 
+          // Count milestone boxes above retirement age for positioning
+          const milestonesAbove = Object.keys(milestonesByAge)
+            .map(Number)
+            .filter(age => age < retirementAge).length
+          
+          const BOX_TOP_LIMIT = top + 8
+          const BOX_GAP = 4
+          let retBoxY = BOX_TOP_LIMIT + milestonesAbove * (retBoxH + BOX_GAP)
+
+          // If box overlaps or is too close to the line, push it below
+          const minGap = 8
+          if (lineY - (retBoxY + retBoxH) < minGap) {
+            retBoxY = lineY + 20
+          }
+
+          // Draw the box
           ctx.fillStyle = 'rgba(255,248,235,0.97)'
           ctx.strokeStyle = 'rgba(168,131,74,0.5)'
           ctx.lineWidth = 1
@@ -1200,12 +1212,15 @@ export default function CapitalMandatePage() {
           ctx.font = '9px Inter, sans-serif'
           ctx.fillText(retAmountLabel, x, retBoxY + 25)
 
-          // Stem from box bottom to dot
-          const stemStart = retBoxY + retBoxH + 2
-          if (lineY - stemStart > 6) {
+          // Draw stem from box to line
+          const boxCenter = retBoxY + retBoxH / 2
+          if (Math.abs(lineY - boxCenter) > 6) {
+            const stemFrom = boxCenter > lineY ? retBoxY : retBoxY + retBoxH
+            const stemTo = stemFrom < lineY ? lineY - 8 : lineY + 8
+            
             ctx.beginPath()
-            ctx.moveTo(x, stemStart)
-            ctx.lineTo(x, lineY - 8)
+            ctx.moveTo(x, stemFrom)
+            ctx.lineTo(x, stemTo)
             ctx.strokeStyle = 'rgba(168,131,74,0.4)'
             ctx.lineWidth = 1
             ctx.setLineDash([2, 3])
