@@ -1329,6 +1329,80 @@ export default function CapitalMandatePage() {
     return weighted / totalVal
   }, [filteredPortfolio, xirrMap])
 
+  const portfolioXIRR = useMemo(() => {
+    const perfVehicles = filteredPortfolio.filter(p => p.vehicleType !== 'cpf_life' && p.vehicleType !== 'rental')
+    if (perfVehicles.length === 0) return null
+    const now = new Date()
+    const allFlows: { amount: number; date: Date }[] = []
+
+    perfVehicles.forEach(p => {
+      if (p.vehicleType === 'investment' || p.vehicleType === 'other') {
+        const startDate = p.startMonth ? new Date(p.startMonth + '-01') : p.startYear ? new Date(p.startYear, 0, 1) : null
+        if (!startDate) return
+        const changeEvents = (p.cashflows || []).filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))
+        const holidayMonths = new Set<string>()
+        ;(p.cashflows || []).filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
+          const hd = new Date(cf.date + '-01'); const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
+          while (hd <= he) { holidayMonths.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
+        })
+        let activeRate = p.monthlyContribution; let rateIdx = 0
+        const iter = new Date(startDate)
+        while (iter <= now) {
+          const ym = iter.toISOString().slice(0, 7)
+          while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
+          if (activeRate > 0 && !holidayMonths.has(ym)) allFlows.push({ amount: -activeRate, date: new Date(iter) })
+          iter.setMonth(iter.getMonth() + 1)
+        }
+        ;(p.cashflows || []).forEach(cf => {
+          const [yr, mo] = cf.date.split('-').map(Number)
+          if (cf.type === 'top_up') allFlows.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) })
+          if (cf.type === 'withdrawal') allFlows.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) })
+        })
+      } else if (p.vehicleType === 'srs') {
+        const startYr = p.srsStartYear || new Date().getFullYear()
+        const annual = p.srsAnnualContribution || 0
+        if (annual > 0) {
+          if (p.srsIsRegular) {
+            for (let yr = startYr; yr <= now.getFullYear(); yr++) {
+              allFlows.push({ amount: -annual, date: new Date(yr, 0, 1) })
+            }
+          } else {
+            allFlows.push({ amount: -annual, date: new Date(startYr, 0, 1) })
+          }
+        }
+      } else if (p.vehicleType === 'endowment') {
+        const premium = p.endowmentPremium || 0
+        if (premium > 0) {
+          const startDate = new Date(p.startYear || new Date().getFullYear(), 0, 1)
+          const iter = new Date(startDate)
+          while (iter <= now) {
+            allFlows.push({ amount: -premium, date: new Date(iter) })
+            iter.setMonth(iter.getMonth() + 1)
+          }
+        }
+      } else if (p.vehicleType === 'annuity') {
+        const premium = p.monthlyContribution || 0
+        if (premium > 0) {
+          const startDate = new Date(p.startYear || new Date().getFullYear(), 0, 1)
+          const iter = new Date(startDate)
+          while (iter <= now) {
+            allFlows.push({ amount: -premium, date: new Date(iter) })
+            iter.setMonth(iter.getMonth() + 1)
+          }
+        }
+      }
+    })
+
+    // Terminal inflow: total current value of all included vehicles
+    const totalValue = perfVehicles.reduce((s, p) => s + (p.currentValue || 0), 0)
+    if (totalValue <= 0 || allFlows.length === 0) return null
+    allFlows.push({ amount: totalValue, date: new Date() })
+    allFlows.sort((a, b) => a.date.getTime() - b.date.getTime())
+
+    const result = xirr(allFlows)
+    return result // already in percentage e.g. 7.33
+  }, [filteredPortfolio])
+
   const projectedAtRetirement = useMemo(() => {
     const ytr = retirementAge - clientAge
     if (ytr <= 0) return { atAssumption: 0, atActual: 0 }
@@ -2179,6 +2253,7 @@ export default function CapitalMandatePage() {
               })
               const blendedReturn = blendedDenominator > 0 ? blendedNumerator / blendedDenominator : null
               if (summaryTotalValue === 0) return null
+              const displayReturn = portfolioXIRR !== null ? portfolioXIRR : (blendedReturn !== null ? blendedReturn * 100 : null)
               return (
                 <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, padding: '18px 24px', marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
                   <div>
@@ -2196,11 +2271,11 @@ export default function CapitalMandatePage() {
                     )}
                   </div>
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Blended Annualized Return</div>
-                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: blendedReturn !== null ? (blendedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
-                      {blendedReturn !== null ? (blendedReturn >= 0 ? '+' : '') + (blendedReturn * 100).toFixed(1) + '%' : '—'}
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Portfolio XIRR</div>
+                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: displayReturn !== null ? (displayReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
+                      {displayReturn !== null ? (displayReturn >= 0 ? '+' : '') + displayReturn.toFixed(1) + '%' : '—'}
                     </div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>weighted by portfolio value</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>time-weighted across all vehicles</div>
                   </div>
                 </div>
               )
@@ -2267,27 +2342,14 @@ export default function CapitalMandatePage() {
                       {monthlyGap > 0 ? `−${fmtMo(monthlyGap)}` : 'On Track'}
                     </div>
                   </div>
-                  {(() => {
-                    const perfVehicles = filteredPortfolio.filter(p => p.vehicleType !== 'cpf_life' && p.vehicleType !== 'annuity' && p.vehicleType !== 'rental')
-                    let num = 0; let den = 0
-                    perfVehicles.forEach(p => {
-                      if (p.annualizedReturn != null && (p.currentValue || 0) > 0) {
-                        num += p.annualizedReturn * p.currentValue
-                        den += p.currentValue
-                      }
-                    })
-                    const blendedAR = den > 0 ? num / den : null
-                    if (blendedAR === null) return null
-                    const pct = blendedAR * 100
-                    return (
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Blended Return</div>
-                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: pct >= settings.expectedReturn ? '#80C4A0' : '#E08080' }}>
-                          {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
-                        </div>
+                  {portfolioXIRR !== null && (
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Portfolio XIRR</div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: portfolioXIRR >= settings.expectedReturn ? '#80C4A0' : '#E08080' }}>
+                        {portfolioXIRR >= 0 ? '+' : ''}{portfolioXIRR.toFixed(1)}%
                       </div>
-                    )
-                  })()}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
