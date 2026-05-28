@@ -2369,14 +2369,27 @@ export default function CapitalMandatePage() {
                       {monthlyGap > 0 ? `−${fmtMo(monthlyGap)}` : 'On Track'}
                     </div>
                   </div>
-                  {blendedXIRR !== null && (
-                    <div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Blended XIRR</div>
-                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: blendedXIRR >= settings.expectedReturn ? '#80C4A0' : '#E08080' }}>
-                        {blendedXIRR.toFixed(1)}%
+                  {(() => {
+                    const perfVehicles = filteredPortfolio.filter(p => p.vehicleType !== 'cpf_life' && p.vehicleType !== 'annuity' && p.vehicleType !== 'rental')
+                    let num = 0; let den = 0
+                    perfVehicles.forEach(p => {
+                      if (p.annualizedReturn != null && (p.currentValue || 0) > 0) {
+                        num += p.annualizedReturn * p.currentValue
+                        den += p.currentValue
+                      }
+                    })
+                    const blendedAR = den > 0 ? num / den : null
+                    if (blendedAR === null) return null
+                    const pct = blendedAR * 100
+                    return (
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Blended Return</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: pct >= settings.expectedReturn ? '#80C4A0' : '#E08080' }}>
+                          {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                 </div>
               </div>
             )}
