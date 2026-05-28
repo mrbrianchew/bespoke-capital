@@ -1577,7 +1577,16 @@ export default function CapitalMandatePage() {
 
   // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
   const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
-  const requiredCorpusAtRet = retGoalForSummary?.targetCorpus || 0
+  const legacyAdjustedCorpus = useMemo(() => {
+    if (!retGoalForSummary || !settings.legacyAmount) return retGoalForSummary?.targetCorpus || 0
+    const finalDE = planMode === 'couple'
+      ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+      : lifeExpectancy
+    const n = Math.max(1, finalDE - earliestRetirementAge)
+    const legacyPV = settings.legacyAmount / Math.pow(1 + postRetirementReturn / 100, n)
+    return (retGoalForSummary.targetCorpus || 0) + legacyPV
+  }, [retGoalForSummary, settings.legacyAmount, postRetirementReturn, lifeExpectancy, spouseLifeExpectancy, clientAge, spouseAge, planMode, earliestRetirementAge])
+  const requiredCorpusAtRet = legacyAdjustedCorpus
   const corpusShortfall = requiredCorpusAtRet - projectedAtRetirement.atAssumption
 
   // Guaranteed monthly retirement income from all income-stream vehicles
@@ -1704,10 +1713,12 @@ export default function CapitalMandatePage() {
           }
         } else {
           // ── Retirement drawdown ──────────────────────────────────────
-          // Deplete corpus from retirementAge to finalDeathAge.
-          // If legacyAmt = 0, target is $0 at finalDeathAge.
-          // Use inflation-adjusted annual withdrawal that exactly depletes the corpus.
-         const retirementCorpus = corpusAtAge[earliestRetAge] ?? corpus
+          const baseCorpusAtRet = corpusAtAge[earliestRetAge] ?? corpus
+          // Add PV of legacy to required corpus so gold line depletes to legacyAmt
+          const legacyPVChart = legacyAmt > 0
+            ? legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
+            : 0
+          const retirementCorpus = baseCorpusAtRet + legacyPVChart
           const retYears = Math.max(1, finalDeathAge - earliestRetAge)
 
           // Compute annual withdrawal at retirement age (real terms), inflation-adjusted each year
@@ -2155,7 +2166,14 @@ export default function CapitalMandatePage() {
                   </div>
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{fmtMo(g.monthlyRequired)}</div>
                   <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginBottom: 8 }}>monthly required</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink2)' }}>{fmt(g.targetCorpus)} corpus</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink2)' }}>
+                    {fmt(g.source === 'retirement' && settings.legacyAmount > 0 ? legacyAdjustedCorpus : g.targetCorpus)} corpus
+                    {g.source === 'retirement' && settings.legacyAmount > 0 && (
+                      <span style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginLeft: 6 }}>
+                        (incl. {fmt(settings.legacyAmount)} legacy)
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
