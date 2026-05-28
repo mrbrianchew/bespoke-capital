@@ -50,6 +50,8 @@ interface FundingVehicle {
   srsIsRegular?: boolean
   srsWithdrawalStartAge?: number
   srsWithdrawalDuration?: number
+  annualizedReturn?: number | null
+  totalContributed?: number
   cashflows: CashflowEvent[]
 }
 
@@ -338,6 +340,72 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
 
   function save() {
     if (!name.trim()) return
+    // Compute annualizedReturn and totalContributed for investment/other/srs at save time
+    let savedAnnualizedReturn: number | null = null
+    let savedTotalContributed = 0
+    const currentValNum = parseFloat(curVal) || 0
+    const monthlyNum = parseFloat(monthly) || 0
+    const startDate = startMonth ? new Date(startMonth + '-01') : null
+    const now = new Date()
+    const monthsHeldSave = startDate
+      ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1
+      : 0
+    if ((vehicleType === 'investment' || vehicleType === 'other') && startDate && monthsHeldSave > 0 && currentValNum > 0) {
+      const sortedChangesS = [...(item?.cashflows || []).filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))]
+      const holidayMonthsS = new Set<string>()
+      ;(item?.cashflows || []).filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
+        const hd = new Date(cf.date + '-01')
+        const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
+        while (hd <= he) { holidayMonthsS.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
+      })
+      let activeRateS = monthlyNum; let rateIdxS = 0
+      const iterS = new Date(startDate)
+      while (iterS <= now) {
+        const ym = iterS.toISOString().slice(0, 7)
+        while (rateIdxS < sortedChangesS.length && sortedChangesS[rateIdxS].date <= ym) { activeRateS = sortedChangesS[rateIdxS].amount; rateIdxS++ }
+        if (!holidayMonthsS.has(ym)) savedTotalContributed += activeRateS
+        iterS.setMonth(iterS.getMonth() + 1)
+      }
+      ;(item?.cashflows || []).forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount; if (cf.type === 'withdrawal') savedTotalContributed -= cf.amount })
+      savedTotalContributed = Math.max(0, savedTotalContributed)
+      // XIRR
+      if (mode === 'Regular' && monthsHeldSave > 1) {
+        try {
+          const xf: { amount: number; date: Date }[] = []
+          let xRate = monthlyNum; let xIdx = 0
+          const xIter = new Date(startDate)
+          while (xIter <= now) {
+            const ym = xIter.toISOString().slice(0, 7)
+            while (xIdx < sortedChangesS.length && sortedChangesS[xIdx].date <= ym) { xRate = sortedChangesS[xIdx].amount; xIdx++ }
+            if (xRate > 0 && !holidayMonthsS.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
+            xIter.setMonth(xIter.getMonth() + 1)
+          }
+          ;(item?.cashflows || []).forEach(cf => { const [yr, mo] = cf.date.split('-').map(Number); if (cf.type === 'top_up') xf.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) }); if (cf.type === 'withdrawal') xf.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) }) })
+          xf.push({ amount: currentValNum, date: new Date() })
+          xf.sort((a, b) => a.date.getTime() - b.date.getTime())
+          const xr = xirr(xf)
+          savedAnnualizedReturn = xr !== null ? xr / 100 : null
+        } catch { savedAnnualizedReturn = null }
+      } else {
+        savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(monthsHeldSave / 12, 0.1)) - 1 : null
+      }
+    } else if (vehicleType === 'srs') {
+      const yearsHeldS = new Date().getFullYear() - srsStartYear
+      const annualAmt = parseFloat(srsAnnual) || 0
+      if (yearsHeldS > 0 && currentValNum > 0) {
+        savedTotalContributed = srsIsRegular && annualAmt > 0 ? annualAmt * yearsHeldS : (annualAmt || currentValNum)
+        savedTotalContributed = Math.max(0, savedTotalContributed)
+        if (savedTotalContributed > 0) savedAnnualizedReturn = Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(yearsHeldS, 0.1)) - 1
+      }
+    } else if (vehicleType === 'endowment') {
+      const endPrem = parseFloat(endPremium) || 0
+      const startYearEnd = item?.startYear || new Date().getFullYear()
+      const yearsHeldE = new Date().getFullYear() - startYearEnd
+      if (yearsHeldE > 0 && currentValNum > 0 && endPrem > 0) {
+        savedTotalContributed = endPrem * yearsHeldE * 12
+        savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(yearsHeldE, 0.1)) - 1 : null
+      }
+    }
     onSave({
       id: item?.id ?? newId(),
       name: name.trim(), vehicleType, owner, mode,
@@ -345,6 +413,8 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
       monthlyContribution: parseFloat(monthly) || 0,
       expectedReturn: ret, startYear,
       startMonth, endMonth,
+      annualizedReturn: savedAnnualizedReturn,
+      totalContributed: savedTotalContributed,
       cpfScheme, cpfMonthlyPayout: parseFloat(cpfPayout) || 0, cpfPayoutStartAge: cpfStartAge,
       endowmentMaturityValue: parseFloat(endMatVal) || 0, endowmentMaturityYear: endMatYear, endowmentPremium: parseFloat(endPremium) || 0,
       annuityMonthlyIncome: parseFloat(annuityIncome) || 0, annuityStartAge, annuityGuaranteeYears: annuityGuarantee,
@@ -2195,6 +2265,47 @@ export default function CapitalMandatePage() {
               </div>
               <button onClick={() => setVehicleModal({ open: true })} style={{ fontFamily: 'Inter', fontSize: 11, padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 6, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>+ Add</button>
             </div>
+
+            {filteredPortfolio.length > 0 && (() => {
+              const perfVehicles = filteredPortfolio.filter(p => p.vehicleType !== 'cpf_life' && p.vehicleType !== 'annuity' && p.vehicleType !== 'rental')
+              const summaryTotalContributed = perfVehicles.reduce((s, p) => s + (p.totalContributed || 0), 0)
+              const summaryTotalValue = perfVehicles.reduce((s, p) => s + (p.currentValue || 0), 0)
+              // Blended annualized return: weighted by current value
+              let blendedNumerator = 0; let blendedDenominator = 0
+              perfVehicles.forEach(p => {
+                if (p.annualizedReturn != null && (p.currentValue || 0) > 0) {
+                  blendedNumerator += p.annualizedReturn * p.currentValue
+                  blendedDenominator += p.currentValue
+                }
+              })
+              const blendedReturn = blendedDenominator > 0 ? blendedNumerator / blendedDenominator : null
+              if (summaryTotalValue === 0) return null
+              return (
+                <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, padding: '18px 24px', marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Total Capital Invested</div>
+                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: 'var(--ink)' }}>{fmt(summaryTotalContributed)}</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>across {perfVehicles.length} vehicle{perfVehicles.length !== 1 ? 's' : ''}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Total Portfolio Value</div>
+                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: 'var(--ink)' }}>{fmt(summaryTotalValue)}</div>
+                    {summaryTotalContributed > 0 && (
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: summaryTotalValue >= summaryTotalContributed ? '#4A9E8A' : '#E08080', marginTop: 2 }}>
+                        {summaryTotalValue >= summaryTotalContributed ? '+' : ''}{fmt(summaryTotalValue - summaryTotalContributed)} gain
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Blended Annualized Return</div>
+                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: blendedReturn !== null ? (blendedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
+                      {blendedReturn !== null ? (blendedReturn >= 0 ? '+' : '') + (blendedReturn * 100).toFixed(1) + '%' : '—'}
+                    </div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>weighted by portfolio value</div>
+                  </div>
+                </div>
+              )
+            })()}
 
             {filteredPortfolio.length === 0 ? (
               <div style={{ background: 'white', border: '2px dashed var(--line)', borderRadius: 12, padding: '40px 24px', textAlign: 'center' }}>
