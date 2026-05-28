@@ -2331,14 +2331,23 @@ export default function CapitalMandatePage() {
                           {p.vehicleType === 'endowment' && `Premium S$${(p.endowmentPremium || 0).toLocaleString('en-SG')}/mo · Maturity ${p.endowmentMaturityYear}: ${fmt(p.endowmentMaturityValue || 0)}`}
                           {p.vehicleType === 'annuity' && `S$${(p.annuityMonthlyIncome || 0).toLocaleString('en-SG')}/mo from age ${p.annuityStartAge} · ${p.annuityGuaranteeYears}yr guarantee`}
                           {p.vehicleType === 'rental' && `Net S$${(p.rentalMonthlyNet || 0).toLocaleString('en-SG')}/mo until age ${p.rentalStopAge}`}
-                          {p.vehicleType === 'srs' && (() => {
+                         {p.vehicleType === 'srs' && (() => {
                             const annual = p.srsAnnualContribution || 0
                             const contribStr = annual > 0
-                              ? `S$${Math.round(annual).toLocaleString('en-SG')}/yr${p.srsIsRegular ? ' (regular)' : ' (lump sum)'}`
+                              ? p.srsIsRegular
+                                ? `S$${Math.round(annual).toLocaleString('en-SG')}/yr (regular)`
+                                : `Lump Sum S$${Math.round(annual).toLocaleString('en-SG')}`
                               : '—'
                             return `${contribStr} · ${fmt(p.currentValue)} · Withdraw age ${p.srsWithdrawalStartAge || 63} over ${p.srsWithdrawalDuration || 10}yrs`
                           })()}
-                          {(p.vehicleType === 'investment' || p.vehicleType === 'other') && `${p.monthlyContribution > 0 ? fmtMo(p.monthlyContribution) : '—'} · ${fmt(p.currentValue)} · ${p.expectedReturn}% p.a.`}
+                          {(p.vehicleType === 'investment' || p.vehicleType === 'other') && (() => {
+                            const latestChange = [...(p.cashflows || [])].filter(cf => cf.type === 'contribution_change').sort((a, b) => b.date.localeCompare(a.date))[0]
+                            const displayMonthly = latestChange ? latestChange.amount : p.monthlyContribution
+                            if (p.mode === 'Lump Sum') {
+                              return `Lump Sum ${fmt(p.monthlyContribution)} · ${fmt(p.currentValue)} · ${p.expectedReturn}% p.a.`
+                            }
+                            return `${displayMonthly > 0 ? fmtMo(displayMonthly) : '—'} · ${fmt(p.currentValue)} · ${p.expectedReturn}% p.a.`
+                          })()}
                         </div>
                         {(p.cashflows?.length || 0) > 0 && (
                           <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 3 }}>{p.cashflows.length} cashflow event{p.cashflows.length !== 1 ? 's' : ''} recorded</div>
