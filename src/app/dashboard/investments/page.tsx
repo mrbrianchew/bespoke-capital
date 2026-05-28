@@ -1421,27 +1421,88 @@ export default function CapitalMandatePage() {
   }, [filteredPortfolio])
 
  const projectedAtRetirement = useMemo(() => {
-    const ytr = retirementAge - clientAge
-    if (ytr <= 0) return { atAssumption: 0, atActual: 0 }
+    const now = new Date()
+    const retirementYear = now.getFullYear() + (retirementAge - clientAge)
+    if (retirementAge <= clientAge) return { atAssumption: 0, atActual: 0 }
+    const rate = settings.expectedReturn / 100
+    const rm = rate / 12
     let atAssumption = 0
-    let atActual = 0
-    const actualPortfolioRate = portfolioXIRR !== null ? portfolioXIRR / 100 : blendedXIRR !== null ? blendedXIRR / 100 : null
+
     filteredPortfolio.forEach(p => {
       if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
-      const assumptionRate = (p.expectedReturn || settings.expectedReturn) / 100
-      const actualRate = actualPortfolioRate !== null ? actualPortfolioRate : assumptionRate
-      const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
-        : p.vehicleType === 'annuity' ? p.monthlyContribution
-        : p.monthlyContribution
-      const fvA = (p.currentValue || 0) * Math.pow(1 + assumptionRate, ytr)
-      const rsvA = fvAnnuityDue(monthly, assumptionRate, ytr)
-      atAssumption += fvA + rsvA
-      const fvX = (p.currentValue || 0) * Math.pow(1 + actualRate, ytr)
-      const rsvX = fvAnnuityDue(monthly, actualRate, ytr)
-      atActual += fvX + rsvX
+
+      // FV of current value compounded to retirement
+      const monthsToRetirement = (retirementAge - clientAge) * 12
+      const fvCurrentValue = (p.currentValue || 0) * Math.pow(1 + rm, monthsToRetirement)
+      atAssumption += fvCurrentValue
+
+      // No future contributions for Lump Sum
+      if (p.mode === 'Lump Sum') return
+
+      // Endowment: fixed premium, no end date concept
+      if (p.vehicleType === 'endowment') {
+        atAssumption += fvAnnuityDue(p.endowmentPremium || 0, rate, retirementAge - clientAge)
+        return
+      }
+
+      // Annuity: fixed premium
+      if (p.vehicleType === 'annuity') {
+        atAssumption += fvAnnuityDue(p.monthlyContribution || 0, rate, retirementAge - clientAge)
+        return
+      }
+
+      // SRS: annual contributions until withdrawal age
+      if (p.vehicleType === 'srs') {
+        if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
+          const effAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
+          const yrsToW = Math.max(0, effAge - clientAge)
+          if (yrsToW > 0) atAssumption += fvAnnuityDue(p.srsAnnualContribution! / 12, rate, yrsToW)
+        }
+        return
+      }
+
+      // Regular investment/other: walk month by month, respecting contribution_change, endMonth, premium_holiday
+      if (p.vehicleType === 'investment' || p.vehicleType === 'other') {
+        const endDate = p.endMonth ? new Date(p.endMonth + '-01') : null
+        const retirementDate = new Date(retirementYear, now.getMonth(), 1)
+        const contribEndDate = endDate && endDate < retirementDate ? endDate : retirementDate
+
+        const changeEvents = [...(p.cashflows || [])]
+          .filter(cf => cf.type === 'contribution_change')
+          .sort((a, b) => a.date.localeCompare(b.date))
+
+        const holidayMonths = new Set<string>()
+        ;(p.cashflows || []).filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
+          const hd = new Date(cf.date + '-01')
+          const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
+          while (hd <= he) { holidayMonths.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
+        })
+
+        // Walk from today to contribEndDate, accumulate FV of each monthly contribution
+        let activeRate = p.monthlyContribution || 0
+        let rateIdx = 0
+        const iter = new Date(now.getFullYear(), now.getMonth(), 1)
+        let monthsAccumulated = 0
+
+        while (iter < contribEndDate) {
+          const ym = iter.toISOString().slice(0, 7)
+          while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) {
+            activeRate = changeEvents[rateIdx].amount
+            rateIdx++
+          }
+          if (!holidayMonths.has(ym) && activeRate > 0) {
+            // FV of this month's contribution from now until retirement
+            const monthsRemaining = monthsToRetirement - monthsAccumulated
+            atAssumption += activeRate * Math.pow(1 + rm, monthsRemaining)
+          }
+          iter.setMonth(iter.getMonth() + 1)
+          monthsAccumulated++
+        }
+      }
     })
-    return { atAssumption, atActual }
-  }, [filteredPortfolio, settings.expectedReturn, blendedXIRR, portfolioXIRR, retirementAge, clientAge])
+
+    return { atAssumption, atActual: atAssumption }
+  }, [filteredPortfolio, settings.expectedReturn, retirementAge, clientAge])
 
   // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
   const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
