@@ -287,6 +287,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   item?: FundingVehicle; onSave: (v: FundingVehicle) => void; onClose: () => void
   isCouple: boolean; clientName: string; spouseName: string; clientAge: number; retirementAge: number
 }) {
+  const [activeTab, setActiveTab] = useState<'details' | 'cashflows'>('details')
   const [name, setName] = useState(item?.name ?? '')
   const [vehicleType, setVehicleType] = useState<VehicleType>(item?.vehicleType ?? 'investment')
   const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>(item?.owner ?? 'client')
@@ -294,7 +295,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [monthly, setMonthly] = useState(String(item?.monthlyContribution ?? ''))
   const [ret, setRet] = useState(item?.expectedReturn ?? 6)
   const [startYear, setStartYear] = useState(item?.startYear ?? new Date().getFullYear())
-const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular')
+  const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular')
   const [startMonth, setStartMonth] = useState(item?.startMonth ?? '')
   const [endMonth, setEndMonth] = useState(item?.endMonth ?? '')
   const [cpfScheme, setCpfScheme] = useState<'BRS' | 'FRS' | 'ERS'>(item?.cpfScheme ?? 'FRS')
@@ -314,7 +315,28 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
   const [srsDuration, setSrsDuration] = useState(item?.srsWithdrawalDuration ?? 10)
   const [srsStartYear, setSrsStartYear] = useState(item?.srsStartYear ?? new Date().getFullYear())
 
+  // Cashflow state
+  const [flows, setFlows] = useState<CashflowEvent[]>(item?.cashflows || [])
+  const [cfDate, setCfDate] = useState('')
+  const [cfEndDate, setCfEndDate] = useState('')
+  const [cfType, setCfType] = useState<CashflowEvent['type']>('contribution')
+  const [cfAmount, setCfAmount] = useState('')
+  const [cfNote, setCfNote] = useState('')
+
+  const cfNeedsEndDate = cfType === 'premium_holiday'
+  const cfNeedsAmount = !['premium_holiday', 'end_contributions', 'missed_premium'].includes(cfType)
+
+  const typeColors: Record<CashflowEvent['type'], string> = {
+    contribution: '#4A9E8A', withdrawal: '#E08080', top_up: '#A8834A', premium_holiday: '#9A9690',
+    contribution_change: '#4A7C9E', end_contributions: '#6B5B8B', missed_premium: '#E0A080'
+  }
+  const typeLabels: Record<CashflowEvent['type'], string> = {
+    contribution: 'Contribution', withdrawal: 'Withdrawal', top_up: 'Top-Up', premium_holiday: 'Premium Holiday',
+    contribution_change: 'Contribution Change', end_contributions: 'End Contributions', missed_premium: 'Missed Premium'
+  }
+
   const inp: React.CSSProperties = { width: '100%', background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }
+  const inpSm: React.CSSProperties = { background: 'white', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 12px', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink)', outline: 'none' }
 
   const vehicleOpts: { value: VehicleType; label: string; icon: string }[] = [
     { value: 'investment', label: 'Investment', icon: '📈' },
@@ -331,16 +353,23 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
     ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, ...(vehicleType !== 'srs' ? [{ value: 'joint' as const, label: 'Joint' }] : [])] : []),
   ]
 
-  // If SRS is selected and owner is joint, reset to client (SRS accounts are always individual)
   useEffect(() => {
-    if (vehicleType === 'srs' && owner === 'joint') {
-      setOwner('client')
-    }
+    if (vehicleType === 'srs' && owner === 'joint') setOwner('client')
   }, [vehicleType])
+
+  function addCashflow() {
+    if (!cfDate) return
+    if (cfNeedsAmount && !cfAmount) return
+    setFlows(prev => [...prev, {
+      id: newId(), date: cfDate,
+      endDate: cfNeedsEndDate ? cfEndDate : undefined,
+      type: cfType, amount: parseFloat(cfAmount) || 0, note: cfNote
+    }])
+    setCfDate(''); setCfEndDate(''); setCfAmount(''); setCfNote('')
+  }
 
   function save() {
     if (!name.trim()) return
-    // Compute annualizedReturn and totalContributed for investment/other/srs at save time
     let savedAnnualizedReturn: number | null = null
     let savedTotalContributed = 0
     const currentValNum = parseFloat(curVal) || 0
@@ -351,9 +380,9 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
       ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1
       : 0
     if ((vehicleType === 'investment' || vehicleType === 'other') && startDate && monthsHeldSave > 0 && currentValNum > 0) {
-      const sortedChangesS = [...(item?.cashflows || []).filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))]
+      const sortedChangesS = [...flows.filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))]
       const holidayMonthsS = new Set<string>()
-      ;(item?.cashflows || []).filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
+      flows.filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
         const hd = new Date(cf.date + '-01')
         const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
         while (hd <= he) { holidayMonthsS.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
@@ -366,9 +395,8 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
         if (!holidayMonthsS.has(ym)) savedTotalContributed += activeRateS
         iterS.setMonth(iterS.getMonth() + 1)
       }
-      ;(item?.cashflows || []).forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount; if (cf.type === 'withdrawal') savedTotalContributed -= cf.amount })
+      flows.forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount; if (cf.type === 'withdrawal') savedTotalContributed -= cf.amount })
       savedTotalContributed = Math.max(0, savedTotalContributed)
-      // XIRR
       if (mode === 'Regular' && monthsHeldSave > 1) {
         try {
           const xf: { amount: number; date: Date }[] = []
@@ -380,7 +408,7 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
             if (xRate > 0 && !holidayMonthsS.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
             xIter.setMonth(xIter.getMonth() + 1)
           }
-          ;(item?.cashflows || []).forEach(cf => { const [yr, mo] = cf.date.split('-').map(Number); if (cf.type === 'top_up') xf.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) }); if (cf.type === 'withdrawal') xf.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) }) })
+          flows.forEach(cf => { const [yr, mo] = cf.date.split('-').map(Number); if (cf.type === 'top_up') xf.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) }); if (cf.type === 'withdrawal') xf.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) }) })
           xf.push({ amount: currentValNum, date: new Date() })
           xf.sort((a, b) => a.date.getTime() - b.date.getTime())
           const xr = xirr(xf)
@@ -423,570 +451,441 @@ const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular'
       srsContributionMode: srsIsRegular ? 'regular' : 'lumpsum',
       srsWithdrawalStartAge: srsWithdrawalAge, srsWithdrawalDuration: srsDuration,
       srsStartYear,
-      cashflows: item?.cashflows || [],
+      cashflows: flows,
     })
   }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background: 'var(--cream)', borderRadius: 16, width: 560, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.22)' }}>
-        <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22 }}>{item ? 'Edit Funding Vehicle' : 'Add Funding Vehicle'}</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 20 }}>✕</button>
+      <div style={{ background: 'var(--cream)', borderRadius: 16, width: 560, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.22)' }}>
+
+        {/* Header */}
+        <div style={{ padding: '24px 28px 0', borderBottom: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22 }}>{item ? 'Edit Funding Vehicle' : 'Add Funding Vehicle'}</div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 20 }}>✕</button>
+          </div>
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 0 }}>
+            {(['details', 'cashflows'] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                padding: '8px 20px', border: 'none', borderBottom: activeTab === tab ? '2px solid var(--ink)' : '2px solid transparent',
+                background: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: activeTab === tab ? 600 : 400,
+                color: activeTab === tab ? 'var(--ink)' : 'var(--ink3)', transition: 'all 0.15s',
+                textTransform: 'capitalize',
+              }}>
+                {tab === 'cashflows' ? `Cashflows${flows.length > 0 ? ` (${flows.length})` : ''}` : 'Details'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div>
-            <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Vehicle Type</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {vehicleOpts.map(o => (
-                <button key={o.value} onClick={() => setVehicleType(o.value)} style={{ padding: '8px 14px', border: '1px solid var(--line)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: vehicleType === o.value ? 'var(--ink)' : 'white', color: vehicleType === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>
-                  {o.icon} {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Name</div>
-            <input style={inp} value={name} onChange={e => setName(e.target.value)} placeholder={vehicleType === 'cpf_life' ? 'e.g. CPF Life (Brian)' : vehicleType === 'endowment' ? 'e.g. Manulife RetireReady' : vehicleType === 'annuity' ? 'e.g. NTUC Income Annuity' : 'e.g. Global Equity RSP'} />
-          </div>
-
-          {isCouple && (
+        {/* Tab: Details */}
+        {activeTab === 'details' && (
+          <div style={{ overflow: 'auto', flex: 1, padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div>
-              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Belongs To</div>
-              <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-                {ownerOpts.map(o => <button key={o.value} onClick={() => setOwner(o.value)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: owner === o.value ? 'var(--ink)' : 'white', color: owner === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.label}</button>)}
+              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Vehicle Type</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {vehicleOpts.map(o => (
+                  <button key={o.value} onClick={() => setVehicleType(o.value)} style={{ padding: '8px 14px', border: '1px solid var(--line)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: vehicleType === o.value ? 'var(--ink)' : 'white', color: vehicleType === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>
+                    {o.icon} {o.label}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
 
-          {vehicleType === 'cpf_life' && (
-            <>
+            <div>
+              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Name</div>
+              <input style={inp} value={name} onChange={e => setName(e.target.value)} placeholder={vehicleType === 'cpf_life' ? 'e.g. CPF Life (Brian)' : vehicleType === 'endowment' ? 'e.g. Manulife RetireReady' : vehicleType === 'annuity' ? 'e.g. NTUC Income Annuity' : 'e.g. Global Equity RSP'} />
+            </div>
+
+            {isCouple && (
               <div>
-                <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>CPF Life Scheme</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Belongs To</div>
                 <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-                  {(['BRS', 'FRS', 'ERS'] as const).map(s => <button key={s} onClick={() => setCpfScheme(s)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 600, background: cpfScheme === s ? 'var(--ink)' : 'white', color: cpfScheme === s ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{s}</button>)}
+                  {ownerOpts.map(o => <button key={o.value} onClick={() => setOwner(o.value)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: owner === o.value ? 'var(--ink)' : 'white', color: owner === o.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{o.label}</button>)}
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Est. Monthly Payout (S$)</div>
-                  <input type="number" style={inp} value={cpfPayout} onChange={e => setCpfPayout(e.target.value)} placeholder="e.g. 1200" />
-                </div>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Payout Start Age</div>
-                  <input type="number" style={inp} value={cpfStartAge} onChange={e => setCpfStartAge(parseInt(e.target.value) || 65)} />
-                </div>
-              </div>
-              <div style={{ background: '#EBF2F8', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#4A7C9E' }}>
-                💡 Use the CPF LIFE Estimator at <strong>cpf.gov.sg</strong> to get your projected monthly payout, then enter it above.
-              </div>
-            </>
-          )}
+            )}
 
-          {vehicleType === 'endowment' && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {vehicleType === 'cpf_life' && (
+              <>
                 <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Premium (S$)</div>
-                  <input type="number" style={inp} value={endPremium} onChange={e => setEndPremium(e.target.value)} placeholder="0" />
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>CPF Life Scheme</div>
+                  <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+                    {(['BRS', 'FRS', 'ERS'] as const).map(s => <button key={s} onClick={() => setCpfScheme(s)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'DM Mono, monospace', fontSize: 12, fontWeight: 600, background: cpfScheme === s ? 'var(--ink)' : 'white', color: cpfScheme === s ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{s}</button>)}
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Surrender Value (S$)</div>
-                  <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Est. Monthly Payout (S$)</div>
+                    <input type="number" style={inp} value={cpfPayout} onChange={e => setCpfPayout(e.target.value)} placeholder="e.g. 1200" />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Payout Start Age</div>
+                    <input type="number" style={inp} value={cpfStartAge} onChange={e => setCpfStartAge(parseInt(e.target.value) || 65)} />
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Projected Maturity Value (S$)</div>
-                  <input type="number" style={inp} value={endMatVal} onChange={e => setEndMatVal(e.target.value)} placeholder="0" />
+                <div style={{ background: '#EBF2F8', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#4A7C9E' }}>
+                  💡 Use the CPF LIFE Estimator at <strong>cpf.gov.sg</strong> to get your projected monthly payout, then enter it above.
                 </div>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Maturity Year</div>
-                  <input type="number" style={inp} value={endMatYear} onChange={e => setEndMatYear(parseInt(e.target.value) || new Date().getFullYear() + 10)} />
-                </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
 
-          {vehicleType === 'annuity' && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Income (S$)</div>
-                  <input type="number" style={inp} value={annuityIncome} onChange={e => setAnnuityIncome(e.target.value)} placeholder="0" />
-                </div>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Age</div>
-                  <input type="number" style={inp} value={annuityStartAge} onChange={e => setAnnuityStartAge(parseInt(e.target.value) || 65)} />
-                </div>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Guarantee (yrs)</div>
-                  <input type="number" style={inp} value={annuityGuarantee} onChange={e => setAnnuityGuarantee(parseInt(e.target.value) || 10)} />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Premium (S$)</div>
-                  <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
-                </div>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Surrender Value (S$)</div>
-                  <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
-                </div>
-              </div>
-            </>
-          )}
-
-          {vehicleType === 'rental' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Net Monthly Rental (S$)</div>
-                <input type="number" style={inp} value={rentalNet} onChange={e => setRentalNet(e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Income Until Age</div>
-                <input type="number" style={inp} value={rentalStop} onChange={e => setRentalStop(parseInt(e.target.value) || 75)} />
-              </div>
-            </div>
-          )}
-
-         {vehicleType === 'srs' && (() => {
-            const currentYear = new Date().getFullYear()
-            const annualAmt = parseFloat(srsAnnual) || 0
-            const currentValNum = parseFloat(curVal) || 0
-            const effectiveWithdrawalAge = Math.max(srsWithdrawalAge, retirementAge ?? 65)
-            const yearsToWithdrawal = Math.max(1, effectiveWithdrawalAge - clientAge)
-            const rm = ret / 100 / 12
-
-            // Projection: current value compounds + regular annual contributions if ticked
-            let projectedBalance = currentValNum * Math.pow(1 + ret / 100, yearsToWithdrawal)
-            if (srsIsRegular && annualAmt > 0) {
-              // Add FV of annual contributions (annuity-due, annual compounding)
-              const r = ret / 100
-              if (r > 0) {
-                projectedBalance += annualAmt * ((Math.pow(1 + r, yearsToWithdrawal) - 1) / r) * (1 + r)
-              } else {
-                projectedBalance += annualAmt * yearsToWithdrawal
-              }
-            } else if (!srsIsRegular && annualAmt > 0 && currentValNum === 0) {
-              // Lump sum: treat as additional current value
-              projectedBalance = annualAmt * Math.pow(1 + ret / 100, yearsToWithdrawal)
-            }
-
-            // SRS drawdown: inflation-adjusted annuity
-            const r = ret / 100
-            const g = 0.03 // default inflation for drawdown
-            const n = srsDuration
-            let monthlyWithdrawalY1 = 0
-            if (projectedBalance > 0 && n > 0) {
-              const annualBase = Math.abs(r - g) < 0.0001
-                ? projectedBalance / n
-                : projectedBalance * (r - g) / (1 - Math.pow((1 + g) / (1 + r), n))
-              monthlyWithdrawalY1 = annualBase / 12
-            }
-            const taxableMonthly = monthlyWithdrawalY1 * 0.5
-
-            // Annualized performance: only if start year < current year and current value > 0
-            const yearsHeld = currentYear - srsStartYear
-            let annualizedReturn: number | null = null
-            if (yearsHeld > 0 && currentValNum > 0) {
-              if (srsIsRegular && annualAmt > 0) {
-                // Total contributed = annual amount × years held
-                const totalContributed = annualAmt * yearsHeld
-                if (totalContributed > 0 && currentValNum > totalContributed) {
-                  annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / yearsHeld) - 1
-                }
-              } else if (!srsIsRegular) {
-                // Lump sum: simple annualized from initial contribution
-                const initialAmt = annualAmt || currentValNum
-                if (initialAmt > 0) {
-                  annualizedReturn = Math.pow(currentValNum / initialAmt, 1 / yearsHeld) - 1
-                }
-              }
-            }
-            const totalContributed = srsIsRegular && annualAmt > 0
-              ? annualAmt * Math.max(1, yearsHeld)
-              : (annualAmt || currentValNum)
-
-            return (
+            {vehicleType === 'endowment' && (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Year</div>
-                    <input type="number" style={inp} value={srsStartYear} onChange={e => setSrsStartYear(parseInt(e.target.value) || currentYear)} placeholder={String(currentYear)} />
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Premium (S$)</div>
+                    <input type="number" style={inp} value={endPremium} onChange={e => setEndPremium(e.target.value)} placeholder="0" />
                   </div>
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current SRS Value (S$)</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Surrender Value (S$)</div>
                     <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
                   </div>
                 </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Annual Contribution Amount (S$)</div>
-                    <input type="number" style={inp} value={srsAnnual} onChange={e => setSrsAnnual(e.target.value)} placeholder="e.g. 15,300" />
-                    {annualAmt > 15300 && (
-                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#A8834A', marginTop: 4 }}>💡 Check total SRS contributions across all vehicles don't exceed S$15,300/yr per person</div>
-                    )}
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Projected Maturity Value (S$)</div>
+                    <input type="number" style={inp} value={endMatVal} onChange={e => setEndMatVal(e.target.value)} placeholder="0" />
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 14px', background: srsIsRegular ? 'rgba(45,90,78,0.08)' : 'white', border: `1px solid ${srsIsRegular ? '#2D5A4E' : 'var(--line)'}`, borderRadius: 8, transition: 'all 0.15s' }}>
-                      <input type="checkbox" checked={srsIsRegular} onChange={e => setSrsIsRegular(e.target.checked)} style={{ accentColor: '#2D5A4E', width: 14, height: 14 }} />
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: srsIsRegular ? '#2D5A4E' : 'var(--ink3)' }}>Regular Annual</div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 1 }}>Contribute every year until withdrawal</div>
-                      </div>
-                    </label>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Maturity Year</div>
+                    <input type="number" style={inp} value={endMatYear} onChange={e => setEndMatYear(parseInt(e.target.value) || new Date().getFullYear() + 10)} />
                   </div>
                 </div>
+              </>
+            )}
 
+            {vehicleType === 'annuity' && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Income (S$)</div>
+                    <input type="number" style={inp} value={annuityIncome} onChange={e => setAnnuityIncome(e.target.value)} placeholder="0" />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Age</div>
+                    <input type="number" style={inp} value={annuityStartAge} onChange={e => setAnnuityStartAge(parseInt(e.target.value) || 65)} />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Guarantee (yrs)</div>
+                    <input type="number" style={inp} value={annuityGuarantee} onChange={e => setAnnuityGuarantee(parseInt(e.target.value) || 10)} />
+                  </div>
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return %</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Premium (S$)</div>
+                    <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Surrender Value (S$)</div>
+                    <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {vehicleType === 'rental' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Net Monthly Rental (S$)</div>
+                  <input type="number" style={inp} value={rentalNet} onChange={e => setRentalNet(e.target.value)} placeholder="0" />
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Income Until Age</div>
+                  <input type="number" style={inp} value={rentalStop} onChange={e => setRentalStop(parseInt(e.target.value) || 75)} />
+                </div>
+              </div>
+            )}
+
+            {vehicleType === 'srs' && (() => {
+              const currentYear = new Date().getFullYear()
+              const annualAmt = parseFloat(srsAnnual) || 0
+              const currentValNum = parseFloat(curVal) || 0
+              const effectiveWithdrawalAge = Math.max(srsWithdrawalAge, retirementAge ?? 65)
+              const yearsToWithdrawal = Math.max(1, effectiveWithdrawalAge - clientAge)
+              let projectedBalance = currentValNum * Math.pow(1 + ret / 100, yearsToWithdrawal)
+              if (srsIsRegular && annualAmt > 0) {
+                const r = ret / 100
+                if (r > 0) projectedBalance += annualAmt * ((Math.pow(1 + r, yearsToWithdrawal) - 1) / r) * (1 + r)
+                else projectedBalance += annualAmt * yearsToWithdrawal
+              } else if (!srsIsRegular && annualAmt > 0 && currentValNum === 0) {
+                projectedBalance = annualAmt * Math.pow(1 + ret / 100, yearsToWithdrawal)
+              }
+              const r = ret / 100; const g = 0.03; const n = srsDuration
+              let monthlyWithdrawalY1 = 0
+              if (projectedBalance > 0 && n > 0) {
+                const annualBase = Math.abs(r - g) < 0.0001 ? projectedBalance / n : projectedBalance * (r - g) / (1 - Math.pow((1 + g) / (1 + r), n))
+                monthlyWithdrawalY1 = annualBase / 12
+              }
+              const taxableMonthly = monthlyWithdrawalY1 * 0.5
+              const yearsHeld = currentYear - srsStartYear
+              let annualizedReturn: number | null = null
+              if (yearsHeld > 0 && currentValNum > 0) {
+                if (srsIsRegular && annualAmt > 0) {
+                  const totalContributed = annualAmt * yearsHeld
+                  if (totalContributed > 0 && currentValNum > totalContributed) annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / yearsHeld) - 1
+                } else if (!srsIsRegular) {
+                  const initialAmt = annualAmt || currentValNum
+                  if (initialAmt > 0) annualizedReturn = Math.pow(currentValNum / initialAmt, 1 / yearsHeld) - 1
+                }
+              }
+              const totalContributed = srsIsRegular && annualAmt > 0 ? annualAmt * Math.max(1, yearsHeld) : (annualAmt || currentValNum)
+              return (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Year</div>
+                      <input type="number" style={inp} value={srsStartYear} onChange={e => setSrsStartYear(parseInt(e.target.value) || currentYear)} placeholder={String(currentYear)} />
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current SRS Value (S$)</div>
+                      <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Annual Contribution Amount (S$)</div>
+                      <input type="number" style={inp} value={srsAnnual} onChange={e => setSrsAnnual(e.target.value)} placeholder="e.g. 15,300" />
+                      {annualAmt > 15300 && <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#A8834A', marginTop: 4 }}>💡 Check total SRS contributions don't exceed S$15,300/yr per person</div>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 14px', background: srsIsRegular ? 'rgba(45,90,78,0.08)' : 'white', border: `1px solid ${srsIsRegular ? '#2D5A4E' : 'var(--line)'}`, borderRadius: 8, transition: 'all 0.15s' }}>
+                        <input type="checkbox" checked={srsIsRegular} onChange={e => setSrsIsRegular(e.target.checked)} style={{ accentColor: '#2D5A4E', width: 14, height: 14 }} />
+                        <div>
+                          <div style={{ fontFamily: 'Inter', fontSize: 11, fontWeight: 600, color: srsIsRegular ? '#2D5A4E' : 'var(--ink3)' }}>Regular Annual</div>
+                          <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 1 }}>Contribute every year until withdrawal</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return %</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <input type="range" min={0} max={12} step={0.5} value={ret} onChange={e => setRet(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--gold)' }} />
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 44, textAlign: 'center' }}>{ret}%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Start Age</div>
+                      <input type="number" style={inp} value={srsWithdrawalAge} onChange={e => setSrsWithdrawalAge(parseInt(e.target.value) || 63)} />
+                      {srsWithdrawalAge < 63 && <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Early withdrawal: 5% penalty + full tax</div>}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Duration (yrs)</div>
+                      <input type="number" style={inp} value={srsDuration} min={1} max={20} onChange={e => setSrsDuration(Math.max(1, parseInt(e.target.value) || 10))} />
+                      {srsDuration <= 10 && <div style={{ fontFamily: 'Inter', fontSize: 9, color: '#4A9E8A', marginTop: 4 }}>✓ Within 10yr tax concession window</div>}
+                      {srsDuration > 10 && <div style={{ fontFamily: 'Inter', fontSize: 9, color: '#A8834A', marginTop: 4 }}>💡 Beyond 10yrs: remaining balance fully taxable</div>}
+                    </div>
+                    <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px' }}>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 2 }}>Effective Withdrawal Age</div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: 'var(--ink)' }}>Age {effectiveWithdrawalAge}</div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>{effectiveWithdrawalAge > srsWithdrawalAge ? `Deferred from ${srsWithdrawalAge} (retirement later)` : 'At statutory retirement age'}</div>
+                    </div>
+                  </div>
+                  {yearsHeld > 0 && currentValNum > 0 && (
+                    <div style={{ background: '#F5F0E8', border: '1px solid rgba(168,131,74,0.2)', borderRadius: 10, padding: '14px 16px' }}>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 10 }}>Historical Performance · {yearsHeld} yr{yearsHeld !== 1 ? 's' : ''}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}</div></div>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Current Value</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{currentValNum >= 1_000_000 ? 'S$' + (currentValNum / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(currentValNum).toLocaleString('en-SG')}</div></div>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>{annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}</div></div>
+                      </div>
+                    </div>
+                  )}
+                  {projectedBalance > 0 && (
+                    <div style={{ background: '#EBF5EE', border: '1px solid rgba(74,158,138,0.2)', borderRadius: 10, padding: '14px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      <div><div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Projected Balance</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{projectedBalance >= 1_000_000 ? 'S$' + (projectedBalance / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(projectedBalance).toLocaleString('en-SG')}</div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>at age {effectiveWithdrawalAge} · {ret}% p.a.</div></div>
+                      <div><div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Monthly Income (Yr 1)</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>S${Math.round(monthlyWithdrawalY1).toLocaleString('en-SG')}/mo</div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>over {srsDuration} yrs · inflation-adj.</div></div>
+                      <div><div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Taxable Portion</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>S${Math.round(taxableMonthly).toLocaleString('en-SG')}/mo</div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>50% concession applies</div></div>
+                    </div>
+                  )}
+                  <div style={{ background: '#EBF2F8', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#4A7C9E' }}>
+                    💡 Only 50% of SRS withdrawals are taxable from statutory retirement age (63). Spread over 10 years to minimise tax impact.
+                  </div>
+                </>
+              )
+            })()}
+
+            {(vehicleType === 'investment' || vehicleType === 'other') && (() => {
+              const currentYearMonth = new Date().toISOString().slice(0, 7)
+              const startDate = startMonth ? new Date(startMonth + '-01') : null
+              const now = new Date()
+              const monthsHeld = startDate ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1 : 0
+              const yearsHeld = monthsHeld / 12
+              const currentValNum = parseFloat(curVal) || 0
+              const monthlyNum = parseFloat(monthly) || 0
+              let annualizedReturn: number | null = null
+              let totalContributed = 0
+              if (yearsHeld > 0 && currentValNum > 0 && startDate) {
+                const changeEvents = flows.filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))
+                const holidayMonths = new Set<string>()
+                flows.filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
+                  const hd = new Date(cf.date + '-01'); const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
+                  while (hd <= he) { holidayMonths.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
+                })
+                if (mode === 'Regular') {
+                  let activeRate = monthlyNum; let rateIdx = 0
+                  const iter = new Date(startDate)
+                  while (iter <= now) {
+                    const ym = iter.toISOString().slice(0, 7)
+                    while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
+                    if (!holidayMonths.has(ym)) totalContributed += activeRate
+                    iter.setMonth(iter.getMonth() + 1)
+                  }
+                  flows.forEach(cf => { if (cf.type === 'top_up') totalContributed += cf.amount; if (cf.type === 'withdrawal') totalContributed -= cf.amount })
+                } else {
+                  totalContributed = monthlyNum || currentValNum
+                  flows.forEach(cf => { if (cf.type === 'top_up') totalContributed += cf.amount; if (cf.type === 'withdrawal') totalContributed -= cf.amount })
+                }
+                totalContributed = Math.max(0, totalContributed)
+                if (totalContributed > 0 && currentValNum > 0) {
+                  if (mode === 'Regular' && monthsHeld > 1) {
+                    try {
+                      const xf: { amount: number; date: Date }[] = []
+                      let xRate = monthlyNum; let xIdx = 0
+                      const xIter = new Date(startDate)
+                      while (xIter <= now) {
+                        const ym = xIter.toISOString().slice(0, 7)
+                        while (xIdx < changeEvents.length && changeEvents[xIdx].date <= ym) { xRate = changeEvents[xIdx].amount; xIdx++ }
+                        if (xRate > 0 && !holidayMonths.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
+                        xIter.setMonth(xIter.getMonth() + 1)
+                      }
+                      flows.forEach(cf => { const [yr, mo] = cf.date.split('-').map(Number); if (cf.type === 'top_up') xf.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) }); if (cf.type === 'withdrawal') xf.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) }) })
+                      xf.push({ amount: currentValNum, date: new Date() })
+                      xf.sort((a, b) => a.date.getTime() - b.date.getTime())
+                      const xr = xirr(xf)
+                      annualizedReturn = xr !== null ? xr / 100 : Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                    } catch { annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1 }
+                  } else {
+                    annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                  }
+                }
+              }
+              return (
+                <>
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Mode</div>
+                    <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+                      {(['Regular', 'Lump Sum'] as const).map(m => <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: mode === m ? 'var(--ink)' : 'white', color: mode === m ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{m}</button>)}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Month / Year</div>
+                      <input type="month" style={inp} value={startMonth} onChange={e => setStartMonth(e.target.value)} max={currentYearMonth} />
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Value (S$)</div>
+                      <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                    </div>
+                  </div>
+                  {mode === 'Regular' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Contribution (S$)</div>
+                        <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>End Month / Year</div>
+                        <input type="month" style={inp} value={endMonth} onChange={e => setEndMonth(e.target.value)} min={startMonth || undefined} />
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>After this date, portfolio compounds at expected return only</div>
+                      </div>
+                    </div>
+                  )}
+                  {mode === 'Lump Sum' && (
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Initial Lump Sum (S$)</div>
+                      <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>Use the Cashflows tab to record top-ups and withdrawals</div>
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return % p.a.</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <input type="range" min={0} max={12} step={0.5} value={ret} onChange={e => setRet(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--gold)' }} />
+                      <input type="range" min={0} max={15} step={0.5} value={ret} onChange={e => setRet(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--gold)' }} />
                       <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 44, textAlign: 'center' }}>{ret}%</span>
                     </div>
                   </div>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Start Age</div>
-                    <input type="number" style={inp} value={srsWithdrawalAge} onChange={e => setSrsWithdrawalAge(parseInt(e.target.value) || 63)} />
-                    {srsWithdrawalAge < 63 && <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>⚠ Early withdrawal: 5% penalty + full tax</div>}
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Withdrawal Duration (yrs)</div>
-                    <input type="number" style={inp} value={srsDuration} min={1} max={20} onChange={e => setSrsDuration(Math.max(1, parseInt(e.target.value) || 10))} />
-                    {srsDuration <= 10 && <div style={{ fontFamily: 'Inter', fontSize: 9, color: '#4A9E8A', marginTop: 4 }}>✓ Within 10yr tax concession window</div>}
-                    {srsDuration > 10 && <div style={{ fontFamily: 'Inter', fontSize: 9, color: '#A8834A', marginTop: 4 }}>💡 Beyond 10yrs: remaining balance fully taxable</div>}
-                  </div>
-                  <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px' }}>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 2 }}>Effective Withdrawal Age</div>
-                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: 'var(--ink)' }}>Age {effectiveWithdrawalAge}</div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>
-                      {effectiveWithdrawalAge > srsWithdrawalAge ? `Deferred from ${srsWithdrawalAge} (retirement later)` : 'At statutory retirement age'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Annualized performance — only if start year is in the past and current value exists */}
-                {yearsHeld > 0 && currentValNum > 0 && (
-                  <div style={{ background: '#F5F0E8', border: '1px solid rgba(168,131,74,0.2)', borderRadius: 10, padding: '14px 16px' }}>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 10 }}>Historical Performance · {yearsHeld} yr{yearsHeld !== 1 ? 's' : ''}</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div>
-                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>{totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Current Value</div>
-                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>{currentValNum >= 1_000_000 ? 'S$' + (currentValNum / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(currentValNum).toLocaleString('en-SG')}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div>
-                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
-                          {annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}
-                        </div>
+                  {yearsHeld > 0 && currentValNum > 0 && (
+                    <div style={{ background: '#F5F0E8', border: '1px solid rgba(168,131,74,0.2)', borderRadius: 10, padding: '14px 16px' }}>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 10 }}>Portfolio Performance · {monthsHeld} month{monthsHeld !== 1 ? 's' : ''} · {startMonth}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}</div></div>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Current Value</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{currentValNum >= 1_000_000 ? 'S$' + (currentValNum / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(currentValNum).toLocaleString('en-SG')}</div></div>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>{annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}</div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>{mode === 'Regular' && monthsHeld > 1 ? 'XIRR · time-weighted' : 'Simple annualized'}</div></div>
                       </div>
                     </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* Tab: Cashflows */}
+        {activeTab === 'cashflows' && (
+          <div style={{ overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            {/* Add event form */}
+            <div style={{ padding: '16px 28px', borderBottom: '1px solid var(--line)', background: 'white' }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>Add Event</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{cfNeedsEndDate ? 'From' : 'Month'}</div>
+                  <input type="month" value={cfDate} onChange={e => setCfDate(e.target.value)} style={{ ...inpSm, width: 130 }} />
+                </div>
+                {cfNeedsEndDate && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>To</div>
+                    <input type="month" value={cfEndDate} onChange={e => setCfEndDate(e.target.value)} min={cfDate || undefined} style={{ ...inpSm, width: 130 }} />
                   </div>
                 )}
-
-                {/* Forward projection */}
-                {projectedBalance > 0 && (
-                  <div style={{ background: '#EBF5EE', border: '1px solid rgba(74,158,138,0.2)', borderRadius: 10, padding: '14px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                    <div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Projected Balance</div>
-                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
-                        {projectedBalance >= 1_000_000 ? 'S$' + (projectedBalance / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(projectedBalance).toLocaleString('en-SG')}
-                      </div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>at age {effectiveWithdrawalAge} · {ret}% p.a.</div>
-                    </div>
-                    <div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Monthly Income (Yr 1)</div>
-                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
-                        S${Math.round(monthlyWithdrawalY1).toLocaleString('en-SG')}/mo
-                      </div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>over {srsDuration} yrs · inflation-adj.</div>
-                    </div>
-                    <div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4A9E8A', marginBottom: 4 }}>Taxable Portion</div>
-                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
-                        S${Math.round(taxableMonthly).toLocaleString('en-SG')}/mo
-                      </div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>50% concession applies</div>
-                    </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Type</div>
+                  <select value={cfType} onChange={e => { setCfType(e.target.value as CashflowEvent['type']); setCfEndDate('') }} style={{ ...inpSm, width: 170 }}>
+                    {(Object.keys(typeLabels) as CashflowEvent['type'][]).map(t => <option key={t} value={t}>{typeLabels[t]}</option>)}
+                  </select>
+                </div>
+                {cfNeedsAmount && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Amount (S$)</div>
+                    <input type="number" placeholder="0" value={cfAmount} onChange={e => setCfAmount(e.target.value)} style={{ ...inpSm, width: 110 }} />
                   </div>
                 )}
-
-                <div style={{ background: '#EBF2F8', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#4A7C9E' }}>
-                  💡 Only 50% of SRS withdrawals are taxable from statutory retirement age (63). Spread over 10 years to minimise tax impact.
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Note</div>
+                  <input placeholder="Optional" value={cfNote} onChange={e => setCfNote(e.target.value)} style={{ ...inpSm, width: 100 }} />
                 </div>
-              </>
-            )
-          })()}
-
-          {(vehicleType === 'investment' || vehicleType === 'other') && (() => {
-            const currentYearMonth = new Date().toISOString().slice(0, 7)
-            const startDate = startMonth ? new Date(startMonth + '-01') : null
-            const now = new Date()
-            const monthsHeld = startDate
-              ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1
-              : 0
-            const yearsHeld = monthsHeld / 12
-            const currentValNum = parseFloat(curVal) || 0
-            const monthlyNum = parseFloat(monthly) || 0
-
-            // Annualized performance from start to now
-            let annualizedReturn: number | null = null
-            let totalContributed = 0
-            if (yearsHeld > 0 && currentValNum > 0 && startDate) {
-              if (mode === 'Regular') {
-                // Check if there are contribution_change events in cashflows
-                const cfEvents = (item?.cashflows || [])
-                  .filter(cf => cf.type === 'contribution' || cf.type === 'contribution_change' || cf.type === 'top_up' || cf.type === 'withdrawal')
-                  .sort((a, b) => a.date.localeCompare(b.date))
-                const changeEvents = (item?.cashflows || [])
-                  .filter(cf => cf.type === 'contribution_change')
-                  .sort((a, b) => a.date.localeCompare(b.date))
-
-                if (changeEvents.length > 0 && startDate) {
-                  // Reconstruct month-by-month contributions using rate changes
-                  let currentRate = monthlyNum  // current rate is the latest
-                  // Build a timeline of rates: work backwards from now
-                  // changeEvents: each says "from this month, rate became X"
-                  // We walk forward from startDate to now, switching rates at each change event
-                  const rateChanges: { yearMonth: string; amount: number }[] = [
-                    { yearMonth: startMonth, amount: changeEvents.length > 0 ? 0 : monthlyNum },
-                    ...changeEvents.map(cf => ({ yearMonth: cf.date, amount: cf.amount })),
-                  ]
-                  // Walk month by month from start to now
-                  let d = new Date(startDate)
-                  const now2 = new Date()
-                  let activeRate = monthlyNum  // fallback
-                  // Find the initial rate: the rate before the first change event
-                  // We can't know this without a starting contribution record
-                  // Best approach: use the first change event amount as the rate from start,
-                  // and the current monthlyNum as the rate after the last change
-                  const sortedChanges = [...changeEvents].sort((a, b) => a.date.localeCompare(b.date))
-                  // Build rate segments: initial rate is monthlyNum (current field),
-                  // each change event sets a new rate from that date forward.
-                  // To find the initial rate: it's whatever was contributed before
-                  // the first change event. Since we only know the current rate and
-                  // change events, we treat monthlyNum as the rate AFTER the last change,
-                  // and work forwards — the initial rate is the first change event's
-                  // preceding rate, which we cannot know without a starting record.
-                  // Best practical approach: the advisor enters the ORIGINAL rate in
-                  // monthlyContribution and records changes via change events.
-                  // So: start with monthlyNum, apply changes at their dates.
-                  // Build holiday months set
-                  const holidayMonthsTC = new Set<string>()
-                  ;(item?.cashflows || [])
-                    .filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium')
-                    .forEach(cf => {
-                      const hDate = new Date(cf.date + '-01')
-                      const hEnd = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
-                      while (hDate <= hEnd) {
-                        holidayMonthsTC.add(hDate.toISOString().slice(0, 7))
-                        hDate.setMonth(hDate.getMonth() + 1)
-                      }
-                    })
-
-                  activeRate = monthlyNum
-                  let rateIdx = 0
-                  totalContributed = 0
-                  const iterDate = new Date(startDate)
-                  while (iterDate <= now2) {
-                    const ym = iterDate.toISOString().slice(0, 7)
-                    while (rateIdx < sortedChanges.length && sortedChanges[rateIdx].date <= ym) {
-                      activeRate = sortedChanges[rateIdx].amount
-                      rateIdx++
-                    }
-                    if (!holidayMonthsTC.has(ym)) {
-                      totalContributed += activeRate
-                    }
-                    iterDate.setMonth(iterDate.getMonth() + 1)
-                  }
-                  ;(item?.cashflows || []).forEach(cf => {
-                    if (cf.type === 'top_up') totalContributed += cf.amount
-                    if (cf.type === 'withdrawal') totalContributed -= cf.amount
-                  })
-                } else {
-                  // No change events — use current monthly × months held
-                  totalContributed = monthlyNum * monthsHeld
-                  // Adjust for top-ups and withdrawals
-                  ;(item?.cashflows || []).forEach(cf => {
-                    if (cf.type === 'top_up') totalContributed += cf.amount
-                    if (cf.type === 'withdrawal') totalContributed -= cf.amount
-                  })
-                }
-              } else if (mode === 'Lump Sum') {
-                totalContributed = monthlyNum || currentValNum
-                ;(item?.cashflows || []).forEach(cf => {
-                  if (cf.type === 'top_up') totalContributed += cf.amount
-                  if (cf.type === 'withdrawal') totalContributed -= cf.amount
-                })
-              }
-             totalContributed = Math.max(0, totalContributed)
-              if (totalContributed > 0 && currentValNum > 0) {
-                // Use XIRR for accurate annualized return on regular contributions
-                // Simple formula understates return because it ignores timing of cashflows
-                if (mode === 'Regular' && startDate && monthsHeld > 1) {
-                  try {
-                    const xirrFlows: { amount: number; date: Date }[] = []
-                    // Reconstruct monthly outflows using same rate logic as totalContributed
-                    let xirrRate = monthlyNum
-                    let xirrRateIdx = 0
-                    const sortedChangesX = [...(item?.cashflows || [])
-                      .filter(cf => cf.type === 'contribution_change')
-                      .sort((a, b) => a.date.localeCompare(b.date))]
-                    // Build holiday months set for XIRR
-                    const holidayMonthsXIRR = new Set<string>()
-                    ;(item?.cashflows || [])
-                      .filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium')
-                      .forEach(cf => {
-                        const hDate = new Date(cf.date + '-01')
-                        const hEnd = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
-                        while (hDate <= hEnd) {
-                          holidayMonthsXIRR.add(hDate.toISOString().slice(0, 7))
-                          hDate.setMonth(hDate.getMonth() + 1)
-                        }
-                      })
-
-                    const xirrIter = new Date(startDate)
-                    const xirrNow = new Date()
-                    while (xirrIter <= xirrNow) {
-                      const ym = xirrIter.toISOString().slice(0, 7)
-                      while (xirrRateIdx < sortedChangesX.length && sortedChangesX[xirrRateIdx].date <= ym) {
-                        xirrRate = sortedChangesX[xirrRateIdx].amount
-                        xirrRateIdx++
-                      }
-                      if (xirrRate > 0 && !holidayMonthsXIRR.has(ym)) {
-                        xirrFlows.push({ amount: -xirrRate, date: new Date(xirrIter) })
-                      }
-                      xirrIter.setMonth(xirrIter.getMonth() + 1)
-                    }
-                    // Add top-ups as outflows, withdrawals as inflows
-                    ;(item?.cashflows || []).forEach(cf => {
-                      const [yr, mo] = cf.date.split('-').map(Number)
-                      if (cf.type === 'top_up') xirrFlows.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) })
-                      if (cf.type === 'withdrawal') xirrFlows.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) })
-                    })
-                    // Current value as final inflow
-                    xirrFlows.push({ amount: currentValNum, date: new Date() })
-                    xirrFlows.sort((a, b) => a.date.getTime() - b.date.getTime())
-                    const xirrResult = xirr(xirrFlows)
-                    if (xirrResult !== null) {
-                      annualizedReturn = xirrResult / 100
-                    } else {
-                      annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
-                    }
-                  } catch {
-                    annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
-                  }
-                } else {
-                  // Lump sum: simple annualized is correct
-                  annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
-                }
-              }
-            }
-
-            return (
-              <>
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Mode</div>
-                  <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
-                    {(['Regular', 'Lump Sum'] as const).map(m => (
-                      <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: mode === m ? 'var(--ink)' : 'white', color: mode === m ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>{m}</button>
-                    ))}
+                <button onClick={addCashflow} style={{ padding: '8px 16px', background: 'var(--ink)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', alignSelf: 'flex-end' }}>Add</button>
+              </div>
+              {cfType === 'premium_holiday' && <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 8 }}>💡 Set From and To months to define the holiday range. Leave To empty for a single month.</div>}
+              {cfType === 'missed_premium' && <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 8 }}>💡 Missed Premium records a single skipped month — no contribution was made that month.</div>}
+            </div>
+            {/* Event list */}
+            <div style={{ flex: 1, padding: '8px 28px', overflow: 'auto' }}>
+              {flows.length === 0 ? (
+                <div style={{ padding: '40px 0', textAlign: 'center', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>No cashflow events recorded</div>
+              ) : (
+                [...flows].sort((a, b) => a.date.localeCompare(b.date)).map(f => (
+                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', minWidth: 120 }}>{f.date}{f.endDate ? ` → ${f.endDate}` : ''}</span>
+                    <span style={{ fontFamily: 'Inter', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: typeColors[f.type] + '20', color: typeColors[f.type] }}>{typeLabels[f.type]}</span>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink)', flex: 1 }}>{['premium_holiday', 'end_contributions', 'missed_premium'].includes(f.type) ? '—' : 'S$' + f.amount.toLocaleString('en-SG')}</span>
+                    {f.note && <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', fontStyle: 'italic' }}>{f.note}</span>}
+                    <button onClick={() => setFlows(prev => prev.filter(x => x.id !== f.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink3)', fontSize: 14 }}>×</button>
                   </div>
-                </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Month / Year</div>
-                    <input type="month" style={inp} value={startMonth} onChange={e => setStartMonth(e.target.value)} max={currentYearMonth} />
-                  </div>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Value (S$)</div>
-                    <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
-                  </div>
-                </div>
-
-                {mode === 'Regular' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Contribution (S$)</div>
-                      <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
-                    </div>
-                    <div>
-                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>End Month / Year</div>
-                      <input type="month" style={inp} value={endMonth} onChange={e => setEndMonth(e.target.value)} min={startMonth || undefined} />
-                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>After this date, portfolio compounds at expected return only</div>
-                    </div>
-                  </div>
-                )}
-
-                {mode === 'Lump Sum' && (
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Initial Lump Sum (S$)</div>
-                    <input type="number" style={inp} value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" />
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>Use Cashflows to record top-ups and withdrawals</div>
-                  </div>
-                )}
-
-                <div>
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Expected Return % p.a.</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <input type="range" min={0} max={15} step={0.5} value={ret} onChange={e => setRet(parseFloat(e.target.value))} style={{ flex: 1, accentColor: 'var(--gold)' }} />
-                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, background: 'white', border: '1px solid var(--line)', borderRadius: 6, padding: '3px 8px', minWidth: 44, textAlign: 'center' }}>{ret}%</span>
-                  </div>
-                </div>
-
-                {/* Performance panel — only if start month is in the past and current value exists */}
-                {yearsHeld > 0 && currentValNum > 0 && (
-                  <div style={{ background: '#F5F0E8', border: '1px solid rgba(168,131,74,0.2)', borderRadius: 10, padding: '14px 16px' }}>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 10 }}>
-                      Portfolio Performance · {monthsHeld} month{monthsHeld !== 1 ? 's' : ''} · {startMonth}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div>
-                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
-                          {totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Current Value</div>
-                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: 'var(--ink)' }}>
-                          {currentValNum >= 1_000_000 ? 'S$' + (currentValNum / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(currentValNum).toLocaleString('en-SG')}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div>
-                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
-                          {annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}
-                        </div>
-                        <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>{mode === 'Regular' && monthsHeld > 1 ? 'XIRR · time-weighted' : 'Simple annualized'}</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-               <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
-                  💡 Use the <strong>Cashflows</strong> button on the vehicle card to record premium holidays, withdrawals, contribution changes, and get a precise XIRR.
-                </div>
-              </>
-            )
-          })()}
-
-        </div>
-
-        <div style={{ padding: '16px 28px', borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        {/* Footer */}
+        <div style={{ padding: '16px 28px', borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end', background: 'var(--cream)' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', fontFamily: 'Inter', fontSize: 12, border: '1px solid var(--line)', borderRadius: 8, background: 'white', color: 'var(--ink2)', cursor: 'pointer' }}>Cancel</button>
           <button onClick={save} style={{ padding: '10px 24px', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, border: 'none', borderRadius: 8, background: 'var(--ink)', color: 'white', cursor: 'pointer' }}>{item ? 'Update' : 'Add Vehicle'}</button>
         </div>
@@ -2346,7 +2245,6 @@ export default function CapitalMandatePage() {
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                        <button onClick={() => setCashflowModal(p)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 6, cursor: 'pointer', color: 'var(--ink3)', fontFamily: 'Inter', fontSize: 10, padding: '4px 10px', whiteSpace: 'nowrap' }}>Cashflows</button>
                         <button onClick={() => setVehicleModal({ open: true, item: p })} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 6, cursor: 'pointer', color: 'var(--ink3)', fontFamily: 'Inter', fontSize: 11, padding: '4px 10px' }}>Edit</button>
                         <button onClick={() => deleteVehicle(p.id)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 6, cursor: 'pointer', color: 'var(--rouge)', fontFamily: 'Inter', fontSize: 11, padding: '4px 8px' }}>×</button>
                       </div>
@@ -2425,7 +2323,6 @@ export default function CapitalMandatePage() {
       </div>
 
       {vehicleModal.open && <VehicleModal item={vehicleModal.item} onSave={saveVehicle} onClose={() => setVehicleModal({ open: false })} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} clientAge={clientAge} retirementAge={retirementAge} />}
-      {cashflowModal && <CashflowModal vehicle={cashflowModal} onSave={(flows) => saveCashflows(cashflowModal.id, flows)} onClose={() => setCashflowModal(null)} />}
       {customGoalModal && <CustomGoalModal onSave={editingGoal ? editCustomGoal : addCustomGoal} onClose={() => { setCustomGoalModal(false); setEditingGoal(null) }} clientAge={clientAge} spouseAge={spouseAge} isCouple={planMode === 'couple'} clientName={clientName} spouseName={spouseName} expectedReturn={settings.expectedReturn} existing={editingGoal ?? undefined} />}
     </div>
   )
