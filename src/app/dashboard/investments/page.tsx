@@ -2024,10 +2024,12 @@ export default function CapitalMandatePage() {
           {' — '}that&apos;s {diff >= 0 ? <strong style={{ color: '#4A9E8A' }}>{diffAbs}% above</strong> : <strong style={{ color: tone === 'bad' ? '#E08080' : '#A8834A' }}>{diffAbs}% below</strong>} your{' '}
           <strong>{settings.expectedReturn}%</strong> assumption. At this pace, you&apos;ll reach{' '}
           <strong>{fmt(projectedAtRetirement.atActual)}</strong> by age {retirementAge}
-          {Math.abs(shortfallAtRet) > 1000 && (
+          {requiredCorpusAtRet > 1000 && (
             <>
-              {' '}instead of <strong>{fmt(projectedAtRetirement.atAssumption)}</strong>
-              {shortfallAtRet > 0 ? ` (a ${fmt(shortfallAtRet)} shortfall)` : ` (a ${fmt(-shortfallAtRet)} surplus)`}
+              {' '}instead of the <strong>{fmt(requiredCorpusAtRet)}</strong> corpus needed
+              {projectedAtRetirement.atActual >= requiredCorpusAtRet
+                ? ` (a ${fmt(projectedAtRetirement.atActual - requiredCorpusAtRet)} surplus)`
+                : ` (a ${fmt(requiredCorpusAtRet - projectedAtRetirement.atActual)} shortfall)`}
             </>
           )}.
         </>
