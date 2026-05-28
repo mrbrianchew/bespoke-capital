@@ -1713,12 +1713,11 @@ export default function CapitalMandatePage() {
           }
         } else {
           // ── Retirement drawdown ──────────────────────────────────────
-          const baseCorpusAtRet = corpusAtAge[earliestRetAge] ?? corpus
-          // Add PV of legacy to required corpus so gold line depletes to legacyAmt
-          const legacyPVChart = legacyAmt > 0
-            ? legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
-            : 0
-          const retirementCorpus = baseCorpusAtRet + legacyPVChart
+          // Required line always starts drawdown from the legacy-adjusted corpus
+          // regardless of what the accumulation loop reached
+          const retirementCorpus = legacyAmt > 0
+            ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
+            : (retGoalForSummary?.targetCorpus || 0)
           const retYears = Math.max(1, finalDeathAge - earliestRetAge)
 
           // Compute annual withdrawal at retirement age (real terms), inflation-adjusted each year
