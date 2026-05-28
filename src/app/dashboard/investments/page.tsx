@@ -1547,13 +1547,13 @@ export default function CapitalMandatePage() {
 
         const annualBaseW = (() => {
           if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
-            return Math.max(0, corpusPF - legacyAmt) / retYearsPF
+            return Math.max(0, corpusPF) / retYearsPF
           }
           const rr = postRetirementReturn / 100
           const gg = inflationRate
           const ratio = (1 + gg) / (1 + rr)
           const sumPV = ratio === 1 ? retYearsPF : (1 - Math.pow(ratio, retYearsPF)) / (1 - ratio)
-          return Math.max(0, corpusPF - legacyAmt / Math.pow(1 + rr, retYearsPF)) / sumPV
+          return Math.max(0, corpusPF / Math.pow(1 + rr, retYearsPF)) / sumPV * Math.pow(1 + rr, retYearsPF)
         })()
         const annualNeeded = annualBaseW * Math.pow(1 + inflationRate, a - earliestRetAge)
         const netDrawdown = Math.max(0, annualNeeded - guaranteedAnnual)
