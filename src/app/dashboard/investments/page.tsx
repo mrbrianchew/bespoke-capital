@@ -1979,8 +1979,9 @@ export default function CapitalMandatePage() {
 
   type StripTone = 'good' | 'warn' | 'bad' | 'neutral'
   let narrativeStrip: { tone: StripTone; text: React.ReactNode } | null = null
-  if (blendedXIRR !== null && filteredPortfolio.length > 0) {
-    const diff = blendedXIRR - settings.expectedReturn
+  const displayXIRR = portfolioXIRR !== null ? portfolioXIRR : blendedXIRR
+  if (displayXIRR !== null && filteredPortfolio.length > 0) {
+    const diff = displayXIRR - settings.expectedReturn
     const diffAbs = Math.abs(diff).toFixed(1)
     const shortfallAtRet = projectedAtRetirement.atAssumption - projectedAtRetirement.atActual
     let tone: StripTone
@@ -1994,7 +1995,7 @@ export default function CapitalMandatePage() {
         <>
           Your portfolio is returning{' '}
           <strong style={{ color: tone === 'good' ? '#4A9E8A' : tone === 'warn' ? '#A8834A' : tone === 'bad' ? '#E08080' : 'var(--ink)' }}>
-            {blendedXIRR.toFixed(1)}%
+            {displayXIRR.toFixed(1)}%
           </strong>
           {' — '}that&apos;s {diff >= 0 ? <strong style={{ color: '#4A9E8A' }}>{diffAbs}% above</strong> : <strong style={{ color: tone === 'bad' ? '#E08080' : '#A8834A' }}>{diffAbs}% below</strong>} your{' '}
           <strong>{settings.expectedReturn}%</strong> assumption. At this pace, you&apos;ll reach{' '}
