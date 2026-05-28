@@ -1293,7 +1293,10 @@ export default function CapitalMandatePage() {
     if (!retGoal || retGoal.targetCorpus <= 0) return 0
     const r = postRetirementReturn / 100
     const g = retirementInflation / 100
-    const n = Math.max(1, lifeExpectancy - retirementAge)
+    const finalDE = planMode === 'couple'
+      ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+      : lifeExpectancy
+    const n = Math.max(1, finalDE - earliestRetirementAge)
     if (Math.abs(r - g) < 0.0001) {
       return retGoal.targetCorpus * (1 + r) / n
     }
