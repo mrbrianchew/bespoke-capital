@@ -1756,8 +1756,6 @@ export default function CapitalMandatePage() {
       // offsetting withdrawals with guaranteed income streams.
 
       const { projectedLine } = projectedPortfolioData
-        }
-      }
 
       const currentYear = new Date().getFullYear()
 
