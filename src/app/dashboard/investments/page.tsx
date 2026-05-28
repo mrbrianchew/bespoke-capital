@@ -1718,33 +1718,14 @@ export default function CapitalMandatePage() {
             // At retirement age, corpus is already recorded; just compute next year
           }
 
-          // Annual withdrawal: inflation-escalating annuity that depletes corpus to legacyAmt over retYears
-          // W * Σ[(1+g)^t / (1+r)^t] for t=0..n-1 = corpus - legacyAmt/(1+r)^n
-          // Simplification: use the corpus at retirement age divided by years, inflation-scaled
-          const annualBase = (() => {
-            if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
-              return Math.max(0, retirementCorpus - legacyAmt) / retYears
-            }
-            const r = postRetirementReturn / 100
-            const g = inflationRate
-            const ratio = (1 + g) / (1 + r)
-            const sumPV = ratio === 1 ? retYears : (1 - Math.pow(ratio, retYears)) / (1 - ratio)
-            return Math.max(0, retirementCorpus - legacyAmt / Math.pow(1 + r, retYears)) / sumPV
-          })()
-
-          // Annual withdrawal in year `a` (inflation-adjusted from retirement)
-          const annualWithdrawal = annualBase * Math.pow(1 + inflationRate, yearsIntoRet)
+          // Use same derivedAnnualWithdrawal as teal line for consistency
+          const annualWithdrawal = derivedAnnualWithdrawal > 0
+            ? derivedAnnualWithdrawal * Math.pow(1 + inflationRate, yearsIntoRet)
+            : (retirementCorpus / Math.max(1, retYears)) * Math.pow(1 + inflationRate, yearsIntoRet)
           const annualGuaranteed = guaranteedMonthlyAt(a) * 12
           const netAnnual = Math.max(0, annualWithdrawal - annualGuaranteed)
 
-          corpus = Math.max(legacyAmt, corpus - netAnnual)
-          if (corpus > legacyAmt) {
-            for (let m = 0; m < 12; m++) {
-              corpus = corpus * (1 + rmPost)
-            }
-          }
-          // Floor at legacy
-          if (legacyAmt > 0) corpus = Math.max(corpus, legacyAmt)
+          corpus = Math.max(legacyAmt, corpus * (1 + rmPost) - netAnnual)
         }
       }
 
