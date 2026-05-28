@@ -1545,17 +1545,11 @@ export default function CapitalMandatePage() {
           }
         })
 
-        const annualBaseW = (() => {
-          if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
-            return Math.max(0, corpusPF) / retYearsPF
-          }
-          const rr = postRetirementReturn / 100
-          const gg = inflationRate
-          const ratio = (1 + gg) / (1 + rr)
-          const sumPV = ratio === 1 ? retYearsPF : (1 - Math.pow(ratio, retYearsPF)) / (1 - ratio)
-          return Math.max(0, corpusPF / Math.pow(1 + rr, retYearsPF)) / sumPV * Math.pow(1 + rr, retYearsPF)
-        })()
-        const annualNeeded = annualBaseW * Math.pow(1 + inflationRate, a - earliestRetAge)
+        // Use the actual retirement income need, inflation-escalated each year
+        // derivedAnnualWithdrawal is the Year 1 annual withdrawal from the retirement goal corpus
+        const annualNeeded = derivedAnnualWithdrawal > 0
+          ? derivedAnnualWithdrawal * Math.pow(1 + inflationRate, a - earliestRetAge)
+          : (corpusPF / Math.max(1, retYearsPF)) * Math.pow(1 + inflationRate, a - earliestRetAge)
         const netDrawdown = Math.max(0, annualNeeded - guaranteedAnnual)
         portfolioCorpus = Math.max(0, portfolioCorpus * (1 + postRetirementReturn / 100) - netDrawdown)
       }
