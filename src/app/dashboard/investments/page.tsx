@@ -1110,8 +1110,18 @@ export default function CapitalMandatePage() {
     setSpouseLifeExpectancy(retSpouseData?.lifeExpectancy || 85)
     setDesiredMonthlyIncome(retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
     setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
-    setPostRetirementReturn(retClientData?.postRetirementReturn || retRow?.postRetirementReturn || 3)
-    const inflationVal = retClientData?.inflation || retRow?.inflation || 3
+    const retAssumptions = retNested?.assumptions || retNested || {}
+    setPostRetirementReturn(
+      retClientData?.postRetirementReturn ||
+      retAssumptions?.postRetirementReturn ||
+      retRow?.postRetirementReturn ||
+      retNested?.postRetirementReturn || 4
+    )
+    const inflationVal =
+      retClientData?.inflation ||
+      retAssumptions?.inflation ||
+      retRow?.inflation ||
+      retNested?.inflation || 3
     setRetirementInflation(inflationVal)
 
     const cmData = by['capital_mandate'] || {}
@@ -1305,13 +1315,6 @@ export default function CapitalMandatePage() {
     if (denom <= 0) return 0
     return retGoal.targetCorpus * (r - g) / denom
   }, [goals, retirementInflation, postRetirementReturn, lifeExpectancy, retirementAge])
-
-  // TEMP DEBUG - remove after
-  useEffect(() => {
-    const finalDE = planMode === 'couple' ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge)) : lifeExpectancy
-    const n = Math.max(1, finalDE - earliestRetirementAge)
-    console.log('[DAW] ' + JSON.stringify({ derivedAnnualWithdrawal, n, finalDE, earliestRetirementAge, clientAge, spouseAge, lifeExpectancy, spouseLifeExpectancy, corpus: retGoalForSummary?.targetCorpus, postRetirementReturn, retirementInflation }))
-  }, [derivedAnnualWithdrawal, earliestRetirementAge])
 
   const effectiveRetirementIncome = useMemo(() => {
     if (settings.incomeSource === 'desired' && desiredMonthlyIncome > 0) return desiredMonthlyIncome
