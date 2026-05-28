@@ -1604,6 +1604,7 @@ export default function CapitalMandatePage() {
 
       const projectedLine: number[] = []
       let portfolioCorpus = 0
+      let retirementCorpusPF: number | null = null
 
       // Initialise with current values of all accumulating vehicles
       filteredPortfolio.forEach(p => {
@@ -1619,6 +1620,11 @@ export default function CapitalMandatePage() {
       for (let i = 0; i < ages.length; i++) {
         const a = ages[i]
         projectedLine.push(Math.max(0, portfolioCorpus))
+
+        // Capture corpus at retirement once
+        if (a === earliestRetAge && retirementCorpusPF === null) {
+          retirementCorpusPF = portfolioCorpus
+        }
 
         if (a < earliestRetAge) {
           // ── Accumulation: grow each vehicle at its own rate ──────────
@@ -1658,8 +1664,8 @@ export default function CapitalMandatePage() {
           })
 
         } else {
-          // ── Drawdown: deplete portfolio net of guaranteed income ──────
-          const retirementCorpusPF = projectedLine[ages.indexOf(earliestRetAge)] ?? portfolioCorpus
+         // ── Drawdown: deplete portfolio net of guaranteed income ──────
+          const corpusPF = retirementCorpusPF ?? portfolioCorpus
           const retYearsPF = Math.max(1, finalDeathAge - earliestRetAge)
 
           // Guaranteed monthly income at this age
@@ -1700,13 +1706,13 @@ export default function CapitalMandatePage() {
           // Required annual withdrawal from the corpus (from required line logic)
           const annualBaseW = (() => {
             if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
-              return Math.max(0, retirementCorpusPF - legacyAmt) / retYearsPF
+              return Math.max(0, corpusPF - legacyAmt) / retYearsPF
             }
             const rr = postRetirementReturn / 100
             const gg = inflationRate
             const ratio = (1 + gg) / (1 + rr)
             const sumPV = ratio === 1 ? retYearsPF : (1 - Math.pow(ratio, retYearsPF)) / (1 - ratio)
-            return Math.max(0, retirementCorpusPF - legacyAmt / Math.pow(1 + rr, retYearsPF)) / sumPV
+            return Math.max(0, corpusPF - legacyAmt / Math.pow(1 + rr, retYearsPF)) / sumPV
           })()
           const yearsIntoRetPF = a - earliestRetAge
           const annualNeeded = annualBaseW * Math.pow(1 + inflationRate, yearsIntoRetPF)
