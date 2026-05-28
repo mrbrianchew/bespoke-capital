@@ -1403,15 +1403,16 @@ export default function CapitalMandatePage() {
     return result // already in percentage e.g. 7.33
   }, [filteredPortfolio])
 
-  const projectedAtRetirement = useMemo(() => {
+ const projectedAtRetirement = useMemo(() => {
     const ytr = retirementAge - clientAge
     if (ytr <= 0) return { atAssumption: 0, atActual: 0 }
     let atAssumption = 0
     let atActual = 0
+    const actualPortfolioRate = portfolioXIRR !== null ? portfolioXIRR / 100 : blendedXIRR !== null ? blendedXIRR / 100 : null
     filteredPortfolio.forEach(p => {
       if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
       const assumptionRate = (p.expectedReturn || settings.expectedReturn) / 100
-      const actualRate = (blendedXIRR !== null) ? (blendedXIRR / 100) : assumptionRate
+      const actualRate = actualPortfolioRate !== null ? actualPortfolioRate : assumptionRate
       const monthly = p.vehicleType === 'endowment' ? (p.endowmentPremium || 0)
         : p.vehicleType === 'annuity' ? p.monthlyContribution
         : p.monthlyContribution
@@ -1423,7 +1424,7 @@ export default function CapitalMandatePage() {
       atActual += fvX + rsvX
     })
     return { atAssumption, atActual }
-  }, [filteredPortfolio, settings.expectedReturn, blendedXIRR, retirementAge, clientAge])
+  }, [filteredPortfolio, settings.expectedReturn, blendedXIRR, portfolioXIRR, retirementAge, clientAge])
 
   // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
   const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
