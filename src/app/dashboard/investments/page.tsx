@@ -1728,10 +1728,18 @@ export default function CapitalMandatePage() {
             // At retirement age, corpus is already recorded; just compute next year
           }
 
-          // Use same derivedAnnualWithdrawal as teal line for consistency
-          const annualWithdrawal = derivedAnnualWithdrawal > 0
-            ? derivedAnnualWithdrawal * Math.pow(1 + inflationRate, yearsIntoRet)
-            : (retirementCorpus / Math.max(1, retYears)) * Math.pow(1 + inflationRate, yearsIntoRet)
+          // Recalculate withdrawal from the legacy-adjusted corpus
+          // so the gold line depletes to exactly legacyAmt at finalDeathAge
+          const rr = postRetirementReturn / 100
+          const gg = inflationRate
+          const goldAnnualBase = (() => {
+            const deployable = Math.max(0, retirementCorpus - legacyAmt / Math.pow(1 + rr, retYears))
+            if (Math.abs(rr - gg) < 0.0001) return deployable / retYears
+            const ratio = (1 + gg) / (1 + rr)
+            const sumPV = ratio === 1 ? retYears : (1 - Math.pow(ratio, retYears)) / (1 - ratio)
+            return deployable / sumPV
+          })()
+          const annualWithdrawal = goldAnnualBase * Math.pow(1 + gg, yearsIntoRet)
           const annualGuaranteed = guaranteedMonthlyAt(a) * 12
           const netAnnual = Math.max(0, annualWithdrawal - annualGuaranteed)
 
