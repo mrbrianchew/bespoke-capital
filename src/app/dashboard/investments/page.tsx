@@ -1420,89 +1420,163 @@ export default function CapitalMandatePage() {
     return result // already in percentage e.g. 7.33
   }, [filteredPortfolio])
 
- const projectedAtRetirement = useMemo(() => {
+ const projectedPortfolioData = useMemo(() => {
     const now = new Date()
-    const retirementYear = now.getFullYear() + (retirementAge - clientAge)
-    if (retirementAge <= clientAge) return { atAssumption: 0, atActual: 0 }
-    const rate = settings.expectedReturn / 100
-    const rm = rate / 12
-    let atAssumption = 0
+    const currentYear = now.getFullYear()
+    const lifeEnd = Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge), clientAge + 35, 85)
+    const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
+    const earliestRetAge = earliestRetirementAge
+    const inflationRate = retirementInflation / 100
+    const legacyAmt = settings.legacyAmount || 0
+    const finalDeathAge = planMode === 'couple'
+      ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+      : lifeExpectancy
+
+    // Non-retirement goals sorted by targetAge — deduct corpus at each milestone
+    const nonRetGoals = filteredGoals
+      .filter(g => g.source !== 'retirement')
+      .sort((a, b) => a.targetAge - b.targetAge)
+    const goalQueue = nonRetGoals.map(g => ({ ...g }))
+
+    const projectedLine: number[] = []
+    let portfolioCorpus = 0
+    let retirementCorpusPF: number | null = null
 
     filteredPortfolio.forEach(p => {
       if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
-
-      // FV of current value compounded to retirement
-      const monthsToRetirement = (retirementAge - clientAge) * 12
-      const fvCurrentValue = (p.currentValue || 0) * Math.pow(1 + rm, monthsToRetirement)
-      atAssumption += fvCurrentValue
-
-      // No future contributions for Lump Sum
-      if (p.mode === 'Lump Sum') return
-
-      // Endowment: fixed premium, no end date concept
-      if (p.vehicleType === 'endowment') {
-        atAssumption += fvAnnuityDue(p.endowmentPremium || 0, rate, retirementAge - clientAge)
-        return
-      }
-
-      // Annuity: fixed premium
-      if (p.vehicleType === 'annuity') {
-        atAssumption += fvAnnuityDue(p.monthlyContribution || 0, rate, retirementAge - clientAge)
-        return
-      }
-
-      // SRS: annual contributions until withdrawal age
-      if (p.vehicleType === 'srs') {
-        if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
-          const effAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
-          const yrsToW = Math.max(0, effAge - clientAge)
-          if (yrsToW > 0) atAssumption += fvAnnuityDue(p.srsAnnualContribution! / 12, rate, yrsToW)
-        }
-        return
-      }
-
-      // Regular investment/other: walk month by month, respecting contribution_change, endMonth, premium_holiday
-      if (p.vehicleType === 'investment' || p.vehicleType === 'other') {
-        const endDate = p.endMonth ? new Date(p.endMonth + '-01') : null
-        const retirementDate = new Date(retirementYear, now.getMonth(), 1)
-        const contribEndDate = endDate && endDate < retirementDate ? endDate : retirementDate
-
-        const changeEvents = [...(p.cashflows || [])]
-          .filter(cf => cf.type === 'contribution_change')
-          .sort((a, b) => a.date.localeCompare(b.date))
-
-        const holidayMonths = new Set<string>()
-        ;(p.cashflows || []).filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
-          const hd = new Date(cf.date + '-01')
-          const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
-          while (hd <= he) { holidayMonths.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
-        })
-
-        // Walk from today to contribEndDate, accumulate FV of each monthly contribution
-        let activeRate = p.monthlyContribution || 0
-        let rateIdx = 0
-        const iter = new Date(now.getFullYear(), now.getMonth(), 1)
-        let monthsAccumulated = 0
-
-        while (iter < contribEndDate) {
-          const ym = iter.toISOString().slice(0, 7)
-          while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) {
-            activeRate = changeEvents[rateIdx].amount
-            rateIdx++
-          }
-          if (!holidayMonths.has(ym) && activeRate > 0) {
-            // FV of this month's contribution from now until retirement
-            const monthsRemaining = monthsToRetirement - monthsAccumulated
-            atAssumption += activeRate * Math.pow(1 + rm, monthsRemaining)
-          }
-          iter.setMonth(iter.getMonth() + 1)
-          monthsAccumulated++
-        }
-      }
+      portfolioCorpus += p.currentValue || 0
     })
 
+    for (let i = 0; i < ages.length; i++) {
+      const a = ages[i]
+      projectedLine.push(Math.max(0, portfolioCorpus))
+
+      if (a === earliestRetAge && retirementCorpusPF === null) {
+        retirementCorpusPF = portfolioCorpus
+      }
+
+      if (a < earliestRetAge) {
+        // ── Accumulation ──────────────────────────────────────────────
+        let annualGrowth = 0
+
+        filteredPortfolio.forEach(p => {
+          if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
+
+          if (p.vehicleType === 'srs') {
+            const effWithdrawalAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
+            if (a < effWithdrawalAge && p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
+              annualGrowth += p.srsAnnualContribution || 0
+            }
+          } else if (p.vehicleType === 'endowment') {
+            annualGrowth += (p.endowmentPremium || 0) * 12
+          } else if (p.vehicleType === 'annuity') {
+            annualGrowth += (p.monthlyContribution || 0) * 12
+          } else if (p.vehicleType === 'investment' || p.vehicleType === 'other') {
+            if (p.mode === 'Lump Sum') {
+              // No ongoing contributions
+            } else {
+              // Respect endMonth
+              if (p.endMonth) {
+                const endYear = parseInt(p.endMonth.slice(0, 4))
+                if (currentYear + (a - clientAge) > endYear) return
+              }
+              // Latest contribution_change rate
+              const changeEvents = [...(p.cashflows || [])]
+                .filter(cf => cf.type === 'contribution_change')
+                .sort((a, b) => b.date.localeCompare(a.date))
+              const latestChange = changeEvents[0]
+              const activeMonthly = latestChange ? latestChange.amount : (p.monthlyContribution || 0)
+              annualGrowth += activeMonthly * 12
+            }
+          }
+        })
+
+        portfolioCorpus = portfolioCorpus * (1 + settings.expectedReturn / 100) + annualGrowth
+
+        // Endowment maturity lump sum
+        filteredPortfolio.forEach(p => {
+          if (p.vehicleType === 'endowment') {
+            const maturityAge = clientAge + ((p.endowmentMaturityYear || currentYear) - currentYear)
+            if (a === maturityAge) portfolioCorpus += p.endowmentMaturityValue || 0
+          }
+        })
+
+        // Deduct non-retirement goal corpuses at their target age
+        while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
+          const g = goalQueue.shift()!
+          portfolioCorpus = Math.max(0, portfolioCorpus - g.targetCorpus)
+        }
+
+      } else {
+        // ── Drawdown ──────────────────────────────────────────────────
+        const corpusPF = retirementCorpusPF ?? portfolioCorpus
+        const retYearsPF = Math.max(1, finalDeathAge - earliestRetAge)
+
+        let guaranteedAnnual = 0
+        filteredPortfolio.forEach(p => {
+          if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) {
+            guaranteedAnnual += (p.cpfMonthlyPayout || 0) * 12
+          }
+          if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) {
+            guaranteedAnnual += (p.annuityMonthlyIncome || 0) * 12
+          }
+          if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) {
+            guaranteedAnnual += (p.rentalMonthlyNet || 0) * 12
+          }
+          if (p.vehicleType === 'srs') {
+            const effWithdrawalAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
+            const endWithdrawalAge = effWithdrawalAge + (p.srsWithdrawalDuration || 10)
+            if (a >= effWithdrawalAge && a < endWithdrawalAge) {
+              const yearsToW = Math.max(1, effWithdrawalAge - clientAge)
+              const pRate = (p.expectedReturn || settings.expectedReturn) / 100
+              let srsBalAtWithdrawal = (p.currentValue || 0) * Math.pow(1 + pRate, yearsToW)
+              if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
+                srsBalAtWithdrawal += pRate > 0
+                  ? (p.srsAnnualContribution || 0) * ((Math.pow(1 + pRate, yearsToW) - 1) / pRate) * (1 + pRate)
+                  : (p.srsAnnualContribution || 0) * yearsToW
+              }
+              const dur = p.srsWithdrawalDuration || 10
+              const g = inflationRate
+              const annualBase = Math.abs(pRate - g) < 0.0001
+                ? srsBalAtWithdrawal / dur
+                : srsBalAtWithdrawal * (pRate - g) / (1 - Math.pow((1 + g) / (1 + pRate), dur))
+              guaranteedAnnual += annualBase * Math.pow(1 + g, a - effWithdrawalAge)
+            }
+          }
+        })
+
+        const annualBaseW = (() => {
+          if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
+            return Math.max(0, corpusPF - legacyAmt) / retYearsPF
+          }
+          const rr = postRetirementReturn / 100
+          const gg = inflationRate
+          const ratio = (1 + gg) / (1 + rr)
+          const sumPV = ratio === 1 ? retYearsPF : (1 - Math.pow(ratio, retYearsPF)) / (1 - ratio)
+          return Math.max(0, corpusPF - legacyAmt / Math.pow(1 + rr, retYearsPF)) / sumPV
+        })()
+        const annualNeeded = annualBaseW * Math.pow(1 + inflationRate, a - earliestRetAge)
+        const netDrawdown = Math.max(0, annualNeeded - guaranteedAnnual)
+        portfolioCorpus = Math.max(0, portfolioCorpus * (1 + postRetirementReturn / 100) - netDrawdown)
+      }
+    }
+
+    const retireIdx = ages.indexOf(earliestRetAge)
+    const atRetirement = retireIdx >= 0 ? projectedLine[retireIdx] : 0
+
+    return { projectedLine, ages, atRetirement }
+  }, [
+    filteredPortfolio, filteredGoals, settings,
+    clientAge, spouseAge, retirementAge, spouseRetirementAge,
+    lifeExpectancy, spouseLifeExpectancy,
+    postRetirementReturn, retirementInflation, planMode,
+    earliestRetirementAge,
+  ])
+
+  const projectedAtRetirement = useMemo(() => {
+    const atAssumption = projectedPortfolioData.atRetirement
     return { atAssumption, atActual: atAssumption }
-  }, [filteredPortfolio, settings.expectedReturn, retirementAge, clientAge])
+  }, [projectedPortfolioData])
 
   // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
   const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
@@ -1681,123 +1755,7 @@ export default function CapitalMandatePage() {
       // Accumulates all investable vehicles pre-retirement, then depletes post-retirement
       // offsetting withdrawals with guaranteed income streams.
 
-      const projectedLine: number[] = []
-      let portfolioCorpus = 0
-      let retirementCorpusPF: number | null = null
-
-      // Initialise with current values of all accumulating vehicles
-      filteredPortfolio.forEach(p => {
-        if (p.vehicleType === 'cpf_life') return // income stream only
-        if (p.vehicleType === 'rental') return    // income stream only
-        portfolioCorpus += p.currentValue || 0
-      })
-
-      // Pre-compute SRS projected balance at each vehicle's effective withdrawal age
-      // so we can add it as a lump sum offset during drawdown
-      const srsVehicles = filteredPortfolio.filter(p => p.vehicleType === 'srs')
-
-      for (let i = 0; i < ages.length; i++) {
-        const a = ages[i]
-        projectedLine.push(Math.max(0, portfolioCorpus))
-
-        // Capture corpus at retirement once
-        if (a === earliestRetAge && retirementCorpusPF === null) {
-          retirementCorpusPF = portfolioCorpus
-        }
-
-        if (a < earliestRetAge) {
-          // ── Accumulation: grow each vehicle at its own rate ──────────
-          let annualGrowth = 0
-
-          filteredPortfolio.forEach(p => {
-            if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return
-
-            const pRate = (p.expectedReturn || settings.expectedReturn) / 100
-
-            if (p.vehicleType === 'srs') {
-              // SRS: regular contributions until withdrawal age
-              const effWithdrawalAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
-              if (a < effWithdrawalAge && p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
-                annualGrowth += p.srsAnnualContribution || 0
-              }
-            } else if (p.vehicleType === 'endowment') {
-              annualGrowth += (p.endowmentPremium || 0) * 12
-            } else if (p.vehicleType === 'annuity') {
-              annualGrowth += p.monthlyContribution * 12
-            } else {
-              annualGrowth += p.monthlyContribution * 12
-            }
-          })
-
-          // Compound portfolio for this year
-          portfolioCorpus = portfolioCorpus * (1 + settings.expectedReturn / 100) + annualGrowth
-
-          // Endowment maturity: add lump sum at maturity year
-          filteredPortfolio.forEach(p => {
-            if (p.vehicleType === 'endowment') {
-              const maturityAge = clientAge + ((p.endowmentMaturityYear || currentYear) - currentYear)
-              if (a === maturityAge) {
-                portfolioCorpus += p.endowmentMaturityValue || 0
-              }
-            }
-          })
-
-        } else {
-         // ── Drawdown: deplete portfolio net of guaranteed income ──────
-          const corpusPF = retirementCorpusPF ?? portfolioCorpus
-          const retYearsPF = Math.max(1, finalDeathAge - earliestRetAge)
-
-          // Guaranteed monthly income at this age
-          let guaranteedAnnual = 0
-          filteredPortfolio.forEach(p => {
-            if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) {
-              guaranteedAnnual += (p.cpfMonthlyPayout || 0) * 12
-            }
-            if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) {
-              guaranteedAnnual += (p.annuityMonthlyIncome || 0) * 12
-            }
-            if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) {
-              guaranteedAnnual += (p.rentalMonthlyNet || 0) * 12
-            }
-            if (p.vehicleType === 'srs') {
-              const effWithdrawalAge = Math.max(p.srsWithdrawalStartAge || 63, retirementAge)
-              const endWithdrawalAge = effWithdrawalAge + (p.srsWithdrawalDuration || 10)
-              if (a >= effWithdrawalAge && a < endWithdrawalAge) {
-                const yearsToW = Math.max(1, effWithdrawalAge - clientAge)
-                const pRate = (p.expectedReturn || settings.expectedReturn) / 100
-                let srsBalAtWithdrawal = (p.currentValue || 0) * Math.pow(1 + pRate, yearsToW)
-                if (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0) {
-                  srsBalAtWithdrawal += pRate > 0
-                    ? (p.srsAnnualContribution || 0) * ((Math.pow(1 + pRate, yearsToW) - 1) / pRate) * (1 + pRate)
-                    : (p.srsAnnualContribution || 0) * yearsToW
-                }
-                const dur = p.srsWithdrawalDuration || 10
-                const g = inflationRate
-                const annualBase = Math.abs(pRate - g) < 0.0001
-                  ? srsBalAtWithdrawal / dur
-                  : srsBalAtWithdrawal * (pRate - g) / (1 - Math.pow((1 + g) / (1 + pRate), dur))
-                const yearsIntoW = a - effWithdrawalAge
-                guaranteedAnnual += annualBase * Math.pow(1 + g, yearsIntoW)
-              }
-            }
-          })
-
-          // Required annual withdrawal from the corpus (from required line logic)
-          const annualBaseW = (() => {
-            if (Math.abs(postRetirementReturn / 100 - inflationRate) < 0.0001) {
-              return Math.max(0, corpusPF - legacyAmt) / retYearsPF
-            }
-            const rr = postRetirementReturn / 100
-            const gg = inflationRate
-            const ratio = (1 + gg) / (1 + rr)
-            const sumPV = ratio === 1 ? retYearsPF : (1 - Math.pow(ratio, retYearsPF)) / (1 - ratio)
-            return Math.max(0, corpusPF - legacyAmt / Math.pow(1 + rr, retYearsPF)) / sumPV
-          })()
-          const yearsIntoRetPF = a - earliestRetAge
-          const annualNeeded = annualBaseW * Math.pow(1 + inflationRate, yearsIntoRetPF)
-          const netDrawdown = Math.max(0, annualNeeded - guaranteedAnnual)
-
-          portfolioCorpus = Math.max(0, portfolioCorpus * (1 + postRetirementReturn / 100) - netDrawdown)
+      const { projectedLine } = projectedPortfolioData
         }
       }
 
@@ -2048,7 +2006,7 @@ export default function CapitalMandatePage() {
       }
     }
   }, [
-    loading, filteredGoals, settings,
+    loading, projectedPortfolioData, filteredGoals, settings,
     clientAge, spouseAge, retirementAge, spouseRetirementAge, lifeExpectancy, spouseLifeExpectancy,
     effectiveRetirementIncome, postRetirementReturn, retirementInflation, planMode,
     earliestRetirementAge,
