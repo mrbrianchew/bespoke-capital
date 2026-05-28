@@ -1713,23 +1713,16 @@ export default function CapitalMandatePage() {
           }
         } else {
           // ── Retirement drawdown ──────────────────────────────────────
-          // Required line always starts drawdown from the legacy-adjusted corpus
-          // regardless of what the accumulation loop reached
+          // Always start from the clean legacy-adjusted corpus, not the accumulation loop value
           const retirementCorpus = legacyAmt > 0
             ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
             : (retGoalForSummary?.targetCorpus || 0)
           const retYears = Math.max(1, finalDeathAge - earliestRetAge)
-
-          // Compute annual withdrawal at retirement age (real terms), inflation-adjusted each year
-          // We solve for W such that sum of PV of inflation-adjusted withdrawals = retirementCorpus - PV(legacyAmt)
-          // For display simplicity: use straight-line depletion adjusted by inflation factor
           const yearsIntoRet = a - earliestRetAge
-          if (yearsIntoRet === 0) {
-            // At retirement age, corpus is already recorded; just compute next year
-          }
 
-          // Recalculate withdrawal from the legacy-adjusted corpus
-          // so the gold line depletes to exactly legacyAmt at finalDeathAge
+          // On first year of retirement, reset corpus to the clean starting value
+          if (yearsIntoRet === 0) corpus = retirementCorpus
+
           const rr = postRetirementReturn / 100
           const gg = inflationRate
           const goldAnnualBase = (() => {
