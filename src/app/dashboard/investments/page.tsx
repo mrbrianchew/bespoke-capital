@@ -380,6 +380,12 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1
       : 0
     if ((vehicleType === 'investment' || vehicleType === 'other') && startDate && monthsHeldSave > 0 && currentValNum > 0) {
+      if (mode === 'Lump Sum') {
+        savedTotalContributed = monthlyNum || currentValNum
+        flows.forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount; if (cf.type === 'withdrawal') savedTotalContributed -= cf.amount })
+        savedTotalContributed = Math.max(0, savedTotalContributed)
+        savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(monthsHeldSave / 12, 0.1)) - 1 : null
+      } else {
       const sortedChangesS = [...flows.filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))]
       const holidayMonthsS = new Set<string>()
       flows.filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
@@ -417,6 +423,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       } else {
         savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(monthsHeldSave / 12, 0.1)) - 1 : null
       }
+      } // end Regular mode block
     } else if (vehicleType === 'srs') {
       const yearsHeldS = new Date().getFullYear() - srsStartYear
       const annualAmt = parseFloat(srsAnnual) || 0
