@@ -2325,7 +2325,7 @@ export default function CapitalMandatePage() {
                           <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
                           <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '2px 6px', borderRadius: 4 }}>{p.vehicleType?.replace('_', ' ')}</span>
                           {planMode === 'couple' && <OwnerBadge owner={p.owner} clientName={clientName} spouseName={spouseName} />}
-                          {xr !== null && <XIRRBadge rate={xr} />}
+                          {xr !== null && p.vehicleType !== 'investment' && p.vehicleType !== 'other' && <XIRRBadge rate={xr} />}
                         </div>
                         <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
                           {p.vehicleType === 'cpf_life' && `${p.cpfScheme} · S$${(p.cpfMonthlyPayout || 0).toLocaleString('en-SG')}/mo from age ${p.cpfPayoutStartAge}`}
