@@ -1694,6 +1694,13 @@ export default function CapitalMandatePage() {
       // First pass: accumulation only — record corpus at each age
       for (let i = 0; i < ages.length; i++) {
         const a = ages[i]
+        // At retirement age, reset corpus to clean legacy-adjusted value before recording
+        if (a === earliestRetAge) {
+          const retirementCorpusReset = legacyAmt > 0
+            ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
+            : (retGoalForSummary?.targetCorpus || 0)
+          corpus = retirementCorpusReset
+        }
         requiredLine.push(Math.max(0, corpus))
         corpusAtAge[a] = Math.max(0, corpus)
 
@@ -1720,8 +1727,7 @@ export default function CapitalMandatePage() {
           const retYears = Math.max(1, finalDeathAge - earliestRetAge)
           const yearsIntoRet = a - earliestRetAge
 
-          // On first year of retirement, reset corpus to the clean starting value
-          if (yearsIntoRet === 0) corpus = retirementCorpus
+          // corpus already reset at retirement age in the loop header above
 
           const rr = postRetirementReturn / 100
           const gg = inflationRate
