@@ -1339,25 +1339,35 @@ export default function CapitalMandatePage() {
       if (p.vehicleType === 'investment' || p.vehicleType === 'other') {
         const startDate = p.startMonth ? new Date(p.startMonth + '-01') : p.startYear ? new Date(p.startYear, 0, 1) : null
         if (!startDate) return
-        const changeEvents = (p.cashflows || []).filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))
-        const holidayMonths = new Set<string>()
-        ;(p.cashflows || []).filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
-          const hd = new Date(cf.date + '-01'); const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
-          while (hd <= he) { holidayMonths.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
-        })
-        let activeRate = p.monthlyContribution; let rateIdx = 0
-        const iter = new Date(startDate)
-        while (iter <= now) {
-          const ym = iter.toISOString().slice(0, 7)
-          while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
-          if (activeRate > 0 && !holidayMonths.has(ym)) allFlows.push({ amount: -activeRate, date: new Date(iter) })
-          iter.setMonth(iter.getMonth() + 1)
+        if (p.mode === 'Lump Sum') {
+          // Lump sum: single initial outflow + any cashflow events
+          if ((p.monthlyContribution || 0) > 0) allFlows.push({ amount: -(p.monthlyContribution), date: new Date(startDate) })
+          ;(p.cashflows || []).forEach(cf => {
+            const [yr, mo] = cf.date.split('-').map(Number)
+            if (cf.type === 'top_up') allFlows.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) })
+            if (cf.type === 'withdrawal') allFlows.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) })
+          })
+        } else {
+          const changeEvents = (p.cashflows || []).filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))
+          const holidayMonths = new Set<string>()
+          ;(p.cashflows || []).filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
+            const hd = new Date(cf.date + '-01'); const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
+            while (hd <= he) { holidayMonths.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
+          })
+          let activeRate = p.monthlyContribution; let rateIdx = 0
+          const iter = new Date(startDate)
+          while (iter <= now) {
+            const ym = iter.toISOString().slice(0, 7)
+            while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
+            if (activeRate > 0 && !holidayMonths.has(ym)) allFlows.push({ amount: -activeRate, date: new Date(iter) })
+            iter.setMonth(iter.getMonth() + 1)
+          }
+          ;(p.cashflows || []).forEach(cf => {
+            const [yr, mo] = cf.date.split('-').map(Number)
+            if (cf.type === 'top_up') allFlows.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) })
+            if (cf.type === 'withdrawal') allFlows.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) })
+          })
         }
-        ;(p.cashflows || []).forEach(cf => {
-          const [yr, mo] = cf.date.split('-').map(Number)
-          if (cf.type === 'top_up') allFlows.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) })
-          if (cf.type === 'withdrawal') allFlows.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) })
-        })
       } else if (p.vehicleType === 'srs') {
         const startYr = p.srsStartYear || new Date().getFullYear()
         const annual = p.srsAnnualContribution || 0
