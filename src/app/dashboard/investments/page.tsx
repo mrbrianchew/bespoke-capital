@@ -1956,6 +1956,12 @@ export default function CapitalMandatePage() {
                       lines.push('')
                       lines.push(`  🏖  Corpus at retirement: ${fmt(corpusAtAge[retirementAge])}`)
                     }
+                    // Show annual retirement income required at this age
+                    if (a >= earliestRetAge && derivedAnnualWithdrawal > 0) {
+                      const annualAtAge = derivedAnnualWithdrawal * Math.pow(1 + retirementInflation / 100, a - earliestRetAge)
+                      lines.push('')
+                      lines.push(`  💸  Retirement income: ${fmtMo(annualAtAge / 12)} (${fmt(annualAtAge)}/yr)`)
+                    }
                     // Show monthly contributions still running
                     const activeGoals = filteredGoals.filter(g => g.source !== 'retirement' && g.targetAge > a)
                     if (a < retirementAge && activeGoals.length > 0) {
