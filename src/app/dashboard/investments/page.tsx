@@ -2289,6 +2289,108 @@ export default function CapitalMandatePage() {
           </div>
         </div>
 
+        {/* ── 4. RETIREMENT INCOME BREAKDOWN ── */}
+        {effectiveRetirementIncome > 0 && (() => {
+          const netMonthlyGap = Math.max(0, effectiveRetirementIncome - guaranteedMonthlyRetirement)
+          const finalDE = planMode === 'couple'
+            ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+            : lifeExpectancy
+          const n = Math.max(1, finalDE - earliestRetirementAge)
+          const rr = postRetirementReturn / 100
+          const gg = retirementInflation / 100
+          const annualNetGap = netMonthlyGap * 12
+          const adjustedCorpus = (() => {
+            if (Math.abs(rr - gg) < 0.0001) return annualNetGap * (1 + rr) / Math.max(rr, 0.0001)
+            const ratio = Math.pow((1 + gg) / (1 + rr), n)
+            const denom = 1 - ratio
+            if (denom <= 0) return 0
+            return annualNetGap * (1 - ratio) === 0 ? 0 : (annualNetGap * (rr - gg)) / ((rr - gg) * (1 - ratio) / (1 - ratio))
+          })()
+          const adjustedCorpusPV = (() => {
+            if (netMonthlyGap <= 0) return 0
+            if (Math.abs(rr - gg) < 0.0001) return annualNetGap / Math.max(rr, 0.0001)
+            const ratio = Math.pow((1 + gg) / (1 + rr), n)
+            const denom = 1 - ratio
+            if (denom <= 0) return 0
+            return annualNetGap * (rr - gg) / ((rr - gg) * denom) * (1 - ratio) / (rr - gg) * (rr - gg)
+          })()
+          // Use same formula as legacyAdjustedCorpus base: growing annuity PV
+          const baseAdjustedCorpus = (() => {
+            if (netMonthlyGap <= 0) return settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
+            const annualGap = netMonthlyGap * 12
+            let corpusPV: number
+            if (Math.abs(rr - gg) < 0.0001) {
+              corpusPV = annualGap * n
+            } else {
+              const ratio = (1 + gg) / (1 + rr)
+              corpusPV = annualGap * (1 - Math.pow(ratio, n)) / (rr - gg)
+            }
+            if (settings.legacyAmount) corpusPV += settings.legacyAmount / Math.pow(1 + rr, n)
+            return corpusPV
+          })()
+          const corpusReduction = Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)
+          const coveragePct = effectiveRetirementIncome > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement / effectiveRetirementIncome * 100)) : 0
+
+          return (
+            <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Retirement Planning</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: 'var(--ink)' }}>Retirement Income Breakdown</div>
+                </div>
+                <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, padding: '4px 10px' }}>
+                  {coveragePct}% of income covered by guaranteed streams
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', padding: '20px 24px', gap: 0 }}>
+                {[
+                  {
+                    label: 'Monthly Income Needed',
+                    value: fmtMo(effectiveRetirementIncome),
+                    sub: settings.incomeSource === 'desired' ? 'Desired income' : 'Current expenses',
+                    color: 'var(--ink)',
+                    border: true,
+                  },
+                  {
+                    label: 'Guaranteed Income Streams',
+                    value: guaranteedMonthlyRetirement > 0 ? fmtMo(guaranteedMonthlyRetirement) : 'None',
+                    sub: 'CPF Life · Annuity · Rental · SRS',
+                    color: '#4A9E8A',
+                    border: true,
+                  },
+                  {
+                    label: 'Net Monthly Gap',
+                    value: netMonthlyGap > 0 ? fmtMo(netMonthlyGap) : 'Fully Covered',
+                    sub: netMonthlyGap > 0 ? 'Funded from portfolio' : 'No corpus drawdown needed',
+                    color: netMonthlyGap > 0 ? '#A8834A' : '#4A9E8A',
+                    border: true,
+                  },
+                  {
+                    label: 'Adjusted Corpus Required',
+                    value: fmt(baseAdjustedCorpus),
+                    sub: 'After income stream offset',
+                    color: 'var(--ink)',
+                    border: true,
+                  },
+                  {
+                    label: 'Corpus Reduction',
+                    value: corpusReduction > 0 ? fmt(corpusReduction) : '—',
+                    sub: corpusReduction > 0 ? 'Saved by income vehicles' : 'No income vehicles',
+                    color: corpusReduction > 0 ? '#4A9E8A' : 'var(--ink3)',
+                    border: false,
+                  },
+                ].map((item, i) => (
+                  <div key={i} style={{ paddingRight: item.border ? 24 : 0, marginRight: item.border ? 24 : 0, borderRight: item.border ? '1px solid var(--line)' : 'none' }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{item.label}</div>
+                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: item.color, marginBottom: 4 }}>{item.value}</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{item.sub}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* ── 4. TWO COLUMNS: Portfolio + Notes ── */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 28 }}>
 
