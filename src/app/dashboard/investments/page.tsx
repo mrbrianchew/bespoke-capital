@@ -1730,14 +1730,11 @@ export default function CapitalMandatePage() {
           }
         } else {
           // ── Retirement drawdown ──────────────────────────────────────
-          // Always start from the clean legacy-adjusted corpus, not the accumulation loop value
           const retirementCorpus = legacyAmt > 0
             ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
             : (retGoalForSummary?.targetCorpus || 0)
           const retYears = Math.max(1, finalDeathAge - earliestRetAge)
           const yearsIntoRet = a - earliestRetAge
-
-          // corpus already reset at retirement age in the loop header above
 
           const rr = postRetirementReturn / 100
           const gg = inflationRate
@@ -1749,10 +1746,9 @@ export default function CapitalMandatePage() {
             return deployable / sumPV
           })()
           const annualWithdrawal = goldAnnualBase * Math.pow(1 + gg, yearsIntoRet)
-          const annualGuaranteed = guaranteedMonthlyAt(a) * 12
-          const netAnnual = Math.max(0, annualWithdrawal - annualGuaranteed)
 
-          corpus = Math.max(legacyAmt, corpus * (1 + rmPost) - netAnnual)
+          corpus = corpus * (1 + rr) - annualWithdrawal
+          if (a >= finalDeathAge) corpus = legacyAmt
         }
       }
 
