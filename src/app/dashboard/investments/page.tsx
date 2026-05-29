@@ -1711,8 +1711,9 @@ export default function CapitalMandatePage() {
             : (retGoalForSummary?.targetCorpus || 0)
           corpus = retirementCorpusReset
         }
-        requiredLine.push(Math.max(0, corpus))
-        corpusAtAge[a] = Math.max(0, corpus)
+        const recordedCorpus = a === finalDeathAge ? legacyAmt : Math.max(0, corpus)
+        requiredLine.push(recordedCorpus)
+        corpusAtAge[a] = recordedCorpus
 
         // Process any goals maturing this year — record milestone regardless of phase
         while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
@@ -1748,7 +1749,6 @@ export default function CapitalMandatePage() {
           const annualWithdrawal = goldAnnualBase * Math.pow(1 + gg, yearsIntoRet)
 
           corpus = corpus * (1 + rr) - annualWithdrawal
-          if (a >= finalDeathAge) corpus = legacyAmt
         }
       }
 
@@ -1961,8 +1961,10 @@ export default function CapitalMandatePage() {
                       lines.push(`  🏖  Corpus at retirement: ${fmt(corpusAtAge[retirementAge])}`)
                     }
                     // Show annual retirement income required at this age
-                    if (a >= earliestRetAge && derivedAnnualWithdrawal > 0) {
-                      const annualAtAge = derivedAnnualWithdrawal * Math.pow(1 + retirementInflation / 100, a - earliestRetAge)
+                    if (a >= earliestRetAge && effectiveRetirementIncome > 0) {
+                      const yearsToRet = earliestRetAge - clientAge
+                      const baseAnnualAtRet = effectiveRetirementIncome * 12 * Math.pow(1 + retirementInflation / 100, yearsToRet)
+                      const annualAtAge = baseAnnualAtRet * Math.pow(1 + retirementInflation / 100, a - earliestRetAge)
                       lines.push('')
                       lines.push(`  💸  Retirement income: ${fmtMo(annualAtAge / 12)} (${fmt(annualAtAge)}/yr)`)
                     }
