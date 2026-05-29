@@ -1564,7 +1564,7 @@ export default function CapitalMandatePage() {
           ? derivedAnnualWithdrawal * Math.pow(1 + inflationRate, a - earliestRetAge)
           : (corpusPF / Math.max(1, retYearsPF)) * Math.pow(1 + inflationRate, a - earliestRetAge)
         const netDrawdown = Math.max(0, annualNeeded - guaranteedAnnual)
-        portfolioCorpus = Math.max(0, portfolioCorpus * (1 + postRetirementReturn / 100) - netDrawdown)
+        portfolioCorpus = Math.max(legacyAmt, portfolioCorpus * (1 + postRetirementReturn / 100) - netDrawdown)
       }
     }
 
@@ -2270,7 +2270,7 @@ export default function CapitalMandatePage() {
                 items.push({
                   label: 'Retirement',
                   ageLine: retAgeLabel,
-                  sub: fmt(retGoal.targetCorpus) + ' corpus',
+                  sub: fmt(legacyAdjustedCorpus) + ' corpus',
                   color: '#A8834A',
                 })
               }
