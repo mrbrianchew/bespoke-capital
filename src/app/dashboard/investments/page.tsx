@@ -1701,6 +1701,21 @@ export default function CapitalMandatePage() {
       let runningMonthly = filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0)
       const goalQueue = nonRetGoals.map(g => ({ ...g })).sort((a, b) => a.targetAge - b.targetAge)
 
+      // Pre-compute goldAnnualBase once — base annual withdrawal at retirement in future dollars
+      const rr = postRetirementReturn / 100
+      const gg = inflationRate
+      const retYears = Math.max(1, finalDeathAge - earliestRetAge)
+      const retirementCorpus = legacyAmt > 0
+        ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + rr, retYears)
+        : (retGoalForSummary?.targetCorpus || 0)
+      const goldAnnualBase = (() => {
+        const deployable = Math.max(0, retirementCorpus - legacyAmt / Math.pow(1 + rr, retYears))
+        if (Math.abs(rr - gg) < 0.0001) return deployable / retYears
+        const ratio = (1 + gg) / (1 + rr)
+        const sumPV = ratio === 1 ? retYears : (1 - Math.pow(ratio, retYears)) / (1 - ratio)
+        return deployable / sumPV
+      })()
+
       // First pass: accumulation only — record corpus at each age
       for (let i = 0; i < ages.length; i++) {
         const a = ages[i]
@@ -1731,21 +1746,7 @@ export default function CapitalMandatePage() {
           }
         } else {
           // ── Retirement drawdown ──────────────────────────────────────
-          const retirementCorpus = legacyAmt > 0
-            ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
-            : (retGoalForSummary?.targetCorpus || 0)
-          const retYears = Math.max(1, finalDeathAge - earliestRetAge)
           const yearsIntoRet = a - earliestRetAge
-
-          const rr = postRetirementReturn / 100
-          const gg = inflationRate
-          const goldAnnualBase = (() => {
-            const deployable = Math.max(0, retirementCorpus - legacyAmt / Math.pow(1 + rr, retYears))
-            if (Math.abs(rr - gg) < 0.0001) return deployable / retYears
-            const ratio = (1 + gg) / (1 + rr)
-            const sumPV = ratio === 1 ? retYears : (1 - Math.pow(ratio, retYears)) / (1 - ratio)
-            return deployable / sumPV
-          })()
           const annualWithdrawal = goldAnnualBase * Math.pow(1 + gg, yearsIntoRet)
 
           corpus = corpus * (1 + rr) - annualWithdrawal
@@ -1961,10 +1962,8 @@ export default function CapitalMandatePage() {
                       lines.push(`  🏖  Corpus at retirement: ${fmt(corpusAtAge[retirementAge])}`)
                     }
                     // Show annual retirement income required at this age
-                    if (a >= earliestRetAge && effectiveRetirementIncome > 0) {
-                      const yearsToRet = earliestRetAge - clientAge
-                      const baseAnnualAtRet = effectiveRetirementIncome * 12 * Math.pow(1 + retirementInflation / 100, yearsToRet)
-                      const annualAtAge = baseAnnualAtRet * Math.pow(1 + retirementInflation / 100, a - earliestRetAge)
+                    if (a >= earliestRetAge && goldAnnualBase > 0) {
+                      const annualAtAge = goldAnnualBase * Math.pow(1 + retirementInflation / 100, a - earliestRetAge)
                       lines.push('')
                       lines.push(`  💸  Retirement income: ${fmtMo(annualAtAge / 12)} (${fmt(annualAtAge)}/yr)`)
                     }
