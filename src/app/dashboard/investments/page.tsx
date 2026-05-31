@@ -1638,6 +1638,36 @@ export default function CapitalMandatePage() {
 
   const netMonthlyGapAfterIncome = Math.max(0, totalMonthlyNeeded - totalMonthlyInvesting - guaranteedMonthlyRetirement)
 
+  // Top-level corpus calculation — shared by goal card and breakdown panel
+  const retirementBreakdown = useMemo(() => {
+    if (effectiveRetirementIncome <= 0) return null
+    const yearsToRet = Math.max(0, earliestRetirementAge - clientAge)
+    const inflFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
+    const inflatedMonthlyIncome = effectiveRetirementIncome * inflFactor
+    const inflatedAnnualHolidays = effectiveAnnualHolidays * inflFactor
+    const annualGapTotal = inflatedMonthlyIncome * 12 + inflatedAnnualHolidays
+    const finalDE = planMode === 'couple'
+      ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+      : lifeExpectancy
+    const n = Math.max(1, finalDE - earliestRetirementAge)
+    const rr = postRetirementReturn / 100
+    const gg = retirementInflation / 100
+    const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
+    const netAnnualGap = Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12)
+    let corpusPV: number
+    if (netAnnualGap <= 0) {
+      corpusPV = legacyPV
+    } else if (Math.abs(rr - gg) < 0.0001) {
+      corpusPV = netAnnualGap * n * (1 + rr) + legacyPV
+    } else {
+      const ratio = (1 + gg) / (1 + rr)
+      corpusPV = netAnnualGap * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr) + legacyPV
+    }
+    return { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus: corpusPV }
+  }, [effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
+      retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
+      postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement])
+
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (loading) return
@@ -2194,7 +2224,7 @@ export default function CapitalMandatePage() {
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{fmtMo(g.monthlyRequired)}</div>
                   <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginBottom: 8 }}>monthly required</div>
                   <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink2)' }}>
-                    {fmt(g.source === 'retirement' && settings.legacyAmount > 0 ? legacyAdjustedCorpus : g.targetCorpus)} portfolio target
+                    {fmt(g.source === 'retirement' && retirementBreakdown ? retirementBreakdown.baseAdjustedCorpus : g.targetCorpus)} portfolio target
                     {g.source === 'retirement' && settings.legacyAmount > 0 && (
                       <span style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginLeft: 6 }}>
                         (incl. {fmt(settings.legacyAmount)} legacy)
@@ -2301,35 +2331,8 @@ export default function CapitalMandatePage() {
         </div>
 
         {/* ── 4. RETIREMENT INCOME BREAKDOWN ── */}
-        {effectiveRetirementIncome > 0 && (() => {
-          const yearsToRet = Math.max(0, earliestRetirementAge - clientAge)
-          const inflFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
-          const inflatedMonthlyIncome = effectiveRetirementIncome * inflFactor
-          const inflatedAnnualHolidays = effectiveAnnualHolidays * inflFactor
-          const annualGapTotal = inflatedMonthlyIncome * 12 + inflatedAnnualHolidays
-          const netMonthlyGap = Math.max(0, inflatedMonthlyIncome - guaranteedMonthlyRetirement)
-          const finalDE = planMode === 'couple'
-            ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
-            : lifeExpectancy
-          const n = Math.max(1, finalDE - earliestRetirementAge)
-          const rr = postRetirementReturn / 100
-          const gg = retirementInflation / 100
-
-          // Growing annuity-due formula — matches Retirement Page exactly:
-          // PV = annualGap × (1 - ((1+g)/(1+r))^n) / (r-g) × (1+r)
-          const baseAdjustedCorpus = (() => {
-            const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
-            const netAnnualGap = Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12)
-            if (netAnnualGap <= 0) return legacyPV
-            let corpusPV: number
-            if (Math.abs(rr - gg) < 0.0001) {
-              corpusPV = netAnnualGap * n * (1 + rr)
-            } else {
-              const ratio = (1 + gg) / (1 + rr)
-              corpusPV = netAnnualGap * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr)
-            }
-            return corpusPV + legacyPV
-          })()
+        {retirementBreakdown && (() => {
+          const { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus } = retirementBreakdown
           const corpusReduction = Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)
           const coveragePct = annualGapTotal > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement * 12 / annualGapTotal * 100)) : 0
 
