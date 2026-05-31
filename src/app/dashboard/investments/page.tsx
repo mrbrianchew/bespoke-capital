@@ -1641,7 +1641,7 @@ export default function CapitalMandatePage() {
   // Top-level corpus calculation — shared by goal card and breakdown panel
   const retirementBreakdown = useMemo(() => {
     if (effectiveRetirementIncome <= 0) return null
-    const yearsToRet = Math.max(0, earliestRetirementAge - clientAge)
+    const yearsToRet = Math.max(0, retirementAge - clientAge)
     const inflFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
     const inflatedMonthlyIncome = effectiveRetirementIncome * inflFactor
     const inflatedAnnualHolidays = effectiveAnnualHolidays * inflFactor
@@ -1649,7 +1649,8 @@ export default function CapitalMandatePage() {
     const finalDE = planMode === 'couple'
       ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
       : lifeExpectancy
-    const n = Math.max(1, finalDE - earliestRetirementAge)
+    // Use retirementAge (client) as the drawdown start — matches Retirement page exactly
+    const n = Math.max(1, finalDE - retirementAge)
     const rr = postRetirementReturn / 100
     const gg = retirementInflation / 100
     const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
@@ -1665,7 +1666,7 @@ export default function CapitalMandatePage() {
     }
     return { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus: corpusPV }
   }, [effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
-      retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
+      retirementAge, retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
       postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement])
 
  // ── CHART ─────────────────────────────────────────────────────────────────
