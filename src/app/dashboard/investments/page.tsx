@@ -1959,7 +1959,7 @@ export default function CapitalMandatePage() {
                     // Show retirement corpus at retirement age
                     if (a === retirementAge && corpusAtAge[retirementAge]) {
                       lines.push('')
-                      lines.push(`  🏖  Corpus at retirement: ${fmt(corpusAtAge[retirementAge])}`)
+                      lines.push(`  🏖  Portfolio target at retirement: ${fmt(corpusAtAge[retirementAge])}`)
                     }
                     // Show annual retirement income required at this age
                     if (a >= earliestRetAge && goldAnnualBase > 0) {
@@ -2051,7 +2051,7 @@ export default function CapitalMandatePage() {
           <strong>{fmt(projectedAtRetirement.atActual)}</strong> by age {retirementAge}
           {requiredCorpusAtRet > 1000 && (
             <>
-              {' '}instead of the <strong>{fmt(requiredCorpusAtRet)}</strong> corpus needed
+              {' '}instead of the <strong>{fmt(requiredCorpusAtRet)}</strong> portfolio target
               {projectedAtRetirement.atActual >= requiredCorpusAtRet
                 ? ` (a ${fmt(projectedAtRetirement.atActual - requiredCorpusAtRet)} surplus)`
                 : ` (a ${fmt(requiredCorpusAtRet - projectedAtRetirement.atActual)} shortfall)`}
@@ -2100,7 +2100,7 @@ export default function CapitalMandatePage() {
             { label: 'Currently Committing', val: fmtMo(totalMonthlyInvesting), color: '#F0EDE8' },
             { label: 'Net Monthly Gap', val: netMonthlyGapAfterIncome > 0 ? '−' + fmtMo(netMonthlyGapAfterIncome) : 'On Track', color: netMonthlyGapAfterIncome > 0 ? '#E08080' : '#80C4A0' },
             { label: 'Portfolio Value', val: fmt(totalCurrentValue), color: '#80B4C4' },
-            { label: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? 'Corpus Shortfall' : 'Corpus Surplus') : 'Projected at Retirement', val: requiredCorpusAtRet > 0 ? fmt(Math.abs(corpusShortfall)) : fmt(projectedAtRetirement.atAssumption), color: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? '#E08080' : '#80C4A0') : '#80B4C4' },
+            { label: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? 'Portfolio Shortfall' : 'Portfolio Surplus') : 'Projected at Retirement', val: requiredCorpusAtRet > 0 ? fmt(Math.abs(corpusShortfall)) : fmt(projectedAtRetirement.atAssumption), color: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? '#E08080' : '#80C4A0') : '#80B4C4' },
             { label: 'Guaranteed Retirement Income', val: guaranteedMonthlyRetirement > 0 ? fmtMo(guaranteedMonthlyRetirement) : 'None recorded', color: guaranteedMonthlyRetirement > 0 ? '#80C4A0' : 'rgba(255,255,255,0.28)' },
           ].map((s, i) => (
             <div key={i} style={{ flex: 1, paddingRight: i < 6 ? 28 : 0, borderRight: i < 6 ? '1px solid rgba(255,255,255,0.06)' : 'none', marginRight: i < 6 ? 28 : 0 }}>
@@ -2180,7 +2180,7 @@ export default function CapitalMandatePage() {
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{fmtMo(g.monthlyRequired)}</div>
                   <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginBottom: 8 }}>monthly required</div>
                   <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink2)' }}>
-                    {fmt(g.source === 'retirement' && settings.legacyAmount > 0 ? legacyAdjustedCorpus : g.targetCorpus)} corpus
+                    {fmt(g.source === 'retirement' && settings.legacyAmount > 0 ? legacyAdjustedCorpus : g.targetCorpus)} portfolio target
                     {g.source === 'retirement' && settings.legacyAmount > 0 && (
                       <span style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginLeft: 6 }}>
                         (incl. {fmt(settings.legacyAmount)} legacy)
@@ -2267,7 +2267,7 @@ export default function CapitalMandatePage() {
                 items.push({
                   label: 'Retirement',
                   ageLine: retAgeLabel,
-                  sub: fmt(legacyAdjustedCorpus) + ' corpus',
+                  sub: fmt(legacyAdjustedCorpus) + ' portfolio target',
                   color: '#A8834A',
                 })
               }
@@ -2349,16 +2349,16 @@ export default function CapitalMandatePage() {
                     border: true,
                   },
                   {
-                    label: 'Adjusted Corpus Required',
+                    label: 'Portfolio Target',
                     value: fmt(baseAdjustedCorpus),
                     sub: 'After income stream offset',
                     color: 'var(--ink)',
                     border: true,
                   },
                   {
-                    label: 'Corpus Reduction',
+                    label: 'Portfolio Savings',
                     value: corpusReduction > 0 ? fmt(corpusReduction) : '—',
-                    sub: corpusReduction > 0 ? 'Saved by income vehicles' : 'No income vehicles',
+                    sub: corpusReduction > 0 ? 'Offset by income streams' : 'No guaranteed streams',
                     color: corpusReduction > 0 ? '#4A9E8A' : 'var(--ink3)',
                     border: false,
                   },
