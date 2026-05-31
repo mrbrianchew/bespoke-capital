@@ -1054,6 +1054,7 @@ export default function CapitalMandatePage() {
   const [settings, setSettings] = useState<CMSettings>({ expectedReturn: 6, legacyAmount: 0, incomeSource: 'desired' })
 
   const [notes, setNotes] = useState('')
+  const [lumpSumFraction, setLumpSumFraction] = useState(0) // 0 = pure monthly, 1 = pure lump sum
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const chartRef = useRef<HTMLCanvasElement>(null)
@@ -2399,7 +2400,7 @@ export default function CapitalMandatePage() {
               </div>
 
               {/* ── Bottom row: portfolio position ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '20px 24px', gap: 0, background: isOnTrack ? 'rgba(74,158,138,0.04)' : 'rgba(224,128,128,0.04)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '20px 24px', gap: 0, background: isOnTrack ? 'rgba(74,158,138,0.04)' : 'rgba(224,128,128,0.04)', borderBottom: !isOnTrack ? '1px solid var(--line)' : 'none' }}>
                 <div style={{ paddingRight: 24, marginRight: 24, borderRight: '1px solid var(--line)' }}>
                   <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Portfolio Target</div>
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, color: 'var(--ink)', marginBottom: 4 }}>{fmt(baseAdjustedCorpus)}</div>
@@ -2420,6 +2421,82 @@ export default function CapitalMandatePage() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Shortfall solver row ── */}
+              {!isOnTrack && gap > 0 && (() => {
+                const r = settings.expectedReturn / 100
+                const rm = r / 12
+                const yearsLeft = Math.max(1, retirementAge - clientAge)
+                const nm = yearsLeft * 12
+                // Lump sum FV = lumpNow * (1+r)^yearsLeft
+                // Monthly FV  = monthly * ((1+rm)^nm - 1)/rm * (1+rm)  [annuity-due]
+                // lumpNow * (1+r)^y + monthly * annuityFactor = gap
+                const annuityFactor = rm > 0 ? ((Math.pow(1 + rm, nm) - 1) / rm) * (1 + rm) : nm
+                const lumpFV = (v: number) => v * Math.pow(1 + r, yearsLeft)
+                // lumpSumFraction: 0 = pure monthly, 1 = pure lump sum
+                const lumpNow = lumpSumFraction * gap / Math.pow(1 + r, yearsLeft)
+                const remainingGap = Math.max(0, gap - lumpFV(lumpNow))
+                const monthlyTopUp = annuityFactor > 0 ? remainingGap / annuityFactor : 0
+                // Endpoints for display
+                const pureLump = gap / Math.pow(1 + r, yearsLeft)
+                const pureMonthly = annuityFactor > 0 ? gap / annuityFactor : 0
+
+                return (
+                  <div style={{ padding: '20px 24px', background: 'rgba(168,131,74,0.04)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Shortfall Solution · {settings.expectedReturn}% p.a. · {yearsLeft} yrs</div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => setLumpSumFraction(0)} style={{ fontFamily: 'Inter', fontSize: 10, padding: '3px 10px', borderRadius: 5, border: '1px solid var(--line)', background: lumpSumFraction === 0 ? 'var(--ink)' : 'white', color: lumpSumFraction === 0 ? 'white' : 'var(--ink3)', cursor: 'pointer' }}>Monthly only</button>
+                        <button onClick={() => setLumpSumFraction(1)} style={{ fontFamily: 'Inter', fontSize: 10, padding: '3px 10px', borderRadius: 5, border: '1px solid var(--line)', background: lumpSumFraction === 1 ? 'var(--ink)' : 'white', color: lumpSumFraction === 1 ? 'white' : 'var(--ink3)', cursor: 'pointer' }}>Lump sum only</button>
+                      </div>
+                    </div>
+
+                    {/* Slider */}
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>← More monthly</span>
+                        <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>More lump sum →</span>
+                      </div>
+                      <input
+                        type="range" min={0} max={100} step={1}
+                        value={Math.round(lumpSumFraction * 100)}
+                        onChange={e => setLumpSumFraction(parseFloat(e.target.value) / 100)}
+                        style={{ width: '100%', accentColor: 'var(--gold)', cursor: 'pointer' }}
+                      />
+                    </div>
+
+                    {/* Two result cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px' }}>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>
+                          {lumpSumFraction === 0 ? 'Lump Sum' : 'Lump Sum Now'}
+                        </div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, color: lumpSumFraction > 0 ? 'var(--ink)' : 'var(--ink3)', marginBottom: 4 }}>
+                          {lumpSumFraction > 0 ? fmt(lumpNow) : '—'}
+                        </div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>
+                          {lumpSumFraction > 0
+                            ? `Grows to ${fmt(lumpFV(lumpNow))} by retirement`
+                            : `Pure monthly: ${fmtMo(pureMonthly)}`}
+                        </div>
+                      </div>
+                      <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 10, padding: '16px 20px' }}>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>
+                          {lumpSumFraction === 1 ? 'Monthly Top-Up' : 'Monthly Top-Up'}
+                        </div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, color: lumpSumFraction < 1 ? 'var(--ink)' : 'var(--ink3)', marginBottom: 4 }}>
+                          {lumpSumFraction < 1 ? fmtMo(monthlyTopUp) : '—'}
+                        </div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>
+                          {lumpSumFraction < 1
+                            ? `Over ${yearsLeft} yrs · annuity-due`
+                            : `Pure lump sum: ${fmt(pureLump)}`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )
         })()}
