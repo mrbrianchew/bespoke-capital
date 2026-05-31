@@ -1749,7 +1749,7 @@ export default function CapitalMandatePage() {
           const yearsIntoRet = a - earliestRetAge
           const annualWithdrawal = goldAnnualBase * Math.pow(1 + gg, yearsIntoRet)
 
-          corpus = corpus * (1 + rr) - annualWithdrawal
+          corpus = (corpus - annualWithdrawal) * (1 + rr)
         }
       }
 
