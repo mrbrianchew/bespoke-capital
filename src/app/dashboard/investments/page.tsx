@@ -2295,7 +2295,9 @@ export default function CapitalMandatePage() {
 
         {/* ── 4. RETIREMENT INCOME BREAKDOWN ── */}
         {effectiveRetirementIncome > 0 && (() => {
-          const netMonthlyGap = Math.max(0, effectiveRetirementIncome - guaranteedMonthlyRetirement)
+          const yearsToRet = Math.max(0, earliestRetirementAge - clientAge)
+          const inflatedMonthlyIncome = effectiveRetirementIncome * Math.pow(1 + retirementInflation / 100, yearsToRet)
+          const netMonthlyGap = Math.max(0, inflatedMonthlyIncome - guaranteedMonthlyRetirement)
           const finalDE = planMode === 'couple'
             ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
             : lifeExpectancy
@@ -2319,7 +2321,7 @@ export default function CapitalMandatePage() {
             return corpusPV + legacyPV
           })()
           const corpusReduction = Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)
-          const coveragePct = effectiveRetirementIncome > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement / effectiveRetirementIncome * 100)) : 0
+          const coveragePct = inflatedMonthlyIncome > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement / inflatedMonthlyIncome * 100)) : 0
 
           return (
             <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
@@ -2336,7 +2338,7 @@ export default function CapitalMandatePage() {
                 {[
                   {
                     label: 'Monthly Income Needed',
-                    value: fmtMo(effectiveRetirementIncome),
+                    value: fmtMo(inflatedMonthlyIncome),
                     sub: settings.incomeSource === 'desired' ? 'Desired income' : 'Current expenses',
                     color: 'var(--ink)',
                     border: true,
