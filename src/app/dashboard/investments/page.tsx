@@ -2343,7 +2343,9 @@ export default function CapitalMandatePage() {
         {/* ── 4. RETIREMENT INCOME BREAKDOWN ── */}
         {retirementBreakdown && (() => {
           const { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus } = retirementBreakdown
-          const corpusReduction = Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)
+          const projectedValue = projectedAtRetirement.atAssumption
+          const gap = baseAdjustedCorpus - projectedValue
+          const isOnTrack = gap <= 0
           const coveragePct = annualGapTotal > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement * 12 / annualGapTotal * 100)) : 0
 
           return (
@@ -2357,7 +2359,9 @@ export default function CapitalMandatePage() {
                   {coveragePct}% of income covered by guaranteed streams
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', padding: '20px 24px', gap: 0 }}>
+
+              {/* ── Top row: income breakdown ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', padding: '20px 24px 16px', gap: 0, borderBottom: '1px solid var(--line)' }}>
                 {[
                   {
                     label: 'Annual Income Needed',
@@ -2366,43 +2370,55 @@ export default function CapitalMandatePage() {
                       ? `${fmtMo(inflatedMonthlyIncome)} + S$${Math.round(inflatedAnnualHolidays).toLocaleString('en-SG')} holidays`
                       : `${fmtMo(inflatedMonthlyIncome)} monthly`,
                     color: 'var(--ink)',
-                    border: true,
                   },
                   {
                     label: 'Guaranteed Income Streams',
                     value: guaranteedMonthlyRetirement > 0 ? fmtMo(guaranteedMonthlyRetirement) : 'None',
                     sub: 'CPF Life · Annuity · Rental · SRS',
                     color: '#4A9E8A',
-                    border: true,
                   },
                   {
                     label: 'Net Annual Gap',
                     value: 'S$' + Math.round(Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12)).toLocaleString('en-SG') + '/yr',
                     sub: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? 'Funded from portfolio' : 'No corpus drawdown needed',
                     color: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? '#A8834A' : '#4A9E8A',
-                    border: true,
                   },
                   {
-                    label: 'Portfolio Target',
-                    value: fmt(baseAdjustedCorpus),
-                    sub: 'After income stream offset',
-                    color: 'var(--ink)',
-                    border: true,
-                  },
-                  {
-                    label: 'Portfolio Savings',
-                    value: corpusReduction > 0 ? fmt(corpusReduction) : '—',
-                    sub: corpusReduction > 0 ? 'Offset by income streams' : 'No guaranteed streams',
-                    color: corpusReduction > 0 ? '#4A9E8A' : 'var(--ink3)',
-                    border: false,
+                    label: 'Portfolio Savings from Streams',
+                    value: Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus) > 0 ? fmt(Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)) : '—',
+                    sub: Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus) > 0 ? 'Offset by income streams' : 'No guaranteed streams',
+                    color: Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus) > 0 ? '#4A9E8A' : 'var(--ink3)',
                   },
                 ].map((item, i) => (
-                  <div key={i} style={{ paddingRight: item.border ? 24 : 0, marginRight: item.border ? 24 : 0, borderRight: item.border ? '1px solid var(--line)' : 'none' }}>
+                  <div key={i} style={{ paddingRight: i < 3 ? 24 : 0, marginRight: i < 3 ? 24 : 0, borderRight: i < 3 ? '1px solid var(--line)' : 'none' }}>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{item.label}</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: item.color, marginBottom: 4 }}>{item.value}</div>
                     <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{item.sub}</div>
                   </div>
                 ))}
+              </div>
+
+              {/* ── Bottom row: portfolio position ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '20px 24px', gap: 0, background: isOnTrack ? 'rgba(74,158,138,0.04)' : 'rgba(224,128,128,0.04)' }}>
+                <div style={{ paddingRight: 24, marginRight: 24, borderRight: '1px solid var(--line)' }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Portfolio Target</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, color: 'var(--ink)', marginBottom: 4 }}>{fmt(baseAdjustedCorpus)}</div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>Required at {fmtAge(retirementAge, planMode === 'couple', clientAge, spouseAge)}</div>
+                </div>
+                <div style={{ paddingRight: 24, marginRight: 24, borderRight: '1px solid var(--line)' }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Projected Portfolio</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, color: projectedValue >= baseAdjustedCorpus ? '#4A9E8A' : '#A8834A', marginBottom: 4 }}>{fmt(projectedValue)}</div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>At {fmtAge(retirementAge, planMode === 'couple', clientAge, spouseAge)} · {settings.expectedReturn}% p.a.</div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{isOnTrack ? 'Surplus' : 'Shortfall'}</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, color: isOnTrack ? '#4A9E8A' : '#E08080', marginBottom: 4 }}>
+                    {isOnTrack ? '+' : '−'}{fmt(Math.abs(gap))}
+                  </div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: isOnTrack ? '#4A9E8A' : '#E08080' }}>
+                    {isOnTrack ? 'Portfolio exceeds target' : 'Additional capital needed'}
+                  </div>
+                </div>
               </div>
             </div>
           )
