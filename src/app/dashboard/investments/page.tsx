@@ -2295,35 +2295,21 @@ export default function CapitalMandatePage() {
           const n = Math.max(1, finalDE - earliestRetirementAge)
           const rr = postRetirementReturn / 100
           const gg = retirementInflation / 100
-          const annualNetGap = netMonthlyGap * 12
-          const adjustedCorpus = (() => {
-            if (Math.abs(rr - gg) < 0.0001) return annualNetGap * (1 + rr) / Math.max(rr, 0.0001)
-            const ratio = Math.pow((1 + gg) / (1 + rr), n)
-            const denom = 1 - ratio
-            if (denom <= 0) return 0
-            return annualNetGap * (1 - ratio) === 0 ? 0 : (annualNetGap * (rr - gg)) / ((rr - gg) * (1 - ratio) / (1 - ratio))
-          })()
-          const adjustedCorpusPV = (() => {
-            if (netMonthlyGap <= 0) return 0
-            if (Math.abs(rr - gg) < 0.0001) return annualNetGap / Math.max(rr, 0.0001)
-            const ratio = Math.pow((1 + gg) / (1 + rr), n)
-            const denom = 1 - ratio
-            if (denom <= 0) return 0
-            return annualNetGap * (rr - gg) / ((rr - gg) * denom) * (1 - ratio) / (rr - gg) * (rr - gg)
-          })()
-          // Use same formula as legacyAdjustedCorpus base: growing annuity PV
+
+          // Growing annuity-due formula — matches Retirement Page exactly:
+          // PV = annualGap × (1 - ((1+g)/(1+r))^n) / (r-g) × (1+r)
           const baseAdjustedCorpus = (() => {
-            if (netMonthlyGap <= 0) return settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
+            const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
+            if (netMonthlyGap <= 0) return legacyPV
             const annualGap = netMonthlyGap * 12
             let corpusPV: number
             if (Math.abs(rr - gg) < 0.0001) {
-              corpusPV = annualGap * n
+              corpusPV = annualGap * n * (1 + rr)
             } else {
               const ratio = (1 + gg) / (1 + rr)
-              corpusPV = annualGap * (1 - Math.pow(ratio, n)) / (rr - gg)
+              corpusPV = annualGap * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr)
             }
-            if (settings.legacyAmount) corpusPV += settings.legacyAmount / Math.pow(1 + rr, n)
-            return corpusPV
+            return corpusPV + legacyPV
           })()
           const corpusReduction = Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)
           const coveragePct = effectiveRetirementIncome > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement / effectiveRetirementIncome * 100)) : 0
