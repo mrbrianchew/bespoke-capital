@@ -1037,6 +1037,7 @@ export default function CapitalMandatePage() {
   const [spouseRetirementAge, setSpouseRetirementAge] = useState(65)
   const [spouseLifeExpectancy, setSpouseLifeExpectancy] = useState(85)
   const [desiredMonthlyIncome, setDesiredMonthlyIncome] = useState(0)
+  const [desiredAnnualHolidays, setDesiredAnnualHolidays] = useState(0)
   const [currentExpenses, setCurrentExpenses] = useState(0)
   const [postRetirementReturn, setPostRetirementReturn] = useState(3)
   const [retirementInflation, setRetirementInflation] = useState(3)
@@ -1114,6 +1115,7 @@ export default function CapitalMandatePage() {
     setSpouseRetirementAge(retSpouseData?.retirementAge || 65)
     setSpouseLifeExpectancy(retSpouseData?.lifeExpectancy || 85)
     setDesiredMonthlyIncome(retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
+    setDesiredAnnualHolidays(retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0)
     setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
     const retAssumptions = retNested?.assumptions || retNested || {}
     setPostRetirementReturn(
@@ -1331,6 +1333,11 @@ export default function CapitalMandatePage() {
     }
     return 0
   }, [settings.incomeSource, desiredMonthlyIncome, currentExpenses, derivedAnnualWithdrawal, retirementAge, clientAge, retirementInflation])
+
+  const effectiveAnnualHolidays = useMemo(() => {
+    if (settings.incomeSource === 'desired') return desiredAnnualHolidays
+    return 0
+  }, [settings.incomeSource, desiredAnnualHolidays])
 
   const xirrMap = useMemo(() => {
     const m: Record<string, number | null> = {}
@@ -2296,7 +2303,10 @@ export default function CapitalMandatePage() {
         {/* ── 4. RETIREMENT INCOME BREAKDOWN ── */}
         {effectiveRetirementIncome > 0 && (() => {
           const yearsToRet = Math.max(0, earliestRetirementAge - clientAge)
-          const inflatedMonthlyIncome = effectiveRetirementIncome * Math.pow(1 + retirementInflation / 100, yearsToRet)
+          const inflFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
+          const inflatedMonthlyIncome = effectiveRetirementIncome * inflFactor
+          const inflatedAnnualHolidays = effectiveAnnualHolidays * inflFactor
+          const annualGapTotal = inflatedMonthlyIncome * 12 + inflatedAnnualHolidays
           const netMonthlyGap = Math.max(0, inflatedMonthlyIncome - guaranteedMonthlyRetirement)
           const finalDE = planMode === 'couple'
             ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
@@ -2309,19 +2319,19 @@ export default function CapitalMandatePage() {
           // PV = annualGap × (1 - ((1+g)/(1+r))^n) / (r-g) × (1+r)
           const baseAdjustedCorpus = (() => {
             const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
-            if (netMonthlyGap <= 0) return legacyPV
-            const annualGap = netMonthlyGap * 12
+            const netAnnualGap = Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12)
+            if (netAnnualGap <= 0) return legacyPV
             let corpusPV: number
             if (Math.abs(rr - gg) < 0.0001) {
-              corpusPV = annualGap * n * (1 + rr)
+              corpusPV = netAnnualGap * n * (1 + rr)
             } else {
               const ratio = (1 + gg) / (1 + rr)
-              corpusPV = annualGap * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr)
+              corpusPV = netAnnualGap * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr)
             }
             return corpusPV + legacyPV
           })()
           const corpusReduction = Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)
-          const coveragePct = inflatedMonthlyIncome > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement / inflatedMonthlyIncome * 100)) : 0
+          const coveragePct = annualGapTotal > 0 ? Math.min(100, Math.round(guaranteedMonthlyRetirement * 12 / annualGapTotal * 100)) : 0
 
           return (
             <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
@@ -2334,13 +2344,20 @@ export default function CapitalMandatePage() {
                   {coveragePct}% of income covered by guaranteed streams
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', padding: '20px 24px', gap: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', padding: '20px 24px', gap: 0 }}>
                 {[
                   {
                     label: 'Monthly Income Needed',
                     value: fmtMo(inflatedMonthlyIncome),
-                    sub: settings.incomeSource === 'desired' ? 'Desired income' : 'Current expenses',
+                    sub: settings.incomeSource === 'desired' ? 'Regular monthly expenses' : 'Current expenses',
                     color: 'var(--ink)',
+                    border: true,
+                  },
+                  {
+                    label: 'Annual Holiday Budget',
+                    value: inflatedAnnualHolidays > 0 ? 'S$' + Math.round(inflatedAnnualHolidays).toLocaleString('en-SG') + '/yr' : '—',
+                    sub: inflatedAnnualHolidays > 0 ? 'Excluded from monthly figure' : 'No holiday budget set',
+                    color: inflatedAnnualHolidays > 0 ? 'var(--ink)' : 'var(--ink3)',
                     border: true,
                   },
                   {
@@ -2372,7 +2389,7 @@ export default function CapitalMandatePage() {
                     border: false,
                   },
                 ].map((item, i) => (
-                  <div key={i} style={{ paddingRight: item.border ? 24 : 0, marginRight: item.border ? 24 : 0, borderRight: item.border ? '1px solid var(--line)' : 'none' }}>
+                  <div key={i} style={{ paddingRight: item.border ? 20 : 0, marginRight: item.border ? 20 : 0, borderRight: item.border ? '1px solid var(--line)' : 'none' }}>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{item.label}</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: item.color, marginBottom: 4 }}>{item.value}</div>
                     <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{item.sub}</div>
