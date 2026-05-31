@@ -2362,7 +2362,7 @@ export default function CapitalMandatePage() {
               </div>
 
               {/* ── Top row: income breakdown ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', padding: '20px 24px 16px', gap: 0, borderBottom: '1px solid var(--line)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '20px 24px 16px', gap: 0, borderBottom: '1px solid var(--line)' }}>
                 {[
                   {
                     label: 'Annual Income Needed',
@@ -2384,14 +2384,8 @@ export default function CapitalMandatePage() {
                     sub: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? 'Funded from portfolio' : 'No corpus drawdown needed',
                     color: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? '#A8834A' : '#4A9E8A',
                   },
-                  {
-                    label: 'Portfolio Savings from Streams',
-                    value: Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus) > 0 ? fmt(Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus)) : '—',
-                    sub: Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus) > 0 ? 'Offset by income streams' : 'No guaranteed streams',
-                    color: Math.max(0, legacyAdjustedCorpus - baseAdjustedCorpus) > 0 ? '#4A9E8A' : 'var(--ink3)',
-                  },
                 ].map((item, i) => (
-                  <div key={i} style={{ paddingRight: i < 3 ? 24 : 0, marginRight: i < 3 ? 24 : 0, borderRight: i < 3 ? '1px solid var(--line)' : 'none' }}>
+                  <div key={i} style={{ paddingRight: i < 2 ? 24 : 0, marginRight: i < 2 ? 24 : 0, borderRight: i < 2 ? '1px solid var(--line)' : 'none' }}>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{item.label}</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: item.color, marginBottom: 4 }}>{item.value}</div>
                     <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{item.sub}</div>
