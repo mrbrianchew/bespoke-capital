@@ -2344,20 +2344,15 @@ export default function CapitalMandatePage() {
                   {coveragePct}% of income covered by guaranteed streams
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', padding: '20px 24px', gap: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', padding: '20px 24px', gap: 0 }}>
                 {[
                   {
-                    label: 'Monthly Income Needed',
-                    value: fmtMo(inflatedMonthlyIncome),
-                    sub: settings.incomeSource === 'desired' ? 'Regular monthly expenses' : 'Current expenses',
+                    label: 'Annual Income Needed',
+                    value: 'S$' + Math.round(annualGapTotal).toLocaleString('en-SG') + '/yr',
+                    sub: effectiveAnnualHolidays > 0
+                      ? `${fmtMo(inflatedMonthlyIncome)} + S$${Math.round(inflatedAnnualHolidays).toLocaleString('en-SG')} holidays`
+                      : `${fmtMo(inflatedMonthlyIncome)} monthly`,
                     color: 'var(--ink)',
-                    border: true,
-                  },
-                  {
-                    label: 'Annual Holiday Budget',
-                    value: inflatedAnnualHolidays > 0 ? 'S$' + Math.round(inflatedAnnualHolidays).toLocaleString('en-SG') + '/yr' : '—',
-                    sub: inflatedAnnualHolidays > 0 ? 'Excluded from monthly figure' : 'No holiday budget set',
-                    color: inflatedAnnualHolidays > 0 ? 'var(--ink)' : 'var(--ink3)',
                     border: true,
                   },
                   {
@@ -2368,10 +2363,10 @@ export default function CapitalMandatePage() {
                     border: true,
                   },
                   {
-                    label: 'Net Monthly Gap',
-                    value: netMonthlyGap > 0 ? fmtMo(netMonthlyGap) : 'Fully Covered',
-                    sub: netMonthlyGap > 0 ? 'Funded from portfolio' : 'No corpus drawdown needed',
-                    color: netMonthlyGap > 0 ? '#A8834A' : '#4A9E8A',
+                    label: 'Net Annual Gap',
+                    value: 'S$' + Math.round(Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12)).toLocaleString('en-SG') + '/yr',
+                    sub: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? 'Funded from portfolio' : 'No corpus drawdown needed',
+                    color: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? '#A8834A' : '#4A9E8A',
                     border: true,
                   },
                   {
@@ -2389,7 +2384,7 @@ export default function CapitalMandatePage() {
                     border: false,
                   },
                 ].map((item, i) => (
-                  <div key={i} style={{ paddingRight: item.border ? 20 : 0, marginRight: item.border ? 20 : 0, borderRight: item.border ? '1px solid var(--line)' : 'none' }}>
+                  <div key={i} style={{ paddingRight: item.border ? 24 : 0, marginRight: item.border ? 24 : 0, borderRight: item.border ? '1px solid var(--line)' : 'none' }}>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{item.label}</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: item.color, marginBottom: 4 }}>{item.value}</div>
                     <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{item.sub}</div>
