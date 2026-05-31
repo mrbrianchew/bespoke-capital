@@ -1114,8 +1114,17 @@ export default function CapitalMandatePage() {
     setLifeExpectancy(retClientData?.lifeExpectancy || retRow?.lifeExpectancy || 85)
     setSpouseRetirementAge(retSpouseData?.retirementAge || 65)
     setSpouseLifeExpectancy(retSpouseData?.lifeExpectancy || 85)
-    setDesiredMonthlyIncome(retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
-    setDesiredAnnualHolidays(retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0)
+    // For couples, income/holidays are stored in expenseSelections (combined); for individuals, in client object
+    const retExpSel = retNested?.expenseSelections || {}
+    const isCouplePlan = mode === 'couple'
+    const savedMonthly = isCouplePlan
+      ? (retExpSel?.combinedDesiredMonthly || retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
+      : (retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
+    const savedHolidays = isCouplePlan
+      ? (retExpSel?.combinedDesiredHolidays || retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0)
+      : (retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0)
+    setDesiredMonthlyIncome(savedMonthly)
+    setDesiredAnnualHolidays(savedHolidays)
     setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
     const retAssumptions = retNested?.assumptions || retNested || {}
     setPostRetirementReturn(
