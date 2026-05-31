@@ -87,6 +87,11 @@ function fmtMo(n: number) {
 function newId() {
   return 'cm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5)
 }
+function fmtAge(clientDisplayAge: number, isCouple: boolean, clientAge: number, spouseAge: number): string {
+  if (!isCouple) return `Age ${clientDisplayAge}`
+  const spouseDisplayAge = spouseAge + (clientDisplayAge - clientAge)
+  return `Age ${clientDisplayAge} / ${spouseDisplayAge}`
+}
 function calcMonthlyRequired(corpus: number, yearsLeft: number, annualReturn: number): number {
   if (corpus <= 0 || yearsLeft <= 0) return 0
   const r = annualReturn / 100
@@ -1910,7 +1915,7 @@ export default function CapitalMandatePage() {
           type: 'line',
           plugins: [retireLinePlugin, milestonePlugin],
           data: {
-            labels: ages.map(a => 'Age ' + a),
+            labels: ages.map(a => fmtAge(a, planMode === 'couple', clientAge, spouseAge)),
             datasets,
           },
           options: {
@@ -1937,7 +1942,7 @@ export default function CapitalMandatePage() {
                     const idx = ctxs[0].dataIndex
                     const a = ages[idx]
                     const phase = a < retirementAge ? 'Accumulation' : a === retirementAge ? 'Retirement Begins' : 'Retirement'
-                    return `Age ${a}  ·  ${phase}`
+                    return `${fmtAge(a, planMode === 'couple', clientAge, spouseAge)}  ·  ${phase}`
                   },
                   label: (ctx: any) => {
                     if (ctx.parsed.y === null || ctx.parsed.y === undefined || ctx.parsed.y < 0) return ''
@@ -1982,7 +1987,7 @@ export default function CapitalMandatePage() {
                     const a = ages[idx]
                     if (a >= retirementAge && a < finalDeathAge) {
                       const yrsLeft = finalDeathAge - a
-                      return [`  ${yrsLeft} yrs to life expectancy (Age ${finalDeathAge})`]
+                      return [`  ${yrsLeft} yrs to life expectancy (${fmtAge(finalDeathAge, planMode === 'couple', clientAge, spouseAge)})`]
                     }
                     return []
                   },
@@ -2172,9 +2177,11 @@ export default function CapitalMandatePage() {
                           const firstRetirer = planMode === 'couple' && spouseYrsAway < clientYrsAway
                             ? { name: spouseName, age: spouseRetirementAge, yrs: spouseYrsAway }
                             : { name: clientName, age: retirementAge, yrs: clientYrsAway }
-                          return `Target age ${firstRetirer.age} of ${firstRetirer.name} · ${firstRetirer.yrs} yrs away`
+                          return planMode === 'couple'
+                            ? `${fmtAge(retirementAge, true, clientAge, spouseAge)} · ${firstRetirer.yrs} yrs away`
+                            : `Age ${retirementAge} · ${clientYrsAway} yrs away`
                         })()
-                      : `Target age ${g.targetAge} · ${g.yearsAway} yrs away`
+                      : `${fmtAge(g.targetAge, planMode === 'couple', clientAge, spouseAge)} · ${g.yearsAway} yrs away`
                     }
                   </div>
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: 'var(--ink)', marginBottom: 2 }}>{fmtMo(g.monthlyRequired)}</div>
@@ -2251,7 +2258,7 @@ export default function CapitalMandatePage() {
               goals.filter(g => g.source !== 'retirement').forEach(g => {
                 items.push({
                   label: g.label,
-                  ageLine: `Age ${g.targetAge}`,
+                  ageLine: fmtAge(g.targetAge, planMode === 'couple', clientAge, spouseAge),
                   sub: '−' + fmt(g.targetCorpus),
                   color: sourceColor[g.source] ?? '#9A9690',
                 })
@@ -2261,8 +2268,8 @@ export default function CapitalMandatePage() {
                 const earliestIsSpouse = planMode === 'couple' && spouseRetirementAge + (clientAge - spouseAge) < retirementAge
                 const retAgeLabel = planMode === 'couple'
                   ? earliestIsSpouse
-                    ? `Age ${earliestRetirementAge} (${spouseName} retires first)`
-                    : `Age ${retirementAge} / ${spouseRetirementAge}`
+                    ? `${fmtAge(earliestRetirementAge, true, clientAge, spouseAge)} (${spouseName} retires first)`
+                    : fmtAge(retirementAge, true, clientAge, spouseAge)
                   : `Age ${retirementAge}`
                 items.push({
                   label: 'Retirement',
