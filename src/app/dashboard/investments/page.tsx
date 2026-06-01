@@ -294,6 +294,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
 }) {
   const [activeTab, setActiveTab] = useState<'details' | 'cashflows'>('details')
   const [name, setName] = useState(item?.name ?? '')
+  const [nameError, setNameError] = useState(false)
   const [vehicleType, setVehicleType] = useState<VehicleType>(item?.vehicleType ?? 'investment')
   const [owner, setOwner] = useState<'client' | 'spouse' | 'joint'>(item?.owner ?? 'client')
   const [curVal, setCurVal] = useState(String(item?.currentValue ?? ''))
@@ -374,7 +375,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   }
 
   function save() {
-    if (!name.trim()) return
+    if (!name.trim()) { setNameError(true); return }
     let savedAnnualizedReturn: number | null = null
     let savedTotalContributed = 0
     const currentValNum = parseFloat(curVal) || 0
@@ -508,7 +509,8 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
 
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Name</div>
-              <input style={inp} value={name} onChange={e => setName(e.target.value)} placeholder={vehicleType === 'cpf_life' ? 'e.g. CPF Life (Brian)' : vehicleType === 'endowment' ? 'e.g. Manulife RetireReady' : vehicleType === 'annuity' ? 'e.g. NTUC Income Annuity' : 'e.g. Global Equity RSP'} />
+              <input style={{ ...inp, borderColor: nameError ? '#E08080' : undefined }} value={name} onChange={e => { setName(e.target.value); setNameError(false) }} placeholder={vehicleType === 'cpf_life' ? 'e.g. CPF Life (Brian)' : vehicleType === 'endowment' ? 'e.g. Manulife RetireReady' : vehicleType === 'annuity' ? 'e.g. NTUC Income Annuity' : 'e.g. Global Equity RSP'} />
+              {nameError && <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#E08080', marginTop: 4 }}>Please enter a name before saving.</div>}
             </div>
 
             {isCouple && (
@@ -1622,7 +1624,9 @@ export default function CapitalMandatePage() {
   const corpusShortfall = requiredCorpusAtRet - projectedAtRetirement.atAssumption
 
   // Guaranteed monthly retirement income from all income-stream vehicles
-  const guaranteedMonthlyRetirement = useMemo(() => filteredPortfolio.reduce((sum, p) => {
+  const guaranteedMonthlyRetirement = useMemo(() => {
+    console.log('[GMR] cpf_life vehicles:', JSON.stringify(filteredPortfolio.filter(p => p.vehicleType === 'cpf_life').map(p => ({ name: p.name, cpfMonthlyPayout: p.cpfMonthlyPayout }))))
+    return filteredPortfolio.reduce((sum, p) => {
     if (p.vehicleType === 'cpf_life') return sum + (p.cpfMonthlyPayout || 0)
     if (p.vehicleType === 'annuity') return sum + (p.annuityMonthlyIncome || 0)
     if (p.vehicleType === 'rental') return sum + (p.rentalMonthlyNet || 0)
@@ -1644,7 +1648,8 @@ export default function CapitalMandatePage() {
       return sum + annualBase / 12
     }
     return sum
-  }, 0), [filteredPortfolio, retirementAge, clientAge, settings.expectedReturn, retirementInflation])
+    }, 0)
+  }, [filteredPortfolio, retirementAge, clientAge, settings.expectedReturn, retirementInflation])
 
   const netMonthlyGapAfterIncome = Math.max(0, totalMonthlyNeeded - totalMonthlyInvesting - guaranteedMonthlyRetirement)
 
