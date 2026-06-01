@@ -2399,34 +2399,38 @@ export default function CapitalMandatePage() {
 
               {/* ── Top row: income breakdown ── */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '20px 24px 16px', gap: 0, borderBottom: '1px solid var(--line)' }}>
-                {[
-                  {
-                    label: 'Annual Income Needed',
-                    value: 'S$' + Math.round(annualGapTotal).toLocaleString('en-SG') + '/yr',
-                    sub: effectiveAnnualHolidays > 0
-                      ? `${fmtMo(inflatedMonthlyIncome)} + S$${Math.round(inflatedAnnualHolidays).toLocaleString('en-SG')} holidays`
-                      : `${fmtMo(inflatedMonthlyIncome)} monthly`,
-                    color: 'var(--ink)',
-                  },
-                  {
-                    label: 'Guaranteed Income Streams',
-                    value: guaranteedMonthlyRetirement > 0 ? fmtMo(guaranteedMonthlyRetirement) : 'None',
-                    sub: 'CPF Life · Annuity · Rental · SRS',
-                    color: '#4A9E8A',
-                  },
-                  {
-                    label: 'Net Annual Gap',
-                    value: 'S$' + Math.round(Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12)).toLocaleString('en-SG') + '/yr',
-                    sub: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? 'Funded from portfolio' : 'No corpus drawdown needed',
-                    color: Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12) > 0 ? '#A8834A' : '#4A9E8A',
-                  },
-                ].map((item, i) => (
-                  <div key={i} style={{ paddingRight: i < 2 ? 24 : 0, marginRight: i < 2 ? 24 : 0, borderRight: i < 2 ? '1px solid var(--line)' : 'none' }}>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>{item.label}</div>
-                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: item.color, marginBottom: 4 }}>{item.value}</div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{item.sub}</div>
+                {/* Col 1: Annual Income Needed (PV) */}
+                <div style={{ paddingRight: 24, marginRight: 24, borderRight: '1px solid var(--line)' }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Annual Income Needed (Today)</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: 'var(--ink)', marginBottom: 4 }}>
+                    {'S$' + Math.round(effectiveRetirementIncome * 12 + effectiveAnnualHolidays).toLocaleString('en-SG') + '/yr'}
                   </div>
-                ))}
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>
+                    {effectiveAnnualHolidays > 0
+                      ? `S$${Math.round(effectiveRetirementIncome).toLocaleString('en-SG')}/mo + S$${Math.round(effectiveAnnualHolidays).toLocaleString('en-SG')} holidays`
+                      : `S$${Math.round(effectiveRetirementIncome).toLocaleString('en-SG')}/mo · today's dollars`}
+                  </div>
+                </div>
+                {/* Col 2: Annual Income Needed (FV at retirement) */}
+                <div style={{ paddingRight: 24, marginRight: 24, borderRight: '1px solid var(--line)' }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Annual Income Needed (At Retirement)</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: 'var(--ink)', marginBottom: 4 }}>
+                    {'S$' + Math.round(annualGapTotal).toLocaleString('en-SG') + '/yr'}
+                  </div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>
+                    {effectiveAnnualHolidays > 0
+                      ? `${fmtMo(inflatedMonthlyIncome)} + S$${Math.round(inflatedAnnualHolidays).toLocaleString('en-SG')} holidays`
+                      : `${fmtMo(inflatedMonthlyIncome)} · inflated ${Math.max(0, retirementAge - clientAge)}y at ${retirementInflation}%`}
+                  </div>
+                </div>
+                {/* Col 3: Guaranteed Income Streams */}
+                <div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Guaranteed Income Streams</div>
+                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: guaranteedMonthlyRetirement > 0 ? '#4A9E8A' : 'var(--ink3)', marginBottom: 4 }}>
+                    {guaranteedMonthlyRetirement > 0 ? fmtMo(guaranteedMonthlyRetirement) : 'None'}
+                  </div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>CPF Life · Annuity · Rental · SRS</div>
+                </div>
               </div>
 
               {/* ── Bottom row: portfolio position ── */}
