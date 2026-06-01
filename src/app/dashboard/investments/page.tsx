@@ -2302,18 +2302,7 @@ export default function CapitalMandatePage() {
             <div>
               <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Capital Journey · {personLabel}</div>
             </div>
-            {(desiredMonthlyIncome > 0 || currentExpenses > 0) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>Retirement Income:</span>
-                <div style={{ display: 'flex', background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden' }}>
-                  {([{ v: 'desired' as IncomeSource, l: fmtMo(desiredMonthlyIncome), label: 'Desired' }, { v: 'current' as IncomeSource, l: fmtMo(currentExpenses), label: 'Current' }]).map(o => (
-                    <button key={o.v} onClick={() => updateSettings({ ...settings, incomeSource: o.v })} style={{ padding: '5px 12px', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 10, fontWeight: 500, background: settings.incomeSource === o.v ? 'var(--ink)' : 'transparent', color: settings.incomeSource === o.v ? 'white' : 'var(--ink3)', transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
-                      {o.label}: {o.l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+
           </div>
           {/* Milestone legend — HTML, zero collision risk */}
           <div style={{ padding: '10px 24px 0', background: 'var(--cream)', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
