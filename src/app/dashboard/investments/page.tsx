@@ -1677,15 +1677,38 @@ export default function CapitalMandatePage() {
       const ratio = (1 + gg) / (1 + rr)
       pvFullNeed = annualGapTotal * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr)
     }
-    // PV of fixed nominal stream (annuity-due, no inflation growth)
-    // Guaranteed income streams (CPF Life, annuity, rental) are fixed nominal
-    const annualStream = guaranteedMonthlyRetirement * 12
-    const pvFixedStream = annualStream > 0
-      ? rr > 0
-        ? annualStream * (1 - Math.pow(1 / (1 + rr), n)) / (rr / (1 + rr))
-        : annualStream * n
-      : 0
-    // Net corpus = PV(full need) - PV(fixed stream) + legacy
+    // PV of each fixed nominal stream separately — each has its own duration
+    // Guaranteed income streams do NOT grow with inflation
+    const pvFixedAnnuityDue = (annual: number, years: number) => {
+      if (annual <= 0 || years <= 0) return 0
+      return rr > 0
+        ? annual * (1 - Math.pow(1 / (1 + rr), years)) / (rr / (1 + rr))
+        : annual * years
+    }
+    const pvFixedStream = filteredPortfolio.reduce((sum, p) => {
+      if (p.vehicleType === 'cpf_life') {
+        // CPF Life: lifetime payout — runs full n years
+        const cpfStartOffset = Math.max(0, (p.cpfPayoutStartAge || 65) - retirementAge)
+        const cpfYears = Math.max(0, n - cpfStartOffset)
+        const pv = pvFixedAnnuityDue((p.cpfMonthlyPayout || 0) * 12, cpfYears)
+        // Discount back if payout starts after retirement
+        return sum + pv / Math.pow(1 + rr, cpfStartOffset)
+      }
+      if (p.vehicleType === 'annuity') {
+        // Annuity: runs from annuityStartAge for annuityGuaranteeYears
+        const startOffset = Math.max(0, (p.annuityStartAge || retirementAge) - retirementAge)
+        const guaranteeYears = Math.min(p.annuityGuaranteeYears || n, n - startOffset)
+        const pv = pvFixedAnnuityDue((p.annuityMonthlyIncome || 0) * 12, Math.max(0, guaranteeYears))
+        return sum + pv / Math.pow(1 + rr, startOffset)
+      }
+      if (p.vehicleType === 'rental') {
+        // Rental: runs from retirement until rentalStopAge
+        const rentalYears = Math.max(0, Math.min((p.rentalStopAge || 75) - retirementAge, n))
+        return sum + pvFixedAnnuityDue((p.rentalMonthlyNet || 0) * 12, rentalYears)
+      }
+      return sum
+    }, 0)
+    // Net corpus = PV(full need) - PV(fixed streams) + legacy
     const corpusPV = Math.max(legacyPV, pvFullNeed - pvFixedStream + legacyPV)
     return { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus: corpusPV }
   }, [effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
