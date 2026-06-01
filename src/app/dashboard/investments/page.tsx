@@ -2183,20 +2183,48 @@ export default function CapitalMandatePage() {
         </div>
 
         <div style={{ display: 'flex', padding: '20px 0' }}>
-          {[
-            { label: 'Total Capital Required', val: fmt(totalCorpus), color: '#C4A464' },
-            { label: 'Monthly Savings Needed', val: fmtMo(totalMonthlyNeeded), color: '#F0EDE8' },
-            { label: 'Currently Committing', val: fmtMo(totalMonthlyInvesting), color: '#F0EDE8' },
-            { label: 'Net Monthly Gap', val: netMonthlyGapAfterIncome > 0 ? '−' + fmtMo(netMonthlyGapAfterIncome) : 'On Track', color: netMonthlyGapAfterIncome > 0 ? '#E08080' : '#80C4A0' },
-            { label: 'Portfolio Value', val: fmt(totalCurrentValue), color: '#80B4C4' },
-            { label: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? 'Portfolio Shortfall' : 'Portfolio Surplus') : 'Projected at Retirement', val: requiredCorpusAtRet > 0 ? fmt(Math.abs(corpusShortfall)) : fmt(projectedAtRetirement.atAssumption), color: requiredCorpusAtRet > 0 ? (corpusShortfall > 0 ? '#E08080' : '#80C4A0') : '#80B4C4' },
-            { label: 'Guaranteed Retirement Income', val: guaranteedMonthlyRetirement > 0 ? fmtMo(guaranteedMonthlyRetirement) : 'None recorded', color: guaranteedMonthlyRetirement > 0 ? '#80C4A0' : 'rgba(255,255,255,0.28)' },
-          ].map((s, i) => (
-            <div key={i} style={{ flex: 1, paddingRight: i < 6 ? 28 : 0, borderRight: i < 6 ? '1px solid rgba(255,255,255,0.06)' : 'none', marginRight: i < 6 ? 28 : 0 }}>
-              <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>{s.label}</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 300, color: s.color }}>{s.val}</div>
-            </div>
-          ))}
+          {(() => {
+            const simpleMonthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
+            const items = [
+              {
+                label: 'Total Capital Required',
+                val: fmt(totalCorpus),
+                sub: `across ${filteredGoals.length} goal${filteredGoals.length !== 1 ? 's' : ''}`,
+                color: '#C4A464',
+              },
+              {
+                label: 'Monthly Savings Needed',
+                val: fmtMo(totalMonthlyNeeded),
+                sub: 'to fund all goals',
+                color: '#F0EDE8',
+              },
+              {
+                label: 'Currently Committing',
+                val: fmtMo(totalMonthlyInvesting),
+                sub: `across ${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0).length} vehicle${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0).length !== 1 ? 's' : ''}`,
+                color: '#F0EDE8',
+              },
+              {
+                label: simpleMonthlyGap > 0 ? 'Monthly Shortfall' : 'Monthly Status',
+                val: simpleMonthlyGap > 0 ? '−' + fmtMo(simpleMonthlyGap) : 'On Track',
+                sub: simpleMonthlyGap > 0 ? 'Additional savings needed' : 'Commitments cover all goals',
+                color: simpleMonthlyGap > 0 ? '#E08080' : '#80C4A0',
+              },
+              {
+                label: 'Current Portfolio Value',
+                val: fmt(totalCurrentValue),
+                sub: totalCurrentValue > 0 ? `+${fmt(totalCurrentValue - filteredPortfolio.reduce((s, p) => s + (p.totalContributed || 0), 0))} unrealised gain` : 'No positions yet',
+                color: '#80B4C4',
+              },
+            ]
+            return items.map((s, i) => (
+              <div key={i} style={{ flex: 1, paddingRight: i < items.length - 1 ? 28 : 0, borderRight: i < items.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none', marginRight: i < items.length - 1 ? 28 : 0 }}>
+                <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>{s.label}</div>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 300, color: s.color }}>{s.val}</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'rgba(255,255,255,0.28)', marginTop: 4 }}>{s.sub}</div>
+              </div>
+            ))
+          })()}
         </div>
       </div>
 
@@ -2634,10 +2662,6 @@ export default function CapitalMandatePage() {
                 })}
 
                 <div style={{ marginTop: 4, background: 'var(--charcoal)', borderRadius: 12, padding: '18px 24px', display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Portfolio Value</div>
-                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: '#80B4C4' }}>{fmt(totalCurrentValue)}</div>
-                  </div>
                   <div>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: 6 }}>Monthly Committing</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, color: '#F0EDE8' }}>{fmtMo(totalMonthlyInvesting)}</div>
