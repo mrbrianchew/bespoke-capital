@@ -1669,16 +1669,24 @@ export default function CapitalMandatePage() {
     const rr = postRetirementReturn / 100
     const gg = retirementInflation / 100
     const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
-    const netAnnualGap = Math.max(0, annualGapTotal - guaranteedMonthlyRetirement * 12)
-    let corpusPV: number
-    if (netAnnualGap <= 0) {
-      corpusPV = legacyPV
-    } else if (Math.abs(rr - gg) < 0.0001) {
-      corpusPV = netAnnualGap * n * (1 + rr) + legacyPV
+    // PV of full growing need (annuity-due, grows at inflation)
+    let pvFullNeed: number
+    if (Math.abs(rr - gg) < 0.0001) {
+      pvFullNeed = annualGapTotal * n * (1 + rr)
     } else {
       const ratio = (1 + gg) / (1 + rr)
-      corpusPV = netAnnualGap * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr) + legacyPV
+      pvFullNeed = annualGapTotal * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr)
     }
+    // PV of fixed nominal stream (annuity-due, no inflation growth)
+    // Guaranteed income streams (CPF Life, annuity, rental) are fixed nominal
+    const annualStream = guaranteedMonthlyRetirement * 12
+    const pvFixedStream = annualStream > 0
+      ? rr > 0
+        ? annualStream * (1 - Math.pow(1 / (1 + rr), n)) / (rr / (1 + rr))
+        : annualStream * n
+      : 0
+    // Net corpus = PV(full need) - PV(fixed stream) + legacy
+    const corpusPV = Math.max(legacyPV, pvFullNeed - pvFixedStream + legacyPV)
     return { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus: corpusPV }
   }, [effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
       retirementAge, retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
