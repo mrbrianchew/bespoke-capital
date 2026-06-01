@@ -33,6 +33,7 @@ interface FundingVehicle {
   mode: 'Regular' | 'Lump Sum'
   startMonth?: string   // YYYY-MM
   endMonth?: string     // YYYY-MM
+  valueAsOfMonth?: string // YYYY-MM
   cpfScheme?: 'BRS' | 'FRS' | 'ERS'
   cpfMonthlyPayout?: number
   cpfPayoutStartAge?: number
@@ -304,6 +305,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [mode, setMode] = useState<'Regular' | 'Lump Sum'>(item?.mode ?? 'Regular')
   const [startMonth, setStartMonth] = useState(item?.startMonth ?? '')
   const [endMonth, setEndMonth] = useState(item?.endMonth ?? '')
+  const [valueAsOfMonth, setValueAsOfMonth] = useState(item?.valueAsOfMonth ?? '')
   const [cpfScheme, setCpfScheme] = useState<'BRS' | 'FRS' | 'ERS'>(item?.cpfScheme ?? 'FRS')
   const [cpfPayout, setCpfPayout] = useState(String(item?.cpfMonthlyPayout ?? ''))
   const [cpfStartAge, setCpfStartAge] = useState(item?.cpfPayoutStartAge ?? 65)
@@ -381,7 +383,8 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
     const currentValNum = parseFloat(curVal) || 0
     const monthlyNum = parseFloat(monthly) || 0
     const startDate = startMonth ? new Date(startMonth + '-01') : null
-    const now = new Date()
+    // Use valueAsOfMonth if set, otherwise fall back to today
+    const now = valueAsOfMonth ? new Date(valueAsOfMonth + '-01') : new Date()
     const monthsHeldSave = startDate
       ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1
       : 0
@@ -453,7 +456,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       currentValue: parseFloat(curVal) || 0,
       monthlyContribution: parseFloat(monthly) || 0,
       expectedReturn: ret, startYear,
-      startMonth, endMonth,
+      startMonth, endMonth, valueAsOfMonth,
       annualizedReturn: savedAnnualizedReturn,
       totalContributed: savedTotalContributed,
       cpfScheme, cpfMonthlyPayout: parseFloat(cpfPayout) || 0, cpfPayoutStartAge: cpfStartAge,
@@ -796,6 +799,13 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                     <div>
                       <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Value (S$)</div>
                       <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Value as of Month</div>
+                      <input type="month" style={inp} value={valueAsOfMonth} onChange={e => setValueAsOfMonth(e.target.value)} max={currentYearMonth} />
+                      <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>When was this value last updated?</div>
                     </div>
                   </div>
                   {mode === 'Regular' && (
@@ -2213,7 +2223,7 @@ export default function CapitalMandatePage() {
               {
                 label: 'Current Portfolio Value',
                 val: fmt(totalCurrentValue),
-                sub: totalCurrentValue > 0 ? `+${fmt(totalCurrentValue - filteredPortfolio.reduce((s, p) => s + (p.totalContributed || 0), 0))} unrealised gain` : 'No positions yet',
+                sub: totalCurrentValue > 0 ? `+${fmt(totalCurrentValue - filteredPortfolio.reduce((s, p) => s + (p.totalContributed || p.currentValue || 0), 0))} unrealised gain` : 'No positions yet',
                 color: '#80B4C4',
               },
             ]
@@ -2566,7 +2576,8 @@ export default function CapitalMandatePage() {
 
             {filteredPortfolio.length > 0 && (() => {
               const perfVehicles = filteredPortfolio.filter(p => p.vehicleType !== 'cpf_life' && p.vehicleType !== 'annuity' && p.vehicleType !== 'rental')
-              const summaryTotalContributed = perfVehicles.reduce((s, p) => s + (p.totalContributed || 0), 0)
+              // Fall back to currentValue when totalContributed not yet calculated (no start date entered)
+              const summaryTotalContributed = perfVehicles.reduce((s, p) => s + (p.totalContributed || p.currentValue || 0), 0)
               const summaryTotalValue = perfVehicles.reduce((s, p) => s + (p.currentValue || 0), 0)
               // Blended annualized return: weighted by current value
               let blendedNumerator = 0; let blendedDenominator = 0
