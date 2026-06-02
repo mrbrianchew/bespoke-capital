@@ -21,13 +21,27 @@ export default function AuthPage() {
     setError('')
     setMessage('')
     if (mode === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setError(error.message)
-      else router.push('/dashboard')
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) { setError(error.message); setLoading(false); return }
+      // Check approval status
+      const { data: adv } = await supabase.from('advisors').select('status').eq('id', data.user.id).single()
+      if (!adv || adv.status !== 'approved') {
+        await supabase.auth.signOut()
+        setError('Your account is awaiting approval. You will be notified once approved.')
+        setLoading(false)
+        return
+      }
+      router.push('/dashboard')
     } else {
-      const { error } = await supabase.auth.signUp({ email, password, options: { data: { name, firm } } })
-      if (error) setError(error.message)
-      else setMessage('Account created! Check your email to verify, then sign in.')
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name, firm } } })
+      if (error) { setError(error.message); setLoading(false); return }
+      if (data.user) {
+        // Create advisor row as pending
+        await supabase.from('advisors').upsert({ id: data.user.id, name, email, firm, status: 'pending' })
+        // Notify admin
+        await fetch('/api/notify-signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, firm }) })
+      }
+      setMessage('Account created! Your account is pending approval. We will notify you once approved.')
     }
     setLoading(false)
   }
@@ -41,8 +55,7 @@ export default function AuthPage() {
         </div>
         <div>
           <div className="font-serif text-3xl font-light leading-tight mb-4" style={{ color: '#F0EDE8' }}>
-            Your clients.<br />
-            Their future.<br />
+            Your clients.<br />Their future.<br />
             <span style={{ color: '#C4A464' }}>Planned precisely.</span>
           </div>
           <div className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.3)' }}>A professional financial planning platform built for Singapore advisors.</div>
@@ -60,7 +73,7 @@ export default function AuthPage() {
               <>
                 <div>
                   <label className="block text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Full Name</label>
-                  <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="e.g. Brian Chew" className="w-full px-4 py-3 text-sm outline-none" style={{ background: 'white', border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="e.g. Sarah Tan" className="w-full px-4 py-3 text-sm outline-none" style={{ background: 'white', border: '1px solid var(--line)', color: 'var(--ink)' }} />
                 </div>
                 <div>
                   <label className="block text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Company / Firm</label>
