@@ -914,7 +914,7 @@ async function handleGenerateShare() {
             </div>
             <button onClick={async()=>{
               const year = new Date().getFullYear()
-              const text = `Portfolio Summary ${year} — ${clientName}\n${shareLink}`
+              const text = `Portfolio Summary ${year} — ${clientName}\n\n${shareLink}`
               await navigator.clipboard.writeText(text)
               setShareCopied(true)
               setTimeout(()=>setShareCopied(false),3000)
