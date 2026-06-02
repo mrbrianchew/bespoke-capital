@@ -70,8 +70,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--cream)' }}>
       <aside className="sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0" style={{ width: 240, background: 'white', borderRight: '1px solid var(--line)' }}>
         <div className="px-6 py-7" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>Bespoke Capital</div>
-          <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
+          <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>Heartwork Capital</div>
+<div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
         </div>
         <div className="relative px-3 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
           <button onClick={() => setShowClientDrop(!showClientDrop)}
