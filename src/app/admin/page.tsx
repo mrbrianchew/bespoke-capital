@@ -6,6 +6,17 @@ import { createClient } from "@/lib/supabase"
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
+async function approveAdvisor(id: string, supabase: any) {
+  await supabase.from('advisors').update({ status: 'approved' }).eq('id', id)
+}
+
+async function rejectAdvisor(id: string, supabase: any) {
+  await supabase.from('advisors').delete().eq('id', id)
+  const { createClient: createAdmin } = await import('@supabase/supabase-js')
+  const admin = createAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+  await admin.auth.admin.deleteUser(id)
+}
+
 async function sendInvite(email: string): Promise<{ success?: boolean; error?: string }> {
   const res = await fetch('/api/invite-advisor', {
     method: 'POST',
@@ -81,6 +92,67 @@ function InviteAdvisorCard() {
   )
 }
 
+function PendingAdvisorsCard() {
+  const supabase = createClient()
+  const [pending, setPending] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [actionId, setActionId] = useState<string | null>(null)
+
+  useEffect(() => {
+    supabase.from('advisors').select('*').eq('status', 'pending').then(({ data }) => {
+      setPending(data || [])
+      setLoading(false)
+    })
+  }, [])
+
+  async function handleApprove(id: string) {
+    setActionId(id)
+    await supabase.from('advisors').update({ status: 'approved' }).eq('id', id)
+    setPending(prev => prev.filter(a => a.id !== id))
+    setActionId(null)
+  }
+
+  async function handleReject(id: string) {
+    if (!confirm('Reject and delete this advisor account? This cannot be undone.')) return
+    setActionId(id)
+    await supabase.from('advisors').delete().eq('id', id)
+    await fetch('/api/delete-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    setPending(prev => prev.filter(a => a.id !== id))
+    setActionId(null)
+  }
+
+  return (
+    <div style={{ background: 'white', border: '0.5px solid #E0DDD6', borderRadius: 12, padding: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 8, background: '#FFF3E0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>⏳</div>
+        <span style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#A8834A', background: '#F5EFE3', padding: '3px 8px', borderRadius: 4 }}>
+          {loading ? '…' : pending.length} Pending
+        </span>
+      </div>
+      <p style={{ fontSize: 15, fontWeight: 500, color: '#1A1816', margin: '0 0 6px' }}>Pending Approvals</p>
+      <p style={{ fontSize: 13, color: '#9A9690', margin: '0 0 16px', lineHeight: 1.5 }}>Advisors who have signed up and are awaiting your approval.</p>
+      {loading && <p style={{ fontSize: 13, color: '#9A9690' }}>Loading…</p>}
+      {!loading && pending.length === 0 && <p style={{ fontSize: 13, color: '#9A9690' }}>No pending approvals.</p>}
+      {pending.map(a => (
+        <div key={a.id} style={{ padding: '10px 0', borderTop: '1px solid #F0EDE6' }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#1A1816' }}>{a.name || '—'}</div>
+          <div style={{ fontSize: 12, color: '#9A9690', marginBottom: 8 }}>{a.email}{a.firm ? ` · ${a.firm}` : ''}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => handleApprove(a.id)} disabled={actionId === a.id}
+              style={{ flex: 1, padding: '7px', background: '#2D5A4E', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              {actionId === a.id ? '…' : '✓ Approve'}
+            </button>
+            <button onClick={() => handleReject(a.id)} disabled={actionId === a.id}
+              style={{ flex: 1, padding: '7px', background: 'white', color: '#C0392B', border: '1px solid #C0392B', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              ✕ Reject
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -128,6 +200,7 @@ export default function AdminPage() {
         <div style={{ background: "#F5F3EE", border: "0.5px dashed #D0CDC5", borderRadius: 12, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <p style={{ fontSize: 13, color: "#9A9690", margin: 0, textAlign: "center" as const }}>More settings will appear here as the app grows.</p>
         </div>
+        <PendingAdvisorsCard />
         <InviteAdvisorCard />
       </div>
     </div>
