@@ -349,6 +349,46 @@ async function deleteFamilyMember(memberId: string) {
     if (totalAccMonthly > 0) accActions.push(`Invest ${fmt(totalAccMonthly)}/mo across ${accGoals.length} wealth goal${accGoals.length !== 1 ? 's' : ''}`)
   }
 
+  // ── EDUCATION — mirrors EducationSection.tsx exactly ─────────────────────────
+
+  const eduChildren    = edu.children || []
+  const eduReturnRate  = edu.returnRate      ?? 5
+  const eduTuitionInfl = edu.tuitionInflation ?? 5
+  const eduLivingInfl  = edu.livingInflation  ?? 3
+  const eduHasData     = children.length > 0
+
+  function eduCalcChildFund(child: any): number {
+    const yearsToUni = Math.max(0, child.uniEntryAge - child.age)
+    const fvTuition = (child.annualTuition || 9000) * Math.pow(1 + eduTuitionInfl / 100, yearsToUni) * (child.courseDuration || 4)
+    const fvLiving  = (child.annualLiving  || 12000) * Math.pow(1 + eduLivingInfl  / 100, yearsToUni) * (child.courseDuration || 4)
+    return fvTuition + fvLiving
+  }
+  function eduCalcGap(fund: number, existingSavings: number, yearsToUni: number): number {
+    const existingFV = existingSavings * Math.pow(1 + eduReturnRate / 100, yearsToUni)
+    return Math.max(0, fund - existingFV)
+  }
+  function eduCalcMonthly(gap: number, yearsToUni: number): number {
+    if (gap <= 0 || yearsToUni <= 0) return 0
+    const n = yearsToUni * 12
+    const r = eduReturnRate / 100 / 12
+    if (r === 0) return gap / n
+    return gap * r / (Math.pow(1 + r, n) - 1)   // ordinary annuity — matches EducationSection
+  }
+
+  // Build child list the same way EducationSection does: merge saved settings onto live family_members age
+  const eduChildList = children.map((kid: any) => {
+    const age = kid.age != null ? kid.age : getAge(kid.dob)
+    const saved = eduChildren.find((e: any) => e.childId === kid.id)
+    const defaultEntry = kid.gender === 'Male' ? 21 : 19
+    if (saved) return { ...saved, age }   // use live age, keep all saved settings
+    return {
+      childId: kid.id, age,
+      uniEntryAge: defaultEntry, courseDuration: 4,
+      annualTuition: 9000, annualLiving: 12000,
+      existingSavings: 0, lumpSumPct: 50,
+    }
+  })
+
   // ── RETIREMENT ───────────────────────────────────────────────────────────────
 
   const retClient = ret.client || {}
@@ -362,8 +402,9 @@ async function deleteFamilyMember(memberId: string) {
   const spouseLE     = isCouple ? (retSpouse.lifeExpectancy || 85) : retLE
   const earliestRetAge = isCouple ? Math.min(retAge, spouseRetAge) : retAge
   // Convert spouse life expectancy to client-age scale to find true final age
+  // ageDiff > 0 means client is older; spouse LE 88 at her age = client age 88 + ageDiff
   const ageDiff = clientAge - spouseAge
-  const spouseLEInClientYears = spouseLE - ageDiff
+  const spouseLEInClientYears = spouseLE + ageDiff
   const finalDeathAge = isCouple ? Math.max(retLE, spouseLEInClientYears) : retLE
 
   const yrsToRet  = Math.max(0, earliestRetAge - clientAge)
@@ -375,12 +416,7 @@ async function deleteFamilyMember(memberId: string) {
     if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return s
     return s + (p.currentValue || 0)
   }, 0)
-  const cmMonthlyContribsDebug = cmPortfolio.map((p: any) => ({
-    name: p.name, vehicleType: p.vehicleType, currentValue: p.currentValue,
-    monthlyContribution: p.monthlyContribution, cashflowsLen: (p.cashflows||[]).length,
-    latestCashflow: (p.cashflows||[]).filter((cf:any)=>cf.type==='contribution_change').sort((a:any,b:any)=>b.date.localeCompare(a.date))[0]
-  }))
-  console.log('[EXEC_CM] ' + JSON.stringify({ cmPortfolioValue, savedCorpus: ffData['retirement']?.corpusNeeded, retSpouseLE: ffData['retirement']?.ret?.spouse?.lifeExpectancy, retClientLE: ffData['retirement']?.ret?.client?.lifeExpectancy, vehicles: cmMonthlyContribsDebug }))
+
 
   const savedCorpusNeeded   = ffData['retirement']?.corpusNeeded        || 0
   const savedMonthlySavings = ffData['retirement']?.monthlySavingsNeeded || 0
@@ -388,28 +424,49 @@ async function deleteFamilyMember(memberId: string) {
   // ── Compute Capital Mandate projected shortfall ───────────────────────────
   // Project the CM portfolio (lump-sum + ongoing contributions) to retirement,
   // then compare against the saved corpus target. This matches what CM displays.
-  const cmExpReturn   = (cm?.settings?.expectedReturn ?? 6) / 100
+  const cmExpReturn   = (cm?.settings?.expectedReturn ?? 5) / 100
+  // Monthly contributions — mirrors Capital Mandate's own projection loop exactly:
+  // use latest contribution_change cashflow amount if present, else monthlyContribution.
   const cmMonthlyContribs = (cm?.portfolio || []).reduce((s: number, p: any) => {
     if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return s
     if (p.vehicleType === 'srs') return s + ((p.srsAnnualContribution || 0) / 12)
     if (p.vehicleType === 'endowment') return s + (p.endowmentPremium || 0)
     if (p.vehicleType === 'annuity') return s + (p.monthlyContribution || 0)
-    // investment / other — use latest contribution_change or monthlyContribution
-    const changes = (p.cashflows || []).filter((cf: any) => cf.type === 'contribution_change').sort((a: any, b: any) => b.date.localeCompare(a.date))
-    return s + (changes[0]?.amount ?? p.monthlyContribution ?? 0)
+    const changes = (p.cashflows || [])
+      .filter((cf: any) => cf.type === 'contribution_change')
+      .sort((a: any, b: any) => b.date.localeCompare(a.date))
+    const activeMonthly = changes.length > 0 ? (changes[0].amount || 0) : (p.monthlyContribution || 0)
+    return s + activeMonthly
   }, 0)
 
+  // Project portfolio using the same annual loop as Capital Mandate:
+  // grow at expectedReturn, add annual contributions, deduct education goals at their milestone ages.
+  // This matches CM's projected portfolio figure exactly.
   let cmProjectedAtRetirement = 0
   if (cmPortfolioValue > 0 || cmMonthlyContribs > 0) {
-    const rM = cmExpReturn / 12
-    const nM = yrsToRet * 12
-    // FV of lump sum
-    const fvLump = cmPortfolioValue * Math.pow(1 + cmExpReturn, yrsToRet)
-    // FV of monthly contributions (annuity-due)
-    const fvContribs = rM > 0
-      ? cmMonthlyContribs * ((Math.pow(1 + rM, nM) - 1) / rM) * (1 + rM)
-      : cmMonthlyContribs * nM
-    cmProjectedAtRetirement = fvLump + fvContribs
+    // Education goals sorted by client's age at milestone — same as CM's goalQueue
+    const eduGoalsSorted = eduChildList
+      .map((child: any) => ({
+        targetAge: clientAge + Math.max(0, child.uniEntryAge - child.age),
+        corpus: eduCalcGap(eduCalcChildFund(child), child.existingSavings || 0,
+                           Math.max(0, child.uniEntryAge - child.age)),
+      }))
+      .filter((g: any) => g.corpus > 0)
+      .sort((a: any, b: any) => a.targetAge - b.targetAge)
+
+    let runningCM = cmPortfolioValue
+    const annualContrib = cmMonthlyContribs * 12
+    let gIdx = 0
+
+    for (let age = clientAge; age < earliestRetAge; age++) {
+      runningCM = runningCM * (1 + cmExpReturn) + annualContrib
+      // Deduct education corpuses at their milestone age (matching CM loop)
+      while (gIdx < eduGoalsSorted.length && eduGoalsSorted[gIdx].targetAge <= age) {
+        runningCM = Math.max(0, runningCM - eduGoalsSorted[gIdx].corpus)
+        gIdx++
+      }
+    }
+    cmProjectedAtRetirement = runningCM
   }
 
   // Shortfall = how much more corpus is needed beyond what the portfolio will deliver
@@ -492,45 +549,6 @@ async function deleteFamilyMember(memberId: string) {
   // Detailed takes priority if mode is 'detailed' AND at least one field is filled
   const annExpClient = (expMode === 'detailed' && detailedTotal > 0) ? detailedTotal : simplifiedTotal
 
-  // ── EDUCATION — mirrors EducationSection.tsx exactly ─────────────────────────
-
-  const eduChildren    = edu.children || []
-  const eduReturnRate  = edu.returnRate      ?? 5
-  const eduTuitionInfl = edu.tuitionInflation ?? 5
-  const eduLivingInfl  = edu.livingInflation  ?? 3
-  const eduHasData     = children.length > 0
-
-  function eduCalcChildFund(child: any): number {
-    const yearsToUni = Math.max(0, child.uniEntryAge - child.age)
-    const fvTuition = (child.annualTuition || 9000) * Math.pow(1 + eduTuitionInfl / 100, yearsToUni) * (child.courseDuration || 4)
-    const fvLiving  = (child.annualLiving  || 12000) * Math.pow(1 + eduLivingInfl  / 100, yearsToUni) * (child.courseDuration || 4)
-    return fvTuition + fvLiving
-  }
-  function eduCalcGap(fund: number, existingSavings: number, yearsToUni: number): number {
-    const existingFV = existingSavings * Math.pow(1 + eduReturnRate / 100, yearsToUni)
-    return Math.max(0, fund - existingFV)
-  }
-  function eduCalcMonthly(gap: number, yearsToUni: number): number {
-    if (gap <= 0 || yearsToUni <= 0) return 0
-    const n = yearsToUni * 12
-    const r = eduReturnRate / 100 / 12
-    if (r === 0) return gap / n
-    return gap * r / (Math.pow(1 + r, n) - 1)   // ordinary annuity — matches EducationSection
-  }
-
-  // Build child list the same way EducationSection does: merge saved settings onto live family_members age
-  const eduChildList = children.map((kid: any) => {
-    const age = kid.age != null ? kid.age : getAge(kid.dob)
-    const saved = eduChildren.find((e: any) => e.childId === kid.id)
-    const defaultEntry = kid.gender === 'Male' ? 21 : 19
-    if (saved) return { ...saved, age }   // use live age, keep all saved settings
-    return {
-      childId: kid.id, age,
-      uniEntryAge: defaultEntry, courseDuration: 4,
-      annualTuition: 9000, annualLiving: 12000,
-      existingSavings: 0, lumpSumPct: 50,
-    }
-  })
 
   let totalEduFund = 0, totalEduGap = 0, totalEduMonthly = 0
   for (const child of eduChildList) {
