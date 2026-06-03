@@ -93,16 +93,14 @@ function InviteAdvisorCard() {
 }
 
 function PendingAdvisorsCard() {
-  const supabase = createClient()
   const [pending, setPending] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.from('advisors').select('*').eq('status', 'pending').then(({ data }) => {
-      setPending(data || [])
-      setLoading(false)
-    })
+    fetch('/api/get-pending-advisors')
+      .then(r => r.json())
+      .then(data => { setPending(data || []); setLoading(false) })
   }, [])
 
   async function handleApprove(id: string) {
@@ -201,7 +199,6 @@ export default function AdminPage() {
           <p style={{ fontSize: 13, color: "#9A9690", margin: 0, textAlign: "center" as const }}>More settings will appear here as the app grows.</p>
         </div>
         <PendingAdvisorsCard />
-        <InviteAdvisorCard />
       </div>
     </div>
   )
