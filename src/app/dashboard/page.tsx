@@ -375,6 +375,7 @@ async function deleteFamilyMember(memberId: string) {
     if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return s
     return s + (p.currentValue || 0)
   }, 0)
+  console.log('[EXEC_CM] ' + JSON.stringify({ cmKeys: Object.keys(cm||{}), portfolioLen: cmPortfolio.length, cmPortfolioValue, savedCorpus: ffData['retirement']?.corpusNeeded, retSpouseLE: ffData['retirement']?.ret?.spouse?.lifeExpectancy, retClientLE: ffData['retirement']?.ret?.client?.lifeExpectancy }))
 
   const savedCorpusNeeded   = ffData['retirement']?.corpusNeeded        || 0
   const savedMonthlySavings = ffData['retirement']?.monthlySavingsNeeded || 0
