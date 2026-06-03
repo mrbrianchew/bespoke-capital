@@ -103,9 +103,13 @@ function PendingAdvisorsCard() {
       .then(data => { setPending(data || []); setLoading(false) })
   }, [])
 
-  async function handleApprove(id: string) {
+ async function handleApprove(id: string) {
     setActionId(id)
-    await supabase.from('advisors').update({ status: 'approved' }).eq('id', id)
+    await fetch('/api/approve-advisor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
     setPending(prev => prev.filter(a => a.id !== id))
     setActionId(null)
   }
