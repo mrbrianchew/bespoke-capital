@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { createClient } from '@/lib/supabase'
 
 interface Policy {
   id: string; categoryCode: string; policyTypeCode: string
@@ -393,22 +392,22 @@ function RemarksBox({ policies, cat }: { policies: Policy[]; cat: string }) {
 export default function SharePage({ params }: { params: { token: string } }) {
   const supabase = createClient()
   const [stage, setStage] = useState<'loading'|'gate'|'unlocked'|'expired'|'notfound'>('loading')
-  const [shareData, setShareData] = useState<any>(null)
+  const [hint, setHint] = useState('')
   const [wrongPw, setWrongPw] = useState(false)
   const [policies, setPolicies] = useState<Policy[]>([])
   const [clientAge, setClientAge] = useState(40)
   const [clientName, setClientName] = useState('')
   const year = new Date().getFullYear()
-const page1Ref = useRef<HTMLDivElement>(null)
+  const page1Ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => { loadShare() }, [])
 
   async function loadShare() {
-    const { data: share, error } = await supabase
-      .from('client_shares').select('*').eq('token', params.token).maybeSingle()
-    if (error || !share) { setStage('notfound'); return }
-    if (share.expires_at && new Date(share.expires_at) < new Date()) { setStage('expired'); return }
-    setShareData(share)
+    const res = await fetch(`/api/share-data/${params.token}`)
+    if (res.status === 404) { setStage('notfound'); return }
+    const data = await res.json()
+    if (data.expired) { setStage('expired'); return }
+    setHint(data.hint || '')
     setStage('gate')
   }
 
@@ -416,25 +415,27 @@ const page1Ref = useRef<HTMLDivElement>(null)
     const encoder = new TextEncoder()
     const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(pw))
     const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
-    if (hashHex !== shareData.password_hash) { setWrongPw(true); setTimeout(()=>setWrongPw(false),100); return }
 
-    const { data: client } = await supabase.from('clients').select('name,age,dob').eq('id',shareData.client_id).maybeSingle()
+    const res = await fetch(`/api/share-data/${params.token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passwordHash: hashHex }),
+    })
+    if (res.status === 401) { setWrongPw(true); setTimeout(() => setWrongPw(false), 100); return }
+    if (!res.ok) { setStage('notfound'); return }
+
+    const { client, person, policies: all } = await res.json()
     if (client) {
-      setClientName(client.name||'Client')
-      if (client.dob) setClientAge(Math.floor((Date.now()-new Date(client.dob).getTime())/(365.25*24*3600*1000)))
+      setClientName(client.name || 'Client')
+      if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
       else if (client.age) setClientAge(Number(client.age))
     }
-    const { data: row } = await supabase.from('fact_finding').select('data').eq('client_id',shareData.client_id).eq('section','protection_portfolio').maybeSingle()
-    const all: Policy[] = row?.data?.risk_management?.policies||[]
-const person = shareData.person || 'client'
-const filtered = all.filter(p => {
-  if (!ACTIVE_STATUSES.includes(p.status)) return false
-  if (person === 'dependents') {
-    return p.person !== 'client' && p.person !== 'spouse'
-  }
-  return p.person === person
-})
-setPolicies(filtered)
+    const filtered = (all as Policy[]).filter(p => {
+      if (!ACTIVE_STATUSES.includes(p.status)) return false
+      if (person === 'dependents') return p.person !== 'client' && p.person !== 'spouse'
+      return p.person === (person || 'client')
+    })
+    setPolicies(filtered)
     setStage('unlocked')
   }
 
@@ -474,7 +475,7 @@ setPolicies(filtered)
   )
 
   if (stage==='gate') return (
-    <PasswordGate hint={shareData?.password_hint||''} onUnlock={handleUnlock} wrongPw={wrongPw}/>
+    <PasswordGate hint={hint} onUnlock={handleUnlock} wrongPw={wrongPw}/>
   )
 
   const catBuckets = [
