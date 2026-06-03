@@ -665,19 +665,19 @@ async function deleteFamilyMember(memberId: string) {
   // ── ASSEMBLE PLANNING AREAS ──────────────────────────────────────────────────
 
   const areas: PlanningArea[] = [
-    { id: 'protection',   icon: '🛡',  label: 'Wealth Protection',   status: protStatus, headline: protHeadline, subline: protSubline, href: '/dashboard/objectives', actions: protActions },
-    { id: 'accumulation', icon: '🏦',  label: 'Wealth Accumulation', status: accStatus,  headline: accHeadline,  subline: accSubline,  href: '/dashboard/objectives', actions: accActions  },
-    { id: 'retirement',   icon: '🌅',  label: 'Retirement',          status: retStatus,  headline: retHeadline,  subline: retSubline,  href: '/dashboard/objectives', actions: retActions  },
-    { id: 'education',    icon: '🎓',  label: 'Education Planning',  status: eduStatus,  headline: eduHeadline,  subline: eduSubline,  href: '/dashboard/objectives', actions: eduActions  },
-    { id: 'estate',       icon: '🏛',  label: 'Estate Planning',     status: estStatus,  headline: estHeadline,  subline: estSubline,  href: '/dashboard/objectives', actions: estActions  },
+    { id: 'protection',   icon: '🛡',  label: 'Wealth Protection',   status: protStatus, headline: protHeadline, subline: protSubline, href: '/dashboard/objectives?tab=0', actions: protActions },
+    { id: 'accumulation', icon: '🏦',  label: 'Wealth Accumulation', status: accStatus,  headline: accHeadline,  subline: accSubline,  href: '/dashboard/objectives?tab=1', actions: accActions  },
+    { id: 'retirement',   icon: '🌅',  label: 'Retirement',          status: retStatus,  headline: retHeadline,  subline: retSubline,  href: '/dashboard/objectives?tab=2', actions: retActions  },
+    { id: 'education',    icon: '🎓',  label: 'Education Planning',  status: eduStatus,  headline: eduHeadline,  subline: eduSubline,  href: '/dashboard/objectives?tab=3', actions: eduActions  },
+    { id: 'estate',       icon: '🏛',  label: 'Estate Planning',     status: estStatus,  headline: estHeadline,  subline: estSubline,  href: '/dashboard/objectives?tab=4', actions: estActions  },
   ]
 
   const allActions: ActionItem[] = [
-    ...protActions.map(t => ({ priority: 'high'   as const, area: '🛡 Protection',   text: t, href: '/dashboard/objectives' })),
-    ...retActions .map(t => ({ priority: 'high'   as const, area: '🌅 Retirement',   text: t, href: '/dashboard/objectives' })),
-    ...eduActions .map(t => ({ priority: 'high'   as const, area: '🎓 Education',    text: t, href: '/dashboard/objectives' })),
-    ...estActions .map(t => ({ priority: 'medium' as const, area: '🏛 Estate',       text: t, href: '/dashboard/objectives' })),
-    ...accActions .map(t => ({ priority: 'medium' as const, area: '🏦 Accumulation', text: t, href: '/dashboard/objectives' })),
+    ...protActions.map(t => ({ priority: 'high'   as const, area: '🛡 Protection',   text: t, href: '/dashboard/objectives?tab=0' })),
+    ...retActions .map(t => ({ priority: 'high'   as const, area: '🌅 Retirement',   text: t, href: '/dashboard/objectives?tab=2' })),
+    ...eduActions .map(t => ({ priority: 'high'   as const, area: '🎓 Education',    text: t, href: '/dashboard/objectives?tab=3' })),
+    ...estActions .map(t => ({ priority: 'medium' as const, area: '🏛 Estate',       text: t, href: '/dashboard/objectives?tab=4' })),
+    ...accActions .map(t => ({ priority: 'medium' as const, area: '🏦 Accumulation', text: t, href: '/dashboard/objectives?tab=1' })),
   ]
 
   const lastSessionDate = Object.values(lastUpdated).sort().reverse()[0] || ''
