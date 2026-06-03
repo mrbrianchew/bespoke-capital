@@ -351,11 +351,22 @@ async function deleteFamilyMember(memberId: string) {
   // ── RETIREMENT ───────────────────────────────────────────────────────────────
 
   const retClient = ret.client || {}
+  const retSpouse = ret.spouse || {}
   const retHasData = !!ret.client
   const retAge = retClient.retirementAge || 65
-  const retLE = retClient.lifeExpectancy || 85
-  const yrsToRet = Math.max(0, retAge - clientAge)
-  const retYears = Math.max(0, retLE - retAge)
+  const retLE  = retClient.lifeExpectancy || 85
+
+  // For display: years until *earliest* retirement; retirement period covers *longest* life
+  const spouseRetAge = isCouple ? (retSpouse.retirementAge || 65) : retAge
+  const spouseLE     = isCouple ? (retSpouse.lifeExpectancy || 85) : retLE
+  const earliestRetAge = isCouple ? Math.min(retAge, spouseRetAge) : retAge
+  // Convert spouse life expectancy to client-age scale to find true final age
+  const ageDiff = clientAge - spouseAge
+  const spouseLEInClientYears = spouseLE - ageDiff
+  const finalDeathAge = isCouple ? Math.max(retLE, spouseLEInClientYears) : retLE
+
+  const yrsToRet  = Math.max(0, earliestRetAge - clientAge)
+  const retYears  = Math.max(0, finalDeathAge - earliestRetAge)
 
   const savedCorpusNeeded = ffData['retirement']?.corpusNeeded || 0
   const savedRetirementGap = ffData['retirement']?.retirementGap || 0
@@ -373,7 +384,7 @@ async function deleteFamilyMember(memberId: string) {
   if (retHasData || savedCorpusNeeded > 0) {
     retStatus = retGap > 0 ? 'gap' : 'good'
     retHeadline = `Savings Gap ${fmtShort(retGap)}`
-    retSubline = `Age ${retAge} · ${yrsToRet}y away · ${retYears}y retirement`
+    retSubline = `Age ${earliestRetAge} · ${yrsToRet}y away · ${retYears}y retirement`
     if (retGap > 0) {
       retStatus = retGap > 100000 ? 'gap' : 'warn'
       retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
@@ -384,44 +395,96 @@ async function deleteFamilyMember(memberId: string) {
     (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
     (fin.a_bonds || 0) + (fin.a_alternatives || 0)
 
-  const annExpClient = (fin.s_income_tax || 0) + (fin.s_insurance || 0) + (fin.s_regular_savings || 0) +
-    (fin.s_housing || 0) + (fin.s_utilities || 0) + (fin.s_family_food || 0) +
-    (fin.s_transport || 0) + (fin.s_children || 0) + (fin.s_lifestyle || 0) + (fin.s_others || 0)
+  // ── ANNUAL EXPENSES: detailed fields take priority; fall back to simplified ──
+  const expMode = fin.expense_mode || 'simple'
 
-  // ── EDUCATION ────────────────────────────────────────────────────────────────
+  // Detailed field lists per category (annual amounts, excluding CPF OA)
+  const DETAILED_ALL_KEYS = [
+    'd_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense',
+    'd_income_tax','d_insurance','d_regular_savings',
+    'd_conservancy','d_utilities','d_family_food','d_maid','d_other_household',
+    'd_personal_food','d_transport','d_car_petrol','d_car_insurance',
+    'd_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children',
+    'd_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle',
+  ]
+  const DETAILED_ALL_KEYS2 = [
+    'd2_mortgage_cash','d2_vehicle_repay','d2_personal_loan_repay','d2_rental_expense',
+    'd2_income_tax','d2_insurance','d2_regular_savings',
+    'd2_conservancy','d2_utilities','d2_family_food','d2_maid','d2_other_household',
+    'd2_personal_food','d2_transport','d2_car_petrol','d2_car_insurance',
+    'd2_childcare','d2_school_fees','d2_school_transport','d2_allowance_children','d2_other_children',
+    'd2_holidays','d2_hobbies','d2_allowance_parents','d2_others_lifestyle',
+  ]
+  const CUSTOM_EXP_KEYS = ['d_custom_financial','d_custom_household','d_custom_personal','d_custom_children','d_custom_lifestyle'] as const
 
-  const eduChildren   = edu.children || []
-  const eduReturnRate = edu.returnRate || 5
-  const eduTuitionInfl = edu.tuitionInflation || 5
-  const eduLivingInfl  = edu.livingInflation  || 3
-  const eduHasData    = children.length > 0
+  const detailedStd1 = DETAILED_ALL_KEYS.reduce((s, k) => s + ((fin[k] as number) || 0), 0)
+  const detailedStd2 = isCouple ? DETAILED_ALL_KEYS2.reduce((s, k) => s + ((fin[k] as number) || 0), 0) : 0
+  const detailedCustom1 = CUSTOM_EXP_KEYS.reduce((s, k) => {
+    const items: any[] = fin[k] || []
+    return s + items.reduce((a: number, i: any) => a + (i.amount || 0), 0)
+  }, 0)
+  const detailedCustom2 = isCouple ? CUSTOM_EXP_KEYS.reduce((s, k) => {
+    const items: any[] = fin[k] || []
+    return s + items.reduce((a: number, i: any) => a + (i.amount2 || 0), 0)
+  }, 0) : 0
+  const detailedTotal = detailedStd1 + detailedStd2 + detailedCustom1 + detailedCustom2
+
+  // Simplified fields (annual, excluding CPF OA)
+  const SIMP_KEYS  = ['s_financial','s_mortgage','s_household','s_personal','s_children','s_lifestyle'] as const
+  const SIMP_KEYS2 = ['s2_financial','s2_mortgage','s2_household','s2_personal','s2_children','s2_lifestyle'] as const
+  const simplifiedTotal =
+    SIMP_KEYS.reduce((s, k) => s + ((fin[k] as number) || 0), 0) +
+    (isCouple ? SIMP_KEYS2.reduce((s, k) => s + ((fin[k] as number) || 0), 0) : 0)
+
+  // Detailed takes priority if mode is 'detailed' AND at least one field is filled
+  const annExpClient = (expMode === 'detailed' && detailedTotal > 0) ? detailedTotal : simplifiedTotal
+
+  // ── EDUCATION — mirrors EducationSection.tsx exactly ─────────────────────────
+
+  const eduChildren    = edu.children || []
+  const eduReturnRate  = edu.returnRate      ?? 5
+  const eduTuitionInfl = edu.tuitionInflation ?? 5
+  const eduLivingInfl  = edu.livingInflation  ?? 3
+  const eduHasData     = children.length > 0
+
+  function eduCalcChildFund(child: any): number {
+    const yearsToUni = Math.max(0, child.uniEntryAge - child.age)
+    const fvTuition = (child.annualTuition || 9000) * Math.pow(1 + eduTuitionInfl / 100, yearsToUni) * (child.courseDuration || 4)
+    const fvLiving  = (child.annualLiving  || 12000) * Math.pow(1 + eduLivingInfl  / 100, yearsToUni) * (child.courseDuration || 4)
+    return fvTuition + fvLiving
+  }
+  function eduCalcGap(fund: number, existingSavings: number, yearsToUni: number): number {
+    const existingFV = existingSavings * Math.pow(1 + eduReturnRate / 100, yearsToUni)
+    return Math.max(0, fund - existingFV)
+  }
+  function eduCalcMonthly(gap: number, yearsToUni: number): number {
+    if (gap <= 0 || yearsToUni <= 0) return 0
+    const n = yearsToUni * 12
+    const r = eduReturnRate / 100 / 12
+    if (r === 0) return gap / n
+    return gap * r / (Math.pow(1 + r, n) - 1)   // ordinary annuity — matches EducationSection
+  }
+
+  // Build child list the same way EducationSection does: merge saved settings onto live family_members age
+  const eduChildList = children.map((kid: any) => {
+    const age = kid.age != null ? kid.age : getAge(kid.dob)
+    const saved = eduChildren.find((e: any) => e.childId === kid.id)
+    const defaultEntry = kid.gender === 'Male' ? 21 : 19
+    if (saved) return { ...saved, age }   // use live age, keep all saved settings
+    return {
+      childId: kid.id, age,
+      uniEntryAge: defaultEntry, courseDuration: 4,
+      annualTuition: 9000, annualLiving: 12000,
+      existingSavings: 0, lumpSumPct: 50,
+    }
+  })
 
   let totalEduFund = 0, totalEduGap = 0, totalEduMonthly = 0
-
-  for (const kid of children) {
-    const age = kid.age ?? getAge(kid.dob)
-    const ec  = eduChildren.find((e: any) => e.childId === kid.id)
-    const defaultEntry = kid.gender === 'Male' ? 21 : 19
-    const uniEntryAge  = ec?.uniEntryAge  || defaultEntry
-    const courseDur    = ec?.courseDuration || 4
-    const annTuition   = ec?.annualTuition  || 9000
-    const annLiving    = ec?.annualLiving   || 12000
-    const existSavings = ec?.existingSavings || 0
-    const lumpPct      = ec?.lumpSumPct || 50
-    const yearsToUni   = Math.max(0, uniEntryAge - age)
-
-    const fvTuition = annTuition * Math.pow(1 + eduTuitionInfl / 100, yearsToUni) * courseDur
-    const fvLiving  = annLiving  * Math.pow(1 + eduLivingInfl  / 100, yearsToUni) * courseDur
-    const fund      = fvTuition + fvLiving
-    const existFV   = existSavings * Math.pow(1 + eduReturnRate / 100, yearsToUni)
-    const gap       = Math.max(0, fund - existFV)
-    const n         = yearsToUni * 12
-    const rm        = eduReturnRate / 100 / 12
-    const mp        = 1 - lumpPct / 100
-    const mo        = gap > 0 && n > 0 && mp > 0
-      ? (rm === 0 ? (gap * mp) / n : (gap * mp) * rm / (Math.pow(1 + rm, n) - 1))
-      : 0
-
+  for (const child of eduChildList) {
+    const yearsToUni = Math.max(0, child.uniEntryAge - child.age)
+    const fund = eduCalcChildFund(child)
+    const gap  = eduCalcGap(fund, child.existingSavings || 0, yearsToUni)
+    const mo   = eduCalcMonthly(gap * (1 - (child.lumpSumPct || 50) / 100), yearsToUni)
     totalEduFund    += fund
     totalEduGap     += gap
     totalEduMonthly += mo
