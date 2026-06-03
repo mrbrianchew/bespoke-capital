@@ -369,13 +369,53 @@ async function deleteFamilyMember(memberId: string) {
   const yrsToRet  = Math.max(0, earliestRetAge - clientAge)
   const retYears  = Math.max(0, finalDeathAge - earliestRetAge)
 
-  const savedCorpusNeeded = ffData['retirement']?.corpusNeeded || 0
-  const savedRetirementGap = ffData['retirement']?.retirementGap || 0
+  // ── Capital Mandate portfolio (shared by retirement shortfall + education coverage) ──
+  const cmPortfolio: any[] = cm?.portfolio || []
+  const cmPortfolioValue = cmPortfolio.reduce((s: number, p: any) => {
+    if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return s
+    return s + (p.currentValue || 0)
+  }, 0)
+
+  const savedCorpusNeeded   = ffData['retirement']?.corpusNeeded        || 0
   const savedMonthlySavings = ffData['retirement']?.monthlySavingsNeeded || 0
 
-  let corpusNeeded = savedCorpusNeeded
-  let retGap = savedRetirementGap
-  let retMonthlySavings = savedMonthlySavings
+  // ── Compute Capital Mandate projected shortfall ───────────────────────────
+  // Project the CM portfolio (lump-sum + ongoing contributions) to retirement,
+  // then compare against the saved corpus target. This matches what CM displays.
+  const cmExpReturn   = (cm?.settings?.expectedReturn ?? 6) / 100
+  const cmMonthlyContribs = (cm?.portfolio || []).reduce((s: number, p: any) => {
+    if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return s
+    if (p.vehicleType === 'srs') return s + ((p.srsAnnualContribution || 0) / 12)
+    if (p.vehicleType === 'endowment') return s + (p.endowmentPremium || 0)
+    if (p.vehicleType === 'annuity') return s + (p.monthlyContribution || 0)
+    // investment / other — use latest contribution_change or monthlyContribution
+    const changes = (p.cashflows || []).filter((cf: any) => cf.type === 'contribution_change').sort((a: any, b: any) => b.date.localeCompare(a.date))
+    return s + (changes[0]?.amount ?? p.monthlyContribution ?? 0)
+  }, 0)
+
+  let cmProjectedAtRetirement = 0
+  if (cmPortfolioValue > 0 || cmMonthlyContribs > 0) {
+    const rM = cmExpReturn / 12
+    const nM = yrsToRet * 12
+    // FV of lump sum
+    const fvLump = cmPortfolioValue * Math.pow(1 + cmExpReturn, yrsToRet)
+    // FV of monthly contributions (annuity-due)
+    const fvContribs = rM > 0
+      ? cmMonthlyContribs * ((Math.pow(1 + rM, nM) - 1) / rM) * (1 + rM)
+      : cmMonthlyContribs * nM
+    cmProjectedAtRetirement = fvLump + fvContribs
+  }
+
+  // Shortfall = how much more corpus is needed beyond what the portfolio will deliver
+  const cmShortfall = savedCorpusNeeded > 0
+    ? Math.max(0, savedCorpusNeeded - cmProjectedAtRetirement)
+    : 0
+
+  // Monthly top-up needed (from saved Retirement tab value)
+  const retMonthlySavings = savedMonthlySavings
+
+  // If CM has portfolio data use the projected shortfall; else fall back to raw gap from Retirement tab
+  const retGap = (cmPortfolioValue > 0 || cmMonthlyContribs > 0) ? cmShortfall : (ffData['retirement']?.retirementGap || 0)
 
   let retStatus: Status = 'empty'
   let retHeadline = 'Not yet configured'
@@ -384,7 +424,7 @@ async function deleteFamilyMember(memberId: string) {
 
   if (retHasData || savedCorpusNeeded > 0) {
     retStatus = retGap > 0 ? 'gap' : 'good'
-    retHeadline = `Savings Gap ${fmtShort(retGap)}`
+    retHeadline = retGap > 0 ? `Shortfall ${fmtShort(retGap)}` : `On Track · ${fmtShort(savedCorpusNeeded)} target`
     retSubline = `Age ${earliestRetAge} · ${yrsToRet}y away · ${retYears}y retirement`
     if (retGap > 0) {
       retStatus = retGap > 100000 ? 'gap' : 'warn'
@@ -499,14 +539,7 @@ async function deleteFamilyMember(memberId: string) {
 
   // ── EDUCATION: check if Capital Mandate projected portfolio covers edu milestones ──
   // Project the CM portfolio forward to the earliest education milestone and check coverage.
-  const cmPortfolio: any[] = cm?.portfolio || []
-  const cmExpectedReturn = (cm?.settings?.expectedReturn ?? 6) / 100
-
-  // Total investable portfolio value (excluding CPF Life & rental)
-  const cmPortfolioValue = cmPortfolio.reduce((s: number, p: any) => {
-    if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return s
-    return s + (p.currentValue || 0)
-  }, 0)
+  // cmPortfolio and cmPortfolioValue defined above (shared with retirement block)
 
   // For each education child, project portfolio value to that milestone and check if it covers the corpus
   // We use a simple lump-sum growth projection (conservative — ignores ongoing contributions)
@@ -522,7 +555,7 @@ async function deleteFamilyMember(memberId: string) {
       const fund = eduCalcChildFund(child)
       const gap  = eduCalcGap(fund, child.existingSavings || 0, yearsToUni)
       // Project running portfolio to this child's milestone
-      const projectedAtMilestone = runningPortfolio * Math.pow(1 + cmExpectedReturn, yearsToUni)
+      const projectedAtMilestone = runningPortfolio * Math.pow(1 + cmExpReturn, yearsToUni)
       if (projectedAtMilestone < gap) {
         eduCoveredByPortfolio = false
         totalEduCoveredShortfall += gap - projectedAtMilestone
@@ -530,7 +563,7 @@ async function deleteFamilyMember(memberId: string) {
       // Deduct corpus from running portfolio (at milestone)
       runningPortfolio = Math.max(0, projectedAtMilestone - gap)
       // Discount back to today for next child comparison
-      if (yearsToUni > 0) runningPortfolio = runningPortfolio / Math.pow(1 + cmExpectedReturn, yearsToUni)
+      if (yearsToUni > 0) runningPortfolio = runningPortfolio / Math.pow(1 + cmExpReturn, yearsToUni)
     }
   }
 
