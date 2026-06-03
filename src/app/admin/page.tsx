@@ -114,10 +114,9 @@ function PendingAdvisorsCard() {
     setActionId(null)
   }
 
-  async function handleReject(id: string) {
+ async function handleReject(id: string) {
     if (!confirm('Reject and delete this advisor account? This cannot be undone.')) return
     setActionId(id)
-    await supabase.from('advisors').delete().eq('id', id)
     await fetch('/api/delete-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setPending(prev => prev.filter(a => a.id !== id))
     setActionId(null)
