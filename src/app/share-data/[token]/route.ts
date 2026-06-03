@@ -6,6 +6,16 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// GET — returns only hint + expiry status (no auth required, no sensitive data)
+export async function GET(_req: Request, { params }: { params: { token: string } }) {
+  const { data: share } = await supabaseAdmin
+    .from('client_shares').select('password_hint,expires_at').eq('token', params.token).maybeSingle()
+  if (!share) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  const expired = share.expires_at ? new Date(share.expires_at) < new Date() : false
+  return NextResponse.json({ hint: share.password_hint || '', expired })
+}
+
+// POST — verifies password, returns client + policies
 export async function POST(req: Request, { params }: { params: { token: string } }) {
   const { passwordHash } = await req.json()
 
