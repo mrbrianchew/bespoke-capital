@@ -250,6 +250,7 @@ async function deleteFamilyMember(memberId: string) {
   const edu   = ffData['education']?.edu || {}
   const estate = ffData['estate']?.estate || {}
   const fin   = ffData['financials'] || {}
+  const cm    = ffData['capital_mandate'] || {}
 
   // ── PROTECTION ───────────────────────────────────────────────────────────────
 
@@ -391,9 +392,20 @@ async function deleteFamilyMember(memberId: string) {
     }
   }
 
-  const clientLiquid = (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) + (fin.a_srs || 0) +
-    (fin.a_shares || 0) + (fin.a_etf || 0) + (fin.a_unit_trust || 0) +
-    (fin.a_bonds || 0) + (fin.a_alternatives || 0)
+  // Household liquid assets — cash/near-cash + investments for both client and spouse
+  const cashCustomHousehold = ((fin.a_cash_custom as any[]) || []).reduce(
+    (s: number, i: any) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0
+  )
+  const clientLiquid =
+    (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) +
+    (fin.a_srs || 0) + (fin.a_shares || 0) + (fin.a_etf || 0) +
+    (fin.a_unit_trust || 0) + (fin.a_bonds || 0) + (fin.a_alternatives || 0) +
+    cashCustomHousehold +
+    (isCouple ? (
+      (fin.a2_savings || 0) + (fin.a2_fixed_deposit || 0) +
+      (fin.a2_srs || 0) + (fin.a2_shares || 0) + (fin.a2_etf || 0) +
+      (fin.a2_unit_trust || 0) + (fin.a2_bonds || 0) + (fin.a2_alternatives || 0)
+    ) : 0)
 
   // ── ANNUAL EXPENSES: detailed fields take priority; fall back to simplified ──
   const expMode = fin.expense_mode || 'simple'
@@ -490,6 +502,43 @@ async function deleteFamilyMember(memberId: string) {
     totalEduMonthly += mo
   }
 
+  // ── EDUCATION: check if Capital Mandate projected portfolio covers edu milestones ──
+  // Project the CM portfolio forward to the earliest education milestone and check coverage.
+  const cmPortfolio: any[] = cm?.portfolio || []
+  const cmExpectedReturn = (cm?.settings?.expectedReturn ?? 6) / 100
+
+  // Total investable portfolio value (excluding CPF Life & rental)
+  const cmPortfolioValue = cmPortfolio.reduce((s: number, p: any) => {
+    if (p.vehicleType === 'cpf_life' || p.vehicleType === 'rental') return s
+    return s + (p.currentValue || 0)
+  }, 0)
+
+  // For each education child, project portfolio value to that milestone and check if it covers the corpus
+  // We use a simple lump-sum growth projection (conservative — ignores ongoing contributions)
+  // then deduct each education corpus in age order, checking if covered at each step
+  const eduChildsSorted = [...eduChildList].sort((a, b) => a.uniEntryAge - b.uniEntryAge)
+  let runningPortfolio = cmPortfolioValue
+  let eduCoveredByPortfolio = cmPortfolioValue > 0  // only consider portfolio coverage if CM has data
+  let totalEduCoveredShortfall = 0
+
+  if (cmPortfolioValue > 0) {
+    for (const child of eduChildsSorted) {
+      const yearsToUni = Math.max(0, child.uniEntryAge - child.age)
+      const fund = eduCalcChildFund(child)
+      const gap  = eduCalcGap(fund, child.existingSavings || 0, yearsToUni)
+      // Project running portfolio to this child's milestone
+      const projectedAtMilestone = runningPortfolio * Math.pow(1 + cmExpectedReturn, yearsToUni)
+      if (projectedAtMilestone < gap) {
+        eduCoveredByPortfolio = false
+        totalEduCoveredShortfall += gap - projectedAtMilestone
+      }
+      // Deduct corpus from running portfolio (at milestone)
+      runningPortfolio = Math.max(0, projectedAtMilestone - gap)
+      // Discount back to today for next child comparison
+      if (yearsToUni > 0) runningPortfolio = runningPortfolio / Math.pow(1 + cmExpectedReturn, yearsToUni)
+    }
+  }
+
   let eduStatus: Status = 'empty'
   let eduHeadline = 'No children in profile'
   let eduSubline  = 'Add children in client profile to plan education'
@@ -503,10 +552,17 @@ async function deleteFamilyMember(memberId: string) {
       eduSubline  = 'Open Education Planning tab to project costs'
       eduActions.push(`Configure education plan for ${children.length} child${children.length !== 1 ? 'ren' : ''}`)
     } else if (totalEduGap > 0) {
-      eduStatus   = 'gap'
-      eduHeadline = `${fmtShort(totalEduFund)} total fund`
-      eduSubline  = `Gap ${fmtShort(totalEduGap)} · ${fmt(totalEduMonthly)}/mo`
-      if (totalEduMonthly > 0) eduActions.push(`Education fund shortfall — invest ${fmt(totalEduMonthly)}/mo`)
+      if (eduCoveredByPortfolio) {
+        // Portfolio projects to cover all education milestones — no separate action needed
+        eduStatus   = 'good'
+        eduHeadline = `${fmtShort(totalEduFund)} total fund`
+        eduSubline  = `${fmtShort(totalEduGap)} gap · Covered by portfolio`
+      } else {
+        eduStatus   = 'gap'
+        eduHeadline = `${fmtShort(totalEduFund)} total fund`
+        eduSubline  = `Gap ${fmtShort(totalEduGap)} · ${fmt(totalEduMonthly)}/mo`
+        if (totalEduMonthly > 0) eduActions.push(`Education fund shortfall — invest ${fmt(totalEduMonthly)}/mo`)
+      }
     } else {
       eduStatus   = 'good'
       eduHeadline = `${fmtShort(totalEduFund)} total fund`
@@ -794,7 +850,7 @@ async function deleteFamilyMember(memberId: string) {
                   { label: 'Liquid Assets',     val: fmtShort(clientLiquid),           sub: 'cash & investments'       },
                   { label: 'Property Equity',    val: fmtShort(propEquity),             sub: 'net of mortgage'          },
                   { label: 'Annual Expenses',    val: fmtShort(annExpClient),           sub: 'from financial profile'   },
-                  { label: 'Emergency Cover',    val: annExpClient > 0 ? (clientLiquid / (annExpClient / 12)).toFixed(1) + 'mo' : '—', sub: 'months of expenses'  },
+                  { label: 'Emergency Fund',     val: annExpClient > 0 ? (clientLiquid / (annExpClient / 12)).toFixed(1) + ' mo' : '—', sub: 'months of expenses'  },
                 ].map((kpi, i) => (
                   <div key={i} style={{ background: 'white', border: '1px solid #E8E4DC', borderRadius: 10, padding: '14px 16px' }}>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 6 }}>{kpi.label}</div>
