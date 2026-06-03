@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
@@ -307,7 +308,7 @@ function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYea
 }
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
-export default function ObjectivesPage() {
+function ObjectivesPageInner() {
   const supabase = createClient()
   const { uniCosts: _uniCosts } = useUniCosts()
   UNI_COST_DEFAULTS = _uniCosts
@@ -343,7 +344,12 @@ export default function ObjectivesPage() {
     advisorNotes: '',
   })
   const [children, setChildren] = useState<FamilyMember[]>([])
-  const [activeSection, setActiveSection] = useState(0)
+  const searchParams = useSearchParams()
+  const [activeSection, setActiveSection] = useState(() => {
+    const t = searchParams.get('tab')
+    const n = t !== null ? parseInt(t, 10) : 0
+    return isNaN(n) ? 0 : Math.min(Math.max(n, 0), 4)
+  })
   const [acc, setAcc] = useState<AccumulationData>({
     inflationRate: 3,
     returnRate: 5,
@@ -2795,4 +2801,12 @@ const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', fontFamily: 'DM Mono, monospace', fontSize: 13,
   color: '#1C1A17', background: '#fff', border: '1px solid #E8E4DC',
   borderRadius: 4, outline: 'none',
+}
+
+export default function ObjectivesPage() {
+  return (
+    <Suspense fallback={null}>
+      <ObjectivesPageInner />
+    </Suspense>
+  )
 }
