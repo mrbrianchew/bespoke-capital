@@ -390,7 +390,6 @@ function RemarksBox({ policies, cat }: { policies: Policy[]; cat: string }) {
 }
 
 export default function SharePage({ params }: { params: { token: string } }) {
-  const supabase = createClient()
   const [stage, setStage] = useState<'loading'|'gate'|'unlocked'|'expired'|'notfound'>('loading')
   const [hint, setHint] = useState('')
   const [wrongPw, setWrongPw] = useState(false)
