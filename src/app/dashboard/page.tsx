@@ -392,20 +392,15 @@ async function deleteFamilyMember(memberId: string) {
     }
   }
 
-  // Household liquid assets — cash/near-cash + investments for both client and spouse
-  const cashCustomHousehold = ((fin.a_cash_custom as any[]) || []).reduce(
+  // Liquid Assets = Cash / Near Cash only (matches Financial Profile "CASH / NEAR CASH" block)
+  // Savings + Fixed Deposits + custom cash items, for both client and spouse
+  const cashCustom = ((fin.a_cash_custom as any[]) || []).reduce(
     (s: number, i: any) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0
   )
   const clientLiquid =
     (fin.a_savings || 0) + (fin.a_fixed_deposit || 0) +
-    (fin.a_srs || 0) + (fin.a_shares || 0) + (fin.a_etf || 0) +
-    (fin.a_unit_trust || 0) + (fin.a_bonds || 0) + (fin.a_alternatives || 0) +
-    cashCustomHousehold +
-    (isCouple ? (
-      (fin.a2_savings || 0) + (fin.a2_fixed_deposit || 0) +
-      (fin.a2_srs || 0) + (fin.a2_shares || 0) + (fin.a2_etf || 0) +
-      (fin.a2_unit_trust || 0) + (fin.a2_bonds || 0) + (fin.a2_alternatives || 0)
-    ) : 0)
+    (isCouple ? (fin.a2_savings || 0) + (fin.a2_fixed_deposit || 0) : 0) +
+    cashCustom
 
   // ── ANNUAL EXPENSES: detailed fields take priority; fall back to simplified ──
   const expMode = fin.expense_mode || 'simple'
@@ -610,7 +605,16 @@ async function deleteFamilyMember(memberId: string) {
   let netEstate = savedNetEstate
 
   if (netEstate === 0) {
-    const totalAssets = clientLiquid +
+    // For net estate fallback: cash + invested + CPF + property equity (both persons)
+    const investedAssets =
+      (fin.a_srs || 0) + (fin.a_shares || 0) + (fin.a_etf || 0) +
+      (fin.a_unit_trust || 0) + (fin.a_bonds || 0) + (fin.a_alternatives || 0) +
+      ((fin.a_invested_custom as any[]) || []).reduce((s: number, i: any) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0) +
+      (isCouple ? (
+        (fin.a2_srs || 0) + (fin.a2_shares || 0) + (fin.a2_etf || 0) +
+        (fin.a2_unit_trust || 0) + (fin.a2_bonds || 0) + (fin.a2_alternatives || 0)
+      ) : 0)
+    const totalAssets = clientLiquid + investedAssets +
       (fin.a_cpf_oa || 0) + (fin.a_cpf_sa || 0) + (fin.a_cpf_ma || 0) + (fin.a_cpf_ra || 0) +
       propEquity
     netEstate = Math.max(0, totalAssets - totalLiab)
@@ -847,7 +851,7 @@ async function deleteFamilyMember(memberId: string) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                 {[
-                  { label: 'Liquid Assets',     val: fmtShort(clientLiquid),           sub: 'cash & investments'       },
+                  { label: 'Liquid Assets',     val: fmtShort(clientLiquid),           sub: 'savings & fixed deposits'       },
                   { label: 'Property Equity',    val: fmtShort(propEquity),             sub: 'net of mortgage'          },
                   { label: 'Annual Expenses',    val: fmtShort(annExpClient),           sub: 'from financial profile'   },
                   { label: 'Emergency Fund',     val: annExpClient > 0 ? (clientLiquid / (annExpClient / 12)).toFixed(1) + ' mo' : '—', sub: 'months of expenses'  },
