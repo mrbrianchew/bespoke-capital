@@ -894,7 +894,7 @@ export default function RecommendationsPage() {
       const ACTIVE = ['In-Force','Premium Holiday','Paid-up']
       const activePolicies = policies.filter((p:any) => ACTIVE.includes(p.status))
 
-      function sumBenefit(person:string, type:'death'|'ci') {
+      const sumBenefit = (person:string, type:'death'|'ci') => {
         return activePolicies
           .filter((p:any)=>p.person===person)
           .reduce((s:number,p:any)=>{
