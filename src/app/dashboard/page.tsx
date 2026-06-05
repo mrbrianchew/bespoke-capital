@@ -741,9 +741,41 @@ async function deleteFamilyMember(memberId: string) {
 
   const p1Gross  = (fin.person1 as any)?.gross_monthly || 0
 const p1Bonus  = (fin.person1 as any)?.gross_bonus || 0
+const p1Cit    = (fin.person1 as any)?.citizenship || 'SC'
+const p1PrYear = (fin.person1 as any)?.pr_year || '3+'
 const p2Gross  = isCouple ? ((fin.person2 as any)?.gross_monthly || 0) : 0
 const p2Bonus  = isCouple ? ((fin.person2 as any)?.gross_bonus || 0) : 0
-const totalIncome = (p1Gross + p2Gross) * 12 + p1Bonus + p2Bonus
+const p2Cit    = isCouple ? ((fin.person2 as any)?.citizenship || 'SC') : 'SC'
+const p2PrYear = isCouple ? ((fin.person2 as any)?.pr_year || '3+') : '3+'
+
+// CPF rates (same tiers as financials page)
+const SC_RATES = [
+  { max_age: 35, employee: 20 }, { max_age: 45, employee: 20 },
+  { max_age: 50, employee: 20 }, { max_age: 55, employee: 20 },
+  { max_age: 60, employee: 18 }, { max_age: 65, employee: 14.5 },
+  { max_age: 70, employee: 7.5 }, { max_age: 999, employee: 5 },
+]
+const PR1_RATES = [{ max_age: 999, employee: 5 }]
+const PR2_RATES = [{ max_age: 999, employee: 15 }]
+
+function getCpfEmpRate(age: number, cit: string, prYear: string): number {
+  if (!['SC', 'PR'].includes(cit)) return 0
+  const tiers = cit === 'PR' ? (prYear === '1' ? PR1_RATES : prYear === '2' ? PR2_RATES : SC_RATES) : SC_RATES
+  return (tiers.find(t => age <= t.max_age) || tiers[tiers.length - 1]).employee
+}
+
+const owCap = 8000
+const p1EmpRate = getCpfEmpRate(clientAge, p1Cit, p1PrYear) / 100
+const p1MonthlyCpf = Math.floor(Math.min(p1Gross, owCap) * p1EmpRate)
+const p1BonusCpf = Math.floor(p1Bonus * p1EmpRate)
+const p1TakeHome = (p1Gross - p1MonthlyCpf) * 12 + (p1Bonus - p1BonusCpf)
+
+const p2EmpRate = isCouple ? getCpfEmpRate(spouseAge, p2Cit, p2PrYear) / 100 : 0
+const p2MonthlyCpf = isCouple ? Math.floor(Math.min(p2Gross, owCap) * p2EmpRate) : 0
+const p2BonusCpf = isCouple ? Math.floor(p2Bonus * p2EmpRate) : 0
+const p2TakeHome = isCouple ? (p2Gross - p2MonthlyCpf) * 12 + (p2Bonus - p2BonusCpf) : 0
+
+const totalIncome = p1TakeHome + p2TakeHome
 const totalExp    = annExpClient
 const annualSurplus = totalIncome - totalExp
 
@@ -825,7 +857,7 @@ const annualSurplus = totalIncome - totalExp
             {[
               { label: 'Annual Income',    val: totalIncome > 0 ? fmtShort(totalIncome) : '—', sub: 'gross combined'         },
               { label: 'Net Estate',       val: netEstate   > 0 ? fmtShort(netEstate)   : '—', sub: 'assets minus liabilities' },
-              { label: 'Annual Surplus',   val: annualSurplus > 0 ? fmtShort(annualSurplus) : '—', sub: 'est. after expenses'  },
+              { label: 'Annual Surplus',   val: annualSurplus > 0 ? fmtShort(annualSurplus) : '—', sub: 'take-home minus expenses'  },
             ].map((kpi, i) => (
               <div key={i} style={{ textAlign: 'right' }}>
                 <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 4 }}>{kpi.label}</div>
