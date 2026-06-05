@@ -740,10 +740,12 @@ async function deleteFamilyMember(memberId: string) {
   const lastSessionDate = Object.values(lastUpdated).sort().reverse()[0] || ''
 
   const p1Gross  = (fin.person1 as any)?.gross_monthly || 0
-  const p2Gross  = isCouple ? ((fin.person2 as any)?.gross_monthly || 0) : 0
-  const totalIncome = (p1Gross + p2Gross) * 12
-  const totalExp    = annExpClient
-  const annualSurplus = totalIncome * 0.8 - totalExp
+const p1Bonus  = (fin.person1 as any)?.gross_bonus || 0
+const p2Gross  = isCouple ? ((fin.person2 as any)?.gross_monthly || 0) : 0
+const p2Bonus  = isCouple ? ((fin.person2 as any)?.gross_bonus || 0) : 0
+const totalIncome = (p1Gross + p2Gross) * 12 + p1Bonus + p2Bonus
+const totalExp    = annExpClient
+const annualSurplus = totalIncome - totalExp
 
   // ─── RENDER ──────────────────────────────────────────────────────────────────
 
