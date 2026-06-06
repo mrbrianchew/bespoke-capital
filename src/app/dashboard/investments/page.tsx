@@ -1303,21 +1303,6 @@ export default function CapitalMandatePage() {
 
   const matchesPerson = useCallback((_owner: 'client' | 'spouse' | 'joint'): boolean => true, [])
 
-  const filteredGoals = useMemo(() => goals
-  .filter(g => matchesPerson(g.owner))
-  .map(g => {
-    if (g.source === 'custom') return g
-    const liveYearsAway = g.source === 'retirement'
-      ? Math.max(0, retirementAge - clientAge)
-      : g.yearsAway
-    const liveCorpus = g.source === 'retirement' && retirementBreakdown
-      ? retirementBreakdown.baseAdjustedCorpus
-      : g.targetCorpus
-    const monthly = liveYearsAway > 0
-      ? calcMonthlyRequired(liveCorpus, liveYearsAway, settings.expectedReturn)
-      : g.monthlyRequired
-    return { ...g, yearsAway: liveYearsAway, targetCorpus: liveCorpus, monthlyRequired: monthly }
-  }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge, retirementBreakdown])
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
 
   const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
@@ -1730,6 +1715,22 @@ export default function CapitalMandatePage() {
   }, [effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
       retirementAge, retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
       postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement])
+
+  const filteredGoals = useMemo(() => goals
+    .filter(g => matchesPerson(g.owner))
+    .map(g => {
+      if (g.source === 'custom') return g
+      const liveYearsAway = g.source === 'retirement'
+        ? Math.max(0, retirementAge - clientAge)
+        : g.yearsAway
+      const liveCorpus = g.source === 'retirement' && retirementBreakdown
+        ? retirementBreakdown.baseAdjustedCorpus
+        : g.targetCorpus
+      const monthly = liveYearsAway > 0
+        ? calcMonthlyRequired(liveCorpus, liveYearsAway, settings.expectedReturn)
+        : g.monthlyRequired
+      return { ...g, yearsAway: liveYearsAway, targetCorpus: liveCorpus, monthlyRequired: monthly }
+    }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge, retirementBreakdown])
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
