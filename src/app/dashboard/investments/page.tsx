@@ -1312,7 +1312,6 @@ export default function CapitalMandatePage() {
     return s
   }, 0), [filteredPortfolio])
   const totalCurrentValue = useMemo(() => filteredPortfolio.reduce((s, p) => s + (p.currentValue || 0), 0), [filteredPortfolio])
-  const monthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
 
  const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
 
@@ -1730,8 +1729,9 @@ export default function CapitalMandatePage() {
       return { ...g, yearsAway: liveYearsAway, targetCorpus: liveCorpus, monthlyRequired: monthly }
     }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge, retirementBreakdown])
 
-  const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
+ const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
   const totalCorpus = useMemo(() => filteredGoals.reduce((s, g) => s + g.targetCorpus, 0), [filteredGoals])
+  const monthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
