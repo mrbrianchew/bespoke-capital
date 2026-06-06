@@ -1310,12 +1310,13 @@ export default function CapitalMandatePage() {
     const liveYearsAway = g.source === 'retirement'
       ? Math.max(0, retirementAge - clientAge)
       : g.yearsAway
-    // For retirement goal, recompute corpus inline (same formula as retirementBreakdown)
     let liveCorpus = g.targetCorpus
-    if (g.source === 'retirement' && effectiveRetirementIncome > 0) {
+    if (g.source === 'retirement' && (desiredMonthlyIncome > 0 || currentExpenses > 0)) {
+      const baseMonthly = desiredMonthlyIncome > 0 ? desiredMonthlyIncome : currentExpenses
+      const baseHolidays = desiredMonthlyIncome > 0 ? desiredAnnualHolidays : 0
       const yearsToRet = Math.max(0, retirementAge - clientAge)
       const inflFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
-      const annualGap = effectiveRetirementIncome * inflFactor * 12 + effectiveAnnualHolidays * inflFactor
+      const annualGap = baseMonthly * inflFactor * 12 + baseHolidays * inflFactor
       const finalDE = planMode === 'couple'
         ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
         : lifeExpectancy
@@ -1336,10 +1337,10 @@ export default function CapitalMandatePage() {
       ? calcMonthlyRequired(liveCorpus, liveYearsAway, settings.expectedReturn)
       : g.monthlyRequired
     return { ...g, yearsAway: liveYearsAway, targetCorpus: liveCorpus, monthlyRequired: monthly }
-  }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge,
-       effectiveRetirementIncome, effectiveAnnualHolidays, retirementInflation,
-       planMode, lifeExpectancy, spouseLifeExpectancy, spouseAge, postRetirementReturn,
-       settings.legacyAmount])
+  }), [goals, matchesPerson, settings.expectedReturn, settings.legacyAmount,
+       retirementAge, clientAge, desiredMonthlyIncome, desiredAnnualHolidays,
+       currentExpenses, retirementInflation, planMode, lifeExpectancy,
+       spouseLifeExpectancy, spouseAge, postRetirementReturn])
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
 
   const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
