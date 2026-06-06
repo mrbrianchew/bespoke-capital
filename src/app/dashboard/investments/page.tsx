@@ -1324,7 +1324,12 @@ export default function CapitalMandatePage() {
 
   const totalMonthlyInvesting = useMemo(() => filteredPortfolio.reduce((s, p) => {
     if (p.mode === 'Lump Sum') return s
-    if (p.vehicleType === 'investment' || p.vehicleType === 'other') return s + p.monthlyContribution
+    if (p.vehicleType === 'investment' || p.vehicleType === 'other') {
+      const latestChange = [...(p.cashflows || [])]
+        .filter(cf => cf.type === 'contribution_change')
+        .sort((a, b) => b.date.localeCompare(a.date))[0]
+      return s + (latestChange ? latestChange.amount : p.monthlyContribution)
+    }
     if (p.vehicleType === 'endowment') return s + (p.endowmentPremium || 0)
     if (p.vehicleType === 'annuity') return s + p.monthlyContribution
     if (p.vehicleType === 'srs' && p.srsIsRegular) return s + (p.srsAnnualContribution || 0) / 12
