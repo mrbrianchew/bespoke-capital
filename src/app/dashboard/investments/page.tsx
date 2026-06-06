@@ -1307,18 +1307,39 @@ export default function CapitalMandatePage() {
   .filter(g => matchesPerson(g.owner))
   .map(g => {
     if (g.source === 'custom') return g
-    // For retirement goal, always recompute yearsAway from live state to stay in sync with Retirement page
     const liveYearsAway = g.source === 'retirement'
       ? Math.max(0, retirementAge - clientAge)
       : g.yearsAway
-    const liveCorpus = g.source === 'retirement' && retirementBreakdown
-      ? retirementBreakdown.baseAdjustedCorpus
-      : g.targetCorpus
+    // For retirement goal, recompute corpus inline (same formula as retirementBreakdown)
+    let liveCorpus = g.targetCorpus
+    if (g.source === 'retirement' && effectiveRetirementIncome > 0) {
+      const yearsToRet = Math.max(0, retirementAge - clientAge)
+      const inflFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
+      const annualGap = effectiveRetirementIncome * inflFactor * 12 + effectiveAnnualHolidays * inflFactor
+      const finalDE = planMode === 'couple'
+        ? Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge))
+        : lifeExpectancy
+      const n = Math.max(1, finalDE - retirementAge)
+      const rr = postRetirementReturn / 100
+      const gg = retirementInflation / 100
+      const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
+      let pvFullNeed: number
+      if (Math.abs(rr - gg) < 0.0001) {
+        pvFullNeed = annualGap * n * (1 + rr)
+      } else {
+        const ratio = (1 + gg) / (1 + rr)
+        pvFullNeed = annualGap * (1 - Math.pow(ratio, n)) / (rr - gg) * (1 + rr)
+      }
+      liveCorpus = Math.max(legacyPV, pvFullNeed + legacyPV)
+    }
     const monthly = liveYearsAway > 0
       ? calcMonthlyRequired(liveCorpus, liveYearsAway, settings.expectedReturn)
       : g.monthlyRequired
     return { ...g, yearsAway: liveYearsAway, targetCorpus: liveCorpus, monthlyRequired: monthly }
-  }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge, retirementBreakdown])
+  }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge,
+       effectiveRetirementIncome, effectiveAnnualHolidays, retirementInflation,
+       planMode, lifeExpectancy, spouseLifeExpectancy, spouseAge, postRetirementReturn,
+       settings.legacyAmount])
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
 
   const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
