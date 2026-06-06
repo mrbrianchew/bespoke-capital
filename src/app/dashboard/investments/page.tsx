@@ -1099,14 +1099,14 @@ export default function CapitalMandatePage() {
     if (rows) rows.forEach((r: any) => { by[r.section] = r.data })
 
     const fin = by['financials'] || by['factfinding'] || {}
-    const dob = fin?.client?.dateOfBirth || fin?.client?.dob || c.date_of_birth
-    const age = dob
-  ? new Date().getFullYear() - new Date(dob).getFullYear()
-  : fin?.client?.currentAge || fin?.client?.age || c.age || 40
+    const dob = fin?.client?.dateOfBirth || fin?.client?.dob
+    const age = c.age ||
+      (dob ? new Date().getFullYear() - new Date(dob).getFullYear() : null) ||
+      fin?.client?.currentAge || fin?.client?.age || 40
     const spouseMember = (familyMembers || []).find((m: any) => m.relationship?.toLowerCase() === 'spouse')
-    const sage = spouseMember?.dob
-  ? new Date().getFullYear() - new Date(spouseMember.dob).getFullYear()
-  : fin?.spouse?.age || 38
+    const sage = spouseMember?.age ||
+      (spouseMember?.dob ? new Date().getFullYear() - new Date(spouseMember.dob).getFullYear() : null) ||
+      fin?.spouse?.age || 38
     const cName = fin?.client?.firstName ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim() : c.name || 'Client'
     const sName = fin?.spouse?.firstName
       ? `${fin.spouse.firstName} ${fin.spouse.lastName || ''}`.trim()
