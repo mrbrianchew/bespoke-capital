@@ -1326,6 +1326,7 @@ export default function CapitalMandatePage() {
     if (p.vehicleType === 'investment' || p.vehicleType === 'other') return s + p.monthlyContribution
     if (p.vehicleType === 'endowment') return s + (p.endowmentPremium || 0)
     if (p.vehicleType === 'annuity') return s + p.monthlyContribution
+    if (p.vehicleType === 'srs' && p.srsIsRegular) return s + (p.srsAnnualContribution || 0) / 12
     return s
   }, 0), [filteredPortfolio])
   const totalCurrentValue = useMemo(() => filteredPortfolio.reduce((s, p) => s + (p.currentValue || 0), 0), [filteredPortfolio])
@@ -2203,6 +2204,8 @@ export default function CapitalMandatePage() {
         <div style={{ display: 'flex', padding: '20px 0' }}>
           {(() => {
             const simpleMonthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
+            const portfolioOnTrack = projectedAtRetirement.atAssumption >= totalCorpus
+            const portfolioGapAmt = totalCorpus - projectedAtRetirement.atAssumption
             const items = [
               {
                 label: 'Total Capital Required',
@@ -2219,14 +2222,14 @@ export default function CapitalMandatePage() {
               {
                 label: 'Currently Committing',
                 val: fmtMo(totalMonthlyInvesting),
-                sub: `across ${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0).length} vehicle${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0).length !== 1 ? 's' : ''}`,
+                sub: `across ${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0 || (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0)).length} vehicle${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0 || (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0)).length !== 1 ? 's' : ''}`,
                 color: '#F0EDE8',
               },
               {
-                label: simpleMonthlyGap > 0 ? 'Monthly Shortfall' : 'Monthly Status',
-                val: simpleMonthlyGap > 0 ? '−' + fmtMo(simpleMonthlyGap) : 'On Track',
-                sub: simpleMonthlyGap > 0 ? 'Additional savings needed' : 'Commitments cover all goals',
-                color: simpleMonthlyGap > 0 ? '#E08080' : '#80C4A0',
+                label: portfolioOnTrack ? 'Portfolio Status' : 'Portfolio Shortfall',
+                val: portfolioOnTrack ? 'On Track' : '−' + fmt(portfolioGapAmt),
+                sub: portfolioOnTrack ? `Projected ${fmt(projectedAtRetirement.atAssumption)} covers target` : 'Projected portfolio below target',
+                color: portfolioOnTrack ? '#80C4A0' : '#E08080',
               },
               {
                 label: 'Current Portfolio Value',
