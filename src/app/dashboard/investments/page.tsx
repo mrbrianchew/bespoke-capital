@@ -1323,6 +1323,7 @@ export default function CapitalMandatePage() {
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
 
   const totalMonthlyInvesting = useMemo(() => filteredPortfolio.reduce((s, p) => {
+    if (p.mode === 'Lump Sum') return s
     if (p.vehicleType === 'investment' || p.vehicleType === 'other') return s + p.monthlyContribution
     if (p.vehicleType === 'endowment') return s + (p.endowmentPremium || 0)
     if (p.vehicleType === 'annuity') return s + p.monthlyContribution
@@ -2204,8 +2205,8 @@ export default function CapitalMandatePage() {
         <div style={{ display: 'flex', padding: '20px 0' }}>
           {(() => {
             const simpleMonthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
-            const portfolioOnTrack = projectedAtRetirement.atAssumption >= totalCorpus
-            const portfolioGapAmt = totalCorpus - projectedAtRetirement.atAssumption
+            const portfolioOnTrack = projectedAtRetirement.atAssumption >= requiredCorpusAtRet
+            const portfolioGapAmt = requiredCorpusAtRet - projectedAtRetirement.atAssumption
             const items = [
               {
                 label: 'Total Capital Required',
@@ -2222,7 +2223,7 @@ export default function CapitalMandatePage() {
               {
                 label: 'Currently Committing',
                 val: fmtMo(totalMonthlyInvesting),
-                sub: `across ${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0 || (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0)).length} vehicle${filteredPortfolio.filter(p => p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0 || (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0)).length !== 1 ? 's' : ''}`,
+                sub: `across ${filteredPortfolio.filter(p => p.mode !== 'Lump Sum' && (p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0 || (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0))).length} vehicle${filteredPortfolio.filter(p => p.mode !== 'Lump Sum' && (p.monthlyContribution > 0 || (p.endowmentPremium || 0) > 0 || (p.srsIsRegular && (p.srsAnnualContribution || 0) > 0))).length !== 1 ? 's' : ''}`,
                 color: '#F0EDE8',
               },
               {
