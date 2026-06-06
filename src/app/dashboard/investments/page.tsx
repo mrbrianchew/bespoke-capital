@@ -1305,8 +1305,6 @@ export default function CapitalMandatePage() {
 
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
 
-  const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
-  const totalCorpus = useMemo(() => filteredGoals.reduce((s, g) => s + g.targetCorpus, 0), [filteredGoals])
   const totalMonthlyInvesting = useMemo(() => filteredPortfolio.reduce((s, p) => {
     if (p.vehicleType === 'investment' || p.vehicleType === 'other') return s + p.monthlyContribution
     if (p.vehicleType === 'endowment') return s + (p.endowmentPremium || 0)
@@ -1731,6 +1729,9 @@ export default function CapitalMandatePage() {
         : g.monthlyRequired
       return { ...g, yearsAway: liveYearsAway, targetCorpus: liveCorpus, monthlyRequired: monthly }
     }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge, retirementBreakdown])
+
+  const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
+  const totalCorpus = useMemo(() => filteredGoals.reduce((s, g) => s + g.targetCorpus, 0), [filteredGoals])
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
