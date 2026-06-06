@@ -1303,6 +1303,23 @@ export default function CapitalMandatePage() {
 
   const matchesPerson = useCallback((_owner: 'client' | 'spouse' | 'joint'): boolean => true, [])
 
+  const filteredGoals = useMemo(() => goals
+    .filter(g => matchesPerson(g.owner))
+    .map(g => {
+      if (g.source === 'custom') return g
+      // Always recompute yearsAway from live state so it matches the Retirement page (year-only age)
+      const liveYearsAway = g.source === 'retirement'
+        ? Math.max(0, retirementAge - clientAge)
+        : g.yearsAway
+      const monthly = liveYearsAway > 0
+        ? calcMonthlyRequired(g.targetCorpus, liveYearsAway, settings.expectedReturn)
+        : g.monthlyRequired
+      return { ...g, yearsAway: liveYearsAway, monthlyRequired: monthly }
+    }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge])
+
+  const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
+  const totalCorpus = useMemo(() => filteredGoals.reduce((s, g) => s + g.targetCorpus, 0), [filteredGoals])
+
   const filteredPortfolio = useMemo(() => portfolio.filter(p => matchesPerson(p.owner)), [portfolio, matchesPerson])
 
   const totalMonthlyInvesting = useMemo(() => filteredPortfolio.reduce((s, p) => {
@@ -1312,8 +1329,9 @@ export default function CapitalMandatePage() {
     return s
   }, 0), [filteredPortfolio])
   const totalCurrentValue = useMemo(() => filteredPortfolio.reduce((s, p) => s + (p.currentValue || 0), 0), [filteredPortfolio])
+  const monthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
 
- const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
+  const personLabel = planMode === 'individual' ? clientName : `${clientName} & ${spouseName}`
 
   const derivedAnnualWithdrawal = useMemo(() => {
     const retGoal = goals.find(g => g.source === 'retirement')
@@ -1713,25 +1731,7 @@ export default function CapitalMandatePage() {
       retirementAge, retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
       postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement])
 
-  const filteredGoals = useMemo(() => goals
-    .filter(g => matchesPerson(g.owner))
-    .map(g => {
-      if (g.source === 'custom') return g
-      const liveYearsAway = g.source === 'retirement'
-        ? Math.max(0, retirementAge - clientAge)
-        : g.yearsAway
-      const liveCorpus = g.source === 'retirement' && retirementBreakdown
-        ? retirementBreakdown.baseAdjustedCorpus
-        : g.targetCorpus
-      const monthly = liveYearsAway > 0
-        ? calcMonthlyRequired(liveCorpus, liveYearsAway, settings.expectedReturn)
-        : g.monthlyRequired
-      return { ...g, yearsAway: liveYearsAway, targetCorpus: liveCorpus, monthlyRequired: monthly }
-    }), [goals, matchesPerson, settings.expectedReturn, retirementAge, clientAge, retirementBreakdown])
 
- const totalMonthlyNeeded = useMemo(() => filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0), [filteredGoals])
-  const totalCorpus = useMemo(() => filteredGoals.reduce((s, g) => s + g.targetCorpus, 0), [filteredGoals])
-  const monthlyGap = totalMonthlyNeeded - totalMonthlyInvesting
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
