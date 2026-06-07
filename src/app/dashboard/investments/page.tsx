@@ -98,7 +98,8 @@ function calcMonthlyRequired(corpus: number, yearsLeft: number, annualReturn: nu
   const r = annualReturn / 100
   const rm = r / 12
   const nm = yearsLeft * 12
-  return rm > 0 ? corpus * rm / (Math.pow(1 + rm, nm) - 1) : corpus / nm
+  // Annuity-due: payments at start of period (matches projection loop convention)
+  return rm > 0 ? corpus * rm / ((Math.pow(1 + rm, nm) - 1) * (1 + rm)) : corpus / nm
 }
 
 // FV of an annuity-due stream of monthly payments
