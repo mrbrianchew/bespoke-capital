@@ -1141,12 +1141,14 @@ export default function CapitalMandatePage() {
     setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
     const retAssumptions = retNested?.assumptions || retNested || {}
     setPostRetirementReturn(
+      retNested?.postReturnRate ||
       retClientData?.postRetirementReturn ||
       retAssumptions?.postRetirementReturn ||
       retRow?.postRetirementReturn ||
       retNested?.postRetirementReturn || 4
     )
     const inflationVal =
+      retNested?.inflationRate ||
       retClientData?.inflation ||
       retAssumptions?.inflation ||
       retRow?.inflation ||
