@@ -72,8 +72,8 @@ function calcAmortizedOutstanding(initialLoan: number, annualRate: number, tenur
   return Math.max(0, Math.round(initialLoan * Math.pow(1 + r, monthsElapsed) - pmt * (Math.pow(1 + r, monthsElapsed) - 1) / r))
 }
 
-function computePropertyEquityAndLiabilities(properties: any[]): { equity: number; liabilities: number } {
-  let equity = 0, liabilities = 0
+function computePropertyEquityAndLiabilities(properties: any[]): { equity: number; grossValue: number; liabilities: number } {
+  let equity = 0, grossValue = 0, liabilities = 0
   for (const prop of properties) {
     const val = prop.propertyValue ?? prop.purchasePrice ?? 0
     // Outstanding: prefer stored value, fall back to amortised calculation
@@ -86,9 +86,10 @@ function computePropertyEquityAndLiabilities(properties: any[]): { equity: numbe
           prop.loanStartDate ?? ''
         )
     liabilities += outstanding
+    grossValue += val
     equity += Math.max(0, val - outstanding)
   }
-  return { equity, liabilities }
+  return { equity, grossValue, liabilities }
 }
 
 // ─── DEFAULT STATE ────────────────────────────────────────────────────────────
@@ -306,16 +307,16 @@ function PersonEstateCard({ person, onChange, name, color, cpfBalance }: {
 
 // ─── ESTATE SIZE CALCULATOR ───────────────────────────────────────────────────
 
-function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, propertyEquity, totalLiabilities, mortgageLiabilities, debtLiabilities, isCouple, clientName, spouseName }: {
+function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, propertyEquity, propertyGrossValue, totalLiabilities, mortgageLiabilities, debtLiabilities, isCouple, clientName, spouseName }: {
   clientLiquid: number; spouseLiquid: number
   clientCPF: number; spouseCPF: number
-  propertyEquity: number; totalLiabilities: number
+  propertyEquity: number; propertyGrossValue: number; totalLiabilities: number
   mortgageLiabilities: number; debtLiabilities: number
   isCouple: boolean; clientName: string; spouseName: string
 }) {
   const clientTotal  = clientLiquid + clientCPF
   const spouseTotal  = isCouple ? spouseLiquid + spouseCPF : 0
-  const combinedAssets = clientTotal + spouseTotal + propertyEquity
+  const combinedAssets = clientTotal + spouseTotal + propertyGrossValue
   const netEstate = Math.max(0, combinedAssets - totalLiabilities)
 
   const rows = [
@@ -325,7 +326,7 @@ function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, pro
       { label: `${spouseName} — Liquid & Investments`, client: 0, spouse: spouseLiquid, hi: false },
       { label: `${spouseName} — CPF`,                  client: 0, spouse: spouseCPF,    hi: false },
     ] : []),
-    { label: 'Property (Net Equity)',               client: propertyEquity, spouse: 0,                hi: false },
+    { label: 'Property (Gross Value)',               client: propertyGrossValue, spouse: 0,            hi: false },
   ]
 
   return (
@@ -579,11 +580,11 @@ export default function EstateSection({
   function updSpouse(c: Partial<EstatePerson>) { upd({ spouse: { ...data.spouse, ...c } }) }
 
   // Compute equity and mortgage liabilities from raw property data
-  const { equity: propertyEquity, liabilities: mortgageLiabilities } = computePropertyEquityAndLiabilities(properties)
+  const { equity: propertyEquity, grossValue: propertyGrossValue, liabilities: mortgageLiabilities } = computePropertyEquityAndLiabilities(properties)
   const debtLiabilities = nonMortgageDebts.reduce((s: number, d: any) => s + (d.amount ?? 0), 0)
   const totalLiabilities = mortgageLiabilities + debtLiabilities
     // Calculate net estate
-const combinedAssets = clientLiquid + clientCPF + (isCouple ? spouseLiquid + spouseCPF : 0) + propertyEquity
+const combinedAssets = clientLiquid + clientCPF + (isCouple ? spouseLiquid + spouseCPF : 0) + propertyGrossValue
 const netEstate = Math.max(0, combinedAssets - totalLiabilities)
 
 // ✅ Send calculated value to parent
@@ -610,6 +611,7 @@ useEffect(() => {
         clientLiquid={clientLiquid} spouseLiquid={spouseLiquid}
         clientCPF={clientCPF} spouseCPF={spouseCPF}
         propertyEquity={propertyEquity}
+        propertyGrossValue={propertyGrossValue}
         totalLiabilities={totalLiabilities}
         mortgageLiabilities={mortgageLiabilities}
         debtLiabilities={debtLiabilities}
