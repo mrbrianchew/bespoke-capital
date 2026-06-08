@@ -2627,6 +2627,8 @@ function OtherProtectionTab({ p, updateP, isCouple, clientName, spouseName }: {
 }
 
 // ─── ASSET OFFSET TAB ───────────────────────────────────────────────────────
+
+function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse }: {
   ff: FactFinding; p: ProtectionData
   isCouple: boolean; clientName: string; spouseName: string
   dtpdClient: CalcResult; dtpdSpouse: CalcResult
