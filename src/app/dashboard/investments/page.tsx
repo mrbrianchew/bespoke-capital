@@ -1073,6 +1073,7 @@ export default function CapitalMandatePage() {
   const chartRef = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<any>(null)
   const breakdownShortfallRef = useRef<number>(0)
+  const monthlyTopUpRef = useRef<number>(0)
 
   const earliestRetirementAge = useMemo(() => {
     if (planMode === 'couple') {
@@ -1243,6 +1244,7 @@ export default function CapitalMandatePage() {
       portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
       portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
       retirementShortfall: effectiveShortfall,
+      retirementMonthlyTopUp: monthlyTopUpRef.current || undefined,
     }
     const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate')
     if (rows && rows.length > 0) {
@@ -1655,6 +1657,19 @@ export default function CapitalMandatePage() {
   }, [retGoalForSummary, settings.legacyAmount, postRetirementReturn, lifeExpectancy, spouseLifeExpectancy, clientAge, spouseAge, planMode, earliestRetirementAge])
   const requiredCorpusAtRet = legacyAdjustedCorpus
   const corpusShortfall = requiredCorpusAtRet - projectedAtRetirement.atAssumption
+
+  // Compute pure monthly top-up needed for shortfall (lump sum = 0 scenario)
+  const cmPureMonthly = (() => {
+    const gap = breakdownShortfallRef.current > 0 ? breakdownShortfallRef.current : Math.max(0, corpusShortfall)
+    if (gap <= 0) return 0
+    const r = settings.expectedReturn / 100
+    const rm = r / 12
+    const yearsLeft = Math.max(1, retirementAge - clientAge)
+    const nm = yearsLeft * 12
+    const annuityFactor = rm > 0 ? ((Math.pow(1 + rm, nm) - 1) / rm) * (1 + rm) : nm
+    return annuityFactor > 0 ? gap / annuityFactor : 0
+  })()
+  monthlyTopUpRef.current = cmPureMonthly
 
   // Guaranteed monthly retirement income from all income-stream vehicles
   const guaranteedMonthlyRetirement = useMemo(() => {
