@@ -113,6 +113,20 @@ interface ProtectionData {
   existingCICoverClient?: number; existingCICoverSpouse?: number
   disabilityIncomeClient?: number; disabilityIncomeSpouse?: number
   advisorNotes?: string
+  // Other Protection Needs
+  medicalInsurance?: {
+    client?: { type?: 'isp' | 'international' | 'none'; plan?: string; ward?: string; rider?: boolean; annualLimit?: number; notes?: string }
+    spouse?: { type?: 'isp' | 'international' | 'none'; plan?: string; ward?: string; rider?: boolean; annualLimit?: number; notes?: string }
+  }
+  personalAccident?: {
+    client?: { covered?: boolean; sumAssured?: number; annualBenefit?: number; notes?: string }
+    spouse?: { covered?: boolean; sumAssured?: number; annualBenefit?: number; notes?: string }
+  }
+  longTermCare?: {
+    client?: { covered?: boolean; type?: 'careshield' | 'eldershield' | 'private' | 'none'; monthlyBenefit?: number; benefitPeriod?: string; notes?: string }
+    spouse?: { covered?: boolean; type?: 'careshield' | 'eldershield' | 'private' | 'none'; monthlyBenefit?: number; benefitPeriod?: string; notes?: string }
+  }
+  otherProtectionPerson?: 'client' | 'spouse'
 }
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -985,7 +999,7 @@ useEffect(() => {
 
   // ─── SUB-COMPONENTS ────────────────────────────────────────────────────────
 
-  const WP_TABS = ['Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset']
+  const WP_TABS = ['Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset', 'Other Protection']
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
 
@@ -1450,6 +1464,12 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
             dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
             ciClient={ciClient} ciSpouse={ciSpouse}
+          />
+        )}
+        {wpTab === 5 && (
+          <OtherProtectionTab
+            p={p} updateP={updateP}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
           />
         )}
       </div>
@@ -2302,7 +2322,311 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
 
 // ─── ASSET OFFSET TAB ────────────────────────────────────────────────────────
 
-function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse }: {
+// ─── OTHER PROTECTION TAB ───────────────────────────────────────────────────
+
+function OtherProtectionTab({ p, updateP, isCouple, clientName, spouseName }: {
+  p: ProtectionData; updateP: (patch: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+}) {
+  const persons: Array<'client' | 'spouse'> = isCouple ? ['client', 'spouse'] : ['client']
+  const personName = (who: 'client' | 'spouse') => who === 'client' ? clientName : spouseName
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  function patchMedical(who: 'client' | 'spouse', patch: object) {
+    updateP({ medicalInsurance: { ...p.medicalInsurance, [who]: { ...p.medicalInsurance?.[who], ...patch } } })
+  }
+  function patchPA(who: 'client' | 'spouse', patch: object) {
+    updateP({ personalAccident: { ...p.personalAccident, [who]: { ...p.personalAccident?.[who], ...patch } } })
+  }
+  function patchLTC(who: 'client' | 'spouse', patch: object) {
+    updateP({ longTermCare: { ...p.longTermCare, [who]: { ...p.longTermCare?.[who], ...patch } } })
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '8px 12px', fontSize: 13,
+    fontFamily: 'Inter, sans-serif', border: '1px solid #E8E4DC',
+    borderRadius: 6, background: '#FAFAF8', color: '#1C1A17', outline: 'none',
+    boxSizing: 'border-box',
+  }
+  const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' }
+  const labelStyle: React.CSSProperties = {
+    fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' as const,
+    color: '#888', fontFamily: 'Inter', marginBottom: 5, display: 'block',
+  }
+  const checkRowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+    background: '#F5F0E8', borderRadius: 8, cursor: 'pointer',
+  }
+
+  function PersonCard({ who }: { who: 'client' | 'spouse' }) {
+    const med = p.medicalInsurance?.[who] ?? {}
+    const pa  = p.personalAccident?.[who] ?? {}
+    const ltc = p.longTermCare?.[who] ?? {}
+    const name = personName(who)
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+        {/* ── Medical Insurance ──────────────────────────────────────────── */}
+        <SectionBlock title="Medical Insurance" color="#A8834A">
+          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16, lineHeight: 1.6 }}>
+            Records the type of hospitalisation and surgical coverage in place for {name}. An Integrated Shield Plan (ISP) is a MediShield Life top-up; International Health Insurance applies for expats or those seeking overseas treatment.
+          </p>
+
+          {/* Type toggle */}
+          <div style={{ marginBottom: 16 }}>
+            <span style={labelStyle}>Coverage type</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([
+                { v: 'isp',           label: 'Integrated Shield Plan' },
+                { v: 'international', label: 'International Health' },
+                { v: 'none',          label: 'None / Not recorded' },
+              ] as const).map(opt => (
+                <button key={opt.v} onClick={() => patchMedical(who, { type: opt.v })}
+                  style={{
+                    padding: '7px 14px', fontSize: 11, fontFamily: 'Inter', fontWeight: 500,
+                    border: '1px solid ' + (med.type === opt.v ? '#A8834A' : '#E8E4DC'),
+                    borderRadius: 6, cursor: 'pointer',
+                    background: med.type === opt.v ? '#A8834A' : 'white',
+                    color: med.type === opt.v ? 'white' : '#555',
+                    transition: 'all 0.15s',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {med.type && med.type !== 'none' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div>
+                <span style={labelStyle}>Insurer / Plan name</span>
+                <input style={inputStyle} placeholder="e.g. AIA HealthShield Gold Max" value={med.plan ?? ''}
+                  onChange={e => patchMedical(who, { plan: e.target.value })} />
+              </div>
+              {med.type === 'isp' && (
+                <div>
+                  <span style={labelStyle}>Ward class</span>
+                  <select style={selectStyle} value={med.ward ?? ''} onChange={e => patchMedical(who, { ward: e.target.value })}>
+                    <option value="">Select ward</option>
+                    <option value="B1">B1 Ward</option>
+                    <option value="A">A Ward</option>
+                    <option value="Private">Private Hospital</option>
+                    <option value="International">International</option>
+                  </select>
+                </div>
+              )}
+              {med.type === 'international' && (
+                <div>
+                  <span style={labelStyle}>Annual limit (SGD)</span>
+                  <input type="number" style={inputStyle} placeholder="e.g. 1000000"
+                    value={med.annualLimit ?? ''} onChange={e => patchMedical(who, { annualLimit: Number(e.target.value) })} />
+                </div>
+              )}
+              {med.type === 'isp' && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={checkRowStyle} onClick={() => patchMedical(who, { rider: !med.rider })}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: 4, border: '1.5px solid ' + (med.rider ? '#A8834A' : '#ccc'),
+                      background: med.rider ? '#A8834A' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}>
+                      {med.rider && <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>✓</span>}
+                    </div>
+                    <span style={{ fontSize: 13, color: '#1C1A17', fontFamily: 'Inter' }}>
+                      Has rider (co-payment waiver)
+                    </span>
+                  </label>
+                </div>
+              )}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span style={labelStyle}>Notes</span>
+                <textarea style={{ ...inputStyle, resize: 'vertical' as const }} rows={2}
+                  placeholder="Pre-existing exclusions, renewal terms, coverage gaps…"
+                  value={med.notes ?? ''} onChange={e => patchMedical(who, { notes: e.target.value })} />
+              </div>
+            </div>
+          )}
+
+          {/* Status badge */}
+          {med.type && (
+            <div style={{
+              marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '4px 12px', borderRadius: 99,
+              background: med.type === 'none' ? '#FEE2E2' : '#E8F5F0',
+              border: '1px solid ' + (med.type === 'none' ? 'rgba(192,57,43,0.2)' : 'rgba(45,90,78,0.2)'),
+            }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: med.type === 'none' ? '#C0392B' : '#2D5A4E' }} />
+              <span style={{ fontSize: 11, fontFamily: 'Inter', color: med.type === 'none' ? '#C0392B' : '#2D5A4E' }}>
+                {med.type === 'none' ? 'No hospitalisation coverage recorded' :
+                  med.type === 'isp' ? `ISP${med.ward ? ` · ${med.ward}` : ''}${med.rider ? ' · With rider' : ' · No rider'}` :
+                  `International Health${med.annualLimit ? ` · Limit ${new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD', maximumFractionDigits: 0 }).format(med.annualLimit)}` : ''}`
+                }
+              </span>
+            </div>
+          )}
+        </SectionBlock>
+
+        {/* ── Personal Accident ──────────────────────────────────────────── */}
+        <SectionBlock title="Personal Accident Insurance" color="#6B7B8D">
+          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16, lineHeight: 1.6 }}>
+            PA covers accidental death, permanent disability, and medical expenses from accidents. Records whether {name} has adequate coverage in place.
+          </p>
+
+          <label style={checkRowStyle} onClick={() => patchPA(who, { covered: !pa.covered })}>
+            <div style={{
+              width: 18, height: 18, borderRadius: 4, border: '1.5px solid ' + (pa.covered ? '#6B7B8D' : '#ccc'),
+              background: pa.covered ? '#6B7B8D' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              {pa.covered && <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>✓</span>}
+            </div>
+            <span style={{ fontSize: 13, color: '#1C1A17', fontFamily: 'Inter' }}>
+              {name} has Personal Accident coverage
+            </span>
+          </label>
+
+          {pa.covered && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+              <div>
+                <span style={labelStyle}>Sum assured (SGD)</span>
+                <input type="number" style={inputStyle} placeholder="e.g. 500000"
+                  value={pa.sumAssured ?? ''} onChange={e => patchPA(who, { sumAssured: Number(e.target.value) })} />
+              </div>
+              <div>
+                <span style={labelStyle}>Annual accident medical benefit</span>
+                <input type="number" style={inputStyle} placeholder="e.g. 5000"
+                  value={pa.annualBenefit ?? ''} onChange={e => patchPA(who, { annualBenefit: Number(e.target.value) })} />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span style={labelStyle}>Notes</span>
+                <textarea style={{ ...inputStyle, resize: 'vertical' as const }} rows={2}
+                  placeholder="Occupation class, exclusions, policy notes…"
+                  value={pa.notes ?? ''} onChange={e => patchPA(who, { notes: e.target.value })} />
+              </div>
+            </div>
+          )}
+
+          {/* Status badge */}
+          <div style={{
+            marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 12px', borderRadius: 99,
+            background: pa.covered ? '#E8F5F0' : '#F5F5F5',
+            border: '1px solid ' + (pa.covered ? 'rgba(45,90,78,0.2)' : '#E0E0E0'),
+          }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: pa.covered ? '#2D5A4E' : '#aaa' }} />
+            <span style={{ fontSize: 11, fontFamily: 'Inter', color: pa.covered ? '#2D5A4E' : '#aaa' }}>
+              {pa.covered
+                ? `Covered${pa.sumAssured ? ` · SA ${new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD', maximumFractionDigits: 0 }).format(pa.sumAssured)}` : ''}`
+                : 'Not recorded'
+              }
+            </span>
+          </div>
+        </SectionBlock>
+
+        {/* ── Long Term Care ─────────────────────────────────────────────── */}
+        <SectionBlock title="Long Term Care Insurance" color="#7B6EA0">
+          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16, lineHeight: 1.6 }}>
+            Long Term Care covers the cost of daily living assistance when {name} can no longer perform Activities of Daily Living (ADLs) independently. CareShield Life is Singapore's mandatory scheme; additional private supplements are optional.
+          </p>
+
+          <label style={checkRowStyle} onClick={() => patchLTC(who, { covered: !ltc.covered })}>
+            <div style={{
+              width: 18, height: 18, borderRadius: 4, border: '1.5px solid ' + (ltc.covered ? '#7B6EA0' : '#ccc'),
+              background: ltc.covered ? '#7B6EA0' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              {ltc.covered && <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>✓</span>}
+            </div>
+            <span style={{ fontSize: 13, color: '#1C1A17', fontFamily: 'Inter' }}>
+              {name} has Long Term Care coverage
+            </span>
+          </label>
+
+          {ltc.covered && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+              <div>
+                <span style={labelStyle}>Coverage type</span>
+                <select style={selectStyle} value={ltc.type ?? ''} onChange={e => patchLTC(who, { type: e.target.value })}>
+                  <option value="">Select type</option>
+                  <option value="careshield">CareShield Life only</option>
+                  <option value="eldershield">ElderShield (pre-2020)</option>
+                  <option value="private">CareShield Life + Private Supplement</option>
+                </select>
+              </div>
+              <div>
+                <span style={labelStyle}>Monthly benefit (SGD)</span>
+                <input type="number" style={inputStyle} placeholder="e.g. 3000"
+                  value={ltc.monthlyBenefit ?? ''} onChange={e => patchLTC(who, { monthlyBenefit: Number(e.target.value) })} />
+              </div>
+              <div>
+                <span style={labelStyle}>Benefit period</span>
+                <select style={selectStyle} value={ltc.benefitPeriod ?? ''} onChange={e => patchLTC(who, { benefitPeriod: e.target.value })}>
+                  <option value="">Select</option>
+                  <option value="lifetime">Lifetime</option>
+                  <option value="10years">10 years</option>
+                  <option value="5years">5 years</option>
+                  <option value="3years">3 years</option>
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span style={labelStyle}>Notes</span>
+                <textarea style={{ ...inputStyle, resize: 'vertical' as const }} rows={2}
+                  placeholder="Supplement insurer, deferral period, escalation feature…"
+                  value={ltc.notes ?? ''} onChange={e => patchLTC(who, { notes: e.target.value })} />
+              </div>
+            </div>
+          )}
+
+          {/* Status badge */}
+          <div style={{
+            marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 12px', borderRadius: 99,
+            background: ltc.covered ? '#F0EDF8' : '#F5F5F5',
+            border: '1px solid ' + (ltc.covered ? 'rgba(123,110,160,0.25)' : '#E0E0E0'),
+          }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: ltc.covered ? '#7B6EA0' : '#aaa' }} />
+            <span style={{ fontSize: 11, fontFamily: 'Inter', color: ltc.covered ? '#7B6EA0' : '#aaa' }}>
+              {ltc.covered
+                ? `${ltc.type === 'careshield' ? 'CareShield Life' : ltc.type === 'eldershield' ? 'ElderShield' : ltc.type === 'private' ? 'CareShield + Supplement' : 'Covered'}${ltc.monthlyBenefit ? ` · $${ltc.monthlyBenefit.toLocaleString()}/mo` : ''}${ltc.benefitPeriod === 'lifetime' ? ' · Lifetime' : ltc.benefitPeriod ? ` · ${ltc.benefitPeriod}` : ''}`
+                : 'Not recorded'
+              }
+            </span>
+          </div>
+        </SectionBlock>
+
+      </div>
+    )
+  }
+
+  if (!isCouple) {
+    return <PersonCard who="client" />
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20, lineHeight: 1.6 }}>
+        Record existing coverage across Medical Insurance, Personal Accident, and Long Term Care for each person. This section is for documentation and advisor reference — it does not affect the D/TPD or CI need calculations above.
+      </p>
+      {/* Person tabs */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid #E8E4DC' }}>
+        {persons.map(who => (
+          <button key={who}
+            onClick={() => updateP({ otherProtectionPerson: who })}
+            style={{
+              padding: '9px 20px', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase' as const,
+              fontFamily: 'Inter', fontWeight: 500, background: 'none', border: 'none',
+              color: p.otherProtectionPerson === who || (!p.otherProtectionPerson && who === 'client') ? '#A8834A' : '#999',
+              borderBottom: p.otherProtectionPerson === who || (!p.otherProtectionPerson && who === 'client') ? '2px solid #A8834A' : '2px solid transparent',
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}>
+            {personName(who)}
+          </button>
+        ))}
+      </div>
+      <PersonCard who={(p.otherProtectionPerson ?? 'client')} />
+    </div>
+  )
+}
+
+// ─── ASSET OFFSET TAB ───────────────────────────────────────────────────────
   ff: FactFinding; p: ProtectionData
   isCouple: boolean; clientName: string; spouseName: string
   dtpdClient: CalcResult; dtpdSpouse: CalcResult
