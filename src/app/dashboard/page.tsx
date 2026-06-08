@@ -472,6 +472,14 @@ return s + activeMonthly
       }
     }
     cmProjectedAtRetirement = runningCM
+console.log('[RET] ' + JSON.stringify({
+  cmPortfolioValue,
+  cmMonthlyContribs,
+  cmExpReturn,
+  cmProjectedAtRetirement,
+  savedCorpusNeeded,
+  shortfall: savedCorpusNeeded - runningCM
+}))
   }
 
   // Shortfall = how much more corpus is needed beyond what the portfolio will deliver
@@ -479,18 +487,16 @@ return s + activeMonthly
     ? Math.max(0, savedCorpusNeeded - cmProjectedAtRetirement)
     : 0
 
-  // Monthly top-up needed (from saved Retirement tab value)
-  const cmSolution = cm?.shortfallSolution || null
-  const retMonthlySavings = cmSolution?.pureMonthly || cm?.retirementMonthlyTopUp || savedMonthlySavings
+  // Monthly top-up needed — prefer Capital Mandate shortfall solver result
+  const sol = cm?.shortfallSolution as { pureMonthly?: number; pureLump?: number; lumpSumFraction?: number } | undefined
+  const retMonthlySavings = sol?.pureMonthly || cm?.retirementMonthlyTopUp || savedMonthlySavings
 
   // If CM has portfolio data use the projected shortfall; else fall back to raw gap from Retirement tab
- const retGap = cm?.portfolioStatus === 'gap'
+  const retGap = cm?.portfolioStatus === 'gap'
     ? (cm?.retirementShortfall || 1)
     : cm?.portfolioStatus === 'on_track'
     ? 0
     : (ffData['retirement']?.retirementGap || 0)
-
-// Also account for active premium holidays in monthly contribs
 
   let retStatus: Status = 'empty'
   let retHeadline = 'Not yet configured'
@@ -503,15 +509,13 @@ return s + activeMonthly
     retSubline = `Age ${earliestRetAge} · ${yrsToRet}y away · ${retYears}y retirement`
     if (retGap > 0) {
       retStatus = retGap > 100000 ? 'gap' : 'warn'
-      const lsf = cmSolution?.lumpSumFraction ?? 0
-      if (lsf >= 1 && cmSolution?.pureLump) {
-        retActions.push(`Retirement savings gap of ${fmt(retGap)} — lump sum ${fmt(cmSolution.pureLump)} now`)
-      } else if (lsf > 0 && lsf < 1 && cmSolution) {
-        const lumpNow = lsf * retGap / Math.pow(1 + (cm?.settings?.expectedReturn ?? 5) / 100, Math.max(1, retAge - clientAge))
-        retActions.push(`Retirement savings gap of ${fmt(retGap)} — lump sum ${fmt(lumpNow)} + ${fmt(retMonthlySavings)}/mo`)
-      } else {
-        retActions.push(`Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`)
-      }
+      const lsf = sol?.lumpSumFraction ?? 0
+      const actionText = lsf === 1 && sol?.pureLump
+        ? `Retirement gap of ${fmt(retGap)} — invest ${fmt(sol.pureLump)} lump sum now`
+        : lsf > 0 && sol?.pureLump && sol?.pureMonthly
+        ? `Retirement gap of ${fmt(retGap)} — ${fmt(lsf * sol.pureLump)} lump sum + ${fmt(retMonthlySavings)}/mo`
+        : `Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`
+      retActions.push(actionText)
     }
   }
 
