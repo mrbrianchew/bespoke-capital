@@ -1235,12 +1235,14 @@ export default function CapitalMandatePage() {
     setLoading(false)
   }
 
-  async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string, shortfall?: number, retBreakdownShortfall?: number) {
+  async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string, shortfall?: number) {
     const c = clientRef.current; if (!c) return
+    // Use breakdownShortfallRef which is always kept in sync via useEffect
+    const effectiveShortfall = breakdownShortfallRef.current > 0 ? breakdownShortfallRef.current : Math.max(0, shortfall ?? 0)
     const dataToSave = {
       portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
       portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
-      retirementShortfall: retBreakdownShortfall != null ? Math.max(0, retBreakdownShortfall) : (shortfall != null ? Math.max(0, shortfall) : undefined),
+      retirementShortfall: effectiveShortfall,
     }
     const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate')
     if (rows && rows.length > 0) {
@@ -1253,14 +1255,14 @@ export default function CapitalMandatePage() {
   async function saveVehicle(item: FundingVehicle) {
     const updated = portfolio.find(p => p.id === item.id) ? portfolio.map(p => p.id === item.id ? item : p) : [...portfolio, item]
     setPortfolio(updated)
-    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall, breakdownShortfallRef.current || corpusShortfall)
+    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
     setVehicleModal({ open: false })
   }
 
   async function saveCashflows(vehicleId: string, cashflows: CashflowEvent[]) {
     const updated = portfolio.map(p => p.id === vehicleId ? { ...p, cashflows } : p)
     setPortfolio(updated)
-    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall, breakdownShortfallRef.current || corpusShortfall)
+    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
     setCashflowModal(null)
   }
 
@@ -1268,7 +1270,7 @@ export default function CapitalMandatePage() {
     if (!confirm('Remove this funding vehicle?')) return
     const updated = portfolio.filter(p => p.id !== id)
     setPortfolio(updated)
-    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall, breakdownShortfallRef.current || corpusShortfall)
+    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
   }
 
   async function addCustomGoal(g: CapitalGoal) {
@@ -1751,6 +1753,11 @@ export default function CapitalMandatePage() {
       breakdownShortfallRef.current = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
     }
   }, [retirementBreakdown, projectedAtRetirement])
+
+  // Also set synchronously so it's available on same-render saves
+  if (retirementBreakdown && projectedAtRetirement) {
+    breakdownShortfallRef.current = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
+  }
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
