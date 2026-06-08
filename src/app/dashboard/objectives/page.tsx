@@ -403,6 +403,7 @@ const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [saved, setSaved] = useState(false)
   const [insCompanies, setInsCompanies] = useState<{id: number; name: string; category_id: number}[]>([])
   const [insProducts, setInsProducts] = useState<{id: number; name: string; company_id: number; category_id: number}[]>([])
+  const [insCategories, setInsCategories] = useState<{id: number; code: string}[]>([])
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const needsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -538,12 +539,14 @@ if (clientData) {
 }
 
     // Load insurance reference data
-    const [{ data: comps }, { data: prods }] = await Promise.all([
+    const [{ data: comps }, { data: prods }, { data: cats }] = await Promise.all([
       supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
       supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
+      supabase.from('ins_categories').select('id, code').order('sort_order'),
     ])
     if (comps) setInsCompanies(comps)
     if (prods) setInsProducts(prods)
+    if (cats)  setInsCategories(cats)
  setLoading(false)
   }
 
@@ -1176,6 +1179,7 @@ useEffect(() => {
               allFamilyMembers={allFamilyMembers}
               insCompanies={insCompanies}
               insProducts={insProducts}
+              insCategories={insCategories}
               addToPortfolio={addToPortfolio}
             />
           )}
@@ -1378,6 +1382,7 @@ interface WPProps {
   allFamilyMembers: FamilyMember[]
   insCompanies: {id: number; name: string; category_id: number}[]
   insProducts: {id: number; name: string; company_id: number; category_id: number}[]
+  insCategories: {id: number; code: string}[]
   addToPortfolio: (policy: any) => Promise<string | undefined>
 }
 
@@ -1385,7 +1390,7 @@ interface WPProps {
 type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number }
 
 
-function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId, allFamilyMembers, insCompanies, insProducts, addToPortfolio }: WPProps) {
+function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId, allFamilyMembers, insCompanies, insProducts, insCategories, addToPortfolio }: WPProps) {
   const wpTab = p.wpSubTab ?? 0
   const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
   const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
@@ -1521,6 +1526,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
             allFamilyMembers={allFamilyMembers}
             insCompanies={insCompanies} insProducts={insProducts}
+            insCategories={insCategories}
             addToPortfolio={addToPortfolio}
           />
         )}
@@ -1564,6 +1570,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
             allFamilyMembers={allFamilyMembers}
             insCompanies={insCompanies} insProducts={insProducts}
+            insCategories={insCategories}
             addToPortfolio={addToPortfolio}
           />
         )}
@@ -2431,6 +2438,7 @@ interface TabSharedProps {
   allFamilyMembers: FamilyMember[]
   insCompanies: {id: number; name: string; category_id: number}[]
   insProducts: {id: number; name: string; company_id: number; category_id: number}[]
+  insCategories: {id: number; code: string}[]
   addToPortfolio: (policy: any) => Promise<string | undefined>
 }
 
@@ -2654,29 +2662,11 @@ function EntryCard({ entry, categoryId, policyTypeOptions, insCompanies, insProd
 
 // ─── MEDICAL & DISABILITY TAB ────────────────────────────────────────────────
 
-function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMembers, insCompanies, insProducts, addToPortfolio }: TabSharedProps) {
+function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMembers, insCompanies, insProducts, insCategories, addToPortfolio }: TabSharedProps) {
   const [activePerson, setActivePerson] = useState('client')
 
-  // ins_categories: medical=1 (assumed), ltc = find by code
-  // We'll use category_id filtering — medical products have category_id matching 'medical' category
-  // Since we don't have category lookup here, use product filtering by known names as fallback
-  // The ins_companies table has category_id — filter companies that appear in medical products
-  const medicalCategoryId = insProducts.find(p => insCompanies.find(c => c.id === p.company_id)?.name)
-    ? (() => {
-        // Infer medical category_id from products associated with known medical companies
-        // Use the most common category_id among products — a safe heuristic
-        const ids = insProducts.map(p => p.category_id)
-        const freq: Record<number, number> = {}
-        ids.forEach(id => { freq[id] = (freq[id] ?? 0) + 1 })
-        return Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 1)
-      })()
-    : 1
-
-  // Better: filter companies that have any products — for medical/ltc use all companies
-  // since we can't resolve category code without a lookup table here
-  const allCategoryIds = Array.from(new Set(insProducts.map(p => p.category_id)))
-  const medCatId = allCategoryIds[0] ?? 1
-  const ltcCatId = allCategoryIds[1] ?? 1
+  const medCatId = insCategories.find(c => c.code === 'medical')?.id ?? 0
+  const ltcCatId = insCategories.find(c => c.code === 'ltc')?.id ?? 0
 
   function getEntries(key: 'medicalEntries' | 'ltcEntries'): MedDisEntry[] {
     return (p[key] ?? {})[activePerson] ?? []
@@ -2785,11 +2775,10 @@ function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, al
 
 // ─── GENERAL TAB ─────────────────────────────────────────────────────────────
 
-function GeneralTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMembers, insCompanies, insProducts, addToPortfolio }: TabSharedProps) {
+function GeneralTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMembers, insCompanies, insProducts, insCategories, addToPortfolio }: TabSharedProps) {
   const [activePerson, setActivePerson] = useState('client')
 
-  const allCategoryIds = Array.from(new Set(insProducts.map(prod => prod.category_id)))
-  const generalCatId = allCategoryIds[2] ?? allCategoryIds[0] ?? 1
+  const generalCatId = insCategories.find(c => c.code === 'general')?.id ?? 0
 
   function getPAEntries(): MedDisEntry[] {
     return (p.paEntries ?? {})[activePerson] ?? []
