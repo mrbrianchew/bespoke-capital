@@ -1251,11 +1251,26 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   setFf(prev => {
     if (!prev) return prev
     const next = { ...prev, [person]: { ...prev[person], [key]: val } }
-    scheduleSave()
+    // Inline save — captures `next` directly, avoids stale closure from scheduleSave
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      if (!client) return
+      setSaving(true)
+      const { client_id, ...data } = next
+      await supabase
+        .from('fact_finding')
+        .upsert(
+          { client_id: client.id, section: 'financials', data, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+      setSaving(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }, 800)
     return next
   })
   setSaved(false)
-}, [scheduleSave])
+}, [client, supabase])
 
   const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
 
