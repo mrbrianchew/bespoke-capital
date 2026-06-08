@@ -2702,7 +2702,7 @@ function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, al
 
   // Better: filter companies that have any products — for medical/ltc use all companies
   // since we can't resolve category code without a lookup table here
-  const allCategoryIds = [...new Set(insProducts.map(p => p.category_id))]
+  const allCategoryIds = Array.from(new Set(insProducts.map(p => p.category_id)))
   const medCatId = allCategoryIds[0] ?? 1
   const ltcCatId = allCategoryIds[1] ?? 1
 
@@ -2816,7 +2816,7 @@ function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, al
 function GeneralTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMembers, insCompanies, insProducts, addToPortfolio }: TabSharedProps) {
   const [activePerson, setActivePerson] = useState('client')
 
-  const allCategoryIds = [...new Set(insProducts.map(prod => prod.category_id))]
+  const allCategoryIds = Array.from(new Set(insProducts.map(prod => prod.category_id)))
   const generalCatId = allCategoryIds[2] ?? allCategoryIds[0] ?? 1
 
   function getPAEntries(): MedDisEntry[] {
