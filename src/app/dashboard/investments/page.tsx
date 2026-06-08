@@ -1236,6 +1236,7 @@ export default function CapitalMandatePage() {
 
   async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string, shortfall?: number, retBreakdownShortfall?: number) {
     const c = clientRef.current; if (!c) return
+    console.log('[SAVE] shortfall:', shortfall, 'retBreakdownShortfall:', retBreakdownShortfall)
     const dataToSave = {
       portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
       portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
