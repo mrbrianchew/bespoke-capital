@@ -489,7 +489,10 @@ console.log('[RET] ' + JSON.stringify({
 
   // Monthly top-up needed — prefer Capital Mandate shortfall solver result
   const sol = cm?.shortfallSolution as { pureMonthly?: number; pureLump?: number; lumpSumFraction?: number } | undefined
-  const retMonthlySavings = sol?.pureMonthly || cm?.retirementMonthlyTopUp || savedMonthlySavings
+  const lsf = sol?.lumpSumFraction ?? 0
+  // blendedMonthly = pureMonthly * (1 - lsf): the remaining monthly after the lump sum covers its share
+  const blendedMonthly = sol?.pureMonthly ? sol.pureMonthly * (1 - lsf) : 0
+  const retMonthlySavings = blendedMonthly || sol?.pureMonthly || cm?.retirementMonthlyTopUp || savedMonthlySavings
 
   // If CM has portfolio data use the projected shortfall; else fall back to raw gap from Retirement tab
   const retGap = cm?.portfolioStatus === 'gap'
@@ -509,11 +512,11 @@ console.log('[RET] ' + JSON.stringify({
     retSubline = `Age ${earliestRetAge} · ${yrsToRet}y away · ${retYears}y retirement`
     if (retGap > 0) {
       retStatus = retGap > 100000 ? 'gap' : 'warn'
-      const lsf = sol?.lumpSumFraction ?? 0
+      const lumpNow = sol?.pureLump ? lsf * sol.pureLump : 0
       const actionText = lsf === 1 && sol?.pureLump
         ? `Retirement gap of ${fmt(retGap)} — invest ${fmt(sol.pureLump)} lump sum now`
-        : lsf > 0 && sol?.pureLump && sol?.pureMonthly
-        ? `Retirement gap of ${fmt(retGap)} — ${fmt(lsf * sol.pureLump)} lump sum + ${fmt(retMonthlySavings)}/mo`
+        : lsf > 0 && lumpNow > 0 && blendedMonthly > 0
+        ? `Retirement gap of ${fmt(retGap)} — ${fmt(lumpNow)} lump sum + ${fmt(blendedMonthly)}/mo`
         : `Retirement savings gap of ${fmt(retGap)} — invest ${fmt(retMonthlySavings)}/mo`
       retActions.push(actionText)
     }
