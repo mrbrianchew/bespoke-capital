@@ -1072,6 +1072,7 @@ export default function CapitalMandatePage() {
 
   const chartRef = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<any>(null)
+  const breakdownShortfallRef = useRef<number>(0)
 
   const earliestRetirementAge = useMemo(() => {
     if (planMode === 'couple') {
