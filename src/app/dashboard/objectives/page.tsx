@@ -682,6 +682,13 @@ if (clientData) {
       status: 'In-Force', remarks: '', person: 'client',
       isUSD: false, fxRate: 1.35,
       ...policy,
+      // Resolve dependent person key to match portfolio's child_${name} format
+      person: (() => {
+        const raw = policy.person ?? 'client'
+        if (raw === 'client' || raw === 'spouse') return raw
+        const dep = allFamilyMembers.find(f => f.id === raw)
+        return dep ? `child_${dep.name || dep.id}` : raw
+      })(),
     }
     const updatedPolicies = [...existingPolicies, newPolicy]
     await supabase.from('fact_finding').upsert(
@@ -3197,7 +3204,7 @@ function ExistingCoverInputs({ p, updateP, isCouple, clientName, spouseName }: {
   return (
     <div>
       <a
-        href="/dashboard/protection"
+        href="/dashboard/protection?tab=portfolio"
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 12px', marginBottom: 12,
           background: 'transparent', border: '1px solid #A8834A', borderRadius: 4, color: '#A8834A',
           fontSize: 11, fontFamily: 'Inter', textDecoration: 'none', letterSpacing: '0.05em' }}
