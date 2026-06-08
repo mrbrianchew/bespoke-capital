@@ -2498,7 +2498,7 @@ function EntryCard({ entry, categoryId, policyTypeOptions, insCompanies, insProd
   showMedisave?: boolean
   addedToPortfolio?: boolean
 }) {
-  const [adding, setAdding] = React.useState(false)
+  const [adding, setAdding] = useState(false)
 
   const filteredCompanies = insCompanies.filter(c => c.category_id === categoryId)
   const selectedCompany = filteredCompanies.find(c => c.name === entry.companyName)
@@ -2683,7 +2683,7 @@ function EntryCard({ entry, categoryId, policyTypeOptions, insCompanies, insProd
 // ─── MEDICAL & DISABILITY TAB ────────────────────────────────────────────────
 
 function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMembers, insCompanies, insProducts, addToPortfolio }: TabSharedProps) {
-  const [activePerson, setActivePerson] = React.useState('client')
+  const [activePerson, setActivePerson] = useState('client')
 
   // ins_categories: medical=1 (assumed), ltc = find by code
   // We'll use category_id filtering — medical products have category_id matching 'medical' category
@@ -2814,7 +2814,7 @@ function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, al
 // ─── GENERAL TAB ─────────────────────────────────────────────────────────────
 
 function GeneralTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMembers, insCompanies, insProducts, addToPortfolio }: TabSharedProps) {
-  const [activePerson, setActivePerson] = React.useState('client')
+  const [activePerson, setActivePerson] = useState('client')
 
   const allCategoryIds = [...new Set(insProducts.map(prod => prod.category_id))]
   const generalCatId = allCategoryIds[2] ?? allCategoryIds[0] ?? 1
