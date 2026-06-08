@@ -671,6 +671,7 @@ if (clientData) {
       const dep = allFamilyMembers.find(f => f.id === raw)
       return dep ? `child_${dep.name || dep.id}` : raw
     })()
+    const { person: _personRaw, ...policyRest } = policy
     const newPolicy = {
       id: crypto.randomUUID(),
       categoryCode: '', policyTypeCode: '', companyName: '', productName: '',
@@ -685,9 +686,9 @@ if (clientData) {
       premiumMode: policy.premiumMedisave ? 'Medisave' : 'Cash',
       frequency: 'Annual',
       inceptionDate: '', premiumMaturity: 'Renewable', coverageMaturity: 'Renewable',
-      status: 'In-Force', remarks: '', person: 'client',
+      status: 'In-Force', remarks: '',
       isUSD: false, fxRate: 1.35,
-      ...policy,
+      ...policyRest,
       person: resolvedPerson,
     }
     const updatedPolicies = [...existingPolicies, newPolicy]
