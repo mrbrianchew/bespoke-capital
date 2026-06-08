@@ -1236,7 +1236,11 @@ export default function CapitalMandatePage() {
 
   async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string) {
     const c = clientRef.current; if (!c) return
-    const dataToSave = { portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes }
+    const dataToSave = {
+      portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
+      portfolioStatus: corpusShortfall > 0 ? 'gap' : 'on_track',
+      retirementShortfall: Math.max(0, corpusShortfall),
+    }
     const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate')
     if (rows && rows.length > 0) {
       await supabase.from('fact_finding').update({ data: dataToSave }).eq('id', rows[0].id)
