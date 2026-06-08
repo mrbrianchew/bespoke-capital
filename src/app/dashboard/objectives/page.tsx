@@ -126,6 +126,13 @@ interface ProtectionData {
     notes?: string
   }>
   otherProtectionPerson?: 'client' | 'spouse'
+  // ── CHANGE 1: Asset offset controls ──────────────────────────────────────
+  assetOffsetEnabled?: boolean
+  assetOffsetItems?: {
+    liquid?: boolean
+    cpf?: boolean
+    property?: boolean
+  }
 }
 
 interface MedDisEntry {
@@ -277,34 +284,47 @@ function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, bool
   return total
 }
 
+// ── CHANGE 2: getAssetOffset respects master switch + per-category toggles ──
 function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtpd' | 'ci', p?: ProtectionData): number {
+  // Master switch — if disabled, offset is zero
+  if (p?.assetOffsetEnabled === false) return 0
+
+  const items = p?.assetOffsetItems ?? {}
+  const liquidEnabled = items.liquid !== false
+  const cpfEnabled = items.cpf !== false
+  const propertyEnabled = items.property !== false
+
   const ap = prefix === 'spouse' ? 'a2_' : 'a_'
-  const liquid =
-    (ff[`${ap}savings`] as number || 0) +
-    (ff[`${ap}fixed_deposit`] as number || 0) +
-    (ff[`${ap}srs`] as number || 0) +
-    (ff[`${ap}shares`] as number || 0) +
-    (ff[`${ap}etf`] as number || 0) +
-    (ff[`${ap}unit_trust`] as number || 0) +
-    (ff[`${ap}bonds`] as number || 0) +
-    (ff[`${ap}alternatives`] as number || 0)
+
+  const liquid = liquidEnabled
+    ? (ff[`${ap}savings`] as number || 0) +
+      (ff[`${ap}fixed_deposit`] as number || 0) +
+      (ff[`${ap}srs`] as number || 0) +
+      (ff[`${ap}shares`] as number || 0) +
+      (ff[`${ap}etf`] as number || 0) +
+      (ff[`${ap}unit_trust`] as number || 0) +
+      (ff[`${ap}bonds`] as number || 0) +
+      (ff[`${ap}alternatives`] as number || 0)
+    : 0
+
   if (type === 'ci') return liquid
-  const cpf =
-    (ff[`${ap}cpf_oa`] as number || 0) +
-    (ff[`${ap}cpf_sa`] as number || 0) +
-    (ff[`${ap}cpf_ma`] as number || 0) +
-    (ff[`${ap}cpf_ra`] as number || 0)
+
+  const cpf = cpfEnabled
+    ? (ff[`${ap}cpf_oa`] as number || 0) +
+      (ff[`${ap}cpf_sa`] as number || 0) +
+      (ff[`${ap}cpf_ma`] as number || 0) +
+      (ff[`${ap}cpf_ra`] as number || 0)
+    : 0
+
+  if (!propertyEnabled) return liquid + cpf
+
   // All properties: full property value × mortgage slider pct for this person
-  // Slider indices map to the filtered mortgage list, so match by property ID
   const properties = (ff.properties ?? []) as any[]
   const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
   const propertyValue = properties.reduce((sum: number, prop: any) => {
     const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    // Find this property's index in the mortgage list (slider index)
     const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
     if (mortgageIdx === -1) {
-      // No mortgage — property belongs to whoever is recorded as sole owner, or split if joint
-      // Default: include fully for client (or split 50/50 if no ownership info)
       const ot = prop.ownershipType ?? ''
       let pct = 1
       if (ot === 'Spouse Only') pct = prefix === 'spouse' ? 1 : 0
@@ -315,13 +335,14 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
       } else pct = prefix === 'client' ? 1 : 0
       return sum + val * pct
     }
-    // Has mortgage — use slider pct
     const pcts = prefix === 'client' ? (p?.mortgageCoverPctsClient ?? []) : (p?.mortgageCoverPctsSpouse ?? [])
     const pct = (pcts[mortgageIdx] ?? 100) / 100
     return sum + val * pct
   }, 0)
+
   return liquid + cpf + propertyValue
 }
+
 function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYears: number, startMmYyyy: string): number {
   if (!initialLoan || !tenureYears) return 0
   const parts = startMmYyyy.split('/')
@@ -373,6 +394,9 @@ function ObjectivesPageInner() {
     existingCICoverClient: 0, existingCICoverSpouse: 0,
     disabilityIncomeClient: 0, disabilityIncomeSpouse: 0,
     advisorNotes: '',
+    // ── CHANGE 3: default both flags to true so existing clients are unaffected ──
+    assetOffsetEnabled: true,
+    assetOffsetItems: { liquid: true, cpf: true, property: true },
   })
   const [children, setChildren] = useState<FamilyMember[]>([])
   const [allFamilyMembers, setAllFamilyMembers] = useState<FamilyMember[]>([])
@@ -479,11 +503,16 @@ if (eduRow?.data?.edu) setEdu((prev: EducationData) => ({ ...prev, ...eduRow.dat
 const estateRow = ffRows.find((r: any) => r.section === 'estate')
 if (estateRow?.data?.estate) setEstate((prev: EstateData) => ({ ...prev, ...estateRow.data.estate }))
 
-    // Load protection settings from the protection_needs section row
+    // ── CHANGE 4: load saved assetOffsetEnabled/assetOffsetItems with safe defaults ──
     const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
     const protData = protRow?.data?.protection
     if (protData) {
-      setP(prev => ({ ...prev, ...protData }))
+      setP(prev => ({
+        ...prev,
+        ...protData,
+        assetOffsetEnabled: protData.assetOffsetEnabled !== undefined ? protData.assetOffsetEnabled : true,
+        assetOffsetItems: protData.assetOffsetItems ?? { liquid: true, cpf: true, property: true },
+      }))
     }
     setFf(merged)
     const portfolioRow = ffRows.find((r: any) => r.section === 'protection_portfolio')
@@ -518,7 +547,7 @@ const { data: clientData } = await supabase
   .single()
 if (clientData) {
   setClientName(clientData.name || 'Client')
-  setClientDOB(clientData.dob)   // ← Change to .dob
+  setClientDOB(clientData.dob)
 }
     // Load family members - spouse name + children
    const { data: familyData } = await supabase
@@ -529,7 +558,7 @@ if (clientData) {
   const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
   if (spouse) {
   setSpouseName(spouse.name || 'Spouse')
-  setSpouseDOB(spouse.dob)   // ← CORRECT column name
+  setSpouseDOB(spouse.dob)
 }
   const kids = familyData.filter((f: any) => ['Daughter','Son','Child'].includes(f.relationship))
   setChildren(kids)
@@ -763,7 +792,7 @@ const coverageTerm = (() => {
         if (years <= 0 || principal <= 0) return 0
         if (annRate === 0) return principal / (years * 12)
         const r = annRate / 100 / 12; const n = years * 12
-        return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+        return principal * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
       }
       // Calculate remaining tenure from start date if not overridden
       let remainingTenure = prop.remainingTenure ?? initialTenure
@@ -808,25 +837,22 @@ const coverageTerm = (() => {
   }
 
   // Education fund — FV-based calculation
-  // Tuition inflates at 5% p.a.; living costs inflate at the client's chosen inflation rate
   function calcEducationForPerson(who: 'client' | 'spouse', ciMode = false): number {
     if (!p.provideEducationFund) return 0
     const eduKids = p.educationChildren ?? []
-    const livingInflation = inflation // uses p.inflationRate / 100
+    const livingInflation = inflation
     return children.reduce((sum, child) => {
       const ec = eduKids.find(e => e.childId === child.id)
       if (!ec) return sum
       const childAge = child.age ?? getAge(child.date_of_birth)
       const defaultEntryAge = child.gender === 'Male' ? 21 : 19
       const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
-      // In CI mode: only include children who haven't reached university yet
       if (ciMode && childAge >= uniEntryAge) return sum
       const yearsToUni = Math.max(0, uniEntryAge - childAge)
       const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
       const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
       const baseLiving = ec.annualLiving ?? uniInfo.annual_living
       const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
-      // FV of each cost component at start of university
       const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
       const fvLiving = baseLiving * Math.pow(1 + livingInflation, yearsToUni) * dur
       const pct = !isCouple ? 1 : (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
@@ -849,7 +875,6 @@ const coverageTerm = (() => {
       const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
       const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
       
-      // Simple PMT calculation
       let monthlyRepayment = prop.monthlyRepayment
       if (!monthlyRepayment && initialLoan > 0 && initialTenure > 0) {
         if (interestRate === 0) {
@@ -886,13 +911,11 @@ const coverageTerm = (() => {
       }
     })
     const ciYrs = p.ciYears ?? 5
-    // Mortgage monthly repayments × CI years
     const mortgageCI = mortgages.reduce((sum, m, i) => {
       const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
       const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
       return sum + m.monthlyRepayment * 12 * ciYrs * pct
     }, 0)
-    // Non-mortgage debt monthly repayments × remaining tenure (capped at CI years)
     const debtCI = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
       const owner = (d as any).owner ?? 'client'
       let applies = false
@@ -901,7 +924,6 @@ const coverageTerm = (() => {
       else if (owner === who) applies = true
       if (!applies) return sum
       const monthlyPmt = calcDebtPMT(d.amount, d.interestRate, d.tenureLeft)
-      // CI covers repayments for min(tenureLeft, ciYears)
       const coverYears = Math.min(d.tenureLeft, ciYrs)
       const split = (!isCouple || owner !== 'joint') ? 1 : 0.5
       return sum + monthlyPmt * 12 * coverYears * split
@@ -921,7 +943,6 @@ const coverageTerm = (() => {
   function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
     const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
-    // Own mode: cover only their own expenses; Combined mode: cover % of total household expenses
     const fdBase = fdMode === 'own'
       ? (who === 'client' ? annExpClient : annExpSpouse)
       : annExpTotal * coverPct
@@ -943,7 +964,7 @@ const coverageTerm = (() => {
     const mort = calcCIMortgage(who)
     const edu = p.provideEducationFund ? calcEducationForPerson(who, true) : 0
     const gross = fd + mort + edu
-    const assets = getAssetOffset(ff, who, 'ci')
+    const assets = getAssetOffset(ff, who, 'ci', p)
     return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
   }
 
@@ -966,7 +987,6 @@ async function saveNeedsToDatabase() {
     needs.p2_ci_need = ciSpouse.net
   }
   
-  // Get existing protection_needs data
   const { data: existing } = await supabase
     .from('fact_finding')
     .select('data')
@@ -976,7 +996,6 @@ async function saveNeedsToDatabase() {
   
   const existingData = existing?.data || {}
   
-  // Save back with needs included
   await supabase
     .from('fact_finding')
     .upsert({
@@ -992,7 +1011,7 @@ useEffect(() => {
     if (needsSaveTimer.current) clearTimeout(needsSaveTimer.current)
     needsSaveTimer.current = setTimeout(() => {
       saveNeedsToDatabase()
-    }, 2000) // Wait 2 seconds after last change
+    }, 2000)
   }
 }, [clientId, dtpdClient.net, ciClient.net, dtpdSpouse?.net, ciSpouse?.net])
 
@@ -1033,14 +1052,12 @@ useEffect(() => {
       const initialTenure = prop.initialTenure ?? 25
       const interestRate = prop.interestRate ?? 0
       const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
-      // PMT calc for monthly repayment if not stored
       function pmtCalc(principal: number, annRate: number, years: number): number {
         if (years <= 0 || principal <= 0) return 0
         if (annRate === 0) return principal / (years * 12)
         const r = annRate / 100 / 12; const n = years * 12
         return principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
       }
-      // Calculate remaining tenure from start date if not overridden
       let remainingTenure = prop.remainingTenure ?? initialTenure
       if (!prop.remainingTenure && startDate) {
         const [mm, yyyy] = startDate.split('/')
@@ -1196,33 +1213,19 @@ useEffect(() => {
               spouseFD={ff.a2_fixed_deposit ?? 0}
               monthlyExpenses={(annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
              monthlySurplus={(() => {
-  // This matches the Financial Profile calculation
-  // Since we can't easily recalculate CPF here, use a simple estimate
-  // or just use the known correct value
-  
-  // For now, return the known correct surplus from Financial Profile
-  // We'll make this dynamic later
-  
   const p1Gross = (ff.person1 as any)?.gross_monthly || 0
   const p2Gross = isCouple ? ((ff.person2 as any)?.gross_monthly || 0) : 0
-  
-  // Estimate take-home as ~80% of gross (after CPF)
   const takeHome = (p1Gross + p2Gross) * 0.8
-  
   const monthlyExp = (annExpClient + (isCouple ? annExpSpouse : 0)) / 12
-  
   return takeHome - monthlyExp
 })()}
                             annualSurplus={(() => {
   const p1 = ff.person1 as any || {}
   const p2 = ff.person2 as any || {}
-  
   const p1AnnualTakeHome = p1.annualTakeHome || ((p1.gross_monthly || 0) * 12)
   const p2AnnualTakeHome = isCouple ? (p2.annualTakeHome || ((p2.gross_monthly || 0) * 12)) : 0
-  
   const totalAnnualTakeHome = p1AnnualTakeHome + p2AnnualTakeHome
   const totalAnnualExpenses = annExpClient + (isCouple ? annExpSpouse : 0)
-  
   console.log('🔵 ANNUAL SURPLUS DEBUG:')
   console.log('p1.annualTakeHome:', p1.annualTakeHome)
   console.log('p2.annualTakeHome:', p2.annualTakeHome)
@@ -1231,7 +1234,6 @@ useEffect(() => {
   console.log('annExpSpouse:', annExpSpouse)
   console.log('totalAnnualExpenses:', totalAnnualExpenses)
   console.log('SURPLUS:', totalAnnualTakeHome - totalAnnualExpenses)
-  
   return totalAnnualTakeHome - totalAnnualExpenses
 })()}
               isCouple={isCouple}
@@ -1403,7 +1405,6 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
       const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
       const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
       
-      // Simple PMT calculation
       let monthlyRepayment = prop.monthlyRepayment
       if (!monthlyRepayment && initialLoan > 0 && initialTenure > 0) {
         if (interestRate === 0) {
@@ -1574,9 +1575,10 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             addToPortfolio={addToPortfolio}
           />
         )}
+        {/* ── CHANGE 5: pass updateP into AssetOffsetTab ── */}
         {wpTab === 6 && (
           <AssetOffsetTab
-            ff={ff} p={p}
+            ff={ff} p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
             dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
             ciClient={ciClient} ciSpouse={ciSpouse}
@@ -2966,28 +2968,27 @@ function GeneralTab({ p, updateP, isCouple, clientName, spouseName, allFamilyMem
 }
 
 
-// ─── ASSET OFFSET TAB ───────────────────────────────────────────────────────
+// ─── ASSET OFFSET TAB ────────────────────────────────────────────────────────
+// ── CHANGE 6: Full rewrite of AssetOffsetTab with master switch + per-row toggles ──
 
-function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse }: {
-  ff: FactFinding; p: ProtectionData
+function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse }: {
+  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
   dtpdClient: CalcResult; dtpdSpouse: CalcResult
   ciClient: CalcResult; ciSpouse: CalcResult
 }) {
-  function AssetRow({ label, clientVal, spouseVal }: { label: string; clientVal: number; spouseVal: number }) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #E8E4DC' }}>
-        <span style={{ flex: 1, fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{label}</span>
-        {isCouple ? (
-          <>
-            <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(clientVal)}</span>
-            <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(spouseVal)}</span>
-          </>
-        ) : (
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(clientVal)}</span>
-        )}
-      </div>
-    )
+  const masterEnabled = p.assetOffsetEnabled !== false
+  const items = p.assetOffsetItems ?? {}
+  const liquidEnabled = items.liquid !== false
+  const cpfEnabled = items.cpf !== false
+  const propertyEnabled = items.property !== false
+
+  function toggleMaster() {
+    updateP({ assetOffsetEnabled: !masterEnabled })
+  }
+
+  function toggleItem(key: 'liquid' | 'cpf' | 'property') {
+    updateP({ assetOffsetItems: { ...items, [key]: !(items[key] !== false) } })
   }
 
   const clientLiquid = (ff.a_savings ?? 0) + (ff.a_fixed_deposit ?? 0) + (ff.a_srs ?? 0) + (ff.a_shares ?? 0) + (ff.a_etf ?? 0) + (ff.a_unit_trust ?? 0) + (ff.a_bonds ?? 0) + (ff.a_alternatives ?? 0)
@@ -2995,7 +2996,6 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
   const clientCPF = (ff.a_cpf_oa ?? 0) + (ff.a_cpf_sa ?? 0) + (ff.a_cpf_ma ?? 0) + (ff.a_cpf_ra ?? 0)
   const spouseCPF = (ff.a2_cpf_oa ?? 0) + (ff.a2_cpf_sa ?? 0) + (ff.a2_cpf_ma ?? 0) + (ff.a2_cpf_ra ?? 0)
 
-  // Property value per person — full value × coverage %, no outstanding subtraction
   const properties = (ff.properties ?? []) as any[]
   const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
   function getPropPct(prop: any, who: 'client' | 'spouse'): number {
@@ -3020,75 +3020,144 @@ function AssetOffsetTab({ ff, p, isCouple, clientName, spouseName, dtpdClient, d
     return sum + (prop.propertyValue ?? prop.purchasePrice ?? 0) * getPropPct(prop, 'spouse')
   }, 0)
 
+  // Effective totals respecting per-category toggles
+  const effectiveClientDTPD = (liquidEnabled ? clientLiquid : 0) + (cpfEnabled ? clientCPF : 0) + (propertyEnabled ? clientPropEquity : 0)
+  const effectiveSpouseDTPD = (liquidEnabled ? spouseLiquid : 0) + (cpfEnabled ? spouseCPF : 0) + (propertyEnabled ? spousePropEquity : 0)
+  const effectiveClientCI = liquidEnabled ? clientLiquid : 0
+  const effectiveSpouseCI = liquidEnabled ? spouseLiquid : 0
+
   const colHeader = (name: string) => (
     <span style={{ width: 120, textAlign: 'right', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter' }}>{name}</span>
   )
 
   return (
     <div>
-      <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>
-        Assets are automatically offset against coverage needs. D/TPD offsets include CPF and property values (by ownership). CI offsets use liquid assets only.
-      </p>
-
-      <SectionBlock title="Asset Values" color="#2D5A4E">
-        {isCouple && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 0, marginBottom: 4 }}>
-            {colHeader(clientName)}
-            {colHeader(spouseName)}
+      {/* ── Master switch ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '16px 20px', marginBottom: 24,
+        background: masterEnabled ? '#F5F0E8' : '#FAF8F5',
+        border: `1px solid ${masterEnabled ? '#A8834A' : '#E8E4DC'}`,
+        borderRadius: 8, transition: 'all 0.2s',
+      }}>
+        <div>
+          <div style={{ fontSize: 14, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Asset Offset</div>
+          <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginTop: 3 }}>
+            {masterEnabled
+              ? 'Assets are being deducted from gross coverage needs.'
+              : 'Asset offset is disabled — gross needs are used as coverage targets.'}
           </div>
-        )}
-        <AssetRow label="Cash & Liquid Investments" clientVal={clientLiquid} spouseVal={spouseLiquid} />
-        <AssetRow label="CPF (OA + SA + MA + RA)" clientVal={clientCPF} spouseVal={spouseCPF} />
-        <AssetRow label="Property Value (by ownership)" clientVal={clientPropEquity} spouseVal={spousePropEquity} />
-        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#F5F0E8', borderRadius: '0 0 4px 4px' }}>
-          <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.06em' }}>D/TPD Offset (all assets)</span>
-          {isCouple ? (
-            <>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientPropEquity)}</span>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid + spouseCPF + spousePropEquity)}</span>
-            </>
-          ) : (
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid + clientCPF + clientPropEquity)}</span>
-          )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#E8F0ED' }}>
-          <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#2D5A4E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>CI Offset (liquid only)</span>
-          {isCouple ? (
-            <>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
-              <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(spouseLiquid)}</span>
-            </>
-          ) : (
-            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(clientLiquid)}</span>
-          )}
-        </div>
-      </SectionBlock>
+        <Toggle value={masterEnabled} onChange={toggleMaster} />
+      </div>
 
-      {/* Net Need Summary */}
-      <SectionBlock title="Net Need After Offset" color="#1C1A17">
-        {[
-          { label: 'D/TPD Net Need', clientNet: dtpdClient.net, spouseNet: dtpdSpouse.net },
-          { label: 'CI Net Need', clientNet: ciClient.net, spouseNet: ciSpouse.net },
-        ].map(row => (
-          <div key={row.label} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', marginBottom: 4, background: '#1C1A17', borderRadius: 6 }}>
-            <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{row.label}</span>
+      {/* ── Content dims when master is off ── */}
+      <div style={{ opacity: masterEnabled ? 1 : 0.4, pointerEvents: masterEnabled ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
+        <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>
+          D/TPD offsets include CPF and property values (by ownership %). CI offsets use liquid assets only. Toggle individual categories to include or exclude them.
+        </p>
+
+        <SectionBlock title="Asset Values" color="#2D5A4E">
+          {isCouple && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 0, marginBottom: 4 }}>
+              {colHeader(clientName)}
+              {colHeader(spouseName)}
+            </div>
+          )}
+
+          {/* Per-category toggle rows */}
+          {[
+            { key: 'liquid' as const, label: 'Cash & Liquid Investments', clientVal: clientLiquid, spouseVal: spouseLiquid, enabled: liquidEnabled, note: 'D/TPD + CI' },
+            { key: 'cpf' as const, label: 'CPF (OA + SA + MA + RA)', clientVal: clientCPF, spouseVal: spouseCPF, enabled: cpfEnabled, note: 'D/TPD only' },
+            { key: 'property' as const, label: 'Property Value (by ownership %)', clientVal: clientPropEquity, spouseVal: spousePropEquity, enabled: propertyEnabled, note: 'D/TPD only' },
+          ].map(row => (
+            <div key={row.key} style={{
+              display: 'flex', alignItems: 'center', padding: '10px 12px',
+              borderBottom: '1px solid #E8E4DC', gap: 10,
+              background: row.enabled ? 'transparent' : '#FAF8F5',
+              transition: 'background 0.15s',
+            }}>
+              {/* Checkbox toggle */}
+              <div
+                onClick={() => toggleItem(row.key)}
+                style={{
+                  width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0,
+                  background: row.enabled ? '#2D5A4E' : 'transparent',
+                  border: `1.5px solid ${row.enabled ? '#2D5A4E' : '#ccc'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                {row.enabled && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+              </div>
+              {/* Label + note */}
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 13, fontFamily: 'Inter', color: row.enabled ? '#1C1A17' : '#aaa' }}>{row.label}</span>
+                <span style={{ fontSize: 10, color: '#bbb', fontFamily: 'Inter', marginLeft: 8 }}>{row.note}</span>
+              </div>
+              {/* Values */}
+              {isCouple ? (
+                <>
+                  <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: row.enabled ? '#2D5A4E' : '#ccc' }}>{fmt(row.clientVal)}</span>
+                  <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 13, color: row.enabled ? '#2D5A4E' : '#ccc' }}>{fmt(row.spouseVal)}</span>
+                </>
+              ) : (
+                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: row.enabled ? '#2D5A4E' : '#ccc' }}>{fmt(row.clientVal)}</span>
+              )}
+            </div>
+          ))}
+
+          {/* D/TPD Offset total */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#F5F0E8' }}>
+            <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', textTransform: 'uppercase', letterSpacing: '0.06em' }}>D/TPD Offset (all assets)</span>
             {isCouple ? (
               <>
-                <div style={{ textAlign: 'right', minWidth: 130 }}>
-                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.clientNet)}</div>
-                </div>
-                <div style={{ textAlign: 'right', minWidth: 130 }}>
-                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.spouseNet)}</div>
-                </div>
+                <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(effectiveClientDTPD)}</span>
+                <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(effectiveSpouseDTPD)}</span>
               </>
             ) : (
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(row.clientNet)}</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(effectiveClientDTPD)}</span>
             )}
           </div>
-        ))}
-      </SectionBlock>
+
+          {/* CI Offset total */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#E8F0ED', borderRadius: '0 0 4px 4px' }}>
+            <span style={{ flex: 1, fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: '#2D5A4E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>CI Offset (liquid only)</span>
+            {isCouple ? (
+              <>
+                <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(effectiveClientCI)}</span>
+                <span style={{ width: 120, textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(effectiveSpouseCI)}</span>
+              </>
+            ) : (
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#2D5A4E', fontWeight: 600 }}>{fmt(effectiveClientCI)}</span>
+            )}
+          </div>
+        </SectionBlock>
+
+        {/* Net Need Summary */}
+        <SectionBlock title="Net Need After Offset" color="#1C1A17">
+          {[
+            { label: 'D/TPD Net Need', clientNet: dtpdClient.net, spouseNet: dtpdSpouse.net },
+            { label: 'CI Net Need', clientNet: ciClient.net, spouseNet: ciSpouse.net },
+          ].map(row => (
+            <div key={row.label} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', marginBottom: 4, background: '#1C1A17', borderRadius: 6 }}>
+              <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{row.label}</span>
+              {isCouple ? (
+                <>
+                  <div style={{ textAlign: 'right', minWidth: 130 }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.clientNet)}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', minWidth: 130 }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(row.spouseNet)}</div>
+                  </div>
+                </>
+              ) : (
+                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(row.clientNet)}</span>
+              )}
+            </div>
+          ))}
+        </SectionBlock>
+      </div>
     </div>
   )
 }
@@ -3221,18 +3290,15 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
   const subItems = p.expenseSubItems ?? {}
   const keys = DETAILED_EXPENSE_MAP[category] ?? []
 
-  // Per-person toggles: subItems[key] = true/false (both), subItems[key+'_c'] = client only, subItems[key+'_s'] = spouse only
   function isClientIncluded(key: string) { return subItems[key+'_c'] !== false }
   function isSpouseIncluded(key: string) { return subItems[key+'_s'] !== false }
   function toggleClient(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_c']: !isClientIncluded(key) } }) }
   function toggleSpouse(key: string) { updateP({ expenseSubItems: { ...subItems, [key+'_s']: !isSpouseIncluded(key) } }) }
-  // Individual mode: single toggle
   function toggleItem(key: string) {
     const cur = subItems[key] !== false
     updateP({ expenseSubItems: { ...subItems, [key]: !cur } })
   }
 
-  // Selected totals
   const selectedClientTotal = keys.filter(k => isCouple ? isClientIncluded(k) : subItems[k] !== false)
     .reduce((s, k) => s + (ff[k] as number || 0), 0)
   const selectedSpouseTotal = keys.filter(k => isSpouseIncluded(k))
@@ -3251,7 +3317,6 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
           {isCouple ? 'Tick under each person to include that expense in their protection calculation.' : 'Select which line items to include in the protection calculation.'}
         </p>
 
-        {/* Column headers */}
         <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 110px 110px' : '1fr 24px 110px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
           <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
           <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{clientName}</div>
@@ -3277,7 +3342,6 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
                   background: rowActive ? '#F5F0E8' : 'transparent', alignItems: 'center',
                   borderBottom: '1px solid #F0EDE8' }}
               >
-                {/* Item name + amounts */}
                 <div>
                   <div style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17', marginBottom: 2 }}>{DETAILED_EXPENSE_LABELS[key]}</div>
                   {total > 0 && (
@@ -3289,7 +3353,6 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
                   )}
                 </div>
 
-                {/* Client checkbox */}
                 {isCouple ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
                     onClick={() => toggleClient(key)}>
@@ -3311,7 +3374,6 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
                   </div>
                 )}
 
-                {/* Spouse checkbox (couple only) */}
                 {isCouple && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
                     onClick={() => toggleSpouse(key)}>
@@ -3329,7 +3391,6 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
           })}
         </div>
 
-        {/* Selected totals */}
         <div style={{ marginTop: 16, padding: '12px 14px', background: '#1C1A17', borderRadius: 6 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Total</span>
