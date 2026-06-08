@@ -665,6 +665,12 @@ if (clientData) {
       .limit(1)
     const existing = rows?.[0]?.data ?? {}
     const existingPolicies: any[] = existing?.risk_management?.policies ?? []
+    const resolvedPerson = (() => {
+      const raw = policy.person ?? 'client'
+      if (raw === 'client' || raw === 'spouse') return raw
+      const dep = allFamilyMembers.find(f => f.id === raw)
+      return dep ? `child_${dep.name || dep.id}` : raw
+    })()
     const newPolicy = {
       id: crypto.randomUUID(),
       categoryCode: '', policyTypeCode: '', companyName: '', productName: '',
@@ -682,13 +688,7 @@ if (clientData) {
       status: 'In-Force', remarks: '', person: 'client',
       isUSD: false, fxRate: 1.35,
       ...policy,
-      // Resolve dependent person key to match portfolio's child_${name} format
-      person: (() => {
-        const raw = policy.person ?? 'client'
-        if (raw === 'client' || raw === 'spouse') return raw
-        const dep = allFamilyMembers.find(f => f.id === raw)
-        return dep ? `child_${dep.name || dep.id}` : raw
-      })(),
+      person: resolvedPerson,
     }
     const updatedPolicies = [...existingPolicies, newPolicy]
     await supabase.from('fact_finding').upsert(
