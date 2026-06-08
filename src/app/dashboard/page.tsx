@@ -472,6 +472,14 @@ return s + activeMonthly
       }
     }
     cmProjectedAtRetirement = runningCM
+console.log('[RET] ' + JSON.stringify({
+  cmPortfolioValue,
+  cmMonthlyContribs,
+  cmExpReturn,
+  cmProjectedAtRetirement,
+  savedCorpusNeeded,
+  shortfall: savedCorpusNeeded - runningCM
+}))
   }
 
   // Shortfall = how much more corpus is needed beyond what the portfolio will deliver
@@ -480,7 +488,7 @@ return s + activeMonthly
     : 0
 
   // Monthly top-up needed (from saved Retirement tab value)
-  const retMonthlySavings = savedMonthlySavings
+  const retMonthlySavings = cm?.retirementMonthlyTopUp || savedMonthlySavings
 
   // If CM has portfolio data use the projected shortfall; else fall back to raw gap from Retirement tab
  const retGap = cm?.portfolioStatus === 'gap'
