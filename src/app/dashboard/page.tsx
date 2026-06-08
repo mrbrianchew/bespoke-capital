@@ -432,11 +432,16 @@ async function deleteFamilyMember(memberId: string) {
     if (p.vehicleType === 'srs') return s + ((p.srsAnnualContribution || 0) / 12)
     if (p.vehicleType === 'endowment') return s + (p.endowmentPremium || 0)
     if (p.vehicleType === 'annuity') return s + (p.monthlyContribution || 0)
-    const changes = (p.cashflows || [])
-      .filter((cf: any) => cf.type === 'contribution_change')
-      .sort((a: any, b: any) => b.date.localeCompare(a.date))
-    const activeMonthly = changes.length > 0 ? (changes[0].amount || 0) : (p.monthlyContribution || 0)
-    return s + activeMonthly
+    const today = new Date().toISOString().slice(0, 7)
+const onHoliday = (p.cashflows || []).some(
+  (cf: any) => cf.type === 'premium_holiday' && cf.date <= today && (cf.endDate || '') >= today
+)
+if (onHoliday) return s
+const changes = (p.cashflows || [])
+  .filter((cf: any) => cf.type === 'contribution_change')
+  .sort((a: any, b: any) => b.date.localeCompare(a.date))
+const activeMonthly = changes.length > 0 ? (changes[0].amount || 0) : (p.monthlyContribution || 0)
+return s + activeMonthly
   }, 0)
 
   // Project portfolio using the same annual loop as Capital Mandate:
@@ -478,7 +483,11 @@ async function deleteFamilyMember(memberId: string) {
   const retMonthlySavings = savedMonthlySavings
 
   // If CM has portfolio data use the projected shortfall; else fall back to raw gap from Retirement tab
-  const retGap = (cmPortfolioValue > 0 || cmMonthlyContribs > 0) ? cmShortfall : (ffData['retirement']?.retirementGap || 0)
+ const retGap = savedCorpusNeeded > 0 && (cmPortfolioValue > 0 || cmMonthlyContribs > 0)
+  ? (cmProjectedAtRetirement < savedCorpusNeeded ? savedCorpusNeeded - cmProjectedAtRetirement : 0)
+  : (ffData['retirement']?.retirementGap || 0)
+
+// Also account for active premium holidays in monthly contribs
 
   let retStatus: Status = 'empty'
   let retHeadline = 'Not yet configured'
