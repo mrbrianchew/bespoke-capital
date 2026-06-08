@@ -999,7 +999,7 @@ useEffect(() => {
 
   // ─── SUB-COMPONENTS ────────────────────────────────────────────────────────
 
-  const WP_TABS = ['Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset', 'Other Protection']
+  const WP_TABS = ['Medical & Disability', 'Family Dependency', 'Mortgage & Debt', 'Education Fund', 'Critical Illness', 'Asset Offset']
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
 
@@ -1425,6 +1425,12 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
 
       <div style={{ padding: '28px 0' }}>
         {wpTab === 0 && (
+          <OtherProtectionTab
+            p={p} updateP={updateP}
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+          />
+        )}
+        {wpTab === 1 && (
           <FamilyDependencyTab
             ff={ff} p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
@@ -1435,21 +1441,21 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             inflation={inflation} defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
           />
         )}
-        {wpTab === 1 && (
+        {wpTab === 2 && (
           <MortgageDebtTab
             ff={ff} p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
             mortgages={mortgages} clientId={clientId ?? ''}
           />
         )}
-        {wpTab === 2 && (
+        {wpTab === 3 && (
           <EducationFundTab
             p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
             children={children} inflation={inflation}
           />
         )}
-        {wpTab === 3 && (
+        {wpTab === 4 && (
           <CriticalIllnessTab
             ff={ff} p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
@@ -1458,18 +1464,12 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             children={children}
           />
         )}
-        {wpTab === 4 && (
+        {wpTab === 5 && (
           <AssetOffsetTab
             ff={ff} p={p}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
             dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
             ciClient={ciClient} ciSpouse={ciSpouse}
-          />
-        )}
-        {wpTab === 5 && (
-          <OtherProtectionTab
-            p={p} updateP={updateP}
-            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
           />
         )}
       </div>
@@ -2603,7 +2603,7 @@ function OtherProtectionTab({ p, updateP, isCouple, clientName, spouseName }: {
   return (
     <div>
       <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20, lineHeight: 1.6 }}>
-        Record existing coverage across Medical Insurance, Personal Accident, and Long Term Care for each person. This section is for documentation and advisor reference — it does not affect the D/TPD or CI need calculations above.
+        Record existing core coverage for each person. Medical Insurance, Personal Accident, and Long Term Care form the foundation of any protection plan — review these before quantifying life and CI needs.
       </p>
       {/* Person tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid #E8E4DC' }}>
