@@ -491,9 +491,11 @@ console.log('[RET] ' + JSON.stringify({
   const retMonthlySavings = savedMonthlySavings
 
   // If CM has portfolio data use the projected shortfall; else fall back to raw gap from Retirement tab
- const retGap = savedCorpusNeeded > 0 && (cmPortfolioValue > 0 || cmMonthlyContribs > 0)
-  ? (cmProjectedAtRetirement < savedCorpusNeeded ? savedCorpusNeeded - cmProjectedAtRetirement : 0)
-  : (ffData['retirement']?.retirementGap || 0)
+ const retGap = cm?.portfolioStatus === 'gap'
+    ? (cm?.retirementShortfall || 1)
+    : cm?.portfolioStatus === 'on_track'
+    ? 0
+    : (ffData['retirement']?.retirementGap || 0)
 
 // Also account for active premium holidays in monthly contribs
 
