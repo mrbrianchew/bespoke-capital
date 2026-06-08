@@ -2481,9 +2481,9 @@ function PersonToggle({ activePerson, setActivePerson, isCouple, clientName, spo
 
 // ─── ENTRY CARD ──────────────────────────────────────────────────────────────
 
-function EntryCard({ entry, categoryId, policyTypeOptions, insCompanies, insProducts, onUpdate, onDelete, onAddToPortfolio, showWard, showRider, showSumAssured, showMonthlyBenefit, showBenefitPeriod, showMedisave, addedToPortfolio }: {
+function EntryCard({ entry, categoryId, policyTypeOptions, insCompanies, insProducts, onUpdate, onDelete, onAddToPortfolio, showWard, showSumAssured, showMonthlyBenefit, showBenefitPeriod, addedToPortfolio }: {
   entry: MedDisEntry
-  categoryId: number  // from ins_categories: medical=1, ltc=2(?), general=3(?)
+  categoryId: number
   policyTypeOptions?: {value: string; label: string}[]
   insCompanies: {id: number; name: string; category_id: number}[]
   insProducts: {id: number; name: string; company_id: number; category_id: number}[]
@@ -2491,11 +2491,9 @@ function EntryCard({ entry, categoryId, policyTypeOptions, insCompanies, insProd
   onDelete: () => void
   onAddToPortfolio: () => void
   showWard?: boolean
-  showRider?: boolean
   showSumAssured?: boolean
   showMonthlyBenefit?: boolean
   showBenefitPeriod?: boolean
-  showMedisave?: boolean
   addedToPortfolio?: boolean
 }) {
   const [adding, setAdding] = useState(false)
@@ -2618,40 +2616,6 @@ function EntryCard({ entry, categoryId, policyTypeOptions, insCompanies, insProd
           </div>
         )}
 
-        {/* Premiums */}
-        <div>
-          <span style={LBL}>Annual premium — cash (SGD)</span>
-          <input type="number" style={INP} placeholder="0"
-            value={entry.premiumCash || ''} onChange={e => onUpdate({ premiumCash: Number(e.target.value) })} />
-        </div>
-        {showMedisave && (
-          <div>
-            <span style={LBL}>Annual premium — Medisave (SGD)</span>
-            <input type="number" style={INP} placeholder="0"
-              value={entry.premiumMedisave || ''} onChange={e => onUpdate({ premiumMedisave: Number(e.target.value) })} />
-          </div>
-        )}
-
-        {/* Rider checkbox — medical main only */}
-        {showRider && isMain && (
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-              background: '#F5F0E8', borderRadius: 8, cursor: 'pointer',
-            }} onClick={() => onUpdate({ hasRider: !entry.hasRider })}>
-              <div style={{
-                width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                border: '1.5px solid ' + (entry.hasRider ? '#A8834A' : '#ccc'),
-                background: entry.hasRider ? '#A8834A' : 'white',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                {entry.hasRider && <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>✓</span>}
-              </div>
-              <span style={{ fontSize: 13, color: '#1C1A17', fontFamily: 'Inter' }}>Has rider (co-payment waiver)</span>
-            </label>
-          </div>
-        )}
-
       </div>
 
       {/* Footer actions */}
@@ -2765,7 +2729,7 @@ function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, al
             categoryId={medCatId}
             policyTypeOptions={[{ value: 'main', label: 'Main Plan' }, { value: 'rider', label: 'Rider' }]}
             insCompanies={insCompanies} insProducts={insProducts}
-            showWard showRider showMedisave
+            showWard
             addedToPortfolio={!!entry.portfolioId}
             onUpdate={patch => updateEntry('medicalEntries', entry.id, patch)}
             onDelete={() => removeEntry('medicalEntries', entry.id)}
@@ -2791,7 +2755,7 @@ function MedicalDisabilityTab({ p, updateP, isCouple, clientName, spouseName, al
             <EntryCard key={entry.id} entry={entry}
               categoryId={ltcCatId}
               insCompanies={insCompanies} insProducts={insProducts}
-              showMonthlyBenefit showBenefitPeriod showMedisave
+              showMonthlyBenefit showBenefitPeriod
               addedToPortfolio={!!entry.portfolioId}
               onUpdate={patch => updateEntry('ltcEntries', entry.id, patch)}
               onDelete={() => removeEntry('ltcEntries', entry.id)}
