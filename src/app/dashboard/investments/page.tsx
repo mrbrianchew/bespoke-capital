@@ -1165,6 +1165,9 @@ export default function CapitalMandatePage() {
     }
     setSettings(savedSettings)
     setNotes(cmData?.notes || '')
+    if (cmData?.shortfallSolution?.lumpSumFraction != null) {
+      setLumpSumFraction(cmData.shortfallSolution.lumpSumFraction)
+    }
 
     const builtGoals: CapitalGoal[] = []
 
@@ -1312,6 +1315,16 @@ export default function CapitalMandatePage() {
       saveData(portfolio, settings, goals.filter(g => g.source === 'custom'), val, corpusShortfall)
     }, 1200)
   }
+
+  const lumpSumFractionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lumpSumFractionRef = useRef(lumpSumFraction)
+  useEffect(() => {
+    lumpSumFractionRef.current = lumpSumFraction
+    if (lumpSumFractionTimer.current) clearTimeout(lumpSumFractionTimer.current)
+    lumpSumFractionTimer.current = setTimeout(() => {
+      saveData(portfolio, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
+    }, 800)
+  }, [lumpSumFraction])
 
   const matchesPerson = useCallback((_owner: 'client' | 'spouse' | 'joint'): boolean => true, [])
 
