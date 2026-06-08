@@ -1073,7 +1073,7 @@ export default function CapitalMandatePage() {
   const chartRef = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<any>(null)
   const breakdownShortfallRef = useRef<number>(0)
-  const monthlyTopUpRef = useRef<number>(0)
+  const shortfallSolutionRef = useRef<{ pureMonthly: number; pureLump: number; lumpSumFraction: number } | null>(null)
 
   const earliestRetirementAge = useMemo(() => {
     if (planMode === 'couple') {
@@ -1244,7 +1244,7 @@ export default function CapitalMandatePage() {
       portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
       portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
       retirementShortfall: effectiveShortfall,
-      retirementMonthlyTopUp: monthlyTopUpRef.current || undefined,
+      shortfallSolution: shortfallSolutionRef.current || undefined,
     }
     const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate')
     if (rows && rows.length > 0) {
@@ -1658,19 +1658,6 @@ export default function CapitalMandatePage() {
   const requiredCorpusAtRet = legacyAdjustedCorpus
   const corpusShortfall = requiredCorpusAtRet - projectedAtRetirement.atAssumption
 
-  // Compute pure monthly top-up needed for shortfall (lump sum = 0 scenario)
-  const cmPureMonthly = (() => {
-    const gap = breakdownShortfallRef.current > 0 ? breakdownShortfallRef.current : Math.max(0, corpusShortfall)
-    if (gap <= 0) return 0
-    const r = settings.expectedReturn / 100
-    const rm = r / 12
-    const yearsLeft = Math.max(1, retirementAge - clientAge)
-    const nm = yearsLeft * 12
-    const annuityFactor = rm > 0 ? ((Math.pow(1 + rm, nm) - 1) / rm) * (1 + rm) : nm
-    return annuityFactor > 0 ? gap / annuityFactor : 0
-  })()
-  monthlyTopUpRef.current = cmPureMonthly
-
   // Guaranteed monthly retirement income from all income-stream vehicles
   const guaranteedMonthlyRetirement = useMemo(() => {
     return filteredPortfolio.reduce((sum, p) => {
@@ -1771,7 +1758,21 @@ export default function CapitalMandatePage() {
 
   // Also set synchronously so it's available on same-render saves
   if (retirementBreakdown && projectedAtRetirement) {
-    breakdownShortfallRef.current = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
+    const _gap = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
+    breakdownShortfallRef.current = _gap
+    if (_gap > 0) {
+      const _r = settings.expectedReturn / 100
+      const _rm = _r / 12
+      const _n = Math.max(1, retirementAge - clientAge) * 12
+      const _af = _rm > 0 ? ((Math.pow(1 + _rm, _n) - 1) / _rm) * (1 + _rm) : _n
+      shortfallSolutionRef.current = {
+        pureMonthly: _af > 0 ? _gap / _af : 0,
+        pureLump: _gap / Math.pow(1 + _r, Math.max(1, retirementAge - clientAge)),
+        lumpSumFraction,
+      }
+    } else {
+      shortfallSolutionRef.current = null
+    }
   }
 
  // ── CHART ─────────────────────────────────────────────────────────────────
