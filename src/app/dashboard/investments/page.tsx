@@ -1234,12 +1234,12 @@ export default function CapitalMandatePage() {
     setLoading(false)
   }
 
-  async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string) {
+  async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string, shortfall?: number) {
     const c = clientRef.current; if (!c) return
     const dataToSave = {
       portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
-      portfolioStatus: corpusShortfall > 0 ? 'gap' : 'on_track',
-      retirementShortfall: Math.max(0, corpusShortfall),
+      portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
+      retirementShortfall: shortfall != null ? Math.max(0, shortfall) : undefined,
     }
     const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate')
     if (rows && rows.length > 0) {
@@ -1252,14 +1252,14 @@ export default function CapitalMandatePage() {
   async function saveVehicle(item: FundingVehicle) {
     const updated = portfolio.find(p => p.id === item.id) ? portfolio.map(p => p.id === item.id ? item : p) : [...portfolio, item]
     setPortfolio(updated)
-    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes)
+    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
     setVehicleModal({ open: false })
   }
 
   async function saveCashflows(vehicleId: string, cashflows: CashflowEvent[]) {
     const updated = portfolio.map(p => p.id === vehicleId ? { ...p, cashflows } : p)
     setPortfolio(updated)
-    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes)
+    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
     setCashflowModal(null)
   }
 
@@ -1267,7 +1267,7 @@ export default function CapitalMandatePage() {
     if (!confirm('Remove this funding vehicle?')) return
     const updated = portfolio.filter(p => p.id !== id)
     setPortfolio(updated)
-    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes)
+    await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
   }
 
   async function addCustomGoal(g: CapitalGoal) {
@@ -1296,7 +1296,7 @@ export default function CapitalMandatePage() {
     setSettings(s)
     if (settingsSaveTimer.current) clearTimeout(settingsSaveTimer.current)
     settingsSaveTimer.current = setTimeout(() => {
-      saveData(portfolio, s, goals.filter(g => g.source === 'custom'), notes)
+      saveData(portfolio, s, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
     }, 800)
   }
 
@@ -1304,7 +1304,7 @@ export default function CapitalMandatePage() {
     setNotes(val)
     if (notesTimer.current) clearTimeout(notesTimer.current)
     notesTimer.current = setTimeout(() => {
-      saveData(portfolio, settings, goals.filter(g => g.source === 'custom'), val)
+      saveData(portfolio, settings, goals.filter(g => g.source === 'custom'), val, corpusShortfall)
     }, 1200)
   }
 
