@@ -1,5 +1,6 @@
 'use client'
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useMemo, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import ProtectionOverview from './ProtectionOverview'
 
@@ -126,7 +127,11 @@ function getMultipliedBenefit(p: Policy, benefitType: 'death' | 'tpd' | 'advCI' 
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function ProtectionPage() {
+export default function ProtectionPageWrapper() {
+  return <Suspense><ProtectionPage /></Suspense>
+}
+
+function ProtectionPage() {
   const supabase = createClient()
   const [error, setError] = useState<string | null>(null)
 
@@ -154,7 +159,10 @@ export default function ProtectionPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // UI state
-  const [activeTab,       setActiveTab]       = useState<'overview'|'portfolio'>('overview')
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState<'overview'|'portfolio'>(() =>
+    searchParams.get('tab') === 'portfolio' ? 'portfolio' : 'overview'
+  )
   const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
   const [portfolioPerson, setPortfolioPerson] = useState<string>('client')
   const [editingPolicy,   setEditingPolicy]   = useState<Policy | null>(null)
