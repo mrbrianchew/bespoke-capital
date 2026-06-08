@@ -1237,7 +1237,6 @@ export default function CapitalMandatePage() {
 
   async function saveData(updPortfolio: FundingVehicle[], updSettings: CMSettings, updCustomGoals: CapitalGoal[], updNotes: string, shortfall?: number, retBreakdownShortfall?: number) {
     const c = clientRef.current; if (!c) return
-    console.log('[SAVE] shortfall:', shortfall, 'retBreakdownShortfall:', retBreakdownShortfall)
     const dataToSave = {
       portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
       portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
@@ -1640,12 +1639,6 @@ export default function CapitalMandatePage() {
     const atAssumption = projectedPortfolioData.atRetirement
     return { atAssumption, atActual: atAssumption }
   }, [projectedPortfolioData])
-  // Keep ref in sync so debounced saves always use latest value
-  useEffect(() => {
-    if (retirementBreakdown) {
-      breakdownShortfallRef.current = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
-    }
-  }, [retirementBreakdown, projectedAtRetirement])
 
   // Corpus shortfall/surplus: projected portfolio at retirement vs required corpus
   const retGoalForSummary = filteredGoals.find(g => g.source === 'retirement')
@@ -1663,7 +1656,6 @@ export default function CapitalMandatePage() {
 
   // Guaranteed monthly retirement income from all income-stream vehicles
   const guaranteedMonthlyRetirement = useMemo(() => {
-    console.log('[GMR] cpf_life vehicles:', JSON.stringify(filteredPortfolio.filter(p => p.vehicleType === 'cpf_life').map(p => ({ name: p.name, cpfMonthlyPayout: p.cpfMonthlyPayout }))))
     return filteredPortfolio.reduce((sum, p) => {
     if (p.vehicleType === 'cpf_life') return sum + (p.cpfMonthlyPayout || 0)
     if (p.vehicleType === 'annuity') return sum + (p.annuityMonthlyIncome || 0)
@@ -1753,7 +1745,12 @@ export default function CapitalMandatePage() {
       retirementAge, retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
       postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement])
 
-
+  // Keep ref in sync so debounced saves always use latest value
+  useEffect(() => {
+    if (retirementBreakdown) {
+      breakdownShortfallRef.current = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
+    }
+  }, [retirementBreakdown, projectedAtRetirement])
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
