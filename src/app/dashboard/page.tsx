@@ -472,6 +472,14 @@ return s + activeMonthly
       }
     }
     cmProjectedAtRetirement = runningCM
+console.log('[RET] ' + JSON.stringify({
+  cmPortfolioValue,
+  cmMonthlyContribs,
+  cmExpReturn,
+  cmProjectedAtRetirement,
+  savedCorpusNeeded,
+  shortfall: savedCorpusNeeded - runningCM
+}))
   }
 
   // Shortfall = how much more corpus is needed beyond what the portfolio will deliver
