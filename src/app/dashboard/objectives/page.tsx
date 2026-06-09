@@ -133,6 +133,14 @@ interface ProtectionData {
     cpf?: boolean
     property?: boolean
   }
+  ciCalcMode?: 'calculate' | 'custom'
+  ciCustomAmountClient?: number; ciCustomAmountSpouse?: number
+  ciIncludeIncomeReplacement?: boolean
+  ciIncomeMonthsClient?: number; ciIncomeMonthsSpouse?: number
+  ciIncludeMedicalBuffer?: boolean
+  ciMedicalBufferClient?: number; ciMedicalBufferSpouse?: number
+  ciIncludeRecoveryBuffer?: boolean
+  ciRecoveryBufferClient?: number; ciRecoveryBufferSpouse?: number
 }
 
 interface MedDisEntry {
@@ -397,6 +405,14 @@ function ObjectivesPageInner() {
     // ── CHANGE 3: default both flags to true so existing clients are unaffected ──
     assetOffsetEnabled: true,
     assetOffsetItems: { liquid: true, cpf: true, property: true },
+    ciCalcMode: 'calculate',
+    ciCustomAmountClient: 0, ciCustomAmountSpouse: 0,
+    ciIncludeIncomeReplacement: false,
+    ciIncomeMonthsClient: 24, ciIncomeMonthsSpouse: 24,
+    ciIncludeMedicalBuffer: false,
+    ciMedicalBufferClient: 50000, ciMedicalBufferSpouse: 50000,
+    ciIncludeRecoveryBuffer: false,
+    ciRecoveryBufferClient: 30000, ciRecoveryBufferSpouse: 30000,
   })
   const [children, setChildren] = useState<FamilyMember[]>([])
   const [allFamilyMembers, setAllFamilyMembers] = useState<FamilyMember[]>([])
@@ -512,6 +528,18 @@ if (estateRow?.data?.estate) setEstate((prev: EstateData) => ({ ...prev, ...esta
         ...protData,
         assetOffsetEnabled: protData.assetOffsetEnabled !== undefined ? protData.assetOffsetEnabled : true,
         assetOffsetItems: protData.assetOffsetItems ?? { liquid: true, cpf: true, property: true },
+        ciCalcMode: protData.ciCalcMode ?? 'calculate',
+        ciCustomAmountClient: protData.ciCustomAmountClient ?? 0,
+        ciCustomAmountSpouse: protData.ciCustomAmountSpouse ?? 0,
+        ciIncludeIncomeReplacement: protData.ciIncludeIncomeReplacement ?? false,
+        ciIncomeMonthsClient: protData.ciIncomeMonthsClient ?? 24,
+        ciIncomeMonthsSpouse: protData.ciIncomeMonthsSpouse ?? 24,
+        ciIncludeMedicalBuffer: protData.ciIncludeMedicalBuffer ?? false,
+        ciMedicalBufferClient: protData.ciMedicalBufferClient ?? 50000,
+        ciMedicalBufferSpouse: protData.ciMedicalBufferSpouse ?? 50000,
+        ciIncludeRecoveryBuffer: protData.ciIncludeRecoveryBuffer ?? false,
+        ciRecoveryBufferClient: protData.ciRecoveryBufferClient ?? 30000,
+        ciRecoveryBufferSpouse: protData.ciRecoveryBufferSpouse ?? 30000,
       }))
     }
     setFf(merged)
@@ -954,7 +982,12 @@ const coverageTerm = (() => {
     return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
   }
 
-  function calcCINeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
+  function calcCINeed(who: 'client' | 'spouse'): CalcResult {
+    const ciMode = p.ciCalcMode ?? 'calculate'
+    if (ciMode === 'custom') {
+      const customAmount = who === 'client' ? (p.ciCustomAmountClient ?? 0) : (p.ciCustomAmountSpouse ?? 0)
+      return { gross: customAmount, assets: 0, net: customAmount, fd: 0, mort: 0, edu: 0, incomeReplacement: 0, medicalBuffer: 0, recoveryBuffer: 0 }
+    }
     const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
     const fdBase = fdMode === 'own'
@@ -963,9 +996,19 @@ const coverageTerm = (() => {
     const fd = fv(inflation, p.ciYears ?? 5, fdBase)
     const mort = calcCIMortgage(who)
     const edu = p.provideEducationFund ? calcEducationForPerson(who, true) : 0
-    const gross = fd + mort + edu
+    let incomeReplacement = 0
+    if (p.ciIncludeIncomeReplacement) {
+      const grossMonthly = who === 'client' ? ((ff.person1 as any)?.gross_monthly ?? 0) : ((ff.person2 as any)?.gross_monthly ?? 0)
+      const months = who === 'client' ? (p.ciIncomeMonthsClient ?? 24) : (p.ciIncomeMonthsSpouse ?? 24)
+      incomeReplacement = grossMonthly * months
+    }
+    const medicalBuffer = p.ciIncludeMedicalBuffer
+      ? (who === 'client' ? (p.ciMedicalBufferClient ?? 50000) : (p.ciMedicalBufferSpouse ?? 50000)) : 0
+    const recoveryBuffer = p.ciIncludeRecoveryBuffer
+      ? (who === 'client' ? (p.ciRecoveryBufferClient ?? 30000) : (p.ciRecoveryBufferSpouse ?? 30000)) : 0
+    const gross = fd + mort + edu + incomeReplacement + medicalBuffer + recoveryBuffer
     const assets = getAssetOffset(ff, who, 'ci', p)
-    return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
+    return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu, incomeReplacement, medicalBuffer, recoveryBuffer }
   }
 
   const dtpdClient = calcDTPDNeed('client')
@@ -1389,7 +1432,7 @@ interface WPProps {
 }
 
 // Type helper for return shape
-type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number }
+type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number; incomeReplacement?: number; medicalBuffer?: number; recoveryBuffer?: number }
 
 
 function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId, allFamilyMembers, insCompanies, insProducts, insCategories, addToPortfolio }: WPProps) {
@@ -2338,7 +2381,300 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
 
 // ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
 
+// ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
+
 function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children }: {
+  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+  mortgages: MortgageProperty[]
+  ciClient: CalcResult; ciSpouse: CalcResult
+  children: FamilyMember[]
+}) {
+  const ciMode = p.ciCalcMode ?? 'calculate'
+  const ciYears = p.ciYears ?? 5
+  const clientGrossMonthly = (ff.person1 as any)?.gross_monthly ?? 0
+  const spouseGrossMonthly = (ff.person2 as any)?.gross_monthly ?? 0
+
+  function AmountInput({ label, value, onChange, note }: { label: string; value: number; onChange: (v: number) => void; note?: string }) {
+    return (
+      <div>
+        <label style={labelStyle}>{label}</label>
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
+          <input type="number" min={0} step={5000} value={value || ''}
+            onChange={e => onChange(parseInt(e.target.value) || 0)}
+            style={{ ...inputStyle, paddingLeft: 24 }} />
+        </div>
+        {note && <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>{note}</div>}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* CI Stage */}
+      <SectionBlock title="Critical Illness Stage" color="#A8834A">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          {([{ key: 'early_late', label: 'Early & Late Stage' }, { key: 'late_only', label: 'Late Stage Only' }] as const).map(opt => (
+            <button key={opt.key} onClick={() => updateP({ ciStage: opt.key })}
+              style={{ padding: '8px 16px', fontFamily: 'Inter', fontSize: 12, background: p.ciStage === opt.key ? '#1C1A17' : '#F5F0E8', color: p.ciStage === opt.key ? '#fff' : '#1C1A17', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+          {p.ciStage === 'early_late' ? 'Covers both early and late stage critical illnesses.' : 'Covers late stage critical illnesses only.'}
+        </p>
+      </SectionBlock>
+
+      {/* Calculation Method */}
+      <SectionBlock title="Calculation Method" color="#A8834A">
+        <div style={{ display: 'flex', gap: 0, background: '#F5F0E8', borderRadius: 6, padding: 3, marginBottom: 16, width: 'fit-content' }}>
+          {([{ key: 'calculate', label: 'Calculate' }, { key: 'custom', label: 'Custom Amount' }] as const).map(opt => (
+            <button key={opt.key} onClick={() => updateP({ ciCalcMode: opt.key })}
+              style={{ padding: '8px 20px', fontFamily: 'Inter', fontSize: 12, fontWeight: 500, background: ciMode === opt.key ? '#1C1A17' : 'transparent', color: ciMode === opt.key ? '#fff' : '#888', border: 'none', borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s' }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {ciMode === 'custom' ? (
+          <div>
+            <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>Enter the CI coverage amount the client wants directly.</p>
+            {isCouple ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <AmountInput label={clientName} value={p.ciCustomAmountClient ?? 0} onChange={v => updateP({ ciCustomAmountClient: v })} />
+                <AmountInput label={spouseName} value={p.ciCustomAmountSpouse ?? 0} onChange={v => updateP({ ciCustomAmountSpouse: v })} />
+              </div>
+            ) : (
+              <AmountInput label="CI Amount" value={p.ciCustomAmountClient ?? 0} onChange={v => updateP({ ciCustomAmountClient: v })} />
+            )}
+          </div>
+        ) : (
+          <div>
+            <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>Build the CI need from individual components. Toggle each one on or off.</p>
+
+            {/* Expenses — always on */}
+            <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #A8834A' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 20, height: 20, borderRadius: 4, background: '#A8834A', border: '1.5px solid #A8834A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Living Expenses</div>
+                  <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Inflation-adjusted expenses over the coverage window</div>
+                </div>
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Coverage Window</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#A8834A' }}>{ciYears.toFixed(1)} years</span>
+                </div>
+                <input type="range" min={0.5} max={10} step={0.5} value={ciYears}
+                  onChange={e => updateP({ ciYears: parseFloat(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#A8834A' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', fontFamily: 'Inter', marginTop: 3 }}>
+                  <span>0.5 yr</span><span>5 yrs</span><span>10 yrs</span>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 8, padding: '8px 10px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#A8834A' }}>{fmt(ciClient.fd)}</div>
+                </div>
+                {isCouple && <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#A8834A' }}>{fmt(ciSpouse.fd)}</div>
+                </div>}
+              </div>
+            </div>
+
+            {/* Mortgage — shown if mortgages exist */}
+            {mortgages.length > 0 && (
+              <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #A8834A' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 4, background: '#A8834A', border: '1.5px solid #A8834A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Mortgage Repayments</div>
+                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Monthly repayments × coverage window</div>
+                  </div>
+                </div>
+                {isCouple ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 8 }}>
+                    <PersonSlider label={clientName} value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+                    <PersonSlider label={spouseName} value={p.ciMortgagePctSpouse ?? 100} onChange={v => updateP({ ciMortgagePctSpouse: v })} color="#A8834A" unit="%" />
+                  </div>
+                ) : (
+                  <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 8, padding: '8px 10px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC', marginTop: 8 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{clientName}</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#A8834A' }}>{fmt(ciClient.mort)}</div>
+                  </div>
+                  {isCouple && <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{spouseName}</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#A8834A' }}>{fmt(ciSpouse.mort)}</div>
+                  </div>}
+                </div>
+              </div>
+            )}
+
+            {/* Education fund */}
+            {p.provideEducationFund && children.length > 0 && (
+              <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #2D5A4E' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 4, background: '#2D5A4E', border: '1.5px solid #2D5A4E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Education Fund</div>
+                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Children who have not yet reached university age</div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 8, minWidth: isCouple ? 240 : 120 }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{clientName}</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(ciClient.edu)}</div>
+                    </div>
+                    {isCouple && <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{spouseName}</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(ciSpouse.edu)}</div>
+                    </div>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Income Replacement */}
+            <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeIncomeReplacement ? '#6B7C93' : '#E8E4DC'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: p.ciIncludeIncomeReplacement ? 14 : 0 }}>
+                <div onClick={() => updateP({ ciIncludeIncomeReplacement: !p.ciIncludeIncomeReplacement })}
+                  style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeIncomeReplacement ? '#6B7C93' : 'transparent', border: `1.5px solid ${p.ciIncludeIncomeReplacement ? '#6B7C93' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {p.ciIncludeIncomeReplacement && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeIncomeReplacement ? '#1C1A17' : '#aaa' }}>Income Replacement</div>
+                  <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>
+                    {clientGrossMonthly > 0 ? `${clientName}: ${fmt(clientGrossMonthly)}/mo from financial profile` : 'Based on gross monthly income from financial profile'}
+                  </div>
+                </div>
+              </div>
+              {p.ciIncludeIncomeReplacement && (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>{clientName} — months of income</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="range" min={6} max={60} step={6} value={p.ciIncomeMonthsClient ?? 24}
+                          onChange={e => updateP({ ciIncomeMonthsClient: parseInt(e.target.value) })}
+                          style={{ flex: 1, accentColor: '#6B7C93' }} />
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#6B7C93', minWidth: 50 }}>{p.ciIncomeMonthsClient ?? 24} mo</span>
+                      </div>
+                      {clientGrossMonthly > 0 && <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginTop: 4 }}>= {fmt(clientGrossMonthly * (p.ciIncomeMonthsClient ?? 24))}</div>}
+                    </div>
+                    {isCouple && <div>
+                      <label style={labelStyle}>{spouseName} — months of income</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="range" min={6} max={60} step={6} value={p.ciIncomeMonthsSpouse ?? 24}
+                          onChange={e => updateP({ ciIncomeMonthsSpouse: parseInt(e.target.value) })}
+                          style={{ flex: 1, accentColor: '#6B7C93' }} />
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#6B7C93', minWidth: 50 }}>{p.ciIncomeMonthsSpouse ?? 24} mo</span>
+                      </div>
+                      {spouseGrossMonthly > 0 && <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginTop: 4 }}>= {fmt(spouseGrossMonthly * (p.ciIncomeMonthsSpouse ?? 24))}</div>}
+                    </div>}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 8, padding: '8px 10px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{clientName}</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#6B7C93' }}>{fmt(ciClient.incomeReplacement ?? 0)}</div>
+                    </div>
+                    {isCouple && <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{spouseName}</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#6B7C93' }}>{fmt(ciSpouse.incomeReplacement ?? 0)}</div>
+                    </div>}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Medical Buffer */}
+            <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeMedicalBuffer ? '#7B6EA0' : '#E8E4DC'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: p.ciIncludeMedicalBuffer ? 14 : 0 }}>
+                <div onClick={() => updateP({ ciIncludeMedicalBuffer: !p.ciIncludeMedicalBuffer })}
+                  style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeMedicalBuffer ? '#7B6EA0' : 'transparent', border: `1.5px solid ${p.ciIncludeMedicalBuffer ? '#7B6EA0' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {p.ciIncludeMedicalBuffer && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeMedicalBuffer ? '#1C1A17' : '#aaa' }}>Medical & Treatment Buffer</div>
+                  <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Out-of-pocket costs beyond medical insurance (specialist, co-pays, overseas treatment)</div>
+                </div>
+              </div>
+              {p.ciIncludeMedicalBuffer && (
+                <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
+                  <AmountInput label={isCouple ? `${clientName} buffer` : 'Medical buffer'} value={p.ciMedicalBufferClient ?? 50000} onChange={v => updateP({ ciMedicalBufferClient: v })} note="Default $50,000" />
+                  {isCouple && <AmountInput label={`${spouseName} buffer`} value={p.ciMedicalBufferSpouse ?? 50000} onChange={v => updateP({ ciMedicalBufferSpouse: v })} note="Default $50,000" />}
+                </div>
+              )}
+            </div>
+
+            {/* Recovery Buffer */}
+            <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeRecoveryBuffer ? '#8A9A7E' : '#E8E4DC'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: p.ciIncludeRecoveryBuffer ? 14 : 0 }}>
+                <div onClick={() => updateP({ ciIncludeRecoveryBuffer: !p.ciIncludeRecoveryBuffer })}
+                  style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeRecoveryBuffer ? '#8A9A7E' : 'transparent', border: `1.5px solid ${p.ciIncludeRecoveryBuffer ? '#8A9A7E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {p.ciIncludeRecoveryBuffer && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeRecoveryBuffer ? '#1C1A17' : '#aaa' }}>Recovery & Lifestyle Adjustment</div>
+                  <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Home modifications, caregiver costs, rehabilitation, career change buffer</div>
+                </div>
+              </div>
+              {p.ciIncludeRecoveryBuffer && (
+                <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
+                  <AmountInput label={isCouple ? `${clientName} buffer` : 'Recovery buffer'} value={p.ciRecoveryBufferClient ?? 30000} onChange={v => updateP({ ciRecoveryBufferClient: v })} note="Default $30,000" />
+                  {isCouple && <AmountInput label={`${spouseName} buffer`} value={p.ciRecoveryBufferSpouse ?? 30000} onChange={v => updateP({ ciRecoveryBufferSpouse: v })} note="Default $30,000" />}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </SectionBlock>
+
+      {/* CI Need Summary */}
+      <SectionBlock title="Critical Illness Need Summary" color="#2D5A4E">
+        {ciMode === 'custom' ? (
+          <div style={{ display: 'flex', padding: '12px 16px', background: '#1C1A17', borderRadius: 6, alignItems: 'center' }}>
+            <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>CI Cover Needed (Custom)</span>
+            {isCouple ? (
+              <>
+                <div style={{ textAlign: 'right', minWidth: 130 }}>
+                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(ciClient.gross)}</div>
+                </div>
+                <div style={{ textAlign: 'right', minWidth: 130 }}>
+                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(ciSpouse.gross)}</div>
+                </div>
+              </>
+            ) : <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(ciClient.gross)}</span>}
+          </div>
+        ) : (
+          <NeedTable
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            clientData={ciClient.gross} spouseData={ciSpouse.gross}
+            label="CI Cover Needed"
+            breakdown={{
+              client: { fd: ciClient.fd, mort: ciClient.mort, edu: ciClient.edu, incomeReplacement: ciClient.incomeReplacement, medicalBuffer: ciClient.medicalBuffer, recoveryBuffer: ciClient.recoveryBuffer },
+              spouse: { fd: ciSpouse.fd, mort: ciSpouse.mort, edu: ciSpouse.edu, incomeReplacement: ciSpouse.incomeReplacement, medicalBuffer: ciSpouse.medicalBuffer, recoveryBuffer: ciSpouse.recoveryBuffer },
+            }}
+          />
+        )}
+      </SectionBlock>
+    </div>
+  )
+}
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
   mortgages: MortgageProperty[]
@@ -3478,8 +3814,24 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 function NeedTable({ isCouple, clientName, spouseName, clientData, spouseData, label, breakdown }: {
   isCouple: boolean; clientName: string; spouseName: string
   clientData: number; spouseData: number; label: string
-  breakdown?: { client: { fd: number; mort: number; edu: number }; spouse: { fd: number; mort: number; edu: number } }
+  breakdown?: {
+    client: { fd: number; mort: number; edu: number; incomeReplacement?: number; medicalBuffer?: number; recoveryBuffer?: number }
+    spouse: { fd: number; mort: number; edu: number; incomeReplacement?: number; medicalBuffer?: number; recoveryBuffer?: number }
+  }
 }) {
+  const extraRows = breakdown ? [
+    { key: 'incomeReplacement', label: 'Income' },
+    { key: 'medicalBuffer', label: 'Medical' },
+    { key: 'recoveryBuffer', label: 'Recovery' },
+  ].filter(r => (breakdown.client as any)[r.key] > 0 || (breakdown.spouse as any)[r.key] > 0) : []
+
+  const baseRows = [
+    { key: 'fd', label: 'Expenses' },
+    { key: 'mort', label: 'Mortgage' },
+    { key: 'edu', label: 'Education' },
+    ...extraRows,
+  ]
+
   return (
     <div>
       <div style={{ display: 'flex', padding: '12px 16px', background: '#1C1A17', borderRadius: 6, alignItems: 'center', marginBottom: breakdown ? 8 : 0 }}>
@@ -3501,16 +3853,13 @@ function NeedTable({ isCouple, clientName, spouseName, clientData, spouseData, l
       </div>
       {breakdown && (
         <div style={{ display: 'flex', gap: 0, background: '#F5F0E8', borderRadius: '0 0 6px 6px', overflow: 'hidden' }}>
-          {(['fd', 'mort', 'edu'] as const).map(key => {
-            const labels = { fd: 'Family Dep.', mort: 'Mortgage', edu: 'Education' }
-            return (
-              <div key={key} style={{ flex: 1, padding: '8px 10px', borderRight: key !== 'edu' ? '1px solid #E8E4DC' : 'none' }}>
-                <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>{labels[key]}</div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1C1A17' }}>{fmt(breakdown.client[key])}</div>
-                {isCouple && <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#888', marginTop: 2 }}>{fmt(breakdown.spouse[key])}</div>}
-              </div>
-            )
-          })}
+          {baseRows.map((row, idx) => (
+            <div key={row.key} style={{ flex: 1, padding: '8px 6px', borderRight: idx < baseRows.length - 1 ? '1px solid #E8E4DC' : 'none' }}>
+              <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{row.label}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#1C1A17' }}>{fmt((breakdown.client as any)[row.key] ?? 0)}</div>
+              {isCouple && <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#888', marginTop: 2 }}>{fmt((breakdown.spouse as any)[row.key] ?? 0)}</div>}
+            </div>
+          ))}
         </div>
       )}
     </div>
