@@ -2428,6 +2428,21 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
 
 // ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
 
+function CIAmountInput({ label, value, onChange, note }: { label: string; value: number; onChange: (v: number) => void; note?: string }) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <div style={{ position: 'relative' }}>
+        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
+        <input type="number" min={0} step={5000} value={value || ''}
+          onChange={e => onChange(parseInt(e.target.value) || 0)}
+          style={{ ...inputStyle, paddingLeft: 24 }} />
+      </div>
+      {note && <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>{note}</div>}
+    </div>
+  )
+}
+
 function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
@@ -2439,21 +2454,6 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
   const ciYears = p.ciYears ?? 5
   const clientGrossMonthly = (ff.person1 as any)?.gross_monthly ?? 0
   const spouseGrossMonthly = (ff.person2 as any)?.gross_monthly ?? 0
-
-  function AmountInput({ label, value, onChange, note }: { label: string; value: number; onChange: (v: number) => void; note?: string }) {
-    return (
-      <div>
-        <label style={labelStyle}>{label}</label>
-        <div style={{ position: 'relative' }}>
-          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#888', fontFamily: 'DM Mono, monospace', fontSize: 13 }}>$</span>
-          <input type="number" min={0} step={5000} value={value || ''}
-            onChange={e => onChange(parseInt(e.target.value) || 0)}
-            style={{ ...inputStyle, paddingLeft: 24 }} />
-        </div>
-        {note && <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter', marginTop: 3 }}>{note}</div>}
-      </div>
-    )
-  }
 
   // ── Shared: Medical & Recovery buffer cards (used in expenses + income modes) ──
   function MedicalBufferCard() {
@@ -2471,8 +2471,8 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
         </div>
         {p.ciIncludeMedicalBuffer && (
           <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
-            <AmountInput label={isCouple ? `${clientName} buffer` : 'Medical buffer'} value={p.ciMedicalBufferClient ?? 50000} onChange={v => updateP({ ciMedicalBufferClient: v })} note="Default $50,000" />
-            {isCouple && <AmountInput label={`${spouseName} buffer`} value={p.ciMedicalBufferSpouse ?? 50000} onChange={v => updateP({ ciMedicalBufferSpouse: v })} note="Default $50,000" />}
+            <CIAmountInput label={isCouple ? `${clientName} buffer` : 'Medical buffer'} value={p.ciMedicalBufferClient ?? 50000} onChange={v => updateP({ ciMedicalBufferClient: v })} note="Default $50,000" />
+            {isCouple && <CIAmountInput label={`${spouseName} buffer`} value={p.ciMedicalBufferSpouse ?? 50000} onChange={v => updateP({ ciMedicalBufferSpouse: v })} note="Default $50,000" />}
           </div>
         )}
       </div>
@@ -2494,8 +2494,8 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
         </div>
         {p.ciIncludeRecoveryBuffer && (
           <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
-            <AmountInput label={isCouple ? `${clientName} buffer` : 'Recovery buffer'} value={p.ciRecoveryBufferClient ?? 30000} onChange={v => updateP({ ciRecoveryBufferClient: v })} note="Default $30,000" />
-            {isCouple && <AmountInput label={`${spouseName} buffer`} value={p.ciRecoveryBufferSpouse ?? 30000} onChange={v => updateP({ ciRecoveryBufferSpouse: v })} note="Default $30,000" />}
+            <CIAmountInput label={isCouple ? `${clientName} buffer` : 'Recovery buffer'} value={p.ciRecoveryBufferClient ?? 30000} onChange={v => updateP({ ciRecoveryBufferClient: v })} note="Default $30,000" />
+            {isCouple && <CIAmountInput label={`${spouseName} buffer`} value={p.ciRecoveryBufferSpouse ?? 30000} onChange={v => updateP({ ciRecoveryBufferSpouse: v })} note="Default $30,000" />}
           </div>
         )}
       </div>
@@ -2793,11 +2793,11 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
             <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16 }}>Enter the CI coverage amount the client wants directly.</p>
             {isCouple ? (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <AmountInput label={clientName} value={p.ciCustomAmountClient ?? 0} onChange={v => updateP({ ciCustomAmountClient: v })} />
-                <AmountInput label={spouseName} value={p.ciCustomAmountSpouse ?? 0} onChange={v => updateP({ ciCustomAmountSpouse: v })} />
+                <CIAmountInput label={clientName} value={p.ciCustomAmountClient ?? 0} onChange={v => updateP({ ciCustomAmountClient: v })} />
+                <CIAmountInput label={spouseName} value={p.ciCustomAmountSpouse ?? 0} onChange={v => updateP({ ciCustomAmountSpouse: v })} />
               </div>
             ) : (
-              <AmountInput label="CI Amount" value={p.ciCustomAmountClient ?? 0} onChange={v => updateP({ ciCustomAmountClient: v })} />
+              <CIAmountInput label="CI Amount" value={p.ciCustomAmountClient ?? 0} onChange={v => updateP({ ciCustomAmountClient: v })} />
             )}
           </div>
         )}
