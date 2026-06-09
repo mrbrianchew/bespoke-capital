@@ -2642,39 +2642,6 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
         )}
       </SectionBlock>
 
-      {/* CI Need Summary */}
-      <SectionBlock title="Critical Illness Need Summary" color="#2D5A4E">
-        {ciMode === 'custom' ? (
-          <div style={{ display: 'flex', padding: '12px 16px', background: '#1C1A17', borderRadius: 6, alignItems: 'center' }}>
-            <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>CI Cover Needed (Custom)</span>
-            {isCouple ? (
-              <>
-                <div style={{ textAlign: 'right', minWidth: 130 }}>
-                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(ciClient.gross)}</div>
-                </div>
-                <div style={{ textAlign: 'right', minWidth: 130 }}>
-                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(ciSpouse.gross)}</div>
-                </div>
-              </>
-            ) : <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 18, color: '#F5F0E8' }}>{fmt(ciClient.gross)}</span>}
-          </div>
-        ) : (
-          <NeedTable
-            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-            clientData={ciClient.gross} spouseData={ciSpouse.gross}
-            label="CI Cover Needed"
-            breakdown={{
-              client: { fd: ciClient.fd, mort: ciClient.mort, edu: ciClient.edu, incomeReplacement: ciClient.incomeReplacement, medicalBuffer: ciClient.medicalBuffer, recoveryBuffer: ciClient.recoveryBuffer },
-              spouse: { fd: ciSpouse.fd, mort: ciSpouse.mort, edu: ciSpouse.edu, incomeReplacement: ciSpouse.incomeReplacement, medicalBuffer: ciSpouse.medicalBuffer, recoveryBuffer: ciSpouse.recoveryBuffer },
-            }}
-          />
-        )}
-      </SectionBlock>
-    </div>
-  )
-}
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
   mortgages: MortgageProperty[]
