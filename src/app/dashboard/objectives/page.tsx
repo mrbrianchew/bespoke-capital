@@ -2381,8 +2381,6 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
 
 // ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
 
-// ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
-
 function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
@@ -2641,99 +2639,6 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
           </div>
         )}
       </SectionBlock>
-
-  ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
-  isCouple: boolean; clientName: string; spouseName: string
-  mortgages: MortgageProperty[]
-  ciClient: CalcResult; ciSpouse: CalcResult
-  children: FamilyMember[]
-}) {
-  return (
-    <div>
-      {/* CI Stage */}
-      <SectionBlock title="Critical Illness Stage" color="#A8834A">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          {([
-            { key: 'early_late', label: 'Early & Late Stage' },
-            { key: 'late_only', label: 'Late Stage Only' },
-          ] as const).map(opt => (
-            <button
-              key={opt.key}
-              onClick={() => updateP({ ciStage: opt.key })}
-              style={{
-                padding: '8px 16px', fontFamily: 'Inter', fontSize: 12,
-                background: p.ciStage === opt.key ? '#1C1A17' : '#F5F0E8',
-                color: p.ciStage === opt.key ? '#fff' : '#1C1A17',
-                border: 'none', borderRadius: 4, cursor: 'pointer',
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <p style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
-          {p.ciStage === 'early_late' ? 'Covers both early and late stage critical illnesses.' : 'Covers late stage critical illnesses only.'}
-        </p>
-      </SectionBlock>
-
-      {/* CI Window */}
-      <SectionBlock title="CI Coverage Window" color="#A8834A">
-        <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 12 }}>
-          How many years of expenses to cover during a critical illness event?
-        </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <input
-            type="range" min={1} max={10} step={1}
-            value={p.ciYears ?? 5}
-            onChange={e => updateP({ ciYears: parseInt(e.target.value) })}
-            style={{ flex: 1, accentColor: '#A8834A' }}
-          />
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#A8834A', minWidth: 60 }}>
-            {p.ciYears ?? 5} years
-          </span>
-        </div>
-      </SectionBlock>
-
-      {/* CI Mortgage */}
-      {mortgages.length > 0 && (
-        <SectionBlock title="Mortgage During CI" color="#A8834A">
-          <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 12 }}>
-            What % of monthly mortgage repayments to cover during CI event?
-          </p>
-          {isCouple ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-              <PersonSlider label={clientName} value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
-              <PersonSlider label={spouseName} value={p.ciMortgagePctSpouse ?? 100} onChange={v => updateP({ ciMortgagePctSpouse: v })} color="#A8834A" unit="%" />
-            </div>
-          ) : (
-            <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
-          )}
-        </SectionBlock>
-      )}
-
-      {/* Education always included in CI */}
-      {p.provideEducationFund && children.length > 0 && (
-        <SectionBlock title="Education Fund" color="#2D5A4E">
-          <div style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', lineHeight: 1.6 }}>
-            Education fund is automatically included for children who have not yet reached university age. If the client or spouse suffers a critical illness, the CI payout covers the education fund so it can be set aside immediately.
-          </div>
-        </SectionBlock>
-      )}
-
-      {/* CI Need Summary */}
-      <SectionBlock title="Critical Illness Need Summary" color="#2D5A4E">
-        <NeedTable
-          isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-          clientData={ciClient.gross} spouseData={ciSpouse.gross}
-          label="CI Cover Needed" breakdown={{
-            client: { fd: ciClient.fd, mort: ciClient.mort, edu: ciClient.edu },
-            spouse: { fd: ciSpouse.fd, mort: ciSpouse.mort, edu: ciSpouse.edu },
-          }}
-        />
-      </SectionBlock>
-    </div>
-  )
-}
 
 // ─── SHARED TYPES FOR MED/DIS & GENERAL TABS ────────────────────────────────
 
