@@ -536,7 +536,7 @@ if (estateRow?.data?.estate) setEstate((prev: EstateData) => ({ ...prev, ...esta
         ...protData,
         assetOffsetEnabled: protData.assetOffsetEnabled !== undefined ? protData.assetOffsetEnabled : true,
         assetOffsetItems: protData.assetOffsetItems ?? { liquid: true, cpf: true, property: true },
-        ciCalcMode: (protData.ciCalcMode === 'calculate' ? 'expenses' : protData.ciCalcMode) ?? 'expenses',
+        ciCalcMode: ((protData.ciCalcMode === 'calculate' ? 'expenses' : protData.ciCalcMode) ?? 'expenses') as 'expenses' | 'income' | 'capital' | 'custom',
         ciCustomAmountClient: protData.ciCustomAmountClient ?? 0,
         ciCustomAmountSpouse: protData.ciCustomAmountSpouse ?? 0,
         ciIncomePctClient: protData.ciIncomePctClient ?? 100,
@@ -995,7 +995,7 @@ const coverageTerm = (() => {
   }
 
   function calcCINeed(who: 'client' | 'spouse'): CalcResult {
-    const ciMode = p.ciCalcMode === 'calculate' ? 'expenses' : (p.ciCalcMode ?? 'expenses')
+    const ciMode = p.ciCalcMode ?? 'expenses'
     const ciYrs = p.ciYears ?? 5
 
     // ── Custom Amount ────────────────────────────────────────────────────────
@@ -2435,7 +2435,7 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
   ciClient: CalcResult; ciSpouse: CalcResult
   children: FamilyMember[]
 }) {
-  const ciMode = p.ciCalcMode === 'calculate' ? 'expenses' : (p.ciCalcMode ?? 'expenses')
+  const ciMode = p.ciCalcMode ?? 'expenses'
   const ciYears = p.ciYears ?? 5
   const clientGrossMonthly = (ff.person1 as any)?.gross_monthly ?? 0
   const spouseGrossMonthly = (ff.person2 as any)?.gross_monthly ?? 0
