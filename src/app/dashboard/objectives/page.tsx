@@ -2551,7 +2551,7 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
   const spouseGrossMonthly = (ff.person2 as any)?.gross_monthly ?? 0
 
   const MODES = [
-    { key: 'expenses', label: 'Expenses Replacement' },
+    { key: 'expenses', label: 'Expense Replacement' },
     { key: 'income',   label: 'Income Replacement' },
     { key: 'capital',  label: 'Capital Fund' },
     { key: 'custom',   label: 'Custom Amount' },
