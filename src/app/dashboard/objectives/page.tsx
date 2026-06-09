@@ -2428,6 +2428,101 @@ function EducationFundTab({ p, updateP, isCouple, clientName, spouseName, childr
 
 // ─── CRITICAL ILLNESS TAB ─────────────────────────────────────────────────────
 
+// ─── CI TAB MODULE-LEVEL SUB-COMPONENTS ──────────────────────────────────────
+// Must be defined outside CriticalIllnessTab to avoid remount-on-render focus loss.
+
+function CIPreviewRow({ isCouple, clientName, spouseName, clientVal, spouseVal, color }: {
+  isCouple: boolean; clientName: string; spouseName: string
+  clientVal: number; spouseVal: number; color: string
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 8, padding: '8px 10px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC', marginTop: 8 }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{clientName}</div>
+        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color }}>{fmt(clientVal)}</div>
+      </div>
+      {isCouple && <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{spouseName}</div>
+        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color }}>{fmt(spouseVal)}</div>
+      </div>}
+    </div>
+  )
+}
+
+function CICoverageWindowSlider({ ciYears, label, description, onUpdate }: {
+  ciYears: number; label: string; description: string; onUpdate: (v: number) => void
+}) {
+  return (
+    <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #A8834A' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 2 }}>{label}</div>
+          <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>{description}</div>
+        </div>
+        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#A8834A', fontWeight: 600, marginLeft: 16, whiteSpace: 'nowrap' }}>{ciYears.toFixed(1)} yrs</span>
+      </div>
+      <input type="range" min={0.5} max={10} step={0.5} value={ciYears}
+        onChange={e => onUpdate(parseFloat(e.target.value))}
+        style={{ width: '100%', accentColor: '#A8834A' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', fontFamily: 'Inter', marginTop: 3 }}>
+        <span>0.5 yr</span><span>5 yrs</span><span>10 yrs</span>
+      </div>
+    </div>
+  )
+}
+
+function CIMedicalBufferCard({ p, updateP, isCouple, clientName, spouseName }: {
+  p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+}) {
+  return (
+    <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeMedicalBuffer ? '#7B6EA0' : '#E8E4DC'}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: p.ciIncludeMedicalBuffer ? 14 : 0 }}>
+        <div onClick={() => updateP({ ciIncludeMedicalBuffer: !p.ciIncludeMedicalBuffer })}
+          style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeMedicalBuffer ? '#7B6EA0' : 'transparent', border: `1.5px solid ${p.ciIncludeMedicalBuffer ? '#7B6EA0' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {p.ciIncludeMedicalBuffer && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeMedicalBuffer ? '#1C1A17' : '#aaa' }}>Medical & Treatment Buffer</div>
+          <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Out-of-pocket costs beyond medical insurance (specialist, co-pays, overseas treatment)</div>
+        </div>
+      </div>
+      {p.ciIncludeMedicalBuffer && (
+        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
+          <CIAmountInput label={isCouple ? `${clientName} buffer` : 'Medical buffer'} value={p.ciMedicalBufferClient ?? 50000} onChange={v => updateP({ ciMedicalBufferClient: v })} note="Default $50,000" />
+          {isCouple && <CIAmountInput label={`${spouseName} buffer`} value={p.ciMedicalBufferSpouse ?? 50000} onChange={v => updateP({ ciMedicalBufferSpouse: v })} note="Default $50,000" />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CIRecoveryBufferCard({ p, updateP, isCouple, clientName, spouseName }: {
+  p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
+  isCouple: boolean; clientName: string; spouseName: string
+}) {
+  return (
+    <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeRecoveryBuffer ? '#8A9A7E' : '#E8E4DC'}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: p.ciIncludeRecoveryBuffer ? 14 : 0 }}>
+        <div onClick={() => updateP({ ciIncludeRecoveryBuffer: !p.ciIncludeRecoveryBuffer })}
+          style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeRecoveryBuffer ? '#8A9A7E' : 'transparent', border: `1.5px solid ${p.ciIncludeRecoveryBuffer ? '#8A9A7E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {p.ciIncludeRecoveryBuffer && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeRecoveryBuffer ? '#1C1A17' : '#aaa' }}>Recovery & Lifestyle Adjustment</div>
+          <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Home modifications, caregiver costs, rehabilitation, career change buffer</div>
+        </div>
+      </div>
+      {p.ciIncludeRecoveryBuffer && (
+        <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
+          <CIAmountInput label={isCouple ? `${clientName} buffer` : 'Recovery buffer'} value={p.ciRecoveryBufferClient ?? 30000} onChange={v => updateP({ ciRecoveryBufferClient: v })} note="Default $30,000" />
+          {isCouple && <CIAmountInput label={`${spouseName} buffer`} value={p.ciRecoveryBufferSpouse ?? 30000} onChange={v => updateP({ ciRecoveryBufferSpouse: v })} note="Default $30,000" />}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CIAmountInput({ label, value, onChange, note }: { label: string; value: number; onChange: (v: number) => void; note?: string }) {
   return (
     <div>
@@ -2454,90 +2549,6 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
   const ciYears = p.ciYears ?? 5
   const clientGrossMonthly = (ff.person1 as any)?.gross_monthly ?? 0
   const spouseGrossMonthly = (ff.person2 as any)?.gross_monthly ?? 0
-
-  // ── Shared: Medical & Recovery buffer cards (used in expenses + income modes) ──
-  function MedicalBufferCard() {
-    return (
-      <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeMedicalBuffer ? '#7B6EA0' : '#E8E4DC'}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: p.ciIncludeMedicalBuffer ? 14 : 0 }}>
-          <div onClick={() => updateP({ ciIncludeMedicalBuffer: !p.ciIncludeMedicalBuffer })}
-            style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeMedicalBuffer ? '#7B6EA0' : 'transparent', border: `1.5px solid ${p.ciIncludeMedicalBuffer ? '#7B6EA0' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {p.ciIncludeMedicalBuffer && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeMedicalBuffer ? '#1C1A17' : '#aaa' }}>Medical & Treatment Buffer</div>
-            <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Out-of-pocket costs beyond medical insurance (specialist, co-pays, overseas treatment)</div>
-          </div>
-        </div>
-        {p.ciIncludeMedicalBuffer && (
-          <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
-            <CIAmountInput label={isCouple ? `${clientName} buffer` : 'Medical buffer'} value={p.ciMedicalBufferClient ?? 50000} onChange={v => updateP({ ciMedicalBufferClient: v })} note="Default $50,000" />
-            {isCouple && <CIAmountInput label={`${spouseName} buffer`} value={p.ciMedicalBufferSpouse ?? 50000} onChange={v => updateP({ ciMedicalBufferSpouse: v })} note="Default $50,000" />}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  function RecoveryBufferCard() {
-    return (
-      <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeRecoveryBuffer ? '#8A9A7E' : '#E8E4DC'}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: p.ciIncludeRecoveryBuffer ? 14 : 0 }}>
-          <div onClick={() => updateP({ ciIncludeRecoveryBuffer: !p.ciIncludeRecoveryBuffer })}
-            style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeRecoveryBuffer ? '#8A9A7E' : 'transparent', border: `1.5px solid ${p.ciIncludeRecoveryBuffer ? '#8A9A7E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {p.ciIncludeRecoveryBuffer && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeRecoveryBuffer ? '#1C1A17' : '#aaa' }}>Recovery & Lifestyle Adjustment</div>
-            <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Home modifications, caregiver costs, rehabilitation, career change buffer</div>
-          </div>
-        </div>
-        {p.ciIncludeRecoveryBuffer && (
-          <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
-            <CIAmountInput label={isCouple ? `${clientName} buffer` : 'Recovery buffer'} value={p.ciRecoveryBufferClient ?? 30000} onChange={v => updateP({ ciRecoveryBufferClient: v })} note="Default $30,000" />
-            {isCouple && <CIAmountInput label={`${spouseName} buffer`} value={p.ciRecoveryBufferSpouse ?? 30000} onChange={v => updateP({ ciRecoveryBufferSpouse: v })} note="Default $30,000" />}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── Shared: coverage window slider (used in expenses + income modes) ──
-  function CoverageWindowSlider({ label, description }: { label: string; description: string }) {
-    return (
-      <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #A8834A' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-          <div>
-            <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 2 }}>{label}</div>
-            <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>{description}</div>
-          </div>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: '#A8834A', fontWeight: 600, marginLeft: 16, whiteSpace: 'nowrap' }}>{ciYears.toFixed(1)} yrs</span>
-        </div>
-        <input type="range" min={0.5} max={10} step={0.5} value={ciYears}
-          onChange={e => updateP({ ciYears: parseFloat(e.target.value) })}
-          style={{ width: '100%', accentColor: '#A8834A' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', fontFamily: 'Inter', marginTop: 3 }}>
-          <span>0.5 yr</span><span>5 yrs</span><span>10 yrs</span>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Preview chip row ──
-  function PreviewRow({ clientVal, spouseVal, color }: { clientVal: number; spouseVal: number; color: string }) {
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 8, padding: '8px 10px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC', marginTop: 8 }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{clientName}</div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color }}>{fmt(clientVal)}</div>
-        </div>
-        {isCouple && <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{spouseName}</div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color }}>{fmt(spouseVal)}</div>
-        </div>}
-      </div>
-    )
-  }
 
   const MODES = [
     { key: 'expenses', label: 'Expenses Replacement' },
@@ -2602,8 +2613,8 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                   <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Inflation-adjusted annual expenses over the recovery window</div>
                 </div>
               </div>
-              <CoverageWindowSlider label="Recovery Window" description="Number of years expenses need to be covered" />
-              <PreviewRow clientVal={ciClient.fd} spouseVal={ciSpouse.fd} color="#A8834A" />
+              <CICoverageWindowSlider ciYears={ciYears} label="Recovery Window" description="Number of years expenses need to be covered" onUpdate={v => updateP({ ciYears: v })} />
+              <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.fd} spouseVal={ciSpouse.fd} color="#A8834A" />
             </div>
 
             {/* Mortgage — shown if mortgages exist */}
@@ -2626,7 +2637,7 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                 ) : (
                   <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
                 )}
-                <PreviewRow clientVal={ciClient.mort} spouseVal={ciSpouse.mort} color="#A8834A" />
+                <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.mort} spouseVal={ciSpouse.mort} color="#A8834A" />
               </div>
             )}
 
@@ -2642,12 +2653,12 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                     <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Children who have not yet reached university age</div>
                   </div>
                 </div>
-                <PreviewRow clientVal={ciClient.edu} spouseVal={ciSpouse.edu} color="#2D5A4E" />
+                <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.edu} spouseVal={ciSpouse.edu} color="#2D5A4E" />
               </div>
             )}
 
-            <MedicalBufferCard />
-            <RecoveryBufferCard />
+            <CIMedicalBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
+            <CIRecoveryBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
           </div>
         )}
 
@@ -2671,7 +2682,7 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
               </div>
 
               {/* Recovery window */}
-              <CoverageWindowSlider label="Recovery Window" description="Number of years income needs to be replaced" />
+              <CICoverageWindowSlider ciYears={ciYears} label="Recovery Window" description="Number of years income needs to be replaced" onUpdate={v => updateP({ ciYears: v })} />
 
               {/* Per-person income % slider */}
               <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 20, marginTop: 12 }}>
@@ -2709,7 +2720,7 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                 )}
               </div>
 
-              <PreviewRow clientVal={ciClient.incomeReplacement ?? 0} spouseVal={ciSpouse.incomeReplacement ?? 0} color="#6B7C93" />
+              <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.incomeReplacement ?? 0} spouseVal={ciSpouse.incomeReplacement ?? 0} color="#6B7C93" />
             </div>
 
             {/* Optional: Mortgage */}
@@ -2735,7 +2746,7 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                     ) : (
                       <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
                     )}
-                    <PreviewRow clientVal={ciClient.mort} spouseVal={ciSpouse.mort} color="#A8834A" />
+                    <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.mort} spouseVal={ciSpouse.mort} color="#A8834A" />
                   </>
                 )}
               </div>
@@ -2769,8 +2780,8 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
               </div>
             )}
 
-            <MedicalBufferCard />
-            <RecoveryBufferCard />
+            <CIMedicalBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
+            <CIRecoveryBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
           </div>
         )}
 
