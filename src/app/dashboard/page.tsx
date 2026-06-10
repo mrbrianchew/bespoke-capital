@@ -494,10 +494,11 @@ console.log('[RET] ' + JSON.stringify({
   const blendedMonthly = sol?.pureMonthly ? sol.pureMonthly * (1 - lsf) : 0
   const retMonthlySavings = blendedMonthly || sol?.pureMonthly || cm?.retirementMonthlyTopUp || savedMonthlySavings
 
-  // If CM has portfolio data use the projected shortfall; else fall back to raw gap from Retirement tab
+  // If CM has portfolio data use the projected shortfall; else use live cmShortfall.
+  // Guard against stale 'on_track' saved when portfolio was empty: if live cmShortfall > 0, trust it.
   const retGap = cm?.portfolioStatus === 'gap'
     ? (cm?.retirementShortfall || 1)
-    : cm?.portfolioStatus === 'on_track'
+    : cm?.portfolioStatus === 'on_track' && cmShortfall === 0
     ? 0
     : cmShortfall
 
