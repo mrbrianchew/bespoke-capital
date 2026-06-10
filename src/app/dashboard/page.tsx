@@ -499,7 +499,7 @@ console.log('[RET] ' + JSON.stringify({
     ? (cm?.retirementShortfall || 1)
     : cm?.portfolioStatus === 'on_track'
     ? 0
-    : (ffData['retirement']?.retirementGap || 0)
+    : cmShortfall
 
   let retStatus: Status = 'empty'
   let retHeadline = 'Not yet configured'
