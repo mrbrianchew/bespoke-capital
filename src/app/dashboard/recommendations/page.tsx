@@ -1508,42 +1508,54 @@ export default function RecommendationsPage() {
           || 'Client'
       )
 
-      // Cash flow — derive from financials data
-      console.log('FIN_EXP', JSON.stringify(Object.entries(fin||{}).filter(([k,v])=>(k.startsWith('d_')||k.startsWith('d2_'))&&Number(v)>0)))
-      console.log('FIN_INC', JSON.stringify({p1_gross: fin?.person1?.gross_monthly, p1_bonus: fin?.person1?.gross_bonus, p2_gross: fin?.person2?.gross_monthly}))
-      // Income: person1/person2 gross_monthly + other_incomes + gross_bonus/12
+      // Cash flow — mirror financials page logic exactly
       {
         const isCpl = fin?.mode === 'couple'
         const p1f = fin?.person1 || {}
         const p2f = fin?.person2 || {}
-        const p1Monthly = (p1f.gross_monthly || 0)
-          + ((p1f.gross_bonus || 0) / 12)
-          + (Array.isArray(p1f.other_incomes) ? p1f.other_incomes.reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0)
-        const p2Monthly = isCpl ? ((p2f.gross_monthly || 0)
-          + ((p2f.gross_bonus || 0) / 12)
-          + (Array.isArray(p2f.other_incomes) ? p2f.other_incomes.reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0)) : 0
-        const totalMonthlyIncome = p1Monthly + p2Monthly
+        const expMode = fin?.expense_mode || 'simple'
 
-        // Expenses: d_ prefix keys (annual amounts) + d2_ for spouse
-        const D_EXP = ['d_transport','d_utilities','d_insurance','d_food','d_family_food',
-          'd_school_fees','d_conservancy','d_mortgage_cpf','d_mortgage_cash','d_personal_food',
-          'd_vehicle_repay','d_invested_custom','d_personal_custom','d_other_household',
-          'd_regular_savings','d_custom_financial','d_custom_household','d_custom_lifestyle',
-          'd_allowance_parents','d_other_regular_savings','d_custom_children','d_allowance_children',
-          'd_maid','d_childcare','d_income_tax']
-        const D2_EXP = D_EXP.map(k => k.replace('d_','d2_'))
-        let annualExp = 0
-        D_EXP.forEach(k => { annualExp += Number(fin?.[k] || 0) })
-        if (isCpl) D2_EXP.forEach(k => { annualExp += Number(fin?.[k] || 0) })
-
-        // Use saved annual_surplus if present, otherwise derive
-        const surplus = fin?.annual_surplus != null
-          ? fin.annual_surplus
-          : totalMonthlyIncome * 12 - annualExp
-
-        setAnnualSurplus(surplus)
-        setMonthlyIncome(totalMonthlyIncome)
-        setMonthlyExpenses(annualExp / 12)
+        if (fin?.annual_surplus != null) {
+          // Prefer saved value
+          const grossMonthly = (p1f.gross_monthly||0) + (isCpl ? (p2f.gross_monthly||0) : 0)
+          setAnnualSurplus(fin.annual_surplus)
+          setMonthlyIncome(grossMonthly)
+          setMonthlyExpenses(Math.max(0, grossMonthly*12 - fin.annual_surplus) / 12)
+        } else {
+          // Detailed expense keys (mirrors DETAILED_KEYS_BY_CAT in financials page, excluding cpf_oa)
+          const DKEYS = {
+            financial: { k: ['d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'], k2: ['d2_vehicle_repay','d2_personal_loan_repay','d2_rental_expense','d2_income_tax','d2_insurance','d2_regular_savings'], ck: 'd_custom_financial' },
+            mortgage:  { k: ['d_mortgage_cash'], k2: ['d2_mortgage_cash'], ck: 'd_custom_financial' },
+            household: { k: ['d_conservancy','d_utilities','d_family_food','d_maid','d_other_household'], k2: ['d2_conservancy','d2_utilities','d2_family_food','d2_maid','d2_other_household'], ck: 'd_custom_household' },
+            personal:  { k: ['d_personal_food','d_transport','d_car_petrol','d_car_insurance'], k2: ['d2_personal_food','d2_transport','d2_car_petrol','d2_car_insurance'], ck: 'd_custom_personal' },
+            children:  { k: ['d_childcare','d_school_fees','d_school_transport','d_allowance_children','d_other_children'], k2: ['d2_childcare','d2_school_fees','d2_school_transport','d2_allowance_children','d2_other_children'], ck: 'd_custom_children' },
+            lifestyle: { k: ['d_holidays','d_hobbies','d_allowance_parents','d_others_lifestyle'], k2: ['d2_holidays','d2_hobbies','d2_allowance_parents','d2_others_lifestyle'], ck: 'd_custom_lifestyle' },
+          }
+          const sk = (keys: string[]) => keys.reduce((s,k)=>s+Number((fin as any)?.[k]||0),0)
+          const sc = (ck: string) => ((fin as any)?.[ck]||[]).reduce((s:number,i:any)=>s+(i.amount||0),0)
+          const sc2 = (ck: string) => ((fin as any)?.[ck]||[]).reduce((s:number,i:any)=>s+(i.amount2||0),0)
+          let annExpNoCpf = 0
+          if (expMode === 'detailed') {
+            Object.values(DKEYS).forEach(cat => {
+              annExpNoCpf += sk(cat.k) + sc(cat.ck)
+              if (isCpl) annExpNoCpf += sk(cat.k2) + sc2(cat.ck)
+            })
+          } else {
+            const SK = ['s_financial','s_mortgage','s_household','s_personal','s_children','s_lifestyle']
+            const SK2 = ['s2_financial','s2_mortgage','s2_household','s2_personal','s2_children','s2_lifestyle']
+            annExpNoCpf = sk(SK) + (isCpl ? sk(SK2) : 0)
+          }
+          // Income: take-home after CPF (approx employee CPF rate by age)
+          const cpfEmpRate = (age: number) => age < 55 ? 0.20 : age < 60 ? 0.13 : age < 65 ? 0.075 : 0.05
+          const ann1 = ((p1f.gross_monthly||0)*12 + (p1f.gross_bonus||0)) * (1-cpfEmpRate(clientAge2||35))
+            + (p1f.other_incomes||[]).reduce((s:number,i:any)=>s+(i.amount||0),0)*12
+          const spouseAge = tabs.find((t: any)=>t.key==='spouse')?.age || 35
+          const ann2 = isCpl ? (((p2f.gross_monthly||0)*12+(p2f.gross_bonus||0))*(1-cpfEmpRate(spouseAge))
+            + (p2f.other_incomes||[]).reduce((s:number,i:any)=>s+(i.amount||0),0)*12) : 0
+          setAnnualSurplus(ann1+ann2-annExpNoCpf)
+          setMonthlyIncome((ann1+ann2)/12)
+          setMonthlyExpenses(annExpNoCpf/12)
+        }
       }
 
       // Existing policies
