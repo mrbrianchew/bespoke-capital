@@ -93,6 +93,8 @@ interface MedicalRider {
   annualPremium: number
 }
 
+type MedCoverageMode = 'main_only' | 'main_rider' | 'rider_only' | 'international'
+
 interface MedicalRec {
   id: string
   rank: RankLabel
@@ -100,13 +102,13 @@ interface MedicalRec {
   // Main plan
   insurer: string
   productName: string
-  coverageType: string   // 'Main' | 'Rider' | policy type from DB
+  coverageMode: MedCoverageMode   // replaces old coverageType
+  briefCoverage: string           // dropdown selection
+  briefCoverageOther: string      // free text if 'other' selected
   premiumMedisave: number
   premiumCash: number
   premiumTerm: string
-  policyTerm: string
-  // Rider
-  hasRider: boolean
+  // Rider (shown when coverageMode includes rider)
   rider: MedicalRider
   // Text
   benefits: string
@@ -134,6 +136,22 @@ function medisaveLimit(age: number): number {
 }
 
 interface InsProduct { id: number; company_id: number; category_id: number; name: string }
+
+const BRIEF_COVERAGE_MAIN: string[] = [
+  'As-Charged — Private Hospital',
+  'As-Charged — Restructured Ward A',
+  'As-Charged — Restructured Ward B',
+  'As-Charged — Restructured Ward C',
+  'International Plan',
+  'Other',
+]
+const BRIEF_COVERAGE_RIDER: string[] = [
+  'Coverage of Deductible & 50% Co-Insurance',
+  'Coverage of Deductible Only',
+  'Coverage of Co-Insurance Only',
+  'Full Rider (Deductible + Co-Insurance)',
+  'Other',
+]
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -610,15 +628,22 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
 
 // ─── MEDICAL CARD ────────────────────────────────────────────────────────────
 
+const COVERAGE_MODE_LABELS: Record<MedCoverageMode, string> = {
+  main_only:    'Main Plan Only',
+  main_rider:   'Main Plan + Rider',
+  rider_only:   'Rider Only',
+  international:'International Medical Plan',
+}
+
 function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
-  existingPolicies, companies, products, monthlyIncome, monthlyExpenses }: {
+  existingPolicies, medicalCompanies, products, monthlyIncome, monthlyExpenses }: {
   rec: MedicalRec
   personAge: number
   onChange: (r: MedicalRec) => void
   onDelete: () => void
   onChoose: () => void
   existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
-  companies: { id: number; name: string }[]
+  medicalCompanies: { id: number; name: string }[]
   products: InsProduct[]
   monthlyIncome: number
   monthlyExpenses: number
@@ -629,17 +654,22 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
 
   const msLimit = medisaveLimit(personAge)
   const totalMainPremium = (rec.premiumMedisave || 0) + (rec.premiumCash || 0)
+  const hasRider = rec.coverageMode === 'main_rider' || rec.coverageMode === 'rider_only'
+  const hasMain  = rec.coverageMode === 'main_only'  || rec.coverageMode === 'main_rider'
+  const isIntl   = rec.coverageMode === 'international'
 
-  // Filter products by selected insurer
-  const selectedCompany = companies.find(c => c.name === rec.insurer)
-  const filteredProducts = selectedCompany
-    ? products.filter(p => p.company_id === selectedCompany.id)
-    : products
+  // Brief coverage options depend on mode
+  const briefOptions = rec.coverageMode === 'rider_only' ? BRIEF_COVERAGE_RIDER
+    : rec.coverageMode === 'international' ? ['International As-Charged', 'Other']
+    : BRIEF_COVERAGE_MAIN
 
-  const riderCompany = companies.find(c => c.name === rec.rider?.insurer)
-  const riderProducts = riderCompany
-    ? products.filter(p => p.company_id === riderCompany.id)
-    : products
+  // Products filtered by insurer (main)
+  const selComp = medicalCompanies.find(c => c.name === rec.insurer)
+  const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
+
+  // Rider products filtered by rider insurer
+  const riderComp = medicalCompanies.find(c => c.name === (rec.rider?.insurer || ''))
+  const riderProducts = riderComp ? products.filter(p => p.company_id === riderComp.id) : []
 
   function togglePolicy(pol: typeof existingPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
@@ -659,118 +689,151 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
           <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
         </div>
 
-        {/* Main plan fields */}
+        {/* Row 1: Coverage mode + Insurer + Product + Brief Coverage */}
         <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
-          {/* Insurer first */}
-          <div>
-            <label style={S.lbl}>Insurer</label>
-            <select style={S.inp} value={rec.insurer} onChange={e => { upd('insurer', e.target.value); upd('productName', '') }}>
-              <option value="">Select insurer…</option>
-              {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          {/* Product Name — filtered by insurer */}
-          <div>
-            <label style={S.lbl}>Product name</label>
-            <select style={S.inp} value={rec.productName} onChange={e => upd('productName', e.target.value)}>
-              <option value="">Select product…</option>
-              {filteredProducts.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-            </select>
-          </div>
-          {/* Coverage type */}
+          {/* Coverage mode */}
           <div>
             <label style={S.lbl}>Coverage type</label>
-            <select style={S.inp} value={rec.coverageType} onChange={e => upd('coverageType', e.target.value)}>
-              <option value="">Select type…</option>
-              {['Integrated Shield Plan', 'MediShield Life Top-up', 'Hospital Plan', 'Other'].map(t => (
-                <option key={t} value={t}>{t}</option>
+            <select style={S.inp} value={rec.coverageMode}
+              onChange={e => upd('coverageMode', e.target.value as MedCoverageMode)}>
+              {(Object.keys(COVERAGE_MODE_LABELS) as MedCoverageMode[]).map(k => (
+                <option key={k} value={k}>{COVERAGE_MODE_LABELS[k]}</option>
               ))}
             </select>
           </div>
+          {/* Insurer — medical-filtered */}
+          <div>
+            <label style={S.lbl}>Insurer</label>
+            <select style={S.inp} value={rec.insurer}
+              onChange={e => { upd('insurer', e.target.value); upd('productName', '') }}>
+              <option value="">Select insurer…</option>
+              {medicalCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          {/* Product — filtered by insurer */}
+          <div>
+            <label style={S.lbl}>Product name</label>
+            <select style={S.inp} value={rec.productName} onChange={e => upd('productName', e.target.value)}
+              disabled={!rec.insurer}>
+              <option value="">{rec.insurer ? 'Select product…' : 'Select insurer first'}</option>
+              {filteredProducts.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+            </select>
+          </div>
 
-          {/* Premium term / policy term */}
+          {/* Brief coverage */}
           <div>
-            <label style={S.lbl}>Premium term</label>
-            <input style={S.inp} value={rec.premiumTerm} onChange={e => upd('premiumTerm', e.target.value)} placeholder="e.g. Annual" />
+            <label style={S.lbl}>Brief coverage</label>
+            <select style={S.inp} value={rec.briefCoverage}
+              onChange={e => { upd('briefCoverage', e.target.value); if (e.target.value !== 'Other') upd('briefCoverageOther', '') }}>
+              <option value="">Select…</option>
+              {briefOptions.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
           </div>
-          <div>
-            <label style={S.lbl}>Policy term</label>
-            <input style={S.inp} value={rec.policyTerm} onChange={e => upd('policyTerm', e.target.value)} placeholder="e.g. Life" />
-          </div>
+          {rec.briefCoverage === 'Other' && (
+            <div style={{ gridColumn: '2/4' }}>
+              <label style={S.lbl}>Specify coverage</label>
+              <input style={S.inp} value={rec.briefCoverageOther}
+                onChange={e => upd('briefCoverageOther', e.target.value)}
+                placeholder="Describe the coverage…" />
+            </div>
+          )}
+
+          {/* Premium term — only for main/intl */}
+          {(hasMain || isIntl) && (
+            <div>
+              <label style={S.lbl}>Premium term</label>
+              <input style={S.inp} value={rec.premiumTerm}
+                onChange={e => upd('premiumTerm', e.target.value)} placeholder="e.g. Annual" />
+            </div>
+          )}
         </div>
 
-        {/* Premium breakdown — Medisave + Cash */}
-        <div style={{ padding: '0 16px 16px' }}>
-          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={S.lbl}>Main plan premium</div>
-              <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
-                Medisave limit for age {personAge}: <strong style={{ color: '#7A9CBF' }}>S${msLimit}/yr</strong>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
-              <div>
-                <label style={S.lbl}>Medisave (S$/yr)</label>
-                <input type="number" style={{ ...S.inp, borderColor: (rec.premiumMedisave || 0) > msLimit ? '#FCA5A5' : undefined }}
-                  value={rec.premiumMedisave || ''}
-                  onChange={e => upd('premiumMedisave', Number(e.target.value))}
-                  placeholder="0" />
-                {(rec.premiumMedisave || 0) > msLimit && (
-                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#9B1C1C', marginTop: 2 }}>Exceeds limit</div>
+        {/* Main plan premium breakdown */}
+        {(hasMain || isIntl) && (
+          <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={S.lbl}>Main plan premium</div>
+                {!isIntl && (
+                  <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
+                    Medisave limit age {personAge}: <strong style={{ color: '#7A9CBF' }}>S${msLimit}/yr</strong>
+                  </div>
                 )}
               </div>
-              <div>
-                <label style={S.lbl}>Cash (S$/yr)</label>
-                <input type="number" style={S.inp}
-                  value={rec.premiumCash || ''}
-                  onChange={e => upd('premiumCash', Number(e.target.value))}
-                  placeholder="0" />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                <label style={S.lbl}>Total premium</label>
-                <div style={{ ...S.inp, background: 'var(--cream3)', color: 'var(--ink)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                  S${totalMainPremium.toLocaleString('en-SG')}
+              <div style={{ display: 'grid', gridTemplateColumns: isIntl ? '1fr 1fr' : '1fr 1fr 1fr', gap: '8px 12px' }}>
+                {!isIntl && (
+                  <div>
+                    <label style={S.lbl}>Medisave (S$/yr)</label>
+                    <input type="number"
+                      style={{ ...S.inp, borderColor: (rec.premiumMedisave || 0) > msLimit ? '#FCA5A5' : undefined }}
+                      value={rec.premiumMedisave || ''} placeholder="0"
+                      onChange={e => upd('premiumMedisave', Number(e.target.value))} />
+                    {(rec.premiumMedisave || 0) > msLimit && (
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#9B1C1C', marginTop: 2 }}>Exceeds limit</div>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <label style={S.lbl}>Cash (S$/yr)</label>
+                  <input type="number" style={S.inp} value={rec.premiumCash || ''} placeholder="0"
+                    onChange={e => upd('premiumCash', Number(e.target.value))} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  <label style={S.lbl}>Total premium</label>
+                  <div style={{ ...S.inp, background: 'var(--cream3)', color: 'var(--ink)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                    S${totalMainPremium.toLocaleString('en-SG')}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Rider toggle */}
-        <div style={{ padding: '0 16px 16px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: rec.hasRider ? 12 : 0 }}>
-            <input type="checkbox" checked={rec.hasRider} onChange={e => upd('hasRider', e.target.checked)}
-              style={{ accentColor: '#2D5A4E', width: 15, height: 15 }} />
-            <span style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>Include rider</span>
-          </label>
-
-          {rec.hasRider && (
+        {/* Rider section */}
+        {hasRider && (
+          <div style={{ padding: '0 16px 16px' }}>
             <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
               <div style={{ ...S.lbl, marginBottom: 10 }}>Rider details</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
                 <div>
                   <label style={S.lbl}>Rider insurer</label>
-                  <select style={S.inp} value={rec.rider?.insurer || ''} onChange={e => { updRider('insurer', e.target.value); updRider('productName', '') }}>
+                  <select style={S.inp} value={rec.rider?.insurer || ''}
+                    onChange={e => { updRider('insurer', e.target.value); updRider('productName', '') }}>
                     <option value="">Select insurer…</option>
-                    {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    {medicalCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={S.lbl}>Rider product</label>
-                  <select style={S.inp} value={rec.rider?.productName || ''} onChange={e => updRider('productName', e.target.value)}>
-                    <option value="">Select product…</option>
+                  <select style={S.inp} value={rec.rider?.productName || ''}
+                    onChange={e => updRider('productName', e.target.value)}
+                    disabled={!rec.rider?.insurer}>
+                    <option value="">{rec.rider?.insurer ? 'Select product…' : 'Select insurer first'}</option>
                     {riderProducts.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={S.lbl}>Rider annual premium (S$)</label>
-                  <input type="number" style={S.inp} value={rec.rider?.annualPremium || ''}
-                    onChange={e => updRider('annualPremium', Number(e.target.value))} placeholder="0" />
+                  <input type="number" style={S.inp} value={rec.rider?.annualPremium || ''} placeholder="0"
+                    onChange={e => updRider('annualPremium', Number(e.target.value))} />
                 </div>
               </div>
+              {/* Rider brief coverage */}
+              <div style={{ marginTop: 10 }}>
+                <label style={S.lbl}>Rider coverage</label>
+                <select style={S.inp} value={rec.briefCoverage === '' || !BRIEF_COVERAGE_RIDER.includes(rec.briefCoverage) ? '' : rec.briefCoverage}
+                  onChange={e => { upd('briefCoverage', e.target.value); if (e.target.value !== 'Other') upd('briefCoverageOther', '') }}>
+                  <option value="">Select rider coverage…</option>
+                  {BRIEF_COVERAGE_RIDER.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                {rec.briefCoverage === 'Other' && (
+                  <input style={{ ...S.inp, marginTop: 8 }} value={rec.briefCoverageOther}
+                    onChange={e => upd('briefCoverageOther', e.target.value)} placeholder="Describe rider coverage…" />
+                )}
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Benefits / Limitations */}
         <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -786,13 +849,13 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
           </div>
         </div>
 
-        {/* Replacement section */}
+        {/* Replacement */}
         {rec.mode === 'replacement' && (
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
               <div style={{ ...S.lbl, marginBottom: 10 }}>Replacing existing policies</div>
               {existingPolicies.length === 0 && (
-                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No existing policies found — add them in the Protection Portfolio tab first.</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No existing policies found.</div>
               )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {existingPolicies.map(pol => {
@@ -813,9 +876,9 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
                 <div style={{ marginTop: 12 }}>
                   <CompareTable
                     replaced={rec.replacedPolicies}
-                    newPremium={totalMainPremium + (rec.hasRider ? (rec.rider?.annualPremium || 0) : 0)}
+                    newPremium={totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
                     newSA={0}
-                    newCoverageType={rec.coverageType}
+                    newCoverageType={COVERAGE_MODE_LABELS[rec.coverageMode]}
                   />
                 </div>
               )}
@@ -842,7 +905,9 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
           rec={{
             ...rec,
             sumAssured: 0,
-            annualPremium: totalMainPremium + (rec.hasRider ? (rec.rider?.annualPremium || 0) : 0),
+            coverageType: COVERAGE_MODE_LABELS[rec.coverageMode],
+            policyTerm: 'Lifetime renewable',
+            annualPremium: totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0),
           }}
           monthlyIncome={monthlyIncome}
           monthlyExpenses={monthlyExpenses}
@@ -1239,6 +1304,7 @@ export default function RecommendationsPage() {
   // Reference data
   const [insurers, setInsurers]   = useState<string[]>([])
   const [companies, setCompanies] = useState<{ id: number; name: string }[]>([])
+  const [medicalCompanies, setMedicalCompanies] = useState<{ id: number; name: string }[]>([])
   const [products, setProducts]   = useState<InsProduct[]>([])
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
 
@@ -1289,10 +1355,17 @@ export default function RecommendationsPage() {
       ])
 
       // Reference data
-      const companiesList = (companiesRaw || []).map((c: any) => ({ id: c.id, name: c.name }))
+      const companiesList = (companiesRaw || []).map((c: any) => ({ id: c.id, category_id: c.category_id, name: c.name }))
       setCompanies(companiesList)
       setInsurers(companiesList.map(c => c.name))
       setProducts((productsRaw || []).map((p: any) => ({ id: p.id, company_id: p.company_id, category_id: p.category_id, name: p.name })))
+      // Medical-only insurers: filter by ins_categories code='medical'
+      const medCat = (cats || []).find((c: any) => c.code === 'medical')
+      if (medCat) {
+        setMedicalCompanies(companiesList.filter((c: any) => c.category_id === medCat.id))
+      } else {
+        setMedicalCompanies(companiesList)
+      }
 
 
       // Coverage types per category — map from ins_policy_types filtered by ins_categories
@@ -1448,9 +1521,10 @@ export default function RecommendationsPage() {
     if (recs.length >= 3) return
     const rec: MedicalRec = {
       id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
-      insurer: '', productName: '', coverageType: '',
-      premiumMedisave: 0, premiumCash: 0, premiumTerm: 'Annual', policyTerm: 'Life',
-      hasRider: false, rider: { insurer: '', productName: '', annualPremium: 0 },
+      insurer: '', productName: '', coverageMode: 'main_only',
+      briefCoverage: '', briefCoverageOther: '',
+      premiumMedisave: 0, premiumCash: 0, premiumTerm: 'Annual',
+      rider: { insurer: '', productName: '', annualPremium: 0 },
       benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
     }
     handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: [...recs, rec] } })
@@ -1668,7 +1742,7 @@ export default function RecommendationsPage() {
                     onDelete={() => deleteMedical(activePerson, rec.id)}
                     onChoose={() => chooseMedical(activePerson, rec.id)}
                     existingPolicies={existingPolicies}
-                    companies={companies}
+                    medicalCompanies={medicalCompanies}
                     products={products}
                     monthlyIncome={monthlyIncome}
                     monthlyExpenses={monthlyExpenses}
