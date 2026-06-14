@@ -744,56 +744,61 @@ function MedicalCard({ rec, personAge, medisaveBands, onChange, onDelete, onChoo
             </div>
           )}
 
-          {/* Premium term — only for main/intl */}
-          {(hasMain || isIntl) && (
-            <div>
-              <label style={S.lbl}>Premium term</label>
-              <input style={S.inp} value={rec.premiumTerm}
-                onChange={e => upd('premiumTerm', e.target.value)} placeholder="e.g. Annual" />
-            </div>
-          )}
         </div>
 
-        {/* Main plan premium breakdown */}
-        {(hasMain || isIntl) && (
-          <div style={{ padding: '0 16px 16px' }}>
-            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={S.lbl}>Main plan premium</div>
-                {!isIntl && (
-                  <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
-                    Medisave limit age {personAge}: <strong style={{ color: '#7A9CBF' }}>S${msLimit}/yr</strong>
+        {/* Main plan premium — single input, auto-splits into Medisave + Cash */}
+        {(hasMain || isIntl) && (() => {
+          const totalPrem = totalMainPremium
+          const autoMedisave = isIntl ? 0 : Math.min(totalPrem, msLimit)
+          const autoCash     = Math.max(0, totalPrem - autoMedisave)
+          return (
+            <div style={{ padding: '0 16px 16px' }}>
+              <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={S.lbl}>Main plan premium</div>
+                  {!isIntl && (
+                    <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
+                      Medisave limit age {personAge}: <strong style={{ color: '#7A9CBF' }}>S${msLimit}/yr</strong>
+                    </div>
+                  )}
+                </div>
+                {/* Single annual premium input */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={S.lbl}>Annual premium (S$/yr)</label>
+                  <input
+                    type="number"
+                    style={S.inp}
+                    value={totalPrem || ''}
+                    placeholder="0"
+                    onChange={e => {
+                      const total = Number(e.target.value) || 0
+                      const ms = isIntl ? 0 : Math.min(total, msLimit)
+                      onChange({ ...rec, premiumMedisave: ms, premiumCash: Math.max(0, total - ms) })
+                    }}
+                  />
+                </div>
+                {/* Auto-split breakdown — read only */}
+                {!isIntl && totalPrem > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                    <div>
+                      <label style={S.lbl}>Medisave (auto)</label>
+                      <div style={{ ...S.inp, background: 'var(--cream3)', color: autoMedisave >= msLimit ? '#854F0B' : '#1E4D35', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                        S${autoMedisave.toLocaleString('en-SG')}
+                        {autoMedisave >= msLimit && <span style={{ fontSize: 10, marginLeft: 6, fontWeight: 400, color: '#854F0B' }}>(at limit)</span>}
+                      </div>
+                    </div>
+                    <div>
+                      <label style={S.lbl}>Cash (auto)</label>
+                      <div style={{ ...S.inp, background: 'var(--cream3)', color: autoCash > 0 ? '#9B1C1C' : 'var(--ink3)', fontWeight: autoCash > 0 ? 600 : 400, display: 'flex', alignItems: 'center' }}>
+                        {autoCash > 0 ? `S$${autoCash.toLocaleString('en-SG')}` : '—'}
+                      </div>
+                    </div>
                   </div>
                 )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isIntl ? '1fr 1fr' : '1fr 1fr 1fr', gap: '8px 12px' }}>
-                {!isIntl && (
-                  <div>
-                    <label style={S.lbl}>Medisave (S$/yr)</label>
-                    <input type="number"
-                      style={{ ...S.inp, borderColor: (rec.premiumMedisave || 0) > msLimit ? '#FCA5A5' : undefined }}
-                      value={rec.premiumMedisave || ''} placeholder="0"
-                      onChange={e => upd('premiumMedisave', Number(e.target.value))} />
-                    {(rec.premiumMedisave || 0) > msLimit && (
-                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#9B1C1C', marginTop: 2 }}>Exceeds limit</div>
-                    )}
-                  </div>
-                )}
-                <div>
-                  <label style={S.lbl}>Cash (S$/yr)</label>
-                  <input type="number" style={S.inp} value={rec.premiumCash || ''} placeholder="0"
-                    onChange={e => upd('premiumCash', Number(e.target.value))} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                  <label style={S.lbl}>Total premium</label>
-                  <div style={{ ...S.inp, background: 'var(--cream3)', color: 'var(--ink)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-                    S${totalMainPremium.toLocaleString('en-SG')}
-                  </div>
-                </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Rider section */}
         {hasRider && (
