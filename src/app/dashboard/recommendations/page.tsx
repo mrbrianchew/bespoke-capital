@@ -1357,6 +1357,7 @@ export default function RecommendationsPage() {
         { data: productsRaw },
         { data: familyRows },
         { data: medisaveBandsRaw },
+        { data: clientRow },
       ] = await Promise.all([
         supabase.from('fact_finding').select('section,data').eq('client_id', id)
           .in('section', ['financials', 'protection_portfolio', 'capital_mandate', 'retirement', 'education', 'strategic_recommendations_v2']),
@@ -1366,6 +1367,7 @@ export default function RecommendationsPage() {
         supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
         supabase.from('family_members').select('*').eq('client_id', id),
         supabase.from('medisave_withdrawal_limits').select('*').order('sort_order', { ascending: true }),
+        supabase.from('clients').select('id,first_name,last_name,dob').eq('id', id).maybeSingle(),
       ])
 
       // Reference data
@@ -1408,9 +1410,14 @@ export default function RecommendationsPage() {
       // Person tabs from family_members
       const currentYear = new Date().getFullYear()
       const fin2 = by['financials'] ?? {}
-      const clientFirstName = fin2?.client?.firstName || fin2?.person1?.firstName || 'Client'
-      const clientAge2 = fin2?.client?.dob ? currentYear - Number(String(fin2.client.dob).slice(0,4))
-        : fin2?.person1?.dob ? currentYear - Number(String(fin2.person1.dob).slice(0,4)) : 35
+      // Client name: prefer clients table, fallback to financials
+      const clientFirstName = clientRow?.first_name
+        || fin2?.person1?.firstName || fin2?.client?.firstName || 'Client'
+      // Client age: prefer clients.dob (year-only subtraction), fallback to financials
+      const clientDob = clientRow?.dob || fin2?.person1?.dob || fin2?.client?.dob
+      const clientAge2 = clientDob
+        ? currentYear - Number(String(clientDob).slice(0, 4))
+        : 35
       const tabs: { key: string; label: string; age: number }[] = [
         { key: 'client', label: clientFirstName, age: clientAge2 }
       ]
@@ -1429,9 +1436,15 @@ export default function RecommendationsPage() {
 
       // Client name
       const fin = by['financials'] ?? {}
-      setClientName(fin?.client?.firstName
-        ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim()
-        : 'Client')
+      setClientName(
+        clientRow?.first_name
+          ? `${clientRow.first_name} ${clientRow.last_name || ''}`.trim()
+          : fin?.person1?.firstName
+            ? `${fin.person1.firstName} ${fin.person1.lastName || ''}`.trim()
+            : fin?.client?.firstName
+              ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim()
+              : 'Client'
+      )
 
       // Cash flow from Financial Profile
       const p1 = fin?.person1 || {}
