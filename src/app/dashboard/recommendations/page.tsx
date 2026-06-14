@@ -316,14 +316,15 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMod
 
 // ─── PROTECTION IMPACT MODAL ──────────────────────────────────────────────────
 
-function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium }: {
+function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOverride, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium }: {
   rec: ProtRec
   monthlyIncome: number
   monthlyExpenses: number
+  annualSurplusOverride?: number
   onClose: () => void
   medicalMode?: boolean
-  medicalCashPremium?: number      // new product cash-only annual premium
-  medicalOldCashPremium?: number   // existing policies cash-only combined
+  medicalCashPremium?: number
+  medicalOldCashPremium?: number
 }) {
   const [cvValues, setCvValues] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {}
@@ -344,8 +345,8 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose, medical
   const policyTermYrs = parseInt(rec.policyTerm) || 20
   const yearsCV       = netAnnual > 0 ? Math.floor(totalCV / netAnnual) : 999
 
-  // Cash flow: use annual surplus / 12 as base (not raw income)
-  const annualSurplus         = (monthlyIncome - monthlyExpenses) * 12
+  // Cash flow: use saved surplus directly, fallback to derived
+  const annualSurplus         = annualSurplusOverride ?? (monthlyIncome - monthlyExpenses) * 12
   const newAdditionAnnual     = !isReplacement ? displayNewPremium : 0
   const surplusAfterAnnual    = isReplacement
     ? annualSurplus - netAnnual
@@ -402,14 +403,22 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose, medical
               ? metCard('Coverage', fmt(rec.sumAssured), rec.coverageType || 'Sum assured / benefit', '#1E4D35')
               : null
           }
-          {isReplacement && metCard(
-            'Net annual change (cash)',
-            (netAnnual > 0 ? '+' : '') + fmt(netAnnual) + ' / yr',
-            netAnnual > 0 ? 'Additional cash outflow' : 'Annual cash savings',
-            netAnnual > 0 ? '#9B1C1C' : '#1E4D35'
-          )}
-          {isReplacement && !medicalMode && metCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
         </div>
+        {isReplacement && (
+          <div style={{ marginBottom: 20 }}>
+            {metCard(
+              'Net annual change (cash)',
+              (netAnnual > 0 ? '+' : '') + fmt(netAnnual) + ' / yr',
+              netAnnual > 0 ? 'Additional cash outflow' : 'Annual cash savings',
+              netAnnual > 0 ? '#9B1C1C' : '#1E4D35'
+            )}
+          </div>
+        )}
+        {isReplacement && !medicalMode && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+            {metCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
+          </div>
+        )}
 
         {/* Cash flow impact */}
         <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 16, marginBottom: 20 }}>
@@ -663,7 +672,7 @@ const COVERAGE_MODE_LABELS: Record<MedCoverageMode, string> = {
 }
 
 function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDelete, onChoose,
-  existingPolicies, medicalCompanies, products, monthlyIncome, monthlyExpenses }: {
+  existingPolicies, medicalCompanies, products, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
   rec: MedicalRec
   personAge: number
   personName: string
@@ -676,6 +685,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
   products: InsProduct[]
   monthlyIncome: number
   monthlyExpenses: number
+  annualSurplusOverride?: number
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof MedicalRec>(k: K, v: MedicalRec[K]) { onChange({ ...rec, [k]: v }) }
@@ -972,6 +982,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
           medicalMode={true}
           medicalCashPremium={rec.premiumCash + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
           medicalOldCashPremium={rec.replacedPolicies.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)}
+          annualSurplusOverride={annualSurplusOverride}
           onClose={() => setShowImpact(false)}
         />
       )}
@@ -982,7 +993,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
 // ─── PROTECTION CARD ──────────────────────────────────────────────────────────
 
 function ProtCard({ rec, category, onChange, onDelete, onChoose,
-  existingPolicies, insurers, coverageTypes, monthlyIncome, monthlyExpenses }: {
+  existingPolicies, insurers, coverageTypes, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
   rec: ProtRec
   category: ProtCategory
   onChange: (r: ProtRec) => void
@@ -993,6 +1004,7 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
   coverageTypes: string[]
   monthlyIncome: number
   monthlyExpenses: number
+  annualSurplusOverride?: number
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof ProtRec>(k: K, v: ProtRec[K]) { onChange({ ...rec, [k]: v }) }
@@ -1124,7 +1136,7 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
         </div>
       </div>
 
-      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} onClose={() => setShowImpact(false)} />}
+      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} onClose={() => setShowImpact(false)} />}
     </>
   )
 }
@@ -1301,14 +1313,14 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
 // ─── PROTECTION SECTION ───────────────────────────────────────────────────────
 
 function ProtSection({ cat, recs, onAdd, onUpdate, onDelete, onChoose,
-  existingPolicies, insurers, coverageTypes, monthlyIncome, monthlyExpenses }: {
+  existingPolicies, insurers, coverageTypes, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
   cat: typeof PROT_CATEGORIES[0]
   recs: ProtRec[]
   onAdd: () => void; onUpdate: (id: string, r: ProtRec) => void
   onDelete: (id: string) => void; onChoose: (id: string) => void
   existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
   insurers: string[]; coverageTypes: string[]
-  monthlyIncome: number; monthlyExpenses: number
+  monthlyIncome: number; monthlyExpenses: number; annualSurplusOverride?: number
 }) {
   const canAdd = recs.length < 3
   return (
@@ -1343,6 +1355,7 @@ function ProtSection({ cat, recs, onAdd, onUpdate, onDelete, onChoose,
             existingPolicies={existingPolicies}
             insurers={insurers} coverageTypes={coverageTypes}
             monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
+            annualSurplusOverride={annualSurplusOverride}
           />
         ))
       )}
@@ -1385,6 +1398,7 @@ export default function RecommendationsPage() {
   // Cash flow from Financial Profile
   const [monthlyIncome, setMonthlyIncome]     = useState(0)
   const [monthlyExpenses, setMonthlyExpenses] = useState(0)
+  const [annualSurplus, setAnnualSurplus]     = useState(0)
 
   // Goals for accumulation waterfall
   const [goals, setGoals]                         = useState<GoalItem[]>([])
@@ -1494,29 +1508,25 @@ export default function RecommendationsPage() {
           || 'Client'
       )
 
-      // Cash flow from Financial Profile
-      const p1 = fin?.person1 || {}
-      const p2 = fin?.person2 || {}
-      const isCouple = fin?.mode === 'couple'
-      const p1Gross = p1.gross_monthly || 0
-      const p2Gross = isCouple ? (p2.gross_monthly || 0) : 0
-      const p1Other = (p1.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0)
-      const p2Other = isCouple ? (p2.other_incomes || []).reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0
-      const totalMonthlyIncome = p1Gross + p2Gross + p1Other + p2Other
-      setMonthlyIncome(totalMonthlyIncome)
-
-      // Monthly expenses: annual_surplus stored, or re-derive from expense keys
+      // Cash flow — use saved annual_surplus as source of truth
       if (fin?.annual_surplus != null) {
-        const annualExpenses = totalMonthlyIncome * 12 - (fin.annual_surplus || 0)
-        setMonthlyExpenses(Math.max(0, annualExpenses / 12))
+        setAnnualSurplus(fin.annual_surplus)
+        setMonthlyIncome(0); setMonthlyExpenses(0)
       } else {
-        // Fallback: sum known simple expense keys
         const EXP_KEYS = ['s_financial','s_healthcare','s_lifestyle','s_household','s_personal','s_children','s_parents']
         const EXP_KEYS2 = ['s2_financial','s2_healthcare','s2_lifestyle','s2_household','s2_personal','s2_children','s2_parents']
-        let annExp = 0
-        EXP_KEYS.forEach(k => { annExp += Number(fin[k] || 0) })
-        if (isCouple) EXP_KEYS2.forEach(k => { annExp += Number(fin[k] || 0) })
-        setMonthlyExpenses(annExp / 12)
+        const p1f = fin?.person1 || fin || {}
+        const p2f = fin?.person2 || {}
+        const isCpl = fin?.mode === 'couple'
+        const inc = (p1f.gross_monthly||0) + (isCpl?(p2f.gross_monthly||0):0)
+          + (p1f.other_incomes||[]).reduce((s:number,i:any)=>s+(i.amount||0),0)
+          + (isCpl?(p2f.other_incomes||[]).reduce((s:number,i:any)=>s+(i.amount||0),0):0)
+        let exp = 0
+        EXP_KEYS.forEach(k=>{ exp += Number(fin[k]||0) })
+        if (isCpl) EXP_KEYS2.forEach(k=>{ exp += Number(fin[k]||0) })
+        const derivedSurplus = inc * 12 - exp
+        setAnnualSurplus(derivedSurplus)
+        setMonthlyIncome(inc); setMonthlyExpenses(exp/12)
       }
 
       // Existing policies
@@ -1865,6 +1875,7 @@ export default function RecommendationsPage() {
             coverageTypes={coverageMap[cat.key]}
             monthlyIncome={monthlyIncome}
             monthlyExpenses={monthlyExpenses}
+            annualSurplusOverride={annualSurplus}
           />
         ))}
 
