@@ -48,6 +48,13 @@ const ADMIN_SECTIONS = [
     icon: "🛡",
     tag: "As needed",
   },
+  {
+    title: "Medisave Withdrawal Limits",
+    description: "Configure Integrated Shield Plan Medisave withdrawal limits by age band. Changes apply instantly to all recommendation cards.",
+    href: "/admin/medisave-limits",
+    icon: "🏥",
+    tag: "As needed",
+  },
 ]
 
 function InviteAdvisorCard() {
