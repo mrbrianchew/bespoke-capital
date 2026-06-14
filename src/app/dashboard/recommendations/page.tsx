@@ -1508,27 +1508,40 @@ export default function RecommendationsPage() {
           || 'Client'
       )
 
-      // Cash flow — use saved annual_surplus as source of truth
-      console.log('FIN_CASHFLOW_ALL', JSON.stringify(Object.keys(fin || {})))
-      console.log('FIN_CASHFLOW_VALS', JSON.stringify({ annual_surplus: fin?.annual_surplus, gross_monthly: fin?.gross_monthly, d_gross_monthly: fin?.d_gross_monthly, person1: fin?.person1, mode: fin?.mode }))
-      if (fin?.annual_surplus != null) {
-        setAnnualSurplus(fin.annual_surplus)
-        setMonthlyIncome(0); setMonthlyExpenses(0)
-      } else {
-        const EXP_KEYS = ['s_financial','s_healthcare','s_lifestyle','s_household','s_personal','s_children','s_parents']
-        const EXP_KEYS2 = ['s2_financial','s2_healthcare','s2_lifestyle','s2_household','s2_personal','s2_children','s2_parents']
-        const p1f = fin?.person1 || fin || {}
-        const p2f = fin?.person2 || {}
+      // Cash flow — derive from financials data
+      // Income: person1/person2 gross_monthly + other_incomes + gross_bonus/12
+      {
         const isCpl = fin?.mode === 'couple'
-        const inc = (p1f.gross_monthly||0) + (isCpl?(p2f.gross_monthly||0):0)
-          + (p1f.other_incomes||[]).reduce((s:number,i:any)=>s+(i.amount||0),0)
-          + (isCpl?(p2f.other_incomes||[]).reduce((s:number,i:any)=>s+(i.amount||0),0):0)
-        let exp = 0
-        EXP_KEYS.forEach(k=>{ exp += Number(fin[k]||0) })
-        if (isCpl) EXP_KEYS2.forEach(k=>{ exp += Number(fin[k]||0) })
-        const derivedSurplus = inc * 12 - exp
-        setAnnualSurplus(derivedSurplus)
-        setMonthlyIncome(inc); setMonthlyExpenses(exp/12)
+        const p1f = fin?.person1 || {}
+        const p2f = fin?.person2 || {}
+        const p1Monthly = (p1f.gross_monthly || 0)
+          + ((p1f.gross_bonus || 0) / 12)
+          + (Array.isArray(p1f.other_incomes) ? p1f.other_incomes.reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0)
+        const p2Monthly = isCpl ? ((p2f.gross_monthly || 0)
+          + ((p2f.gross_bonus || 0) / 12)
+          + (Array.isArray(p2f.other_incomes) ? p2f.other_incomes.reduce((s: number, i: any) => s + (i.amount || 0), 0) : 0)) : 0
+        const totalMonthlyIncome = p1Monthly + p2Monthly
+
+        // Expenses: d_ prefix keys (annual amounts) + d2_ for spouse
+        const D_EXP = ['d_transport','d_utilities','d_insurance','d_food','d_family_food',
+          'd_school_fees','d_conservancy','d_mortgage_cpf','d_mortgage_cash','d_personal_food',
+          'd_vehicle_repay','d_invested_custom','d_personal_custom','d_other_household',
+          'd_regular_savings','d_custom_financial','d_custom_household','d_custom_lifestyle',
+          'd_allowance_parents','d_other_regular_savings','d_custom_children','d_allowance_children',
+          'd_maid','d_childcare','d_income_tax']
+        const D2_EXP = D_EXP.map(k => k.replace('d_','d2_'))
+        let annualExp = 0
+        D_EXP.forEach(k => { annualExp += Number(fin?.[k] || 0) })
+        if (isCpl) D2_EXP.forEach(k => { annualExp += Number(fin?.[k] || 0) })
+
+        // Use saved annual_surplus if present, otherwise derive
+        const surplus = fin?.annual_surplus != null
+          ? fin.annual_surplus
+          : totalMonthlyIncome * 12 - annualExp
+
+        setAnnualSurplus(surplus)
+        setMonthlyIncome(totalMonthlyIncome)
+        setMonthlyExpenses(annualExp / 12)
       }
 
       // Existing policies
