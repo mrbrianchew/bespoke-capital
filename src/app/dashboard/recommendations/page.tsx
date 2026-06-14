@@ -85,6 +85,7 @@ interface AccRec {
   benefits: string
   limitations: string
   allocatedGoalIds: string[]
+  accountType: 'individual' | 'joint'
   isChosen: boolean
 }
 
@@ -125,10 +126,10 @@ interface RecPageData {
   ltcByPerson: Record<string, ProtRec[]>
   expenseByPerson: Record<string, ProtRec[]>
   generalByPerson: Record<string, ProtRec[]>
-  accumulation: AccRec[]
+  accumulationByPerson: Record<string, AccRec[]>
 }
 
-const EMPTY: RecPageData = { medicalByPerson: {}, ltcByPerson: {}, expenseByPerson: {}, generalByPerson: {}, accumulation: [] }
+const EMPTY: RecPageData = { medicalByPerson: {}, ltcByPerson: {}, expenseByPerson: {}, generalByPerson: {}, accumulationByPerson: {} }
 
 interface MedisaveBand { age_from: number; age_to: number | null; annual_limit: number }
 
@@ -1165,6 +1166,19 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
           <RankBadge rank={rec.rank} />
           {rec.isChosen && <ChosenBadge />}
           <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+          <div style={{ display: 'flex', border: '1px solid var(--cream3)', borderRadius: 6, overflow: 'hidden', marginLeft: 8 }}>
+            {(['individual', 'joint'] as const).map(t => (
+              <button key={t} onClick={() => upd('accountType', t)} style={{
+                fontSize: 11, padding: '4px 12px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
+                background: (rec.accountType || 'individual') === t ? 'var(--cream2)' : 'transparent',
+                color: (rec.accountType || 'individual') === t ? 'var(--ink)' : 'var(--ink3)',
+                fontWeight: (rec.accountType || 'individual') === t ? 600 : 400, textTransform: 'capitalize',
+              }}>{t}</button>
+            ))}
+          </div>
+          {(rec.accountType === 'joint') && (
+            <span style={{ fontSize: 11, color: '#2D5A4E', fontFamily: 'Inter', fontStyle: 'italic' }}>Visible to all</span>
+          )}
         </div>
 
         {/* Core fields */}
@@ -1385,7 +1399,6 @@ export default function RecommendationsPage() {
 
   // Person tabs
   const [activePerson, setActivePerson] = useState<string>('client')
-  const [activeProtPerson, setActiveProtPerson] = useState<string>('client')
   const [personTabs, setPersonTabs] = useState<{ key: string; label: string; age: number }[]>([
     { key: 'client', label: 'Client', age: 35 }
   ])
@@ -1603,7 +1616,7 @@ export default function RecommendationsPage() {
           ltcByPerson:      saved.ltcByPerson      || (saved.ltc     ? { client: saved.ltc     } : {}),
           expenseByPerson:  saved.expenseByPerson  || (saved.expense ? { client: saved.expense } : {}),
           generalByPerson:  saved.generalByPerson  || (saved.general ? { client: saved.general } : {}),
-          accumulation: saved.accumulation || [],
+          accumulationByPerson: saved.accumulationByPerson || (saved.accumulation ? { client: saved.accumulation } : {}),
         })
       } else {
         setData(EMPTY)
@@ -1682,51 +1695,86 @@ export default function RecommendationsPage() {
     const byPerson = { ...data[catKey(cat)], [person]: [...recs, rec] }
     handleChange({ ...data, [catKey(cat)]: byPerson })
   }
-  function addProt(cat: ProtCategory) { addProtPerson(cat, activeProtPerson) }
+  function addProt(cat: ProtCategory) { addProtPerson(cat, activePerson) }
   function updateProt(cat: ProtCategory, id: string, r: ProtRec) {
     setData(prev => {
-      const byPerson = { ...prev[catKey(cat)], [activeProtPerson]: (prev[catKey(cat)][activeProtPerson] || []).map(x => x.id === id ? r : x) }
+      const byPerson = { ...prev[catKey(cat)], [activePerson]: (prev[catKey(cat)][activePerson] || []).map(x => x.id === id ? r : x) }
       const next = { ...prev, [catKey(cat)]: byPerson }
       schedSave(next)
       return next
     })
   }
   function deleteProt(cat: ProtCategory, id: string) {
-    const recs = getProtRecs(cat, activeProtPerson)
+    const recs = getProtRecs(cat, activePerson)
     const next = recs.filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
-    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activeProtPerson]: next } })
+    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activePerson]: next } })
   }
   function chooseProt(cat: ProtCategory, id: string) {
-    const recs = getProtRecs(cat, activeProtPerson)
-    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activeProtPerson]: recs.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) } })
+    const recs = getProtRecs(cat, activePerson)
+    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activePerson]: recs.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) } })
   }
 
   // ── Accumulation helpers ────────────────────────────────────────────────────
-  function addAcc() {
-    if (data.accumulation.length >= 3) return
+  function getAccVisible(person: string): AccRec[] {
+    const personal = data.accumulationByPerson[person] || []
+    const joint = data.accumulationByPerson['joint'] || []
+    return person === 'joint' ? joint : [...personal, ...joint]
+  }
+  function addAccForPerson(person: string) {
+    const visible = getAccVisible(person)
+    if (visible.length >= 3) return
+    const ownRecs = data.accumulationByPerson[person] || []
     const rec: AccRec = {
-      id: newId(), rank: RANK_LABELS[data.accumulation.length], mode: 'new',
+      id: newId(), rank: RANK_LABELS[visible.length], mode: 'new',
       productType: '', company: '', planType: '',
       hasLumpSum: false, lumpSumAmount: 0, hasRegular: true,
       regularFreq: 'Monthly', regularAmount: 0, regularYears: 0,
       projMethod: 'illustration', illusTerm: 0, illusGuaranteed: 0, illusNonGuaranteed: 0,
       rateYears: 0, rateReturn: 0, replacedPolicies: [], benefits: '', limitations: '',
-      allocatedGoalIds: [], isChosen: false,
+      allocatedGoalIds: [], accountType: 'individual', isChosen: false,
     }
-    handleChange({ ...data, accumulation: [...data.accumulation, rec] })
+    handleChange({ ...data, accumulationByPerson: { ...data.accumulationByPerson, [person]: [...ownRecs, rec] } })
   }
   function updateAcc(id: string, r: AccRec) {
     setData(prev => {
-      const next = { ...prev, accumulation: prev.accumulation.map(x => x.id === id ? r : x) }
+      const newByPerson = { ...prev.accumulationByPerson }
+      for (const person of Object.keys(newByPerson)) {
+        if ((newByPerson[person] || []).some((x: AccRec) => x.id === id)) {
+          const targetBucket = r.accountType === 'joint' ? 'joint' : (person === 'joint' ? activePerson : person)
+          if (targetBucket !== person) {
+            newByPerson[person] = (newByPerson[person] || []).filter((x: AccRec) => x.id !== id)
+            newByPerson[targetBucket] = [...(newByPerson[targetBucket] || []), r]
+          } else {
+            newByPerson[person] = (newByPerson[person] || []).map((x: AccRec) => x.id === id ? r : x)
+          }
+          break
+        }
+      }
+      const next = { ...prev, accumulationByPerson: newByPerson }
       schedSave(next)
       return next
     })
   }
   function deleteAcc(id: string) {
-    const next = data.accumulation.filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
-    handleChange({ ...data, accumulation: next })
+    const newByPerson = { ...data.accumulationByPerson }
+    for (const person of Object.keys(newByPerson)) {
+      if ((newByPerson[person] || []).some((x: AccRec) => x.id === id)) {
+        newByPerson[person] = (newByPerson[person] || []).filter((x: AccRec) => x.id !== id).map((r: AccRec, i: number) => ({ ...r, rank: RANK_LABELS[i] }))
+        break
+      }
+    }
+    handleChange({ ...data, accumulationByPerson: newByPerson })
   }
-  function chooseAcc(id: string) { handleChange({ ...data, accumulation: data.accumulation.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) }) }
+  function chooseAcc(id: string) {
+    const newByPerson = { ...data.accumulationByPerson }
+    for (const person of Object.keys(newByPerson)) {
+      if ((newByPerson[person] || []).some((x: AccRec) => x.id === id)) {
+        newByPerson[person] = (newByPerson[person] || []).map((r: AccRec) => ({ ...r, isChosen: r.id === id ? !r.isChosen : false }))
+        break
+      }
+    }
+    handleChange({ ...data, accumulationByPerson: newByPerson })
+  }
 
   const [showPicker, setShowPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -1746,7 +1794,7 @@ export default function RecommendationsPage() {
   const activeSections = [
     ...(medicalHasCards ? ['medical' as ProtCategory | 'accumulation'] : []),
     ...PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && Object.values(data[`${cat.key}ByPerson` as 'ltcByPerson'|'expenseByPerson'|'generalByPerson']).some(recs => recs.length > 0)).map(cat => cat.key as ProtCategory | 'accumulation'),
-    ...(data.accumulation.length > 0 ? ['accumulation' as const] : []),
+    ...(Object.values(data.accumulationByPerson).some(r => r.length > 0) ? ['accumulation' as const] : []),
   ]
 
   const ALL_OPTIONS: { key: ProtCategory | 'accumulation'; label: string; sub: string; color: string }[] = [
@@ -1757,7 +1805,7 @@ export default function RecommendationsPage() {
   // Picker adds first card immediately so section appears
   function activateSection(key: ProtCategory | 'accumulation') {
     setShowPicker(false)
-    if (key === 'accumulation') addAcc()
+    if (key === 'accumulation') addAccForPerson('client')
     else if (key === 'medical') addMedical('client')
     else addProtPerson(key, 'client')
   }
@@ -1788,6 +1836,35 @@ export default function RecommendationsPage() {
       <div style={{ flex: 1, padding: '32px 48px', maxWidth: 1100 }}>
         {error && (
           <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '12px 16px', marginBottom: 20, fontFamily: 'Inter', fontSize: 13, color: '#9B1C1C' }}>{error}</div>
+        )}
+
+        {/* Top-level person tabs */}
+        {personTabs.length > 1 && (
+          <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '2px solid var(--cream3)' }}>
+            {personTabs.map(tab => {
+              const total =
+                (data.medicalByPerson[tab.key] || []).length +
+                (data.ltcByPerson[tab.key] || []).length +
+                (data.expenseByPerson[tab.key] || []).length +
+                (data.generalByPerson[tab.key] || []).length +
+                (data.accumulationByPerson[tab.key] || []).length
+              return (
+                <button key={tab.key} onClick={() => setActivePerson(tab.key)} style={{
+                  fontSize: 13, padding: '10px 22px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
+                  borderBottom: activePerson === tab.key ? '2px solid var(--charcoal)' : '2px solid transparent',
+                  marginBottom: -2, background: 'transparent',
+                  color: activePerson === tab.key ? 'var(--ink)' : 'var(--ink3)',
+                  fontWeight: activePerson === tab.key ? 600 : 400,
+                  display: 'flex', alignItems: 'center', gap: 7,
+                }}>
+                  {tab.label}
+                  {total > 0 && (
+                    <span style={{ fontSize: 10, background: 'var(--charcoal)', color: 'var(--cream)', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>{total}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         )}
 
         {/* Empty state */}
@@ -1862,25 +1939,6 @@ export default function RecommendationsPage() {
                 </button>
               </div>
 
-              {/* Person tabs */}
-              <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--cream3)', paddingBottom: 0 }}>
-                {personTabs.map(tab => (
-                  <button key={tab.key} onClick={() => setActivePerson(tab.key)} style={{
-                    fontSize: 12, padding: '7px 16px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
-                    borderBottom: activePerson === tab.key ? `2px solid ${cat.color}` : '2px solid transparent',
-                    background: 'transparent', color: activePerson === tab.key ? 'var(--ink)' : 'var(--ink3)',
-                    fontWeight: activePerson === tab.key ? 600 : 400, marginBottom: -1,
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                    {tab.label}
-                    {getMedical(tab.key).length > 0 && (
-                      <span style={{ fontSize: 10, background: cat.color, color: '#fff', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>
-                        {getMedical(tab.key).length}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
 
               {/* Cards for active person */}
               {personRecs.length === 0 ? (
@@ -1913,7 +1971,7 @@ export default function RecommendationsPage() {
         {/* Active non-medical protection sections — per person tabs */}
         {PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && activeSections.includes(cat.key)).map(cat => {
           const catK = `${cat.key}ByPerson` as 'ltcByPerson'|'expenseByPerson'|'generalByPerson'
-          const personRecs = data[catK][activeProtPerson] || []
+          const personRecs = data[catK][activePerson] || []
           const canAddProt = personRecs.length < 3
           return (
             <div key={cat.key} style={{ marginBottom: 28 }}>
@@ -1924,7 +1982,7 @@ export default function RecommendationsPage() {
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label}</span>
                   <span style={{ fontSize: 10, color: 'var(--ink3)', borderLeft: '1px solid var(--cream3)', paddingLeft: 10 }}>{cat.hint}</span>
                 </div>
-                <button onClick={() => addProtPerson(cat.key, activeProtPerson)} disabled={!canAddProt} style={{
+                <button onClick={() => addProtPerson(cat.key, activePerson)} disabled={!canAddProt} style={{
                   background: canAddProt ? 'var(--charcoal)' : 'var(--cream3)', color: canAddProt ? 'var(--cream)' : 'var(--ink3)',
                   border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
                   cursor: canAddProt ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
@@ -1932,32 +1990,11 @@ export default function RecommendationsPage() {
                   <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAddProt ? 'Add option' : 'Max 3'}
                 </button>
               </div>
-              {/* Person tabs */}
-              <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--cream3)' }}>
-                {personTabs.map(tab => {
-                  const tabRecs = data[catK][tab.key] || []
-                  return (
-                    <button key={tab.key} onClick={() => setActiveProtPerson(tab.key)} style={{
-                      fontSize: 12, padding: '7px 16px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
-                      borderBottom: activeProtPerson === tab.key ? `2px solid ${cat.color}` : '2px solid transparent',
-                      background: 'transparent', color: activeProtPerson === tab.key ? 'var(--ink)' : 'var(--ink3)',
-                      fontWeight: activeProtPerson === tab.key ? 600 : 400, marginBottom: -1,
-                      display: 'flex', alignItems: 'center', gap: 6,
-                    }}>
-                      {tab.label}
-                      {tabRecs.length > 0 && (
-                        <span style={{ fontSize: 10, background: cat.color, color: '#fff', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>
-                          {tabRecs.length}
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
+
               {/* Cards for active person */}
               {personRecs.length === 0 ? (
                 <div style={{ padding: '20px 0 8px', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>
-                  No {cat.label.toLowerCase()} recommendations for {personTabs.find(t => t.key === activeProtPerson)?.label || activeProtPerson} yet
+                  No {cat.label.toLowerCase()} recommendations for {personTabs.find(t => t.key === activePerson)?.label || activePerson} yet
                 </div>
               ) : (
                 personRecs.map(rec => (
@@ -1978,40 +2015,51 @@ export default function RecommendationsPage() {
         })}
 
         {/* Active accumulation section */}
-        {activeSections.includes('accumulation') && (
-          <div style={S.sectionWrap}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18, paddingBottom: 14, borderBottom: '1px solid var(--cream3)' }}>
-              <div>
-                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.1 }}>Wealth Accumulation</div>
-                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>Investment & savings recommendations (max 3 options)</div>
+        {activeSections.includes('accumulation') && (() => {
+          const visibleRecs = getAccVisible(activePerson)
+          const canAddAcc = visibleRecs.length < 3
+          const currentLabel = personTabs.find(t => t.key === activePerson)?.label || activePerson
+          return (
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid #2D5A4E33' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 2, height: 14, background: '#2D5A4E', flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>Wealth Accumulation</span>
+                  <span style={{ fontSize: 10, color: 'var(--ink3)', borderLeft: '1px solid var(--cream3)', paddingLeft: 10 }}>Investments & savings</span>
+                </div>
+                <button onClick={() => addAccForPerson(activePerson)} disabled={!canAddAcc} style={{
+                  background: canAddAcc ? 'var(--charcoal)' : 'var(--cream3)', color: canAddAcc ? 'var(--cream)' : 'var(--ink3)',
+                  border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
+                  cursor: canAddAcc ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAddAcc ? 'Add option' : 'Max 3'}
+                </button>
               </div>
-              <button onClick={addAcc} disabled={data.accumulation.length >= 3} style={{
-                background: data.accumulation.length < 3 ? 'var(--charcoal)' : 'var(--cream3)',
-                color: data.accumulation.length < 3 ? 'var(--cream)' : 'var(--ink3)',
-                border: 'none', borderRadius: 6, padding: '7px 14px', fontFamily: 'Inter', fontSize: 12,
-                cursor: data.accumulation.length < 3 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 5,
-              }}>
-                <span style={{ fontSize: 15, lineHeight: 1 }}>+</span>
-                {data.accumulation.length < 3 ? 'Add option' : 'Max 3'}
-              </button>
+              {visibleRecs.length === 0 ? (
+                <div style={{ padding: '20px 0 8px', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>
+                  No accumulation recommendations for {currentLabel} yet
+                </div>
+              ) : (
+                visibleRecs.map(rec => (
+                  <AccCard
+                    key={rec.id} rec={rec}
+                    onChange={r => updateAcc(rec.id, r)}
+                    onDelete={() => deleteAcc(rec.id)}
+                    onChoose={() => chooseAcc(rec.id)}
+                    goals={goals} existingPortfolioValue={existingPortfolioValue}
+                    existingPolicies={existingPolicies}
+                    monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
+                  />
+                ))
+              )}
+              {(data.accumulationByPerson['joint'] || []).length > 0 && activePerson !== 'joint' && (
+                <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 8, fontStyle: 'italic' }}>
+                  ↑ Joint accounts are shared across all family members
+                </div>
+              )}
             </div>
-            {data.accumulation.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>No accumulation recommendations yet — click Add option above</div>
-            ) : (
-              data.accumulation.map(rec => (
-                <AccCard
-                  key={rec.id} rec={rec}
-                  onChange={r => updateAcc(rec.id, r)}
-                  onDelete={() => deleteAcc(rec.id)}
-                  onChoose={() => chooseAcc(rec.id)}
-                  goals={goals} existingPortfolioValue={existingPortfolioValue}
-                  existingPolicies={existingPolicies}
-                  monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
-                />
-              ))
-            )}
-          </div>
-        )}
+          )
+        })()}
 
         {/* Add recommendation button — shown when at least 1 section is active and more are available */}
         {activeSections.length > 0 && availableOptions.length > 0 && (
