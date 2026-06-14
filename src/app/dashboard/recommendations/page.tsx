@@ -1367,7 +1367,7 @@ export default function RecommendationsPage() {
         supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
         supabase.from('family_members').select('*').eq('client_id', id),
         supabase.from('medisave_withdrawal_limits').select('*').order('sort_order', { ascending: true }),
-        supabase.from('clients').select('id,first_name,last_name,dob').eq('id', id).maybeSingle(),
+        supabase.from('clients').select('id,name,dob').eq('id', id).maybeSingle(),
       ])
 
       // Reference data
@@ -1411,7 +1411,7 @@ export default function RecommendationsPage() {
       const currentYear = new Date().getFullYear()
       const fin2 = by['financials'] ?? {}
       // Client name: prefer clients table, fallback to financials
-      const clientFirstName = clientRow?.first_name
+      const clientFirstName = clientRow?.name
         || fin2?.person1?.firstName || fin2?.client?.firstName || 'Client'
       // Client age: prefer clients.dob (year-only subtraction), fallback to financials
       const clientDob = clientRow?.dob || fin2?.person1?.dob || fin2?.client?.dob
@@ -1437,13 +1437,10 @@ export default function RecommendationsPage() {
       // Client name
       const fin = by['financials'] ?? {}
       setClientName(
-        clientRow?.first_name
-          ? `${clientRow.first_name} ${clientRow.last_name || ''}`.trim()
-          : fin?.person1?.firstName
-            ? `${fin.person1.firstName} ${fin.person1.lastName || ''}`.trim()
-            : fin?.client?.firstName
-              ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim()
-              : 'Client'
+        clientRow?.name
+          || (fin?.person1?.firstName ? `${fin.person1.firstName} ${fin.person1.lastName || ''}`.trim() : '')
+          || (fin?.client?.firstName  ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim()   : '')
+          || 'Client'
       )
 
       // Cash flow from Financial Profile
