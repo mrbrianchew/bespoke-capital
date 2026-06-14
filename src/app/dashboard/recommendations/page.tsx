@@ -87,15 +87,53 @@ interface AccRec {
   isChosen: boolean
 }
 
+interface MedicalRider {
+  insurer: string
+  productName: string
+  annualPremium: number
+}
+
+interface MedicalRec {
+  id: string
+  rank: RankLabel
+  mode: RecMode
+  // Main plan
+  insurer: string
+  productName: string
+  coverageType: string   // 'Main' | 'Rider' | policy type from DB
+  premiumMedisave: number
+  premiumCash: number
+  premiumTerm: string
+  policyTerm: string
+  // Rider
+  hasRider: boolean
+  rider: MedicalRider
+  // Text
+  benefits: string
+  limitations: string
+  // Replacement
+  replacedPolicies: ReplacedPolicy[]
+  isChosen: boolean
+}
+
 interface RecPageData {
-  medical: ProtRec[]
+  // keyed by person tab: 'client' | 'spouse' | child id
+  medicalByPerson: Record<string, MedicalRec[]>
   ltc: ProtRec[]
   expense: ProtRec[]
   general: ProtRec[]
   accumulation: AccRec[]
 }
 
-const EMPTY: RecPageData = { medical: [], ltc: [], expense: [], general: [], accumulation: [] }
+const EMPTY: RecPageData = { medicalByPerson: {}, ltc: [], expense: [], general: [], accumulation: [] }
+
+function medisaveLimit(age: number): number {
+  if (age < 40) return 300
+  if (age < 61) return 600
+  return 900
+}
+
+interface InsProduct { id: number; company_id: number; category_id: number; name: string }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -570,6 +608,251 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
   )
 }
 
+// ─── MEDICAL CARD ────────────────────────────────────────────────────────────
+
+function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
+  existingPolicies, companies, products, monthlyIncome, monthlyExpenses }: {
+  rec: MedicalRec
+  personAge: number
+  onChange: (r: MedicalRec) => void
+  onDelete: () => void
+  onChoose: () => void
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
+  companies: { id: number; name: string }[]
+  products: InsProduct[]
+  monthlyIncome: number
+  monthlyExpenses: number
+}) {
+  const [showImpact, setShowImpact] = useState(false)
+  function upd<K extends keyof MedicalRec>(k: K, v: MedicalRec[K]) { onChange({ ...rec, [k]: v }) }
+  function updRider<K extends keyof MedicalRider>(k: K, v: MedicalRider[K]) { onChange({ ...rec, rider: { ...rec.rider, [k]: v } }) }
+
+  const msLimit = medisaveLimit(personAge)
+  const totalMainPremium = (rec.premiumMedisave || 0) + (rec.premiumCash || 0)
+
+  // Filter products by selected insurer
+  const selectedCompany = companies.find(c => c.name === rec.insurer)
+  const filteredProducts = selectedCompany
+    ? products.filter(p => p.company_id === selectedCompany.id)
+    : products
+
+  const riderCompany = companies.find(c => c.name === rec.rider?.insurer)
+  const riderProducts = riderCompany
+    ? products.filter(p => p.company_id === riderCompany.id)
+    : products
+
+  function togglePolicy(pol: typeof existingPolicies[0]) {
+    const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
+    if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, currentCashValue: pol.currentCashValue }])
+  }
+
+  const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
+
+  return (
+    <>
+      <div style={{ ...S.card, border: borderStyle }}>
+        {/* Top bar */}
+        <div style={{ background: 'var(--cream)', padding: '12px 16px', borderBottom: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <RankBadge rank={rec.rank} />
+          {rec.isChosen && <ChosenBadge />}
+          <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+        </div>
+
+        {/* Main plan fields */}
+        <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
+          {/* Insurer first */}
+          <div>
+            <label style={S.lbl}>Insurer</label>
+            <select style={S.inp} value={rec.insurer} onChange={e => { upd('insurer', e.target.value); upd('productName', '') }}>
+              <option value="">Select insurer…</option>
+              {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          {/* Product Name — filtered by insurer */}
+          <div>
+            <label style={S.lbl}>Product name</label>
+            <select style={S.inp} value={rec.productName} onChange={e => upd('productName', e.target.value)}>
+              <option value="">Select product…</option>
+              {filteredProducts.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+            </select>
+          </div>
+          {/* Coverage type */}
+          <div>
+            <label style={S.lbl}>Coverage type</label>
+            <select style={S.inp} value={rec.coverageType} onChange={e => upd('coverageType', e.target.value)}>
+              <option value="">Select type…</option>
+              {['Integrated Shield Plan', 'MediShield Life Top-up', 'Hospital Plan', 'Other'].map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Premium term / policy term */}
+          <div>
+            <label style={S.lbl}>Premium term</label>
+            <input style={S.inp} value={rec.premiumTerm} onChange={e => upd('premiumTerm', e.target.value)} placeholder="e.g. Annual" />
+          </div>
+          <div>
+            <label style={S.lbl}>Policy term</label>
+            <input style={S.inp} value={rec.policyTerm} onChange={e => upd('policyTerm', e.target.value)} placeholder="e.g. Life" />
+          </div>
+        </div>
+
+        {/* Premium breakdown — Medisave + Cash */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={S.lbl}>Main plan premium</div>
+              <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>
+                Medisave limit for age {personAge}: <strong style={{ color: '#7A9CBF' }}>S${msLimit}/yr</strong>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
+              <div>
+                <label style={S.lbl}>Medisave (S$/yr)</label>
+                <input type="number" style={{ ...S.inp, borderColor: (rec.premiumMedisave || 0) > msLimit ? '#FCA5A5' : undefined }}
+                  value={rec.premiumMedisave || ''}
+                  onChange={e => upd('premiumMedisave', Number(e.target.value))}
+                  placeholder="0" />
+                {(rec.premiumMedisave || 0) > msLimit && (
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: '#9B1C1C', marginTop: 2 }}>Exceeds limit</div>
+                )}
+              </div>
+              <div>
+                <label style={S.lbl}>Cash (S$/yr)</label>
+                <input type="number" style={S.inp}
+                  value={rec.premiumCash || ''}
+                  onChange={e => upd('premiumCash', Number(e.target.value))}
+                  placeholder="0" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                <label style={S.lbl}>Total premium</label>
+                <div style={{ ...S.inp, background: 'var(--cream3)', color: 'var(--ink)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                  S${totalMainPremium.toLocaleString('en-SG')}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Rider toggle */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: rec.hasRider ? 12 : 0 }}>
+            <input type="checkbox" checked={rec.hasRider} onChange={e => upd('hasRider', e.target.checked)}
+              style={{ accentColor: '#2D5A4E', width: 15, height: 15 }} />
+            <span style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>Include rider</span>
+          </label>
+
+          {rec.hasRider && (
+            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={{ ...S.lbl, marginBottom: 10 }}>Rider details</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
+                <div>
+                  <label style={S.lbl}>Rider insurer</label>
+                  <select style={S.inp} value={rec.rider?.insurer || ''} onChange={e => { updRider('insurer', e.target.value); updRider('productName', '') }}>
+                    <option value="">Select insurer…</option>
+                    {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.lbl}>Rider product</label>
+                  <select style={S.inp} value={rec.rider?.productName || ''} onChange={e => updRider('productName', e.target.value)}>
+                    <option value="">Select product…</option>
+                    {riderProducts.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.lbl}>Rider annual premium (S$)</label>
+                  <input type="number" style={S.inp} value={rec.rider?.annualPremium || ''}
+                    onChange={e => updRider('annualPremium', Number(e.target.value))} placeholder="0" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Benefits / Limitations */}
+        <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={S.lbl}>Benefits</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }}
+              value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
+          </div>
+          <div>
+            <label style={S.lbl}>Limitations</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }}
+              value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" />
+          </div>
+        </div>
+
+        {/* Replacement section */}
+        {rec.mode === 'replacement' && (
+          <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={{ ...S.lbl, marginBottom: 10 }}>Replacing existing policies</div>
+              {existingPolicies.length === 0 && (
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No existing policies found — add them in the Protection Portfolio tab first.</div>
+              )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {existingPolicies.map(pol => {
+                  const selected = !!rec.replacedPolicies.find(p => p.policyId === pol.id)
+                  return (
+                    <button key={pol.id} onClick={() => togglePolicy(pol)} style={{
+                      fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Inter',
+                      border: `1px solid ${selected ? '#2D5A4E' : 'var(--cream3)'}`,
+                      background: selected ? '#D1FAE5' : '#fff', color: selected ? '#1E4D35' : 'var(--ink2)',
+                      fontWeight: selected ? 600 : 400,
+                    }}>
+                      {selected ? '✓ ' : ''}{pol.policyName || pol.companyName}
+                    </button>
+                  )
+                })}
+              </div>
+              {rec.replacedPolicies.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <CompareTable
+                    replaced={rec.replacedPolicies}
+                    newPremium={totalMainPremium + (rec.hasRider ? (rec.rider?.annualPremium || 0) : 0)}
+                    newSA={0}
+                    newCoverageType={rec.coverageType}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {rec.isChosen ? (
+            <>
+              <button onClick={() => setShowImpact(true)} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid #2D5A4E', background: 'transparent', color: '#2D5A4E', fontWeight: 600 }}>View impact</button>
+              <button onClick={onChoose} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid var(--cream3)', background: 'transparent', color: 'var(--ink2)' }}>Unmark as chosen</button>
+            </>
+          ) : (
+            <button onClick={onChoose} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: 'none', background: 'var(--charcoal)', color: 'var(--cream)', fontWeight: 600 }}>Mark as chosen</button>
+          )}
+          <button onClick={onDelete} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid var(--cream3)', background: 'transparent', color: '#9B1C1C', marginLeft: 'auto' }}>Remove</button>
+        </div>
+      </div>
+
+      {showImpact && (
+        <ProtImpactModal
+          rec={{
+            ...rec,
+            sumAssured: 0,
+            annualPremium: totalMainPremium + (rec.hasRider ? (rec.rider?.annualPremium || 0) : 0),
+          }}
+          monthlyIncome={monthlyIncome}
+          monthlyExpenses={monthlyExpenses}
+          onClose={() => setShowImpact(false)}
+        />
+      )}
+    </>
+  )
+}
+
 // ─── PROTECTION CARD ──────────────────────────────────────────────────────────
 
 function ProtCard({ rec, category, onChange, onDelete, onChoose,
@@ -955,7 +1238,15 @@ export default function RecommendationsPage() {
 
   // Reference data
   const [insurers, setInsurers]   = useState<string[]>([])
+  const [companies, setCompanies] = useState<{ id: number; name: string }[]>([])
+  const [products, setProducts]   = useState<InsProduct[]>([])
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
+
+  // Person tabs
+  const [activePerson, setActivePerson] = useState<string>('client')
+  const [personTabs, setPersonTabs] = useState<{ key: string; label: string; age: number }[]>([
+    { key: 'client', label: 'Client', age: 35 }
+  ])
 
   // Existing policies from protection_portfolio
   const [existingPolicies, setExistingPolicies] = useState<{
@@ -984,17 +1275,25 @@ export default function RecommendationsPage() {
         { data: ffRows },
         { data: cats },
         { data: policyTypes },
-        { data: companies },
+        { data: companiesRaw },
+        { data: productsRaw },
+        { data: familyRows },
       ] = await Promise.all([
         supabase.from('fact_finding').select('section,data').eq('client_id', id)
           .in('section', ['financials', 'protection_portfolio', 'capital_mandate', 'retirement', 'education', 'strategic_recommendations_v2']),
         supabase.from('ins_categories').select('*').order('sort_order'),
         supabase.from('ins_policy_types').select('*').order('sort_order'),
         supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
+        supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
+        supabase.from('family_members').select('*').eq('client_id', id),
       ])
 
-      // Insurers dropdown
-      if (companies) setInsurers(companies.map((c: any) => c.name))
+      // Reference data
+      const companiesList = (companiesRaw || []).map((c: any) => ({ id: c.id, name: c.name }))
+      setCompanies(companiesList)
+      setInsurers(companiesList.map(c => c.name))
+      setProducts((productsRaw || []).map((p: any) => ({ id: p.id, company_id: p.company_id, category_id: p.category_id, name: p.name })))
+
 
       // Coverage types per category — map from ins_policy_types filtered by ins_categories
       if (cats && policyTypes) {
@@ -1013,6 +1312,28 @@ export default function RecommendationsPage() {
 
       const by: Record<string, any> = {}
       if (ffRows) ffRows.forEach((r: any) => { by[r.section] = r.data })
+
+      // Person tabs from family_members
+      const currentYear = new Date().getFullYear()
+      const fin2 = by['financials'] ?? {}
+      const clientFirstName = fin2?.client?.firstName || fin2?.person1?.firstName || 'Client'
+      const clientAge2 = fin2?.client?.dob ? currentYear - Number(String(fin2.client.dob).slice(0,4))
+        : fin2?.person1?.dob ? currentYear - Number(String(fin2.person1.dob).slice(0,4)) : 35
+      const tabs: { key: string; label: string; age: number }[] = [
+        { key: 'client', label: clientFirstName, age: clientAge2 }
+      ]
+      const spouse = (familyRows || []).find((m: any) => m.relationship?.toLowerCase() === 'spouse')
+      if (spouse) {
+        const spouseAge2 = spouse.age ? Number(spouse.age)
+          : spouse.dob ? currentYear - Number(String(spouse.dob).slice(0,4)) : 35
+        tabs.push({ key: 'spouse', label: spouse.name || 'Spouse', age: spouseAge2 })
+      }
+      const kids = (familyRows || []).filter((m: any) => m.relationship?.toLowerCase() !== 'spouse')
+      kids.forEach((k: any) => {
+        const kAge = k.age ? Number(k.age) : k.dob ? currentYear - Number(String(k.dob).slice(0,4)) : 0
+        tabs.push({ key: `child_${k.id || k.name}`, label: k.name || 'Dependent', age: kAge })
+      })
+      setPersonTabs(tabs)
 
       // Client name
       const fin = by['financials'] ?? {}
@@ -1084,7 +1405,7 @@ export default function RecommendationsPage() {
       const saved = by['strategic_recommendations_v2']
       if (saved) {
         setData({
-          medical:      saved.medical      || [],
+          medicalByPerson: saved.medicalByPerson || (saved.medical ? { client: saved.medical } : {}),
           ltc:          saved.ltc          || [],
           expense:      saved.expense      || [],
           general:      saved.general      || [],
@@ -1120,9 +1441,35 @@ export default function RecommendationsPage() {
 
   function handleChange(d: RecPageData) { setData(d); schedSave(d) }
 
-  // ── Per-category prot helpers ───────────────────────────────────────────────
+  // ── Medical helpers (per person) ────────────────────────────────────────────
+  function getMedical(person: string): MedicalRec[] { return data.medicalByPerson[person] || [] }
+  function addMedical(person: string) {
+    const recs = getMedical(person)
+    if (recs.length >= 3) return
+    const rec: MedicalRec = {
+      id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
+      insurer: '', productName: '', coverageType: '',
+      premiumMedisave: 0, premiumCash: 0, premiumTerm: 'Annual', policyTerm: 'Life',
+      hasRider: false, rider: { insurer: '', productName: '', annualPremium: 0 },
+      benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
+    }
+    handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: [...recs, rec] } })
+  }
+  function updateMedical(person: string, id: string, r: MedicalRec) {
+    handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: getMedical(person).map(x => x.id === id ? r : x) } })
+  }
+  function deleteMedical(person: string, id: string) {
+    const next = getMedical(person).filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
+    handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: next } })
+  }
+  function chooseMedical(person: string, id: string) {
+    handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: getMedical(person).map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) } })
+  }
+
+  // ── Per-category prot helpers (ltc / expense / general) ──────────────────
   function addProt(cat: ProtCategory) {
-    const recs = data[cat]
+    if (cat === 'medical') return // medical handled separately
+    const recs = data[cat as 'ltc' | 'expense' | 'general']
     if (recs.length >= 3) return
     const rec: ProtRec = {
       id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
@@ -1132,14 +1479,14 @@ export default function RecommendationsPage() {
     handleChange({ ...data, [cat]: [...recs, rec] })
   }
   function updateProt(cat: ProtCategory, id: string, r: ProtRec) {
-    handleChange({ ...data, [cat]: data[cat].map(x => x.id === id ? r : x) })
+    handleChange({ ...data, [cat]: (data[cat as 'ltc'|'expense'|'general'] as ProtRec[]).map(x => x.id === id ? r : x) })
   }
   function deleteProt(cat: ProtCategory, id: string) {
-    const next = data[cat].filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
+    const next = (data[cat as 'ltc'|'expense'|'general'] as ProtRec[]).filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
     handleChange({ ...data, [cat]: next })
   }
   function chooseProt(cat: ProtCategory, id: string) {
-    handleChange({ ...data, [cat]: data[cat].map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) })
+    handleChange({ ...data, [cat]: (data[cat as 'ltc'|'expense'|'general'] as ProtRec[]).map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) })
   }
 
   // ── Accumulation helpers ────────────────────────────────────────────────────
@@ -1166,8 +1513,10 @@ export default function RecommendationsPage() {
   const [showPicker, setShowPicker] = useState(false)
 
   // Sections are derived purely from card count — appear on first card, disappear on last deletion
+  const medicalHasCards = Object.values(data.medicalByPerson).some(recs => recs.length > 0)
   const activeSections = [
-    ...PROT_CATEGORIES.filter(cat => data[cat.key].length > 0).map(cat => cat.key as ProtCategory | 'accumulation'),
+    ...(medicalHasCards ? ['medical' as ProtCategory | 'accumulation'] : []),
+    ...PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && (data[cat.key as 'ltc'|'expense'|'general'] as ProtRec[]).length > 0).map(cat => cat.key as ProtCategory | 'accumulation'),
     ...(data.accumulation.length > 0 ? ['accumulation' as const] : []),
   ]
 
@@ -1180,6 +1529,7 @@ export default function RecommendationsPage() {
   function activateSection(key: ProtCategory | 'accumulation') {
     setShowPicker(false)
     if (key === 'accumulation') addAcc()
+    else if (key === 'medical') addMedical('client')
     else addProt(key)
   }
 
@@ -1259,12 +1609,82 @@ export default function RecommendationsPage() {
           </div>
         )}
 
-        {/* Active protection sections — in fixed order */}
-        {PROT_CATEGORIES.filter(cat => activeSections.includes(cat.key)).map(cat => (
+        {/* Medical Insurance — with person tabs */}
+        {medicalHasCards && (() => {
+          const cat = PROT_CATEGORIES.find(c => c.key === 'medical')!
+          const currentPerson = personTabs.find(t => t.key === activePerson) || personTabs[0]
+          const personRecs = getMedical(activePerson)
+          const canAdd = personRecs.length < 3
+          return (
+            <div style={{ marginBottom: 28 }}>
+              {/* Section header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${cat.color}33` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 2, height: 14, background: cat.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label}</span>
+                  <span style={{ fontSize: 10, color: 'var(--ink3)', borderLeft: '1px solid var(--cream3)', paddingLeft: 10 }}>{cat.hint}</span>
+                </div>
+                <button onClick={() => addMedical(activePerson)} disabled={!canAdd} style={{
+                  background: canAdd ? 'var(--charcoal)' : 'var(--cream3)', color: canAdd ? 'var(--cream)' : 'var(--ink3)',
+                  border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
+                  cursor: canAdd ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAdd ? 'Add option' : 'Max 3'}
+                </button>
+              </div>
+
+              {/* Person tabs */}
+              <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--cream3)', paddingBottom: 0 }}>
+                {personTabs.map(tab => (
+                  <button key={tab.key} onClick={() => setActivePerson(tab.key)} style={{
+                    fontSize: 12, padding: '7px 16px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
+                    borderBottom: activePerson === tab.key ? `2px solid ${cat.color}` : '2px solid transparent',
+                    background: 'transparent', color: activePerson === tab.key ? 'var(--ink)' : 'var(--ink3)',
+                    fontWeight: activePerson === tab.key ? 600 : 400, marginBottom: -1,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    {tab.label}
+                    {getMedical(tab.key).length > 0 && (
+                      <span style={{ fontSize: 10, background: cat.color, color: '#fff', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>
+                        {getMedical(tab.key).length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Cards for active person */}
+              {personRecs.length === 0 ? (
+                <div style={{ padding: '20px 0 8px', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>
+                  No medical recommendations for {currentPerson?.label} yet
+                </div>
+              ) : (
+                personRecs.map(rec => (
+                  <MedicalCard
+                    key={rec.id}
+                    rec={rec}
+                    personAge={currentPerson?.age || 35}
+                    onChange={r => updateMedical(activePerson, rec.id, r)}
+                    onDelete={() => deleteMedical(activePerson, rec.id)}
+                    onChoose={() => chooseMedical(activePerson, rec.id)}
+                    existingPolicies={existingPolicies}
+                    companies={companies}
+                    products={products}
+                    monthlyIncome={monthlyIncome}
+                    monthlyExpenses={monthlyExpenses}
+                  />
+                ))
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Active non-medical protection sections */}
+        {PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && activeSections.includes(cat.key)).map(cat => (
           <ProtSection
             key={cat.key}
             cat={cat}
-            recs={data[cat.key]}
+            recs={data[cat.key as 'ltc'|'expense'|'general'] as ProtRec[]}
             onAdd={() => addProt(cat.key)}
             onUpdate={(id, r) => updateProt(cat.key, id, r)}
             onDelete={id => deleteProt(cat.key, id)}
