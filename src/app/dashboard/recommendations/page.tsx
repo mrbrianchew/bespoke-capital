@@ -41,6 +41,7 @@ interface ReplacedPolicy {
   policyName: string
   companyName: string
   annualPremium: number
+  premiumMedisave: number
   currentCashValue: number
 }
 
@@ -265,11 +266,16 @@ function ModeToggle({ mode, onChange }: { mode: RecMode; onChange: (m: RecMode) 
 
 // ─── COMPARE TABLE ────────────────────────────────────────────────────────────
 
-function CompareTable({ replaced, newPremium, newSA, newCoverageType }: {
+function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMode, newCashPremium }: {
   replaced: ReplacedPolicy[]; newPremium: number; newSA: number; newCoverageType: string
+  medicalMode?: boolean; newCashPremium?: number
 }) {
-  const oldTotal = replaced.reduce((s, p) => s + p.annualPremium, 0)
-  const delta = newPremium - oldTotal
+  const oldTotal     = replaced.reduce((s, p) => s + p.annualPremium, 0)
+  const oldCashTotal = replaced.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)
+  const existingNames = replaced.map(p => p.policyName || p.companyName).filter(Boolean).join(', ')
+  const compareNew = medicalMode ? (newCashPremium ?? newPremium) : newPremium
+  const compareOld = medicalMode ? oldCashTotal : oldTotal
+  const delta = compareNew - compareOld
   const td: React.CSSProperties = { padding: '6px 10px', fontFamily: 'Inter', fontSize: 12, borderBottom: '1px solid var(--cream3)' }
   const th: React.CSSProperties = { ...td, fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', fontWeight: 600 }
   return (
@@ -279,26 +285,26 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType }: {
         <thead><tr><th style={th}></th><th style={th}>Existing (combined)</th><th style={th}>New product</th><th style={th}>Change</th></tr></thead>
         <tbody>
           <tr>
-            <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Annual premium</td>
-            <td style={{ ...td, color: '#9B1C1C' }}>{fmt(oldTotal)}</td>
-            <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(newPremium)}</td>
+            <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Plan(s)</td>
+            <td style={{ ...td, color: '#9B1C1C' }}>{existingNames || '—'}</td>
+            <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{newCoverageType || '—'}</td>
+            <td style={td}>—</td>
+          </tr>
+          <tr>
+            <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>
+              {medicalMode ? 'Cash premium / yr' : 'Annual premium'}
+            </td>
+            <td style={{ ...td, color: '#9B1C1C' }}>{fmt(compareOld)}</td>
+            <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(compareNew)}</td>
             <td style={{ ...td, color: delta > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
               {delta > 0 ? '+' : ''}{fmt(delta)} / yr
             </td>
           </tr>
           {newSA > 0 && (
             <tr>
-              <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Sum assured / benefit</td>
+              <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Sum assured</td>
               <td style={{ ...td, color: '#9B1C1C' }}>—</td>
               <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(newSA)}</td>
-              <td style={td}>—</td>
-            </tr>
-          )}
-          {newCoverageType && (
-            <tr>
-              <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Coverage type</td>
-              <td style={{ ...td, color: '#9B1C1C' }}>—</td>
-              <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{newCoverageType}</td>
               <td style={td}>—</td>
             </tr>
           )}
@@ -698,7 +704,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
   function togglePolicy(pol: typeof existingPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, currentCashValue: pol.currentCashValue }])
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue }])
   }
 
   const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
@@ -912,7 +918,9 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
                     replaced={rec.replacedPolicies}
                     newPremium={totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
                     newSA={0}
-                    newCoverageType={COVERAGE_MODE_LABELS[rec.coverageMode]}
+                    newCoverageType={rec.productName || COVERAGE_MODE_LABELS[rec.coverageMode]}
+                    medicalMode={true}
+                    newCashPremium={rec.premiumCash + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
                   />
                 </div>
               )}
@@ -973,7 +981,7 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
   function togglePolicy(pol: typeof existingPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, currentCashValue: pol.currentCashValue }])
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue }])
   }
 
   function updateReplacedField(policyId: string, field: 'annualPremium' | 'currentCashValue', val: number) {
@@ -1215,7 +1223,7 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
                     <button key={pol.id} onClick={() => {
                       const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
                       if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-                      else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, currentCashValue: pol.currentCashValue }])
+                      else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue }])
                     }} style={{
                       fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Inter',
                       border: `1px solid ${selected ? '#2D5A4E' : 'var(--cream3)'}`,
@@ -1352,7 +1360,7 @@ export default function RecommendationsPage() {
   // Existing policies from protection_portfolio (includes person + category for filtering)
   const [existingPolicies, setExistingPolicies] = useState<{
     id: string; policyName: string; companyName: string; annualPremium: number
-    currentCashValue: number; lifeAssured: string; categoryCode: string
+    premiumMedisave: number; currentCashValue: number; lifeAssured: string; categoryCode: string
   }[]>([])
 
   // Cash flow from Financial Profile
@@ -1500,7 +1508,8 @@ export default function RecommendationsPage() {
         policies.filter((p: any) => ACTIVE.includes(p.status)).map((p: any) => {
           const freq = p.frequency || p.premiumMode || 'Annual'
           const annualPrem = freq === 'Monthly' ? (p.premiumCash || 0) * 12 : freq === 'Quarterly' ? (p.premiumCash || 0) * 4 : (p.premiumCash || 0)
-          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '' }
+          const msAnnual = (p.premiumMedisave || 0) * (freq === 'Monthly' ? 12 : freq === 'Quarterly' ? 4 : 1)
+          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, premiumMedisave: msAnnual, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '' }
         })
       )
 
