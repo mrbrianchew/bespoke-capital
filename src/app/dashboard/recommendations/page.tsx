@@ -1530,7 +1530,11 @@ export default function RecommendationsPage() {
     handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: [...recs, rec] } })
   }
   function updateMedical(person: string, id: string, r: MedicalRec) {
-    handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: getMedical(person).map(x => x.id === id ? r : x) } })
+    setData(prev => {
+      const next = { ...prev, medicalByPerson: { ...prev.medicalByPerson, [person]: (prev.medicalByPerson[person] || []).map(x => x.id === id ? r : x) } }
+      schedSave(next)
+      return next
+    })
   }
   function deleteMedical(person: string, id: string) {
     const next = getMedical(person).filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
@@ -1553,7 +1557,11 @@ export default function RecommendationsPage() {
     handleChange({ ...data, [cat]: [...recs, rec] })
   }
   function updateProt(cat: ProtCategory, id: string, r: ProtRec) {
-    handleChange({ ...data, [cat]: (data[cat as 'ltc'|'expense'|'general'] as ProtRec[]).map(x => x.id === id ? r : x) })
+    setData(prev => {
+      const next = { ...prev, [cat]: (prev[cat as 'ltc'|'expense'|'general'] as ProtRec[]).map(x => x.id === id ? r : x) }
+      schedSave(next)
+      return next
+    })
   }
   function deleteProt(cat: ProtCategory, id: string) {
     const next = (data[cat as 'ltc'|'expense'|'general'] as ProtRec[]).filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
@@ -1577,7 +1585,13 @@ export default function RecommendationsPage() {
     }
     handleChange({ ...data, accumulation: [...data.accumulation, rec] })
   }
-  function updateAcc(id: string, r: AccRec) { handleChange({ ...data, accumulation: data.accumulation.map(x => x.id === id ? r : x) }) }
+  function updateAcc(id: string, r: AccRec) {
+    setData(prev => {
+      const next = { ...prev, accumulation: prev.accumulation.map(x => x.id === id ? r : x) }
+      schedSave(next)
+      return next
+    })
+  }
   function deleteAcc(id: string) {
     const next = data.accumulation.filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
     handleChange({ ...data, accumulation: next })
