@@ -129,7 +129,12 @@ interface RecPageData {
 
 const EMPTY: RecPageData = { medicalByPerson: {}, ltc: [], expense: [], general: [], accumulation: [] }
 
-function medisaveLimit(age: number): number {
+interface MedisaveBand { age_from: number; age_to: number | null; annual_limit: number }
+
+function medisaveLimitFromBands(age: number, bands: MedisaveBand[]): number {
+  for (const band of bands) {
+    if (age >= band.age_from && (band.age_to === null || age <= band.age_to)) return band.annual_limit
+  }
   if (age < 40) return 300
   if (age < 61) return 600
   return 900
@@ -635,10 +640,11 @@ const COVERAGE_MODE_LABELS: Record<MedCoverageMode, string> = {
   international:'International Medical Plan',
 }
 
-function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
+function MedicalCard({ rec, personAge, medisaveBands, onChange, onDelete, onChoose,
   existingPolicies, medicalCompanies, products, monthlyIncome, monthlyExpenses }: {
   rec: MedicalRec
   personAge: number
+  medisaveBands: MedisaveBand[]
   onChange: (r: MedicalRec) => void
   onDelete: () => void
   onChoose: () => void
@@ -652,7 +658,7 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
   function upd<K extends keyof MedicalRec>(k: K, v: MedicalRec[K]) { onChange({ ...rec, [k]: v }) }
   function updRider<K extends keyof MedicalRider>(k: K, v: MedicalRider[K]) { onChange({ ...rec, rider: { ...rec.rider, [k]: v } }) }
 
-  const msLimit = medisaveLimit(personAge)
+  const msLimit = medisaveLimitFromBands(personAge, medisaveBands)
   const totalMainPremium = (rec.premiumMedisave || 0) + (rec.premiumCash || 0)
   const hasRider = rec.coverageMode === 'main_rider' || rec.coverageMode === 'rider_only'
   const hasMain  = rec.coverageMode === 'main_only'  || rec.coverageMode === 'main_rider'
@@ -1305,6 +1311,7 @@ export default function RecommendationsPage() {
   const [insurers, setInsurers]   = useState<string[]>([])
   const [companies, setCompanies] = useState<{ id: number; name: string }[]>([])
   const [medicalCompanies, setMedicalCompanies] = useState<{ id: number; name: string }[]>([])
+  const [medisaveBands, setMedisaveBands] = useState<MedisaveBand[]>([])
   const [products, setProducts]   = useState<InsProduct[]>([])
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
 
@@ -1344,6 +1351,7 @@ export default function RecommendationsPage() {
         { data: companiesRaw },
         { data: productsRaw },
         { data: familyRows },
+        { data: medisaveBandsRaw },
       ] = await Promise.all([
         supabase.from('fact_finding').select('section,data').eq('client_id', id)
           .in('section', ['financials', 'protection_portfolio', 'capital_mandate', 'retirement', 'education', 'strategic_recommendations_v2']),
@@ -1352,6 +1360,7 @@ export default function RecommendationsPage() {
         supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
         supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
         supabase.from('family_members').select('*').eq('client_id', id),
+        supabase.from('medisave_withdrawal_limits').select('*').order('sort_order', { ascending: true }),
       ])
 
       // Reference data
@@ -1385,6 +1394,11 @@ export default function RecommendationsPage() {
 
       const by: Record<string, any> = {}
       if (ffRows) ffRows.forEach((r: any) => { by[r.section] = r.data })
+
+      // Medisave withdrawal limits
+      if (medisaveBandsRaw && medisaveBandsRaw.length > 0) {
+        setMedisaveBands(medisaveBandsRaw.map((b: any) => ({ age_from: b.age_from, age_to: b.age_to, annual_limit: b.annual_limit })))
+      }
 
       // Person tabs from family_members
       const currentYear = new Date().getFullYear()
@@ -1752,6 +1766,7 @@ export default function RecommendationsPage() {
                     key={rec.id}
                     rec={rec}
                     personAge={currentPerson?.age || 35}
+                    medisaveBands={medisaveBands}
                     onChange={r => updateMedical(activePerson, rec.id, r)}
                     onDelete={() => deleteMedical(activePerson, rec.id)}
                     onChoose={() => chooseMedical(activePerson, rec.id)}
