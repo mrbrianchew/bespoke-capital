@@ -1509,7 +1509,8 @@ export default function RecommendationsPage() {
       )
 
       // Cash flow — use saved annual_surplus as source of truth
-      console.log('FIN_CASHFLOW', JSON.stringify({ annual_surplus: fin?.annual_surplus, keys: Object.keys(fin || {}).filter(k => k.includes('surplus') || k.includes('income') || k.includes('gross')) }))
+      console.log('FIN_CASHFLOW_ALL', JSON.stringify(Object.keys(fin || {})))
+      console.log('FIN_CASHFLOW_VALS', JSON.stringify({ annual_surplus: fin?.annual_surplus, gross_monthly: fin?.gross_monthly, d_gross_monthly: fin?.d_gross_monthly, person1: fin?.person1, mode: fin?.mode }))
       if (fin?.annual_surplus != null) {
         setAnnualSurplus(fin.annual_surplus)
         setMonthlyIncome(0); setMonthlyExpenses(0)
