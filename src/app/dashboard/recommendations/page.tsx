@@ -705,7 +705,7 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
           <div>
             <label style={S.lbl}>Insurer</label>
             <select style={S.inp} value={rec.insurer}
-              onChange={e => { upd('insurer', e.target.value); upd('productName', '') }}>
+              onChange={e => onChange({ ...rec, insurer: e.target.value, productName: '' })}>
               <option value="">Select insurer…</option>
               {medicalCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
@@ -724,7 +724,7 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
           <div>
             <label style={S.lbl}>Brief coverage</label>
             <select style={S.inp} value={rec.briefCoverage}
-              onChange={e => { upd('briefCoverage', e.target.value); if (e.target.value !== 'Other') upd('briefCoverageOther', '') }}>
+              onChange={e => onChange({ ...rec, briefCoverage: e.target.value, briefCoverageOther: e.target.value !== 'Other' ? '' : rec.briefCoverageOther })}>
               <option value="">Select…</option>
               {briefOptions.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
@@ -798,7 +798,7 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
                 <div>
                   <label style={S.lbl}>Rider insurer</label>
                   <select style={S.inp} value={rec.rider?.insurer || ''}
-                    onChange={e => { updRider('insurer', e.target.value); updRider('productName', '') }}>
+                    onChange={e => onChange({ ...rec, rider: { ...rec.rider, insurer: e.target.value, productName: '' } })}>
                     <option value="">Select insurer…</option>
                     {medicalCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
@@ -822,7 +822,7 @@ function MedicalCard({ rec, personAge, onChange, onDelete, onChoose,
               <div style={{ marginTop: 10 }}>
                 <label style={S.lbl}>Rider coverage</label>
                 <select style={S.inp} value={rec.briefCoverage === '' || !BRIEF_COVERAGE_RIDER.includes(rec.briefCoverage) ? '' : rec.briefCoverage}
-                  onChange={e => { upd('briefCoverage', e.target.value); if (e.target.value !== 'Other') upd('briefCoverageOther', '') }}>
+                  onChange={e => onChange({ ...rec, briefCoverage: e.target.value, briefCoverageOther: e.target.value !== 'Other' ? '' : rec.briefCoverageOther })}>
                   <option value="">Select rider coverage…</option>
                   {BRIEF_COVERAGE_RIDER.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
