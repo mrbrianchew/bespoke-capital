@@ -316,11 +316,14 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMod
 
 // ─── PROTECTION IMPACT MODAL ──────────────────────────────────────────────────
 
-function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose }: {
+function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium }: {
   rec: ProtRec
   monthlyIncome: number
   monthlyExpenses: number
   onClose: () => void
+  medicalMode?: boolean
+  medicalCashPremium?: number      // new product cash-only annual premium
+  medicalOldCashPremium?: number   // existing policies cash-only combined
 }) {
   const [cvValues, setCvValues] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {}
@@ -328,22 +331,26 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose }: {
     return init
   })
 
-  const oldPremium   = rec.replacedPolicies.reduce((s, p) => s + p.annualPremium, 0)
-  const netAnnual    = rec.annualPremium - oldPremium          // + = more expensive, - = saving
-  const netMonthly   = netAnnual / 12
-  const totalCV      = Object.values(cvValues).reduce((s, v) => s + v, 0)
-  const policyTermYrs = parseInt(rec.policyTerm) || 20
-  const yearsCV      = netAnnual > 0 ? Math.floor(totalCV / netAnnual) : 999
-
-  // Cash flow impact
-  const currentSurplusMonthly = monthlyIncome - monthlyExpenses
-  const newSurplusMonthly     = currentSurplusMonthly - netMonthly
-  // For new addition there is no "old premium freed up"
   const isReplacement = rec.mode === 'replacement'
-  const newAdditionMonthly = !isReplacement ? rec.annualPremium / 12 : 0
-  const surplusAfter = isReplacement
-    ? currentSurplusMonthly - netMonthly
-    : currentSurplusMonthly - newAdditionMonthly
+  const oldPremium    = rec.replacedPolicies.reduce((s, p) => s + p.annualPremium, 0)
+
+  // For medical: compare cash portions only
+  const displayNewPremium = medicalMode ? (medicalCashPremium ?? rec.annualPremium) : rec.annualPremium
+  const displayOldPremium = medicalMode ? (medicalOldCashPremium ?? oldPremium) : oldPremium
+  const netAnnual     = displayNewPremium - displayOldPremium
+  const netMonthly    = netAnnual / 12
+
+  const totalCV       = Object.values(cvValues).reduce((s, v) => s + v, 0)
+  const policyTermYrs = parseInt(rec.policyTerm) || 20
+  const yearsCV       = netAnnual > 0 ? Math.floor(totalCV / netAnnual) : 999
+
+  // Cash flow: use annual surplus / 12 as base (not raw income)
+  const annualSurplus         = (monthlyIncome - monthlyExpenses) * 12
+  const newAdditionAnnual     = !isReplacement ? displayNewPremium : 0
+  const surplusAfterAnnual    = isReplacement
+    ? annualSurplus - netAnnual
+    : annualSurplus - newAdditionAnnual
+  const surplusAfterMonthly   = surplusAfterAnnual / 12
 
   const totalNetOutcome = totalCV - Math.max(0, netAnnual) * policyTermYrs
 
@@ -378,21 +385,33 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose }: {
         {/* Premium impact */}
         <div style={{ ...S.lbl, marginBottom: 8 }}>Premium impact</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-          {metCard('New annual premium', fmt(rec.annualPremium), rec.premiumTerm ? `${rec.premiumTerm} payment term` : '', '#854F0B')}
+          {metCard(
+            medicalMode ? 'New cash premium' : 'New annual premium',
+            fmt(displayNewPremium) + ' / yr',
+            medicalMode ? 'Cash portion only (excl. Medisave)' : (rec.premiumTerm ? `${rec.premiumTerm} payment term` : ''),
+            '#854F0B'
+          )}
           {isReplacement
-            ? metCard('Old premiums freed up', fmt(oldPremium) + ' / yr', `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`, '#1E4D35')
-            : metCard('Coverage', fmt(rec.sumAssured), rec.coverageType || 'Sum assured / benefit', '#1E4D35')
+            ? metCard(
+                medicalMode ? 'Old cash premiums freed up' : 'Old premiums freed up',
+                fmt(displayOldPremium) + ' / yr',
+                `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`,
+                '#1E4D35'
+              )
+            : !medicalMode
+              ? metCard('Coverage', fmt(rec.sumAssured), rec.coverageType || 'Sum assured / benefit', '#1E4D35')
+              : null
           }
           {isReplacement && metCard(
-            'Net annual change',
+            'Net annual change (cash)',
             (netAnnual > 0 ? '+' : '') + fmt(netAnnual) + ' / yr',
-            netAnnual > 0 ? 'Additional outflow' : 'Annual savings',
+            netAnnual > 0 ? 'Additional cash outflow' : 'Annual cash savings',
             netAnnual > 0 ? '#9B1C1C' : '#1E4D35'
           )}
-          {isReplacement && metCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
+          {isReplacement && !medicalMode && metCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
         </div>
 
-        {/* Cash flow impact — from Financial Profile */}
+        {/* Cash flow impact */}
         <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 16, marginBottom: 20 }}>
           <div style={{ ...S.lbl, marginBottom: 10 }}>Cash flow impact</div>
           {monthlyIncome === 0 && monthlyExpenses === 0 ? (
@@ -400,28 +419,25 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose }: {
               Cash flow data not available — please complete the Financial Profile first.
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-              {metCard('Monthly income', fmt(monthlyIncome) + ' / mo', 'From Financial Profile', 'var(--ink2)')}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {metCard(
-                'Monthly expenses (after)',
-                fmt(monthlyExpenses + (isReplacement ? netMonthly : newAdditionMonthly)) + ' / mo',
-                isReplacement
-                  ? (netMonthly > 0 ? `+${fmt(netMonthly)}/mo net increase` : `${fmt(Math.abs(netMonthly))}/mo net saving`)
-                  : `+${fmt(newAdditionMonthly)}/mo new premium`,
-                '#854F0B'
+                'Annual surplus (before)',
+                fmt(annualSurplus) + ' / yr',
+                'Income minus expenses',
+                'var(--ink2)'
               )}
               {metCard(
-                'Monthly surplus (after)',
-                fmt(surplusAfter) + ' / mo',
-                surplusAfter >= 0 ? 'Positive cashflow' : 'Cashflow deficit',
-                surplusAfter >= 0 ? '#1E4D35' : '#9B1C1C'
+                'Annual surplus (after)',
+                fmt(surplusAfterAnnual) + ' / yr',
+                surplusAfterAnnual >= 0 ? 'Positive cashflow' : 'Cashflow deficit',
+                surplusAfterAnnual >= 0 ? '#1E4D35' : '#9B1C1C'
               )}
             </div>
           )}
         </div>
 
-        {/* Cash value section — replacements only */}
-        {isReplacement && rec.replacedPolicies.length > 0 && (
+        {/* Cash value section — replacements only, not for medical */}
+        {isReplacement && rec.replacedPolicies.length > 0 && !medicalMode && (
           <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 16 }}>
             <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 12 }}>Cash value mitigation</div>
             {rec.replacedPolicies.map(p => (
@@ -454,7 +470,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose }: {
                 </div>
               )}
             </div>
-            <div style={{
+            {!medicalMode && <div style={{
               background: totalNetOutcome >= 0 ? '#D1FAE5' : '#FEE2E2',
               borderRadius: 8, padding: '12px 16px',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12,
@@ -465,7 +481,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, onClose }: {
               <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: totalNetOutcome >= 0 ? '#1E4D35' : '#9B1C1C' }}>
                 {totalNetOutcome >= 0 ? '' : '-'}{fmt(Math.abs(totalNetOutcome))} {totalNetOutcome >= 0 ? 'saved' : 'increase'}
               </span>
-            </div>
+            </div>}
           </div>
         )}
       </div>
@@ -953,6 +969,9 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
           }}
           monthlyIncome={monthlyIncome}
           monthlyExpenses={monthlyExpenses}
+          medicalMode={true}
+          medicalCashPremium={rec.premiumCash + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
+          medicalOldCashPremium={rec.replacedPolicies.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)}
           onClose={() => setShowImpact(false)}
         />
       )}
