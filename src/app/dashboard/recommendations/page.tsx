@@ -1509,6 +1509,8 @@ export default function RecommendationsPage() {
       )
 
       // Cash flow — derive from financials data
+      console.log('FIN_EXP', JSON.stringify(Object.entries(fin||{}).filter(([k,v])=>(k.startsWith('d_')||k.startsWith('d2_'))&&Number(v)>0)))
+      console.log('FIN_INC', JSON.stringify({p1_gross: fin?.person1?.gross_monthly, p1_bonus: fin?.person1?.gross_bonus, p2_gross: fin?.person2?.gross_monthly}))
       // Income: person1/person2 gross_monthly + other_incomes + gross_bonus/12
       {
         const isCpl = fin?.mode === 'couple'
