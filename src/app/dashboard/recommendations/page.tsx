@@ -1223,13 +1223,44 @@ export default function RecommendationsPage() {
             <div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', marginBottom: 24 }}>
               Add a recommendation section to get started
             </div>
-            <button onClick={() => setShowPicker(true)} style={{
-              background: 'var(--charcoal)', color: 'var(--cream)', border: 'none',
-              borderRadius: 8, padding: '10px 24px', fontFamily: 'Inter', fontSize: 13,
-              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
-            }}>
-              <span style={{ fontSize: 18, lineHeight: 1 }}>+</span> Add recommendation
-            </button>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <button onClick={() => setShowPicker(v => !v)} style={{
+                background: 'var(--charcoal)', color: 'var(--cream)', border: 'none',
+                borderRadius: 8, padding: '10px 24px', fontFamily: 'Inter', fontSize: 13,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ fontSize: 18, lineHeight: 1 }}>+</span> Add recommendation
+              </button>
+              {showPicker && (
+                <>
+                  <div onClick={() => setShowPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+                    background: '#fff', border: '1px solid var(--cream3)', borderRadius: 10,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.10)', padding: 8, minWidth: 280,
+                  }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', padding: '6px 10px 8px' }}>
+                      Choose a section to add
+                    </div>
+                    {availableOptions.map(opt => (
+                      <button key={opt.key} onClick={() => activateSection(opt.key)} style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                        background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: 7, textAlign: 'left',
+                      }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <div style={{ width: 10, height: 10, borderRadius: 3, background: opt.color, flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{opt.label}</div>
+                          <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{opt.sub}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 
