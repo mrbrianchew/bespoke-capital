@@ -1163,31 +1163,24 @@ export default function RecommendationsPage() {
   }
   function chooseAcc(id: string) { handleChange({ ...data, accumulation: data.accumulation.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) }) }
 
-  // Which categories + accumulation have been activated (have cards OR were explicitly opened)
-  const [activeSections, setActiveSections] = useState<Array<ProtCategory | 'accumulation'>>([])
   const [showPicker, setShowPicker] = useState(false)
 
-  // Sync activeSections when data loads — any section with cards should be visible
-  useEffect(() => {
-    const fromData: Array<ProtCategory | 'accumulation'> = []
-    PROT_CATEGORIES.forEach(cat => { if (data[cat.key].length > 0) fromData.push(cat.key) })
-    if (data.accumulation.length > 0) fromData.push('accumulation')
-    if (fromData.length > 0) {
-      setActiveSections(prev => {
-        const merged = Array.from(new Set([...prev, ...fromData]))
-        return merged
-      })
-    }
-  }, [data])
+  // Sections are derived purely from card count — appear on first card, disappear on last deletion
+  const activeSections = [
+    ...PROT_CATEGORIES.filter(cat => data[cat.key].length > 0).map(cat => cat.key as ProtCategory | 'accumulation'),
+    ...(data.accumulation.length > 0 ? ['accumulation' as const] : []),
+  ]
 
   const ALL_OPTIONS: { key: ProtCategory | 'accumulation'; label: string; sub: string; color: string }[] = [
     ...PROT_CATEGORIES.map(c => ({ key: c.key as ProtCategory | 'accumulation', label: c.label, sub: 'Wealth Protection', color: c.color })),
     { key: 'accumulation', label: 'Wealth Accumulation', sub: 'Investments & savings', color: '#2D5A4E' },
   ]
 
+  // Picker adds first card immediately so section appears
   function activateSection(key: ProtCategory | 'accumulation') {
-    setActiveSections(prev => prev.includes(key) ? prev : [...prev, key])
     setShowPicker(false)
+    if (key === 'accumulation') addAcc()
+    else addProt(key)
   }
 
   const availableOptions = ALL_OPTIONS.filter(o => !activeSections.includes(o.key))
