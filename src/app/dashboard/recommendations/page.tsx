@@ -673,9 +673,20 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
   // Products filtered by insurer (main)
   const selComp = medicalCompanies.find(c => c.name === rec.insurer)
   // Only show medical policies for this person in replacement picker
+  // lifeAssured may be stored as first name only ("Andy Au") while personName is full name ("Au Chi Hoi")
+  // Match if any word in lifeAssured appears in personName, or personName contains lifeAssured, or vice versa
+  function personMatch(lifeAssured: string, tabName: string): boolean {
+    if (!lifeAssured) return true  // if no lifeAssured stored, show for all
+    const la = lifeAssured.toLowerCase().trim()
+    const tn = tabName.toLowerCase().trim()
+    if (la === tn) return true
+    // Check if any word in lifeAssured matches any word in tabName
+    const laWords = la.split(/\s+/)
+    const tnWords = tn.split(/\s+/)
+    return laWords.some(w => w.length > 1 && tnWords.includes(w))
+  }
   const personMedicalPolicies = existingPolicies.filter(p =>
-    p.categoryCode === 'medical' &&
-    (!p.lifeAssured || p.lifeAssured === personName)
+    p.categoryCode === 'medical' && personMatch(p.lifeAssured, personName)
   )
 
   const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
@@ -1485,7 +1496,6 @@ export default function RecommendationsPage() {
       const pPort = by['protection_portfolio'] ?? {}
       const policies: any[] = pPort?.risk_management?.policies ?? []
       const ACTIVE = ['In-Force', 'Premium Holiday', 'Paid-up']
-      console.log('RAW_POLICIES', JSON.stringify(policies.map((p: any) => ({ id: p.id, name: p.productName, cat: p.categoryCode, la: p.lifeAssured, status: p.status }))))
       setExistingPolicies(
         policies.filter((p: any) => ACTIVE.includes(p.status)).map((p: any) => {
           const freq = p.frequency || p.premiumMode || 'Annual'
