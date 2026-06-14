@@ -977,6 +977,8 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
           rec={{
             ...rec,
             sumAssured: 0,
+            monthlyBenefit: 0,
+            benefitPaymentPeriod: '',
             coverageType: COVERAGE_MODE_LABELS[rec.coverageMode],
             policyTerm: 'Lifetime renewable',
             annualPremium: totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0),
