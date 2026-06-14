@@ -640,15 +640,16 @@ const COVERAGE_MODE_LABELS: Record<MedCoverageMode, string> = {
   international:'International Medical Plan',
 }
 
-function MedicalCard({ rec, personAge, medisaveBands, onChange, onDelete, onChoose,
+function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDelete, onChoose,
   existingPolicies, medicalCompanies, products, monthlyIncome, monthlyExpenses }: {
   rec: MedicalRec
   personAge: number
+  personName: string
   medisaveBands: MedisaveBand[]
   onChange: (r: MedicalRec) => void
   onDelete: () => void
   onChoose: () => void
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string }[]
   medicalCompanies: { id: number; name: string }[]
   products: InsProduct[]
   monthlyIncome: number
@@ -671,6 +672,12 @@ function MedicalCard({ rec, personAge, medisaveBands, onChange, onDelete, onChoo
 
   // Products filtered by insurer (main)
   const selComp = medicalCompanies.find(c => c.name === rec.insurer)
+  // Only show medical policies for this person in replacement picker
+  const personMedicalPolicies = existingPolicies.filter(p =>
+    p.categoryCode === 'medical' &&
+    (!p.lifeAssured || p.lifeAssured === personName)
+  )
+
   const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
 
   // Rider products filtered by rider insurer
@@ -868,8 +875,13 @@ function MedicalCard({ rec, personAge, medisaveBands, onChange, onDelete, onChoo
               {existingPolicies.length === 0 && (
                 <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No existing policies found.</div>
               )}
+              {personMedicalPolicies.length === 0 && (
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic', marginBottom: 8 }}>
+                  No active medical policies found for {personName}.
+                </div>
+              )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {existingPolicies.map(pol => {
+                {personMedicalPolicies.map(pol => {
                   const selected = !!rec.replacedPolicies.find(p => p.policyId === pol.id)
                   return (
                     <button key={pol.id} onClick={() => togglePolicy(pol)} style={{
@@ -1326,9 +1338,10 @@ export default function RecommendationsPage() {
     { key: 'client', label: 'Client', age: 35 }
   ])
 
-  // Existing policies from protection_portfolio
+  // Existing policies from protection_portfolio (includes person + category for filtering)
   const [existingPolicies, setExistingPolicies] = useState<{
-    id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number
+    id: string; policyName: string; companyName: string; annualPremium: number
+    currentCashValue: number; lifeAssured: string; categoryCode: string
   }[]>([])
 
   // Cash flow from Financial Profile
@@ -1476,7 +1489,7 @@ export default function RecommendationsPage() {
         policies.filter((p: any) => ACTIVE.includes(p.status)).map((p: any) => {
           const freq = p.frequency || p.premiumMode || 'Annual'
           const annualPrem = freq === 'Monthly' ? (p.premiumCash || 0) * 12 : freq === 'Quarterly' ? (p.premiumCash || 0) * 4 : (p.premiumCash || 0)
-          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, currentCashValue: p.currentCashValue || 0 }
+          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '' }
         })
       )
 
@@ -1781,6 +1794,7 @@ export default function RecommendationsPage() {
                     key={rec.id}
                     rec={rec}
                     personAge={currentPerson?.age || 35}
+                    personName={currentPerson?.label || ''}
                     medisaveBands={medisaveBands}
                     onChange={r => updateMedical(activePerson, rec.id, r)}
                     onDelete={() => deleteMedical(activePerson, rec.id)}
