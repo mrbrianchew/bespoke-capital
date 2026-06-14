@@ -122,13 +122,13 @@ interface MedicalRec {
 interface RecPageData {
   // keyed by person tab: 'client' | 'spouse' | child id
   medicalByPerson: Record<string, MedicalRec[]>
-  ltc: ProtRec[]
-  expense: ProtRec[]
-  general: ProtRec[]
+  ltcByPerson: Record<string, ProtRec[]>
+  expenseByPerson: Record<string, ProtRec[]>
+  generalByPerson: Record<string, ProtRec[]>
   accumulation: AccRec[]
 }
 
-const EMPTY: RecPageData = { medicalByPerson: {}, ltc: [], expense: [], general: [], accumulation: [] }
+const EMPTY: RecPageData = { medicalByPerson: {}, ltcByPerson: {}, expenseByPerson: {}, generalByPerson: {}, accumulation: [] }
 
 interface MedisaveBand { age_from: number; age_to: number | null; annual_limit: number }
 
@@ -1385,6 +1385,7 @@ export default function RecommendationsPage() {
 
   // Person tabs
   const [activePerson, setActivePerson] = useState<string>('client')
+  const [activeProtPerson, setActiveProtPerson] = useState<string>('client')
   const [personTabs, setPersonTabs] = useState<{ key: string; label: string; age: number }[]>([
     { key: 'client', label: 'Client', age: 35 }
   ])
@@ -1598,10 +1599,10 @@ export default function RecommendationsPage() {
       const saved = by['strategic_recommendations_v2']
       if (saved) {
         setData({
-          medicalByPerson: saved.medicalByPerson || (saved.medical ? { client: saved.medical } : {}),
-          ltc:          saved.ltc          || [],
-          expense:      saved.expense      || [],
-          general:      saved.general      || [],
+          medicalByPerson:  saved.medicalByPerson  || (saved.medical  ? { client: saved.medical  } : {}),
+          ltcByPerson:      saved.ltcByPerson      || (saved.ltc     ? { client: saved.ltc     } : {}),
+          expenseByPerson:  saved.expenseByPerson  || (saved.expense ? { client: saved.expense } : {}),
+          generalByPerson:  saved.generalByPerson  || (saved.general ? { client: saved.general } : {}),
           accumulation: saved.accumulation || [],
         })
       } else {
@@ -1664,31 +1665,40 @@ export default function RecommendationsPage() {
     handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: getMedical(person).map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) } })
   }
 
-  // ── Per-category prot helpers (ltc / expense / general) ──────────────────
-  function addProt(cat: ProtCategory) {
-    if (cat === 'medical') return // medical handled separately
-    const recs = data[cat as 'ltc' | 'expense' | 'general']
+  // ── Per-category prot helpers (ltc / expense / general) — per person ───────
+  type ProtCatKey = 'ltcByPerson' | 'expenseByPerson' | 'generalByPerson'
+  function catKey(cat: ProtCategory): ProtCatKey { return `${cat}ByPerson` as ProtCatKey }
+  function getProtRecs(cat: ProtCategory, person: string): ProtRec[] { return data[catKey(cat)][person] || [] }
+
+  function addProtPerson(cat: ProtCategory, person: string) {
+    if (cat === 'medical') return
+    const recs = getProtRecs(cat, person)
     if (recs.length >= 3) return
     const rec: ProtRec = {
       id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
       productName: '', insurer: '', coverageType: '', sumAssured: 0, annualPremium: 0,
       premiumTerm: '', policyTerm: '', benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
     }
-    handleChange({ ...data, [cat]: [...recs, rec] })
+    const byPerson = { ...data[catKey(cat)], [person]: [...recs, rec] }
+    handleChange({ ...data, [catKey(cat)]: byPerson })
   }
+  function addProt(cat: ProtCategory) { addProtPerson(cat, activeProtPerson) }
   function updateProt(cat: ProtCategory, id: string, r: ProtRec) {
     setData(prev => {
-      const next = { ...prev, [cat]: (prev[cat as 'ltc'|'expense'|'general'] as ProtRec[]).map(x => x.id === id ? r : x) }
+      const byPerson = { ...prev[catKey(cat)], [activeProtPerson]: (prev[catKey(cat)][activeProtPerson] || []).map(x => x.id === id ? r : x) }
+      const next = { ...prev, [catKey(cat)]: byPerson }
       schedSave(next)
       return next
     })
   }
   function deleteProt(cat: ProtCategory, id: string) {
-    const next = (data[cat as 'ltc'|'expense'|'general'] as ProtRec[]).filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
-    handleChange({ ...data, [cat]: next })
+    const recs = getProtRecs(cat, activeProtPerson)
+    const next = recs.filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
+    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activeProtPerson]: next } })
   }
   function chooseProt(cat: ProtCategory, id: string) {
-    handleChange({ ...data, [cat]: (data[cat as 'ltc'|'expense'|'general'] as ProtRec[]).map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) })
+    const recs = getProtRecs(cat, activeProtPerson)
+    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activeProtPerson]: recs.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) } })
   }
 
   // ── Accumulation helpers ────────────────────────────────────────────────────
@@ -1724,7 +1734,7 @@ export default function RecommendationsPage() {
   const medicalHasCards = Object.values(data.medicalByPerson).some(recs => recs.length > 0)
   const activeSections = [
     ...(medicalHasCards ? ['medical' as ProtCategory | 'accumulation'] : []),
-    ...PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && (data[cat.key as 'ltc'|'expense'|'general'] as ProtRec[]).length > 0).map(cat => cat.key as ProtCategory | 'accumulation'),
+    ...PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && Object.values(data[`${cat.key}ByPerson` as 'ltcByPerson'|'expenseByPerson'|'generalByPerson']).some(recs => recs.length > 0)).map(cat => cat.key as ProtCategory | 'accumulation'),
     ...(data.accumulation.length > 0 ? ['accumulation' as const] : []),
   ]
 
@@ -1738,7 +1748,7 @@ export default function RecommendationsPage() {
     setShowPicker(false)
     if (key === 'accumulation') addAcc()
     else if (key === 'medical') addMedical('client')
-    else addProt(key)
+    else addProtPerson(key, 'client')
   }
 
   const availableOptions = ALL_OPTIONS.filter(o => !activeSections.includes(o.key))
@@ -1889,24 +1899,72 @@ export default function RecommendationsPage() {
           )
         })()}
 
-        {/* Active non-medical protection sections */}
-        {PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && activeSections.includes(cat.key)).map(cat => (
-          <ProtSection
-            key={cat.key}
-            cat={cat}
-            recs={data[cat.key as 'ltc'|'expense'|'general'] as ProtRec[]}
-            onAdd={() => addProt(cat.key)}
-            onUpdate={(id, r) => updateProt(cat.key, id, r)}
-            onDelete={id => deleteProt(cat.key, id)}
-            onChoose={id => chooseProt(cat.key, id)}
-            existingPolicies={existingPolicies}
-            insurers={insurers}
-            coverageTypes={coverageMap[cat.key]}
-            monthlyIncome={monthlyIncome}
-            monthlyExpenses={monthlyExpenses}
-            annualSurplusOverride={annualSurplus}
-          />
-        ))}
+        {/* Active non-medical protection sections — per person tabs */}
+        {PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && activeSections.includes(cat.key)).map(cat => {
+          const catK = `${cat.key}ByPerson` as 'ltcByPerson'|'expenseByPerson'|'generalByPerson'
+          const personRecs = data[catK][activeProtPerson] || []
+          const canAddProt = personRecs.length < 3
+          return (
+            <div key={cat.key} style={{ marginBottom: 28 }}>
+              {/* Section header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${cat.color}33` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 2, height: 14, background: cat.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label}</span>
+                  <span style={{ fontSize: 10, color: 'var(--ink3)', borderLeft: '1px solid var(--cream3)', paddingLeft: 10 }}>{cat.hint}</span>
+                </div>
+                <button onClick={() => addProtPerson(cat.key, activeProtPerson)} disabled={!canAddProt} style={{
+                  background: canAddProt ? 'var(--charcoal)' : 'var(--cream3)', color: canAddProt ? 'var(--cream)' : 'var(--ink3)',
+                  border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
+                  cursor: canAddProt ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAddProt ? 'Add option' : 'Max 3'}
+                </button>
+              </div>
+              {/* Person tabs */}
+              <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--cream3)' }}>
+                {personTabs.map(tab => {
+                  const tabRecs = data[catK][tab.key] || []
+                  return (
+                    <button key={tab.key} onClick={() => setActiveProtPerson(tab.key)} style={{
+                      fontSize: 12, padding: '7px 16px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
+                      borderBottom: activeProtPerson === tab.key ? `2px solid ${cat.color}` : '2px solid transparent',
+                      background: 'transparent', color: activeProtPerson === tab.key ? 'var(--ink)' : 'var(--ink3)',
+                      fontWeight: activeProtPerson === tab.key ? 600 : 400, marginBottom: -1,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
+                      {tab.label}
+                      {tabRecs.length > 0 && (
+                        <span style={{ fontSize: 10, background: cat.color, color: '#fff', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>
+                          {tabRecs.length}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Cards for active person */}
+              {personRecs.length === 0 ? (
+                <div style={{ padding: '20px 0 8px', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>
+                  No {cat.label.toLowerCase()} recommendations for {personTabs.find(t => t.key === activeProtPerson)?.label || activeProtPerson} yet
+                </div>
+              ) : (
+                personRecs.map(rec => (
+                  <ProtCard
+                    key={rec.id} rec={rec} category={cat.key}
+                    onChange={r => updateProt(cat.key, rec.id, r)}
+                    onDelete={() => deleteProt(cat.key, rec.id)}
+                    onChoose={() => chooseProt(cat.key, rec.id)}
+                    existingPolicies={existingPolicies}
+                    insurers={insurers} coverageTypes={coverageMap[cat.key]}
+                    monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
+                    annualSurplusOverride={annualSurplus}
+                  />
+                ))
+              )}
+            </div>
+          )
+        })}
 
         {/* Active accumulation section */}
         {activeSections.includes('accumulation') && (
