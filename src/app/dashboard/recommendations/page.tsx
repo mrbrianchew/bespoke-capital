@@ -1161,6 +1161,35 @@ export default function RecommendationsPage() {
   }
   function chooseAcc(id: string) { handleChange({ ...data, accumulation: data.accumulation.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) }) }
 
+  // Which categories + accumulation have been activated (have cards OR were explicitly opened)
+  const [activeSections, setActiveSections] = useState<Array<ProtCategory | 'accumulation'>>([])
+  const [showPicker, setShowPicker] = useState(false)
+
+  // Sync activeSections when data loads — any section with cards should be visible
+  useEffect(() => {
+    const fromData: Array<ProtCategory | 'accumulation'> = []
+    PROT_CATEGORIES.forEach(cat => { if (data[cat.key].length > 0) fromData.push(cat.key) })
+    if (data.accumulation.length > 0) fromData.push('accumulation')
+    if (fromData.length > 0) {
+      setActiveSections(prev => {
+        const merged = Array.from(new Set([...prev, ...fromData]))
+        return merged
+      })
+    }
+  }, [data])
+
+  const ALL_OPTIONS: { key: ProtCategory | 'accumulation'; label: string; sub: string; color: string }[] = [
+    ...PROT_CATEGORIES.map(c => ({ key: c.key as ProtCategory | 'accumulation', label: c.label, sub: 'Wealth Protection', color: c.color })),
+    { key: 'accumulation', label: 'Wealth Accumulation', sub: 'Investments & savings', color: '#2D5A4E' },
+  ]
+
+  function activateSection(key: ProtCategory | 'accumulation') {
+    setActiveSections(prev => prev.includes(key) ? prev : [...prev, key])
+    setShowPicker(false)
+  }
+
+  const availableOptions = ALL_OPTIONS.filter(o => !activeSections.includes(o.key))
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Hero */}
@@ -1187,10 +1216,25 @@ export default function RecommendationsPage() {
           <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '12px 16px', marginBottom: 20, fontFamily: 'Inter', fontSize: 13, color: '#9B1C1C' }}>{error}</div>
         )}
 
-        {/* Section label */}
-        <div style={{ fontFamily: 'Inter', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16 }}>Wealth Protection</div>
+        {/* Empty state */}
+        {activeSections.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '64px 24px', border: '1px dashed var(--cream3)', borderRadius: 12, marginBottom: 24 }}>
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: 'var(--ink2)', marginBottom: 8 }}>No recommendations yet</div>
+            <div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', marginBottom: 24 }}>
+              Add a recommendation section to get started
+            </div>
+            <button onClick={() => setShowPicker(true)} style={{
+              background: 'var(--charcoal)', color: 'var(--cream)', border: 'none',
+              borderRadius: 8, padding: '10px 24px', fontFamily: 'Inter', fontSize: 13,
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 18, lineHeight: 1 }}>+</span> Add recommendation
+            </button>
+          </div>
+        )}
 
-        {PROT_CATEGORIES.map(cat => (
+        {/* Active protection sections — in fixed order */}
+        {PROT_CATEGORIES.filter(cat => activeSections.includes(cat.key)).map(cat => (
           <ProtSection
             key={cat.key}
             cat={cat}
@@ -1207,40 +1251,86 @@ export default function RecommendationsPage() {
           />
         ))}
 
-        {/* Accumulation */}
-        <div style={{ fontFamily: 'Inter', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16, marginTop: 8 }}>Wealth Accumulation</div>
-        <div style={S.sectionWrap}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18, paddingBottom: 14, borderBottom: '1px solid var(--cream3)' }}>
-            <div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.1 }}>Wealth Accumulation</div>
-              <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>Investment & savings recommendations (max 3 options)</div>
+        {/* Active accumulation section */}
+        {activeSections.includes('accumulation') && (
+          <div style={S.sectionWrap}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18, paddingBottom: 14, borderBottom: '1px solid var(--cream3)' }}>
+              <div>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.1 }}>Wealth Accumulation</div>
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>Investment & savings recommendations (max 3 options)</div>
+              </div>
+              <button onClick={addAcc} disabled={data.accumulation.length >= 3} style={{
+                background: data.accumulation.length < 3 ? 'var(--charcoal)' : 'var(--cream3)',
+                color: data.accumulation.length < 3 ? 'var(--cream)' : 'var(--ink3)',
+                border: 'none', borderRadius: 6, padding: '7px 14px', fontFamily: 'Inter', fontSize: 12,
+                cursor: data.accumulation.length < 3 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 5,
+              }}>
+                <span style={{ fontSize: 15, lineHeight: 1 }}>+</span>
+                {data.accumulation.length < 3 ? 'Add option' : 'Max 3'}
+              </button>
             </div>
-            <button onClick={addAcc} disabled={data.accumulation.length >= 3} style={{
-              background: data.accumulation.length < 3 ? 'var(--charcoal)' : 'var(--cream3)',
-              color: data.accumulation.length < 3 ? 'var(--cream)' : 'var(--ink3)',
-              border: 'none', borderRadius: 6, padding: '7px 14px', fontFamily: 'Inter', fontSize: 12,
-              cursor: data.accumulation.length < 3 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 5,
-            }}>
-              <span style={{ fontSize: 15, lineHeight: 1 }}>+</span>
-              {data.accumulation.length < 3 ? 'Add option' : 'Max 3'}
-            </button>
+            {data.accumulation.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '24px 0', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>No accumulation recommendations yet — click Add option above</div>
+            ) : (
+              data.accumulation.map(rec => (
+                <AccCard
+                  key={rec.id} rec={rec}
+                  onChange={r => updateAcc(rec.id, r)}
+                  onDelete={() => deleteAcc(rec.id)}
+                  onChoose={() => chooseAcc(rec.id)}
+                  goals={goals} existingPortfolioValue={existingPortfolioValue}
+                  existingPolicies={existingPolicies}
+                  monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
+                />
+              ))
+            )}
           </div>
-          {data.accumulation.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '24px 0', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>No accumulation recommendations yet</div>
-          ) : (
-            data.accumulation.map(rec => (
-              <AccCard
-                key={rec.id} rec={rec}
-                onChange={r => updateAcc(rec.id, r)}
-                onDelete={() => deleteAcc(rec.id)}
-                onChoose={() => chooseAcc(rec.id)}
-                goals={goals} existingPortfolioValue={existingPortfolioValue}
-                existingPolicies={existingPolicies}
-                monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
-              />
-            ))
-          )}
-        </div>
+        )}
+
+        {/* Add recommendation button — shown when at least 1 section is active and more are available */}
+        {activeSections.length > 0 && availableOptions.length > 0 && (
+          <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
+            <button onClick={() => setShowPicker(v => !v)} style={{
+              background: 'transparent', color: 'var(--ink2)', border: '1px dashed var(--cream3)',
+              borderRadius: 8, padding: '9px 20px', fontFamily: 'Inter', fontSize: 13,
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 18, lineHeight: 1 }}>+</span> Add recommendation section
+            </button>
+
+            {/* Picker dropdown */}
+            {showPicker && (
+              <>
+                <div onClick={() => setShowPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 100,
+                  background: '#fff', border: '1px solid var(--cream3)', borderRadius: 10,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.10)', padding: 8, minWidth: 280,
+                }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', padding: '6px 10px 8px' }}>
+                    Choose a section to add
+                  </div>
+                  {availableOptions.map(opt => (
+                    <button key={opt.key} onClick={() => activateSection(opt.key)} style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                      background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: 7,
+                      textAlign: 'left',
+                    }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: opt.color, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{opt.label}</div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>{opt.sub}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
