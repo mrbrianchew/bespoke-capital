@@ -13,11 +13,11 @@ type ProtCategory = 'medical' | 'ltc' | 'expense' | 'general'
 const RANK_LABELS: RankLabel[] = ['Recommended', 'Alternative 1', 'Alternative 2']
 
 // Protection categories — maps to ins_categories codes
-const PROT_CATEGORIES: { key: ProtCategory; label: string; color: string; dbCode: string }[] = [
-  { key: 'medical',  label: 'Medical Protection',    color: '#7A9CBF', dbCode: 'medical' },
-  { key: 'ltc',      label: 'Long Term Care Protection', color: '#9B7BAA', dbCode: 'ltc' },
-  { key: 'expense',  label: 'Expense Protection',    color: '#c8a96e', dbCode: 'life' },
-  { key: 'general',  label: 'General Insurance',     color: '#8A9A7E', dbCode: 'general' },
+const PROT_CATEGORIES: { key: ProtCategory; label: string; hint: string; color: string; dbCode: string }[] = [
+  { key: 'medical',  label: 'Medical Insurance',             hint: 'Medical & hospitalisation coverage',  color: '#7A9CBF', dbCode: 'medical' },
+  { key: 'ltc',      label: 'Long Term Care Protection',     hint: 'LTC / disability income protection',  color: '#9B7BAA', dbCode: 'ltc' },
+  { key: 'expense',  label: 'Expense Protection',            hint: 'Life, CI, ECI, Term, Whole Life',     color: '#c8a96e', dbCode: 'life' },
+  { key: 'general',  label: 'General Insurance',             hint: 'Personal accident, travel, home',     color: '#8A9A7E', dbCode: 'general' },
 ]
 
 // Fallback coverage type options per category (used if ins_policy_types not loaded)
@@ -903,18 +903,20 @@ function ProtSection({ cat, recs, onAdd, onUpdate, onDelete, onChoose,
 }) {
   const canAdd = recs.length < 3
   return (
-    <div style={{ ...S.sectionWrap, borderLeft: `3px solid ${cat.color}` }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18, paddingBottom: 14, borderBottom: '1px solid var(--cream3)' }}>
-        <div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.1 }}>{cat.label}</div>
-          <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>Recommendation options (max 3)</div>
+    <div style={{ marginBottom: 28 }}>
+      {/* Section header — matches Protection Portfolio style */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${cat.color}33` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 2, height: 14, background: cat.color, flexShrink: 0 }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>{cat.label}</span>
+          <span style={{ fontSize: 10, color: 'var(--ink3)', borderLeft: '1px solid var(--cream3)', paddingLeft: 10 }}>{cat.hint}</span>
         </div>
         <button onClick={onAdd} disabled={!canAdd} style={{
           background: canAdd ? 'var(--charcoal)' : 'var(--cream3)', color: canAdd ? 'var(--cream)' : 'var(--ink3)',
-          border: 'none', borderRadius: 6, padding: '7px 14px', fontFamily: 'Inter', fontSize: 12,
-          cursor: canAdd ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 5,
+          border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
+          cursor: canAdd ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
         }}>
-          <span style={{ fontSize: 15, lineHeight: 1 }}>+</span>
+          <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>
           {canAdd ? 'Add option' : 'Max 3'}
         </button>
       </div>
