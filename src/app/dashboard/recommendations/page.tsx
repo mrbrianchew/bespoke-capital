@@ -1485,6 +1485,7 @@ export default function RecommendationsPage() {
       const pPort = by['protection_portfolio'] ?? {}
       const policies: any[] = pPort?.risk_management?.policies ?? []
       const ACTIVE = ['In-Force', 'Premium Holiday', 'Paid-up']
+      console.log('RAW_POLICIES', JSON.stringify(policies.map((p: any) => ({ id: p.id, name: p.productName, cat: p.categoryCode, la: p.lifeAssured, status: p.status }))))
       setExistingPolicies(
         policies.filter((p: any) => ACTIVE.includes(p.status)).map((p: any) => {
           const freq = p.frequency || p.premiumMode || 'Annual'
