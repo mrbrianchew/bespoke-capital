@@ -1729,6 +1729,17 @@ export default function RecommendationsPage() {
   function chooseAcc(id: string) { handleChange({ ...data, accumulation: data.accumulation.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) }) }
 
   const [showPicker, setShowPicker] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showPicker) return
+    function handleOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [showPicker])
 
   // Sections are derived purely from card count — appear on first card, disappear on last deletion
   const medicalHasCards = Object.values(data.medicalByPerson).some(recs => recs.length > 0)
@@ -1786,7 +1797,7 @@ export default function RecommendationsPage() {
             <div style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', marginBottom: 24 }}>
               Add a recommendation section to get started
             </div>
-            <div style={{ position: 'relative', display: 'inline-block' }}>
+            <div ref={pickerRef} style={{ position: 'relative', display: 'inline-block' }}>
               <button onClick={() => setShowPicker(v => !v)} style={{
                 background: 'var(--charcoal)', color: 'var(--cream)', border: 'none',
                 borderRadius: 8, padding: '10px 24px', fontFamily: 'Inter', fontSize: 13,
@@ -1796,7 +1807,7 @@ export default function RecommendationsPage() {
               </button>
               {showPicker && (
                 <>
-                  <div onClick={() => setShowPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
+  
                   <div style={{
                     position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
                     background: '#fff', border: '1px solid var(--cream3)', borderRadius: 10,
@@ -2004,7 +2015,7 @@ export default function RecommendationsPage() {
 
         {/* Add recommendation button — shown when at least 1 section is active and more are available */}
         {activeSections.length > 0 && availableOptions.length > 0 && (
-          <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
+          <div ref={pickerRef} style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
             <button onClick={() => setShowPicker(v => !v)} style={{
               background: 'transparent', color: 'var(--ink2)', border: '1px dashed var(--cream3)',
               borderRadius: 8, padding: '9px 20px', fontFamily: 'Inter', fontSize: 13,
@@ -2016,7 +2027,7 @@ export default function RecommendationsPage() {
             {/* Picker dropdown */}
             {showPicker && (
               <>
-                <div onClick={() => setShowPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
+
                 <div style={{
                   position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 100,
                   background: '#fff', border: '1px solid var(--cream3)', borderRadius: 10,
