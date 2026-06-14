@@ -4,822 +4,1052 @@ import { createClient } from '@/lib/supabase'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
-type Priority    = 'High' | 'Medium' | 'Low'
-type ActionStatus = 'Proposed' | 'In Discussion' | 'Accepted' | 'Declined'
-type PremiumMode = 'Monthly' | 'Annual'
+type RecMode = 'new' | 'replacement'
+type ContribFreq = 'Monthly' | 'Annual' | 'Quarterly'
+type ProjMethod = 'illustration' | 'rate'
+type RankLabel = 'Recommended' | 'Alternative 1' | 'Alternative 2'
 
-interface ProtectionRec {
-  id: string
-  person: string                 // 'client' | 'spouse' | child key
-  category: string               // 'life' | 'medical' | 'ci' | 'ltc' | 'general'
-  policyType: string             // 'Term' | 'Whole Life' | 'ILP' | 'CI Rider' | …
-  company: string
-  product: string
-  recommendedSA: number
-  premiumAmount: number
-  premiumMode: PremiumMode
-  priority: Priority
-  status: ActionStatus
-  remarks: string
-}
+const RANK_LABELS: RankLabel[] = ['Recommended', 'Alternative 1', 'Alternative 2']
 
-type WealthVehicle = 'ILP' | 'Endowment' | 'Unit Trust' | 'CPF Top-up (OA)' | 'CPF Top-up (SA)' | 'CPF Top-up (MA)' | 'SRS' | 'RSP' | 'Lump Sum Investment' | 'Cash Savings' | 'Other'
-type WealthGoalLink = 'Retirement' | 'Education' | 'Wealth Accumulation' | 'Emergency Fund' | 'Custom'
-
-interface WealthRec {
-  id: string
-  person: string
-  vehicle: WealthVehicle
-  linkedGoal: WealthGoalLink
-  targetCorpus: number
-  monthlyContribution: number
-  horizon: number                // years
-  expectedReturn: number         // % p.a.
-  priority: Priority
-  status: ActionStatus
-  remarks: string
-}
-
-type DistribCategory = 'Will' | 'LPA' | 'CPF Nomination' | 'Trust' | 'Estate Duty' | 'Business Succession' | 'Gifting Strategy'
-type DistribUrgency  = 'Immediate' | 'Within 6 months' | 'Within 1 year' | 'Long-term'
-
-interface DistribRec {
-  id: string
-  person: string
-  category: DistribCategory
-  action: string                 // free-text: what needs to be done
-  urgency: DistribUrgency
-  status: ActionStatus
-  remarks: string
-}
-
-interface RecData {
-  protection: ProtectionRec[]
-  wealth: WealthRec[]
-  distribution: DistribRec[]
-}
-
-const EMPTY_REC_DATA: RecData = { protection: [], wealth: [], distribution: [] }
-
-// ─── REFERENCE DATA ───────────────────────────────────────────────────────────
-const PROTECTION_CATEGORIES = [
-  { code: 'life',       label: 'Life / Death & TPD',        color: '#c8a96e' },
-  { code: 'ci',         label: 'Critical Illness',           color: '#8A9A7E' },
-  { code: 'medical',    label: 'Medical / Hospitalisation',  color: '#7A9CBF' },
-  { code: 'ltc',        label: 'Long-Term Care / DI',        color: '#9B7BAA' },
-  { code: 'general',    label: 'General Insurance',          color: '#B0A898' },
+const PLAN_TYPES = [
+  '101 ILP', 'ILP', 'Endowment', 'Unit Trust', 'Annuity',
+  'Indexed Savings', 'RSP', 'CPF Top-up (OA)', 'CPF Top-up (SA)',
+  'CPF Top-up (MA)', 'SRS', 'Cash Savings', 'Other',
 ]
-const POLICY_TYPES   = ['Term', 'Whole Life', 'Universal Life', 'ILP', 'CI Rider', 'ECI Rider', 'Hospital Plan', 'LTC Plan', 'Disability Income', 'Annuity', 'Other']
-const WEALTH_VEHICLES: WealthVehicle[] = ['ILP','Endowment','Unit Trust','CPF Top-up (OA)','CPF Top-up (SA)','CPF Top-up (MA)','SRS','RSP','Lump Sum Investment','Cash Savings','Other']
-const GOAL_LINKS: WealthGoalLink[] = ['Retirement','Education','Wealth Accumulation','Emergency Fund','Custom']
-const DISTRIB_CATEGORIES: DistribCategory[] = ['Will','LPA','CPF Nomination','Trust','Estate Duty','Business Succession','Gifting Strategy']
-const DISTRIB_URGENCIES: DistribUrgency[] = ['Immediate','Within 6 months','Within 1 year','Long-term']
-const PRIORITIES: Priority[] = ['High','Medium','Low']
-const STATUSES: ActionStatus[] = ['Proposed','In Discussion','Accepted','Declined']
-const PREMIUM_MODES: PremiumMode[] = ['Monthly','Annual']
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-function newId() { return 'rec_' + Date.now() + '_' + Math.random().toString(36).slice(2,6) }
+interface ReplacedPolicy {
+  policyId: string          // from protection_portfolio
+  policyName: string
+  companyName: string
+  annualPremium: number     // overrideable
+  currentCashValue: number  // manually input
+}
+
+interface ProtRec {
+  id: string
+  rank: RankLabel
+  mode: RecMode
+  // Core fields
+  productName: string
+  insurer: string
+  coverageType: string
+  sumAssured: number
+  annualPremium: number
+  premiumTerm: string
+  policyTerm: string
+  // Text
+  benefits: string
+  limitations: string
+  // Replacement
+  replacedPolicies: ReplacedPolicy[]
+  // Chosen
+  isChosen: boolean
+}
+
+interface AccRec {
+  id: string
+  rank: RankLabel
+  mode: RecMode
+  // Core fields
+  productType: string
+  company: string
+  planType: string
+  // Contribution
+  hasLumpSum: boolean
+  lumpSumAmount: number
+  hasRegular: boolean
+  regularFreq: ContribFreq
+  regularAmount: number
+  regularYears: number
+  // Projection
+  projMethod: ProjMethod
+  illusTerm: number
+  illusGuaranteed: number
+  illusNonGuaranteed: number
+  rateYears: number
+  rateReturn: number
+  // Replacement (if mode === 'replacement')
+  replacedPolicies: ReplacedPolicy[]
+  // Text
+  benefits: string
+  limitations: string
+  // Goal allocation
+  allocatedGoalIds: string[]
+  // Chosen
+  isChosen: boolean
+}
+
+interface RecPageData {
+  protection: ProtRec[]
+  accumulation: AccRec[]
+}
+
+const EMPTY: RecPageData = { protection: [], accumulation: [] }
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+function newId() { return 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) }
+
 function fmt(n: number) {
-  if (!n || isNaN(n)) return '—'
-  if (n >= 1_000_000) return 'S$' + (n/1_000_000).toFixed(2) + 'M'
+  if (!n || isNaN(n)) return 'S$0'
+  if (n >= 1_000_000) return 'S$' + (n / 1_000_000).toFixed(2) + 'M'
   return 'S$' + Math.round(n).toLocaleString('en-SG')
 }
-function fmtMo(n: number) { return n ? 'S$' + Math.round(n).toLocaleString('en-SG') + '/mo' : '—' }
 
-const PRIORITY_STYLE: Record<Priority,{color:string;bg:string}> = {
-  High:   { color:'#9B1C1C', bg:'#FEE2E2' },
-  Medium: { color:'#854F0B', bg:'#FEF3C7' },
-  Low:    { color:'#1E4D35', bg:'#D1FAE5' },
-}
-const STATUS_STYLE: Record<ActionStatus,{color:string;bg:string}> = {
-  Proposed:      { color:'#1C3A6B', bg:'#DBEAFE' },
-  'In Discussion':{ color:'#6B3A1C', bg:'#FEF3C7' },
-  Accepted:      { color:'#1E4D35', bg:'#D1FAE5' },
-  Declined:      { color:'#4A4740', bg:'#E4E1DA' },
+function calcIRR(invested: number, fv: number, years: number): number {
+  if (invested <= 0 || years <= 0 || fv <= 0) return 0
+  return (Math.pow(fv / invested, 1 / years) - 1) * 100
 }
 
-// ─── SUB-COMPONENTS ──────────────────────────────────────────────────────────
+function calcProjectedValue(rec: AccRec): number {
+  if (rec.projMethod === 'illustration') {
+    const ng = rec.illusNonGuaranteed > 0 ? rec.illusNonGuaranteed : rec.illusGuaranteed
+    return ng
+  }
+  const total = calcTotalInvested(rec)
+  const r = (rec.rateReturn || 0) / 100
+  const y = rec.rateYears || 1
+  return total * Math.pow(1 + r, y)
+}
 
-// Shared pill select
-function PillSelect<T extends string>({ options, value, onChange, styleMap }: {
-  options: T[]; value: T; onChange:(v:T)=>void
-  styleMap?: Record<string,{color:string;bg:string}>
-}) {
-  const style = styleMap?.[value]
+function calcTotalInvested(rec: AccRec): number {
+  const lump = rec.hasLumpSum ? (rec.lumpSumAmount || 0) : 0
+  const perYear = rec.regularFreq === 'Monthly' ? 12 : rec.regularFreq === 'Quarterly' ? 4 : 1
+  const reg = rec.hasRegular ? (rec.regularAmount || 0) * perYear * (rec.regularYears || 0) : 0
+  return lump + reg
+}
+
+function calcAnnualContrib(rec: AccRec): number {
+  const lumpAmort = rec.hasLumpSum && rec.regularYears > 0
+    ? (rec.lumpSumAmount || 0) / rec.regularYears
+    : rec.hasLumpSum ? (rec.lumpSumAmount || 0) : 0
+  const perYear = rec.regularFreq === 'Monthly' ? 12 : rec.regularFreq === 'Quarterly' ? 4 : 1
+  const reg = rec.hasRegular ? (rec.regularAmount || 0) * perYear : 0
+  return lumpAmort + reg
+}
+
+// ─── SHARED STYLES ────────────────────────────────────────────────────────────
+
+const S = {
+  inp: {
+    background: 'var(--cream2)', border: '1px solid var(--cream3)', borderRadius: 4,
+    padding: '5px 8px', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink)',
+    width: '100%', outline: 'none',
+  } as React.CSSProperties,
+  lbl: {
+    fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' as const,
+    color: 'var(--ink3)', marginBottom: 3, display: 'block',
+  } as React.CSSProperties,
+  card: {
+    background: '#fff', border: '1px solid var(--cream3)', borderRadius: 10,
+    overflow: 'hidden', marginBottom: 12,
+  } as React.CSSProperties,
+  sectionWrap: {
+    background: 'var(--cream)', border: '1px solid var(--cream3)', borderRadius: 10,
+    padding: 24, marginBottom: 24,
+  } as React.CSSProperties,
+}
+
+// ─── RANK BADGE ───────────────────────────────────────────────────────────────
+
+function RankBadge({ rank }: { rank: RankLabel }) {
+  const isRec = rank === 'Recommended'
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value as T)}
-      style={{
-        border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: 11,
-        fontFamily: 'Inter', fontWeight: 600, letterSpacing:'0.05em', cursor:'pointer',
-        background: style?.bg ?? 'var(--cream2)',
-        color: style?.color ?? 'var(--ink2)',
-        appearance: 'none', WebkitAppearance: 'none',
-      }}
-    >
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  )
-}
-
-// Gap summary badge
-function GapBadge({ need, have }: { need:number; have:number }) {
-  if (need <= 0) return null
-  const gap = need - have
-  if (gap <= 0) return (
-    <span style={{ fontSize:10, padding:'2px 7px', borderRadius:4, background:'#D1FAE5', color:'#1E4D35', fontFamily:'Inter', fontWeight:600 }}>Covered</span>
-  )
-  const pct = Math.round((have/need)*100)
-  return (
-    <span style={{ fontSize:10, padding:'2px 7px', borderRadius:4, background:'#FEE2E2', color:'#9B1C1C', fontFamily:'Inter', fontWeight:600 }}>
-      {pct}% covered · Gap {fmt(gap)}
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, fontFamily: 'Inter',
+      background: isRec ? '#D1FAE5' : 'var(--cream2)',
+      color: isRec ? '#1E4D35' : 'var(--ink3)',
+      display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0,
+    }}>
+      {isRec && '★ '}{rank}
     </span>
   )
 }
 
-// ─── PROTECTION CARD ─────────────────────────────────────────────────────────
-function ProtectionCard({ rec, onChange, onDelete, companies, products }: {
-  rec: ProtectionRec
-  onChange: (r:ProtectionRec) => void
-  onDelete: () => void
-  companies: {id:number;name:string;category_id:number}[]
-  products:  {id:number;name:string;category_id:number;company_id:number}[]
+// ─── MODE TOGGLE ──────────────────────────────────────────────────────────────
+
+function ModeToggle({ mode, onChange }: { mode: RecMode; onChange: (m: RecMode) => void }) {
+  const btn = (m: RecMode, label: string) => (
+    <button onClick={() => onChange(m)} style={{
+      fontSize: 12, padding: '4px 12px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
+      background: mode === m ? 'var(--cream2)' : 'transparent',
+      color: mode === m ? 'var(--ink)' : 'var(--ink3)',
+      fontWeight: mode === m ? 600 : 400,
+    }}>{label}</button>
+  )
+  return (
+    <div style={{
+      display: 'flex', border: '1px solid var(--cream3)', borderRadius: 6,
+      overflow: 'hidden', marginLeft: 'auto', flexShrink: 0,
+    }}>
+      {btn('new', 'New addition')}
+      {btn('replacement', 'Replacement')}
+    </div>
+  )
+}
+
+// ─── CHOSEN BADGE ─────────────────────────────────────────────────────────────
+
+function ChosenBadge() {
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, fontFamily: 'Inter',
+      background: '#D1FAE5', color: '#1E4D35', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0,
+    }}>✓ Client chosen</span>
+  )
+}
+
+// ─── COMPARISON TABLE ─────────────────────────────────────────────────────────
+
+function CompareTable({ existing, newPremium, newSA, newCoverageType, existingPolicies }: {
+  existing: ReplacedPolicy[]
+  newPremium: number
+  newSA: number
+  newCoverageType: string
+  existingPolicies: ReplacedPolicy[]
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const catInfo = PROTECTION_CATEGORIES.find(c=>c.code===rec.category)
-  const availCompanies = companies.filter(c => {
-    // Show all companies (category_id filtering is optional for flexibility)
-    return true
+  const oldPremium = existing.reduce((s, p) => s + p.annualPremium, 0)
+  const deltaP = newPremium - oldPremium
+  const tdS: React.CSSProperties = { padding: '6px 10px', fontFamily: 'Inter', fontSize: 12, borderBottom: '1px solid var(--cream3)' }
+  const thS: React.CSSProperties = { ...tdS, fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', fontWeight: 600 }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ ...S.lbl, marginBottom: 8 }}>Side-by-side comparison</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid var(--cream3)', borderRadius: 6, overflow: 'hidden' }}>
+        <thead>
+          <tr>
+            <th style={thS}></th>
+            <th style={thS}>Existing (combined)</th>
+            <th style={thS}>New product</th>
+            <th style={thS}>Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={{ ...tdS, color: 'var(--ink3)', fontSize: 11 }}>Annual premium</td>
+            <td style={{ ...tdS, color: '#9B1C1C' }}>{fmt(oldPremium)}</td>
+            <td style={{ ...tdS, color: '#1E4D35', fontWeight: 600 }}>{fmt(newPremium)}</td>
+            <td style={{ ...tdS, color: deltaP > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
+              {deltaP > 0 ? '+' : ''}{fmt(deltaP)} / yr
+            </td>
+          </tr>
+          <tr>
+            <td style={{ ...tdS, color: 'var(--ink3)', fontSize: 11 }}>Sum assured / benefit</td>
+            <td style={{ ...tdS, color: '#9B1C1C' }}>—</td>
+            <td style={{ ...tdS, color: '#1E4D35', fontWeight: 600 }}>{fmt(newSA)}</td>
+            <td style={{ ...tdS, color: '#1E4D35', fontWeight: 600 }}>—</td>
+          </tr>
+          {newCoverageType && (
+            <tr>
+              <td style={{ ...tdS, color: 'var(--ink3)', fontSize: 11 }}>Coverage type</td>
+              <td style={{ ...tdS, color: '#9B1C1C' }}>—</td>
+              <td style={{ ...tdS, color: '#1E4D35', fontWeight: 600 }}>{newCoverageType}</td>
+              <td style={tdS}>—</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── PROTECTION IMPACT MODAL ──────────────────────────────────────────────────
+
+function ProtImpactModal({ rec, onClose }: { rec: ProtRec; onClose: () => void }) {
+  const [cvValues, setCvValues] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {}
+    rec.replacedPolicies.forEach(p => { init[p.policyId] = p.currentCashValue || 0 })
+    return init
   })
-  const availProducts = products.filter(p => rec.company ? p.company_id === companies.find(c=>c.name===rec.company)?.id : true)
 
-  function upd<K extends keyof ProtectionRec>(k:K, v:ProtectionRec[K]) { onChange({...rec,[k]:v}) }
+  const oldPremium = rec.replacedPolicies.reduce((s, p) => s + p.annualPremium, 0)
+  const netAnnual = rec.annualPremium - oldPremium
+  const totalCV = Object.values(cvValues).reduce((s, v) => s + v, 0)
+  const policyTermYrs = parseInt(rec.policyTerm) || 20
+  const yearsCV = netAnnual > 0 ? Math.floor(totalCV / netAnnual) : (netAnnual < 0 ? 999 : 0)
+  const totalNetOutcome = totalCV - Math.max(0, netAnnual) * policyTermYrs
 
-  const inp: React.CSSProperties = {
-    background:'var(--cream2)', border:'1px solid var(--cream3)', borderRadius:4,
-    padding:'5px 8px', fontFamily:'Inter', fontSize:12, color:'var(--ink)',
-    width:'100%', outline:'none',
+  const overlay: React.CSSProperties = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   }
-  const lbl: React.CSSProperties = {
-    fontFamily:'Inter', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase',
-    color:'var(--ink3)', marginBottom:3, display:'block',
+  const modal: React.CSSProperties = {
+    background: '#fff', borderRadius: 12, border: '1px solid var(--cream3)',
+    width: 560, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '28px',
   }
-
-  return (
-    <div style={{
-      background:'#fff', border:'1px solid var(--cream3)', borderRadius:8,
-      overflow:'hidden', marginBottom:10,
-    }}>
-      {/* Card header */}
-      <div style={{
-        display:'flex', alignItems:'center', gap:10, padding:'12px 16px',
-        background:'var(--cream)', borderBottom: expanded ? '1px solid var(--cream3)' : 'none',
-        cursor:'pointer',
-      }} onClick={() => setExpanded(e=>!e)}>
-        {/* Category dot */}
-        <div style={{ width:8, height:8, borderRadius:'50%', background: catInfo?.color ?? '#ccc', flexShrink:0 }} />
-        {/* Category + product */}
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontFamily:'Inter', fontSize:11, color:'var(--ink3)', letterSpacing:'0.06em', textTransform:'uppercase' }}>
-            {catInfo?.label ?? rec.category}
-          </div>
-          <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:16, color:'var(--ink)', marginTop:1, fontWeight:600 }}>
-            {rec.product || rec.company || <span style={{color:'var(--ink3)',fontStyle:'italic',fontWeight:400}}>New recommendation</span>}
-          </div>
-        </div>
-        {/* Badges */}
-        <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-          <PillSelect options={PRIORITIES} value={rec.priority} onChange={v=>upd('priority',v)} styleMap={PRIORITY_STYLE} />
-          <PillSelect options={STATUSES} value={rec.status} onChange={v=>upd('status',v)} styleMap={STATUS_STYLE} />
-        </div>
-        {/* Expand chevron */}
-        <div style={{ color:'var(--ink3)', fontSize:12, marginLeft:4, transform: expanded?'rotate(180deg)':'none', transition:'transform 0.2s' }}>▾</div>
-        {/* Delete */}
-        <button onClick={e=>{e.stopPropagation();onDelete()}} style={{
-          background:'none',border:'none',color:'var(--ink3)',cursor:'pointer',fontSize:14,padding:'0 2px',marginLeft:2,lineHeight:1
-        }}>×</button>
-      </div>
-
-      {/* Expanded form */}
-      {expanded && (
-        <div style={{ padding:'16px', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'12px 16px' }}>
-          {/* Row 1 */}
-          <div>
-            <label style={lbl}>Category</label>
-            <select value={rec.category} onChange={e=>upd('category',e.target.value)} style={inp}>
-              {PROTECTION_CATEGORIES.map(c=><option key={c.code} value={c.code}>{c.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Policy Type</label>
-            <select value={rec.policyType} onChange={e=>upd('policyType',e.target.value)} style={inp}>
-              <option value=''>Select…</option>
-              {POLICY_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Company</label>
-            <input
-              list={`co-list-${rec.id}`}
-              value={rec.company}
-              onChange={e=>upd('company',e.target.value)}
-              placeholder='Type or select…'
-              style={inp}
-            />
-            <datalist id={`co-list-${rec.id}`}>
-              {availCompanies.map(c=><option key={c.id} value={c.name}/>)}
-            </datalist>
-          </div>
-          {/* Row 2 */}
-          <div style={{gridColumn:'1/3'}}>
-            <label style={lbl}>Product Name</label>
-            <input
-              list={`prod-list-${rec.id}`}
-              value={rec.product}
-              onChange={e=>upd('product',e.target.value)}
-              placeholder='Type or select…'
-              style={inp}
-            />
-            <datalist id={`prod-list-${rec.id}`}>
-              {availProducts.map(p=><option key={p.id} value={p.name}/>)}
-            </datalist>
-          </div>
-          <div>
-            <label style={lbl}>Recommended SA / Benefit</label>
-            <input type='number' value={rec.recommendedSA||''} onChange={e=>upd('recommendedSA',Number(e.target.value))} placeholder='0' style={inp}/>
-          </div>
-          {/* Row 3 */}
-          <div>
-            <label style={lbl}>Est. Premium</label>
-            <input type='number' value={rec.premiumAmount||''} onChange={e=>upd('premiumAmount',Number(e.target.value))} placeholder='0' style={inp}/>
-          </div>
-          <div>
-            <label style={lbl}>Premium Frequency</label>
-            <select value={rec.premiumMode} onChange={e=>upd('premiumMode',e.target.value as PremiumMode)} style={inp}>
-              {PREMIUM_MODES.map(m=><option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div>
-            {/* empty cell for alignment */}
-          </div>
-          {/* Remarks full width */}
-          <div style={{gridColumn:'1/4'}}>
-            <label style={lbl}>Advisor Remarks</label>
-            <textarea
-              value={rec.remarks}
-              onChange={e=>upd('remarks',e.target.value)}
-              placeholder='Notes for client discussion…'
-              rows={2}
-              style={{...inp, resize:'vertical', fontFamily:'DM Mono, monospace', fontSize:11, lineHeight:1.5}}
-            />
-          </div>
-        </div>
-      )}
+  const metricCard = (label: string, value: string, sub: string, color: string) => (
+    <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '14px', border: '1px solid var(--cream3)' }}>
+      <div style={{ ...S.lbl, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color }}>{value}</div>
+      {sub && <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>{sub}</div>}
     </div>
   )
-}
-
-// ─── WEALTH CARD ─────────────────────────────────────────────────────────────
-function WealthCard({ rec, onChange, onDelete }: {
-  rec: WealthRec
-  onChange: (r:WealthRec) => void
-  onDelete: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  function upd<K extends keyof WealthRec>(k:K, v:WealthRec[K]) { onChange({...rec,[k]:v}) }
-
-  const inp: React.CSSProperties = {
-    background:'var(--cream2)', border:'1px solid var(--cream3)', borderRadius:4,
-    padding:'5px 8px', fontFamily:'Inter', fontSize:12, color:'var(--ink)',
-    width:'100%', outline:'none',
-  }
-  const lbl: React.CSSProperties = {
-    fontFamily:'Inter', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase',
-    color:'var(--ink3)', marginBottom:3, display:'block',
-  }
-
-  const VEHICLE_COLORS: Record<string,string> = {
-    'ILP':'#c8a96e','Endowment':'#B8956A','Unit Trust':'#7A9CBF',
-    'CPF Top-up (OA)':'#2D5A4E','CPF Top-up (SA)':'#3A7A65','CPF Top-up (MA)':'#4A9E8A',
-    'SRS':'#8A9A7E','RSP':'#9B7BAA','Lump Sum Investment':'#7A9CBF',
-    'Cash Savings':'#B0A898','Other':'#9A9690',
-  }
-  const vColor = VEHICLE_COLORS[rec.vehicle] ?? '#9A9690'
 
   return (
-    <div style={{
-      background:'#fff', border:'1px solid var(--cream3)', borderRadius:8,
-      overflow:'hidden', marginBottom:10,
-    }}>
-      <div style={{
-        display:'flex', alignItems:'center', gap:10, padding:'12px 16px',
-        background:'var(--cream)', borderBottom: expanded ? '1px solid var(--cream3)' : 'none',
-        cursor:'pointer',
-      }} onClick={() => setExpanded(e=>!e)}>
-        <div style={{ width:8, height:8, borderRadius:'50%', background: vColor, flexShrink:0 }} />
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontFamily:'Inter', fontSize:11, color:'var(--ink3)', letterSpacing:'0.06em', textTransform:'uppercase' }}>
-            {rec.vehicle || 'Vehicle'}
-            {rec.linkedGoal && <span style={{color:'var(--gold)',marginLeft:8}}>→ {rec.linkedGoal}</span>}
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={modal}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: 'var(--ink)' }}>
+            Impact analysis
           </div>
-          <div style={{ display:'flex', gap:16, marginTop:3, alignItems:'baseline' }}>
-            {rec.targetCorpus > 0 && (
-              <span style={{fontFamily:'Cormorant Garamond,serif', fontSize:16, fontWeight:600, color:'var(--ink)'}}>{fmt(rec.targetCorpus)}</span>
-            )}
-            {rec.monthlyContribution > 0 && (
-              <span style={{fontFamily:'Inter', fontSize:12, color:'var(--ink2)'}}>{fmtMo(rec.monthlyContribution)}</span>
-            )}
-            {!rec.targetCorpus && !rec.monthlyContribution && (
-              <span style={{fontFamily:'Cormorant Garamond,serif', fontSize:16, fontWeight:400, color:'var(--ink3)', fontStyle:'italic'}}>New recommendation</span>
-            )}
-          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--ink3)', lineHeight: 1 }}>×</button>
         </div>
-        <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-          <PillSelect options={PRIORITIES} value={rec.priority} onChange={v=>upd('priority',v)} styleMap={PRIORITY_STYLE} />
-          <PillSelect options={STATUSES} value={rec.status} onChange={v=>upd('status',v)} styleMap={STATUS_STYLE} />
+
+        <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 16 }}>
+          {rec.productName} — {rec.insurer}
         </div>
-        <div style={{ color:'var(--ink3)', fontSize:12, marginLeft:4, transform: expanded?'rotate(180deg)':'none', transition:'transform 0.2s' }}>▾</div>
-        <button onClick={e=>{e.stopPropagation();onDelete()}} style={{
-          background:'none',border:'none',color:'var(--ink3)',cursor:'pointer',fontSize:14,padding:'0 2px',marginLeft:2,lineHeight:1
-        }}>×</button>
-      </div>
 
-      {expanded && (
-        <div style={{ padding:'16px', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'12px 16px' }}>
-          <div>
-            <label style={lbl}>Vehicle Type</label>
-            <select value={rec.vehicle} onChange={e=>upd('vehicle',e.target.value as WealthVehicle)} style={inp}>
-              {WEALTH_VEHICLES.map(v=><option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Linked Goal</label>
-            <select value={rec.linkedGoal} onChange={e=>upd('linkedGoal',e.target.value as WealthGoalLink)} style={inp}>
-              {GOAL_LINKS.map(g=><option key={g} value={g}>{g}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Target Corpus</label>
-            <input type='number' value={rec.targetCorpus||''} onChange={e=>upd('targetCorpus',Number(e.target.value))} placeholder='0' style={inp}/>
-          </div>
-          <div>
-            <label style={lbl}>Monthly Contribution (S$)</label>
-            <input type='number' value={rec.monthlyContribution||''} onChange={e=>upd('monthlyContribution',Number(e.target.value))} placeholder='0' style={inp}/>
-          </div>
-          <div>
-            <label style={lbl}>Investment Horizon (years)</label>
-            <input type='number' value={rec.horizon||''} onChange={e=>upd('horizon',Number(e.target.value))} placeholder='0' style={inp}/>
-          </div>
-          <div>
-            <label style={lbl}>Expected Return (% p.a.)</label>
-            <input type='number' step='0.1' value={rec.expectedReturn||''} onChange={e=>upd('expectedReturn',Number(e.target.value))} placeholder='e.g. 5' style={inp}/>
-          </div>
-          <div style={{gridColumn:'1/4'}}>
-            <label style={lbl}>Advisor Remarks</label>
-            <textarea value={rec.remarks} onChange={e=>upd('remarks',e.target.value)} placeholder='Notes for client discussion…' rows={2}
-              style={{...inp, resize:'vertical', fontFamily:'DM Mono, monospace', fontSize:11, lineHeight:1.5}}/>
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+          {metricCard('New annual premium', fmt(rec.annualPremium), rec.premiumTerm ? `${rec.premiumTerm} payment term` : '', '#854F0B')}
+          {rec.mode === 'replacement'
+            ? metricCard('Old premiums freed up', fmt(oldPremium) + ' / yr', `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`, '#1E4D35')
+            : metricCard('Policy term', rec.policyTerm || '—', 'Coverage duration', 'var(--ink2)')
+          }
+          {rec.mode === 'replacement' && metricCard(
+            'Net annual change',
+            (netAnnual > 0 ? '+' : '') + fmt(netAnnual) + ' / yr',
+            netAnnual > 0 ? 'Additional outflow' : 'Annual savings',
+            netAnnual > 0 ? '#9B1C1C' : '#1E4D35'
+          )}
+          {metricCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
         </div>
-      )}
-    </div>
-  )
-}
 
-// ─── DISTRIBUTION CARD ───────────────────────────────────────────────────────
-const DISTRIB_ICONS: Record<DistribCategory, string> = {
-  'Will': '📜',
-  'LPA': '⚖️',
-  'CPF Nomination': '🏦',
-  'Trust': '🏛️',
-  'Estate Duty': '📋',
-  'Business Succession': '🏢',
-  'Gifting Strategy': '🎁',
-}
-
-function DistribCard({ rec, onChange, onDelete }: {
-  rec: DistribRec
-  onChange: (r:DistribRec) => void
-  onDelete: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  function upd<K extends keyof DistribRec>(k:K, v:DistribRec[K]) { onChange({...rec,[k]:v}) }
-
-  const inp: React.CSSProperties = {
-    background:'var(--cream2)', border:'1px solid var(--cream3)', borderRadius:4,
-    padding:'5px 8px', fontFamily:'Inter', fontSize:12, color:'var(--ink)',
-    width:'100%', outline:'none',
-  }
-  const lbl: React.CSSProperties = {
-    fontFamily:'Inter', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase',
-    color:'var(--ink3)', marginBottom:3, display:'block',
-  }
-  const URGENCY_STYLE: Record<DistribUrgency,{color:string;bg:string}> = {
-    'Immediate':        {color:'#9B1C1C',bg:'#FEE2E2'},
-    'Within 6 months':  {color:'#854F0B',bg:'#FEF3C7'},
-    'Within 1 year':    {color:'#6B3A1C',bg:'#FEF3C7'},
-    'Long-term':        {color:'#1E4D35',bg:'#D1FAE5'},
-  }
-
-  return (
-    <div style={{
-      background:'#fff', border:'1px solid var(--cream3)', borderRadius:8,
-      overflow:'hidden', marginBottom:10,
-    }}>
-      <div style={{
-        display:'flex', alignItems:'center', gap:10, padding:'12px 16px',
-        background:'var(--cream)', borderBottom: expanded ? '1px solid var(--cream3)' : 'none',
-        cursor:'pointer',
-      }} onClick={() => setExpanded(e=>!e)}>
-        <div style={{ fontSize:16, flexShrink:0 }}>{DISTRIB_ICONS[rec.category]}</div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontFamily:'Inter', fontSize:11, color:'var(--ink3)', letterSpacing:'0.06em', textTransform:'uppercase' }}>{rec.category}</div>
-          <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:16, fontWeight:600, color:'var(--ink)', marginTop:1 }}>
-            {rec.action || <span style={{color:'var(--ink3)',fontStyle:'italic',fontWeight:400}}>New action item</span>}
-          </div>
-        </div>
-        <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-          <PillSelect options={DISTRIB_URGENCIES} value={rec.urgency} onChange={v=>upd('urgency',v)} styleMap={URGENCY_STYLE} />
-          <PillSelect options={STATUSES} value={rec.status} onChange={v=>upd('status',v)} styleMap={STATUS_STYLE} />
-        </div>
-        <div style={{ color:'var(--ink3)', fontSize:12, marginLeft:4, transform: expanded?'rotate(180deg)':'none', transition:'transform 0.2s' }}>▾</div>
-        <button onClick={e=>{e.stopPropagation();onDelete()}} style={{
-          background:'none',border:'none',color:'var(--ink3)',cursor:'pointer',fontSize:14,padding:'0 2px',marginLeft:2,lineHeight:1
-        }}>×</button>
-      </div>
-
-      {expanded && (
-        <div style={{ padding:'16px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px 16px' }}>
-          <div>
-            <label style={lbl}>Category</label>
-            <select value={rec.category} onChange={e=>upd('category',e.target.value as DistribCategory)} style={inp}>
-              {DISTRIB_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Urgency</label>
-            <select value={rec.urgency} onChange={e=>upd('urgency',e.target.value as DistribUrgency)} style={inp}>
-              {DISTRIB_URGENCIES.map(u=><option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>
-          <div style={{gridColumn:'1/3'}}>
-            <label style={lbl}>Recommended Action</label>
-            <input value={rec.action} onChange={e=>upd('action',e.target.value)} placeholder='e.g. Draft a will with an estate lawyer, nominating spouse and children equally' style={inp}/>
-          </div>
-          <div style={{gridColumn:'1/3'}}>
-            <label style={lbl}>Advisor Remarks</label>
-            <textarea value={rec.remarks} onChange={e=>upd('remarks',e.target.value)} placeholder='Additional context…' rows={2}
-              style={{...inp, resize:'vertical', fontFamily:'DM Mono, monospace', fontSize:11, lineHeight:1.5}}/>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── SECTION HEADER ──────────────────────────────────────────────────────────
-function SectionHeader({ title, subtitle, count, onAdd, addLabel }: {
-  title: string; subtitle: string; count: number
-  onAdd: () => void; addLabel: string
-}) {
-  return (
-    <div style={{
-      display:'flex', alignItems:'flex-end', justifyContent:'space-between',
-      marginBottom:16, paddingBottom:12, borderBottom:'1px solid var(--cream3)',
-    }}>
-      <div>
-        <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:22, fontWeight:600, color:'var(--ink)', lineHeight:1.1 }}>{title}</div>
-        <div style={{ fontFamily:'Inter', fontSize:12, color:'var(--ink3)', marginTop:3 }}>{subtitle}</div>
-      </div>
-      <div style={{display:'flex',alignItems:'center',gap:12}}>
-        {count > 0 && (
-          <span style={{ fontFamily:'Inter', fontSize:11, color:'var(--ink3)', background:'var(--cream2)', padding:'3px 9px', borderRadius:20 }}>
-            {count} item{count!==1?'s':''}
-          </span>
-        )}
-        <button onClick={onAdd} style={{
-          background:'var(--charcoal)', color:'var(--cream)', border:'none',
-          borderRadius:6, padding:'8px 16px', fontFamily:'Inter', fontSize:12,
-          cursor:'pointer', display:'flex', alignItems:'center', gap:6,
-        }}>
-          <span style={{fontSize:16,lineHeight:1}}>+</span>{addLabel}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── GAP SUMMARY ROW ─────────────────────────────────────────────────────────
-function GapSummaryRow({ label, need, have }: { label:string; need:number; have:number }) {
-  if (need <= 0) return null
-  const gap = Math.max(0, need - have)
-  const pct = need > 0 ? Math.min(100, Math.round((have/need)*100)) : 100
-  const covered = gap <= 0
-  return (
-    <div style={{
-      display:'flex', alignItems:'center', gap:12, padding:'8px 0',
-      borderBottom:'1px solid var(--cream3)',
-    }}>
-      <div style={{ fontFamily:'Inter', fontSize:12, color:'var(--ink2)', width:120, flexShrink:0 }}>{label}</div>
-      {/* Bar */}
-      <div style={{ flex:1, height:6, background:'var(--cream3)', borderRadius:3, overflow:'hidden' }}>
-        <div style={{ width:`${pct}%`, height:'100%', background: covered ? 'var(--emerald)' : '#c8a96e', borderRadius:3, transition:'width 0.4s' }}/>
-      </div>
-      <div style={{ fontFamily:'DM Mono,monospace', fontSize:11, color:'var(--ink3)', width:90, textAlign:'right', flexShrink:0 }}>
-        {fmt(have)} / {fmt(need)}
-      </div>
-      <div style={{ width:80, flexShrink:0, textAlign:'right' }}>
-        {covered
-          ? <span style={{fontSize:10,padding:'2px 7px',borderRadius:4,background:'#D1FAE5',color:'#1E4D35',fontFamily:'Inter',fontWeight:600}}>Covered</span>
-          : <span style={{fontSize:10,padding:'2px 7px',borderRadius:4,background:'#FEE2E2',color:'#9B1C1C',fontFamily:'Inter',fontWeight:600}}>Gap {fmt(gap)}</span>
-        }
-      </div>
-    </div>
-  )
-}
-
-// ─── GOAL CONTEXT ROW ────────────────────────────────────────────────────────
-function GoalContextRow({ icon, label, corpus, monthly, shortfall }: {
-  icon:string; label:string; corpus:number; monthly:number; shortfall:number
-}) {
-  return (
-    <div style={{
-      display:'grid', gridTemplateColumns:'28px 1fr auto auto auto',
-      alignItems:'center', gap:12, padding:'10px 0', borderBottom:'1px solid var(--cream3)',
-    }}>
-      <span style={{fontSize:16}}>{icon}</span>
-      <div style={{fontFamily:'Inter',fontSize:12,color:'var(--ink2)'}}>{label}</div>
-      <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--ink3)',textAlign:'right'}}>
-        {corpus > 0 ? <><span style={{color:'var(--ink2)',fontWeight:600}}>{fmt(corpus)}</span> corpus</> : '—'}
-      </div>
-      <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:'var(--ink3)',textAlign:'right'}}>
-        {monthly > 0 ? <><span style={{color:'var(--ink2)',fontWeight:600}}>{fmtMo(monthly)}</span></> : '—'}
-      </div>
-      <div style={{width:90,textAlign:'right'}}>
-        {shortfall > 0
-          ? <span style={{fontSize:10,padding:'2px 7px',borderRadius:4,background:'#FEE2E2',color:'#9B1C1C',fontFamily:'Inter',fontWeight:600}}>↓ {fmt(shortfall)}</span>
-          : corpus > 0
-            ? <span style={{fontSize:10,padding:'2px 7px',borderRadius:4,background:'#D1FAE5',color:'#1E4D35',fontFamily:'Inter',fontWeight:600}}>On track</span>
-            : null
-        }
-      </div>
-    </div>
-  )
-}
-
-// ─── PERSON TAB SECTION ──────────────────────────────────────────────────────
-function PersonSection({ person, personLabel, recData, onChangeRecData, ffData, gapData, goalsData, companies, products }: {
-  person: string
-  personLabel: string
-  recData: RecData
-  onChangeRecData: (d:RecData) => void
-  ffData: any
-  gapData: { dtpd: { need:number; have:number }; ci: { need:number; have:number } }
-  goalsData: { icon:string; label:string; corpus:number; monthly:number; shortfall:number }[]
-  companies: {id:number;name:string;category_id:number}[]
-  products:  {id:number;name:string;category_id:number;company_id:number}[]
-}) {
-  const protRecs   = recData.protection.filter(r=>r.person===person)
-  const wealthRecs = recData.wealth.filter(r=>r.person===person)
-  const distribRecs= recData.distribution.filter(r=>r.person===person)
-
-  function addProtection() {
-    const newRec: ProtectionRec = {
-      id:newId(), person, category:'life', policyType:'', company:'', product:'',
-      recommendedSA:0, premiumAmount:0, premiumMode:'Monthly',
-      priority:'High', status:'Proposed', remarks:'',
-    }
-    onChangeRecData({...recData, protection:[...recData.protection, newRec]})
-  }
-  function addWealth() {
-    const newRec: WealthRec = {
-      id:newId(), person, vehicle:'ILP', linkedGoal:'Retirement',
-      targetCorpus:0, monthlyContribution:0, horizon:0, expectedReturn:5,
-      priority:'Medium', status:'Proposed', remarks:'',
-    }
-    onChangeRecData({...recData, wealth:[...recData.wealth, newRec]})
-  }
-  function addDistrib() {
-    const newRec: DistribRec = {
-      id:newId(), person, category:'Will', action:'',
-      urgency:'Within 1 year', status:'Proposed', remarks:'',
-    }
-    onChangeRecData({...recData, distribution:[...recData.distribution, newRec]})
-  }
-  function updateProtRec(id:string, r:ProtectionRec) {
-    onChangeRecData({...recData, protection:recData.protection.map(x=>x.id===id?r:x)})
-  }
-  function deleteProtRec(id:string) {
-    onChangeRecData({...recData, protection:recData.protection.filter(x=>x.id!==id)})
-  }
-  function updateWealthRec(id:string, r:WealthRec) {
-    onChangeRecData({...recData, wealth:recData.wealth.map(x=>x.id===id?r:x)})
-  }
-  function deleteWealthRec(id:string) {
-    onChangeRecData({...recData, wealth:recData.wealth.filter(x=>x.id!==id)})
-  }
-  function updateDistribRec(id:string, r:DistribRec) {
-    onChangeRecData({...recData, distribution:recData.distribution.map(x=>x.id===id?r:x)})
-  }
-  function deleteDistribRec(id:string) {
-    onChangeRecData({...recData, distribution:recData.distribution.filter(x=>x.id!==id)})
-  }
-
-  const sectionCard: React.CSSProperties = {
-    background:'var(--cream)', border:'1px solid var(--cream3)', borderRadius:10,
-    padding:'24px', marginBottom:20,
-  }
-
-  const hasGaps = gapData.dtpd.need > 0 || gapData.ci.need > 0
-
-  return (
-    <div>
-      {/* ── Wealth Protection ── */}
-      <div style={sectionCard}>
-        <SectionHeader
-          title='Wealth Protection'
-          subtitle='Insurance & risk coverage recommendations'
-          count={protRecs.length}
-          onAdd={addProtection}
-          addLabel='Add Protection Rec'
-        />
-
-        {/* Gap context */}
-        {hasGaps && (
-          <div style={{
-            background:'#fff', border:'1px solid var(--cream3)', borderRadius:8,
-            padding:'14px 16px', marginBottom:16,
-          }}>
-            <div style={{ fontFamily:'Inter', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--ink3)', marginBottom:10 }}>
-              Coverage Gap Summary — from Risk Management
+        {/* Cash value section — only for replacements */}
+        {rec.mode === 'replacement' && rec.replacedPolicies.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 16, marginTop: 4 }}>
+            <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 12 }}>
+              Cash value mitigation
             </div>
-            <GapSummaryRow label='Death / TPD' need={gapData.dtpd.need} have={gapData.dtpd.have} />
-            <GapSummaryRow label='Critical Illness' need={gapData.ci.need} have={gapData.ci.have} />
-          </div>
-        )}
 
-        {protRecs.length === 0 ? (
-          <div style={{
-            textAlign:'center', padding:'32px 16px', color:'var(--ink3)',
-            fontFamily:'Inter', fontSize:13, fontStyle:'italic',
-          }}>
-            No protection recommendations yet — click <strong>+ Add Protection Rec</strong> to begin
+            {rec.replacedPolicies.map(p => (
+              <div key={p.policyId} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <div style={{ flex: 1, fontFamily: 'Inter', fontSize: 12, color: 'var(--ink2)' }}>
+                  Surrender value — {p.policyName || p.companyName}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>S$</span>
+                  <input
+                    type="number"
+                    value={cvValues[p.policyId] ?? 0}
+                    onChange={e => setCvValues(prev => ({ ...prev, [p.policyId]: Number(e.target.value) }))}
+                    style={{ ...S.inp, width: 130 }}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 10, marginTop: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>Total cash value available</span>
+                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{fmt(totalCV)}</span>
+              </div>
+              {netAnnual > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink2)' }}>Years cash value offsets net additional cost</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600, color: '#1E4D35' }}>
+                    {yearsCV >= 999 ? '∞' : yearsCV} yr{yearsCV !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div style={{
+              background: totalNetOutcome >= 0 ? '#D1FAE5' : '#FEE2E2',
+              borderRadius: 8, padding: '12px 16px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12,
+            }}>
+              <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                Total net outcome over {policyTermYrs}-year premium term
+              </span>
+              <span style={{
+                fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600,
+                color: totalNetOutcome >= 0 ? '#1E4D35' : '#9B1C1C',
+              }}>
+                {totalNetOutcome >= 0 ? '' : '-'}{fmt(Math.abs(totalNetOutcome))} {totalNetOutcome >= 0 ? 'saved' : 'increase'}
+              </span>
+            </div>
           </div>
-        ) : (
-          protRecs.map(r => (
-            <ProtectionCard
-              key={r.id} rec={r}
-              onChange={u=>updateProtRec(r.id,u)}
-              onDelete={()=>deleteProtRec(r.id)}
-              companies={companies}
-              products={products}
-            />
-          ))
         )}
       </div>
+    </div>
+  )
+}
 
-      {/* ── Wealth Accumulation ── */}
-      <div style={sectionCard}>
-        <SectionHeader
-          title='Wealth Accumulation & Management'
-          subtitle='Investment and savings vehicle recommendations'
-          count={wealthRecs.length}
-          onAdd={addWealth}
-          addLabel='Add Wealth Rec'
-        />
+// ─── ACCUMULATION IMPACT MODAL ────────────────────────────────────────────────
 
-        {/* Goals context */}
-        {goalsData.length > 0 && (
-          <div style={{
-            background:'#fff', border:'1px solid var(--cream3)', borderRadius:8,
-            padding:'14px 16px', marginBottom:16,
-          }}>
-            <div style={{ fontFamily:'Inter', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--ink3)', marginBottom:8 }}>
-              Goal Context — from Capital Mandate
+interface GoalItem {
+  id: string
+  label: string
+  icon: string
+  targetCorpus: number
+  targetAge: number
+  existingProjected: number
+}
+
+function AccImpactModal({ rec, goals, existingPortfolioValue, onClose }: {
+  rec: AccRec
+  goals: GoalItem[]
+  existingPortfolioValue: number
+  onClose: () => void
+}) {
+  const [view, setView] = useState<'existing' | 'with'>('existing')
+  const [orderedGoals, setOrderedGoals] = useState<GoalItem[]>(() =>
+    [...goals].sort((a, b) => a.targetAge - b.targetAge)
+  )
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+
+  const totalInvested = calcTotalInvested(rec)
+  const projValue = calcProjectedValue(rec)
+  const gain = projValue - totalInvested
+  const annualContrib = calcAnnualContrib(rec)
+  const monthlyContrib = annualContrib / 12
+  const irr = calcIRR(totalInvested, projValue, rec.projMethod === 'illustration' ? rec.illusTerm : rec.rateYears)
+
+  // Goal waterfall — simple waterfall: portfolio fills each goal sequentially
+  const portfolioBase = view === 'existing' ? existingPortfolioValue : existingPortfolioValue + projValue
+  let remaining = portfolioBase
+
+  const goalResults = orderedGoals.map(g => {
+    const funded = Math.min(remaining, g.targetCorpus)
+    remaining = Math.max(0, remaining - g.targetCorpus)
+    const shortfall = Math.max(0, g.targetCorpus - funded)
+    const pct = g.targetCorpus > 0 ? Math.min(100, Math.round((funded / g.targetCorpus) * 100)) : 100
+    return { ...g, funded, shortfall, pct }
+  })
+
+  const overlay: React.CSSProperties = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  }
+  const modal: React.CSSProperties = {
+    background: '#fff', borderRadius: 12, border: '1px solid var(--cream3)',
+    width: 580, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '28px',
+  }
+
+  // Drag handlers
+  function onDragStart(idx: number) { setDragIdx(idx) }
+  function onDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault()
+    if (dragIdx === null || dragIdx === idx) return
+    const next = [...orderedGoals]
+    const [moved] = next.splice(dragIdx, 1)
+    next.splice(idx, 0, moved)
+    setOrderedGoals(next)
+    setDragIdx(idx)
+  }
+  function onDragEnd() { setDragIdx(null) }
+
+  const statusBg = (pct: number) => pct >= 100 ? '#D1FAE5' : pct >= 60 ? '#FEF3C7' : '#FEE2E2'
+  const statusColor = (pct: number) => pct >= 100 ? '#1E4D35' : pct >= 60 ? '#854F0B' : '#9B1C1C'
+  const statusLabel = (pct: number) => pct >= 100 ? 'Fully funded' : pct >= 60 ? 'Partially funded' : 'Shortfall'
+  const barColor = (pct: number) => pct >= 100 ? '#2D5A4E' : pct >= 60 ? '#c8a96e' : '#9B1C1C'
+
+  return (
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={modal}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: 'var(--ink)' }}>
+            Impact analysis
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--ink3)', lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 16 }}>
+          {rec.productType || rec.planType} — {rec.company}
+        </div>
+
+        {/* Key figures */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
+          {[
+            { label: 'Total invested', val: fmt(totalInvested), color: '#854F0B' },
+            { label: 'Projected value', val: fmt(projValue), color: '#1E4D35' },
+            { label: 'Projected gain', val: (gain >= 0 ? '+' : '') + fmt(gain), color: gain >= 0 ? '#1E4D35' : '#9B1C1C' },
+          ].map(m => (
+            <div key={m.label} style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={S.lbl}>{m.label}</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: m.color }}>{m.val}</div>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'28px 1fr auto auto auto', gap:'0 12px', padding:'0 0 4px' }}>
-              {['','Goal','Corpus Needed','Monthly Required','Status'].map((h,i)=>(
-                <div key={i} style={{fontFamily:'Inter',fontSize:10,letterSpacing:'0.07em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
+          ))}
+        </div>
+
+        {/* Cash flow impact */}
+        <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '14px 16px', marginBottom: 20, border: '1px solid var(--cream3)' }}>
+          <div style={{ ...S.lbl, marginBottom: 8 }}>Cash flow impact</div>
+          <div style={{ display: 'flex', gap: 32 }}>
+            <div>
+              <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 2 }}>Monthly outflow</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 600, color: '#9B1C1C' }}>
+                {fmt(monthlyContrib)} / mo
+              </div>
+            </div>
+            <div>
+              <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 2 }}>Annual outflow</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 600, color: '#9B1C1C' }}>
+                {fmt(annualContrib)} / yr
+              </div>
+            </div>
+            {irr > 0 && (
+              <div>
+                <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 2 }}>Projected IRR</div>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 600, color: '#1E4D35' }}>
+                  {irr.toFixed(1)}% p.a.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Goal waterfall */}
+        {orderedGoals.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                Goal progress
+              </div>
+              <div style={{ display: 'flex', border: '1px solid var(--cream3)', borderRadius: 6, overflow: 'hidden' }}>
+                {(['existing', 'with'] as const).map(v => (
+                  <button key={v} onClick={() => setView(v)} style={{
+                    fontSize: 11, padding: '4px 12px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
+                    background: view === v ? 'var(--cream2)' : 'transparent',
+                    color: view === v ? 'var(--ink)' : 'var(--ink3)',
+                    fontWeight: view === v ? 600 : 400,
+                  }}>
+                    {v === 'existing' ? 'Existing only' : '+ This product'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 10 }}>
+              Drag to reorder. Portfolio waterfall funds goals in order shown.
+            </div>
+
+            {goalResults.map((g, idx) => (
+              <div
+                key={g.id}
+                draggable
+                onDragStart={() => onDragStart(idx)}
+                onDragOver={e => onDragOver(e, idx)}
+                onDragEnd={onDragEnd}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0',
+                  borderBottom: idx < goalResults.length - 1 ? '1px solid var(--cream3)' : 'none',
+                  cursor: 'grab', opacity: dragIdx === idx ? 0.5 : 1,
+                }}
+              >
+                {/* Icon */}
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: 14, flexShrink: 0,
+                  background: statusBg(g.pct), color: statusColor(g.pct),
+                }}>
+                  {g.icon}
+                </div>
+                {/* Details */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{g.label}</div>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, fontFamily: 'Inter',
+                      background: statusBg(g.pct), color: statusColor(g.pct),
+                    }}>{statusLabel(g.pct)}</span>
+                  </div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 6 }}>
+                    Target age {g.targetAge} · Need {fmt(g.targetCorpus)}
+                  </div>
+                  <div style={{ height: 6, background: 'var(--cream3)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+                    <div style={{ width: `${g.pct}%`, height: '100%', background: barColor(g.pct), borderRadius: 3, transition: 'width 0.4s' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Inter', fontSize: 11 }}>
+                    <span style={{ color: statusColor(g.pct) }}>{fmt(g.funded)} covered</span>
+                    {g.shortfall > 0 && <span style={{ color: '#9B1C1C' }}>{fmt(g.shortfall)} short</span>}
+                  </div>
+                </div>
+                {/* Drag handle */}
+                <div style={{ color: 'var(--ink3)', fontSize: 14, paddingTop: 6, cursor: 'grab' }}>⠿</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── PROTECTION CARD ──────────────────────────────────────────────────────────
+
+function ProtCard({ rec, onChange, onDelete, onChoose, existingPolicies, canAddMore, rankIdx }: {
+  rec: ProtRec
+  onChange: (r: ProtRec) => void
+  onDelete: () => void
+  onChoose: () => void
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
+  canAddMore: boolean
+  rankIdx: number
+}) {
+  const [showImpact, setShowImpact] = useState(false)
+  function upd<K extends keyof ProtRec>(k: K, v: ProtRec[K]) { onChange({ ...rec, [k]: v }) }
+
+  function togglePolicy(pol: typeof existingPolicies[0]) {
+    const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
+    if (exists) {
+      upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
+    } else {
+      upd('replacedPolicies', [...rec.replacedPolicies, {
+        policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName,
+        annualPremium: pol.annualPremium, currentCashValue: pol.currentCashValue,
+      }])
+    }
+  }
+
+  function updateReplacedField(policyId: string, field: 'annualPremium' | 'currentCashValue', val: number) {
+    upd('replacedPolicies', rec.replacedPolicies.map(p =>
+      p.policyId === policyId ? { ...p, [field]: val } : p
+    ))
+  }
+
+  const borderStyle = rec.isChosen
+    ? '2px solid #2D5A4E'
+    : `1px solid var(--cream3)`
+
+  return (
+    <>
+      <div style={{ ...S.card, border: borderStyle }}>
+        {/* Card top bar */}
+        <div style={{ background: 'var(--cream)', padding: '12px 16px', borderBottom: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <RankBadge rank={rec.rank} />
+          {rec.isChosen && <ChosenBadge />}
+          <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+        </div>
+
+        {/* Core fields */}
+        <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
+          <div>
+            <label style={S.lbl}>Product name</label>
+            <input style={S.inp} value={rec.productName} onChange={e => upd('productName', e.target.value)} placeholder="e.g. MultiPay CI Advantage" />
+          </div>
+          <div>
+            <label style={S.lbl}>Insurer</label>
+            <input style={S.inp} value={rec.insurer} onChange={e => upd('insurer', e.target.value)} placeholder="e.g. Prudential" />
+          </div>
+          <div>
+            <label style={S.lbl}>Coverage type</label>
+            <input style={S.inp} value={rec.coverageType} onChange={e => upd('coverageType', e.target.value)} placeholder="e.g. Critical Illness" />
+          </div>
+          <div>
+            <label style={S.lbl}>Sum assured</label>
+            <input type="number" style={S.inp} value={rec.sumAssured || ''} onChange={e => upd('sumAssured', Number(e.target.value))} placeholder="0" />
+          </div>
+          <div>
+            <label style={S.lbl}>Annual premium (S$)</label>
+            <input type="number" style={S.inp} value={rec.annualPremium || ''} onChange={e => upd('annualPremium', Number(e.target.value))} placeholder="0" />
+          </div>
+          <div>
+            <label style={S.lbl}>Premium term / Policy term</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input style={{ ...S.inp }} value={rec.premiumTerm} onChange={e => upd('premiumTerm', e.target.value)} placeholder="e.g. 20 yrs" />
+              <input style={{ ...S.inp }} value={rec.policyTerm} onChange={e => upd('policyTerm', e.target.value)} placeholder="e.g. Life" />
+            </div>
+          </div>
+          <div style={{ gridColumn: '1/3' }}>
+            <label style={S.lbl}>Benefits</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 70, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits of this product…" />
+          </div>
+          <div>
+            <label style={S.lbl}>Limitations</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 70, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" />
+          </div>
+        </div>
+
+        {/* Replacement section */}
+        {rec.mode === 'replacement' && (
+          <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={{ ...S.lbl, marginBottom: 10 }}>Replacing existing policies</div>
+
+              {existingPolicies.length === 0 && (
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>
+                  No existing policies found — add them in the Protection Portfolio tab first.
+                </div>
+              )}
+
+              {/* Policy multi-select */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {existingPolicies.map(pol => {
+                  const selected = !!rec.replacedPolicies.find(p => p.policyId === pol.id)
+                  return (
+                    <button key={pol.id} onClick={() => togglePolicy(pol)} style={{
+                      fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Inter',
+                      border: `1px solid ${selected ? '#2D5A4E' : 'var(--cream3)'}`,
+                      background: selected ? '#D1FAE5' : '#fff',
+                      color: selected ? '#1E4D35' : 'var(--ink2)',
+                      fontWeight: selected ? 600 : 400,
+                    }}>
+                      {selected ? '✓ ' : ''}{pol.policyName || pol.companyName}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Override fields for selected policies */}
+              {rec.replacedPolicies.length > 0 && (
+                <div>
+                  {rec.replacedPolicies.map(p => (
+                    <div key={p.policyId} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'end', marginBottom: 8 }}>
+                      <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink2)', paddingBottom: 6 }}>
+                        {p.policyName || p.companyName}
+                      </div>
+                      <div>
+                        <label style={S.lbl}>Annual premium</label>
+                        <input type="number" style={{ ...S.inp, width: 120 }}
+                          value={p.annualPremium || ''}
+                          onChange={e => updateReplacedField(p.policyId, 'annualPremium', Number(e.target.value))} />
+                      </div>
+                      <div>
+                        <label style={S.lbl}>Cash value</label>
+                        <input type="number" style={{ ...S.inp, width: 120 }}
+                          value={p.currentCashValue || ''}
+                          onChange={e => updateReplacedField(p.policyId, 'currentCashValue', Number(e.target.value))} />
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Comparison table */}
+                  <CompareTable
+                    existing={rec.replacedPolicies}
+                    newPremium={rec.annualPremium}
+                    newSA={rec.sumAssured}
+                    newCoverageType={rec.coverageType}
+                    existingPolicies={rec.replacedPolicies}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {rec.isChosen ? (
+            <>
+              <button onClick={() => setShowImpact(true)} style={{
+                fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+                border: '1px solid #2D5A4E', background: 'transparent', color: '#2D5A4E', fontWeight: 600,
+              }}>View impact</button>
+              <button onClick={onChoose} style={{
+                fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+                border: '1px solid var(--cream3)', background: 'transparent', color: 'var(--ink2)',
+              }}>Unmark as chosen</button>
+            </>
+          ) : (
+            <button onClick={onChoose} style={{
+              fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+              border: 'none', background: 'var(--charcoal)', color: 'var(--cream)', fontWeight: 600,
+            }}>Mark as chosen</button>
+          )}
+          <button onClick={onDelete} style={{
+            fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+            border: '1px solid var(--cream3)', background: 'transparent', color: '#9B1C1C', marginLeft: 'auto',
+          }}>Remove</button>
+        </div>
+      </div>
+
+      {showImpact && <ProtImpactModal rec={rec} onClose={() => setShowImpact(false)} />}
+    </>
+  )
+}
+
+// ─── ACCUMULATION CARD ────────────────────────────────────────────────────────
+
+function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, existingPolicies, rankIdx }: {
+  rec: AccRec
+  onChange: (r: AccRec) => void
+  onDelete: () => void
+  onChoose: () => void
+  goals: GoalItem[]
+  existingPortfolioValue: number
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
+  rankIdx: number
+}) {
+  const [showImpact, setShowImpact] = useState(false)
+  function upd<K extends keyof AccRec>(k: K, v: AccRec[K]) { onChange({ ...rec, [k]: v }) }
+
+  const totalInvested = calcTotalInvested(rec)
+  const projValue = calcProjectedValue(rec)
+  const gain = projValue - totalInvested
+  const irr = calcIRR(totalInvested, projValue, rec.projMethod === 'illustration' ? rec.illusTerm : rec.rateYears)
+
+  const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
+
+  return (
+    <>
+      <div style={{ ...S.card, border: borderStyle }}>
+        {/* Top bar */}
+        <div style={{ background: 'var(--cream)', padding: '12px 16px', borderBottom: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <RankBadge rank={rec.rank} />
+          {rec.isChosen && <ChosenBadge />}
+          <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+        </div>
+
+        {/* Core fields */}
+        <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
+          <div>
+            <label style={S.lbl}>Product / Type</label>
+            <input style={S.inp} value={rec.productType} onChange={e => upd('productType', e.target.value)} placeholder="e.g. Gro Capital Ease II" />
+          </div>
+          <div>
+            <label style={S.lbl}>Company</label>
+            <input style={S.inp} value={rec.company} onChange={e => upd('company', e.target.value)} placeholder="e.g. NTUC Income" />
+          </div>
+          <div>
+            <label style={S.lbl}>Plan</label>
+            <select style={S.inp} value={rec.planType} onChange={e => upd('planType', e.target.value)}>
+              <option value="">Select…</option>
+              {PLAN_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Contribution structure */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+            <div style={{ ...S.lbl, marginBottom: 10 }}>Contribution structure</div>
+
+            {/* Lump sum */}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={rec.hasLumpSum} onChange={e => upd('hasLumpSum', e.target.checked)} style={{ accentColor: '#2D5A4E', width: 15, height: 15 }} />
+              <span style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)' }}>Lump sum</span>
+            </label>
+            {rec.hasLumpSum && (
+              <div style={{ marginLeft: 23, marginBottom: 12 }}>
+                <label style={S.lbl}>Amount (S$)</label>
+                <input type="number" style={{ ...S.inp, width: 200 }} value={rec.lumpSumAmount || ''} onChange={e => upd('lumpSumAmount', Number(e.target.value))} placeholder="0" />
+              </div>
+            )}
+
+            {/* Regular */}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={rec.hasRegular} onChange={e => upd('hasRegular', e.target.checked)} style={{ accentColor: '#2D5A4E', width: 15, height: 15 }} />
+              <span style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--ink)' }}>Regular contribution / top-up</span>
+            </label>
+            {rec.hasRegular && (
+              <div style={{ marginLeft: 23, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
+                <div>
+                  <label style={S.lbl}>Frequency</label>
+                  <select style={S.inp} value={rec.regularFreq} onChange={e => upd('regularFreq', e.target.value as ContribFreq)}>
+                    {(['Monthly', 'Annual', 'Quarterly'] as ContribFreq[]).map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.lbl}>Amount (S$)</label>
+                  <input type="number" style={S.inp} value={rec.regularAmount || ''} onChange={e => upd('regularAmount', Number(e.target.value))} placeholder="0" />
+                </div>
+                <div>
+                  <label style={S.lbl}>For how many years</label>
+                  <input type="number" style={S.inp} value={rec.regularYears || ''} onChange={e => upd('regularYears', Number(e.target.value))} placeholder="yrs" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Projected value */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+            <div style={{ ...S.lbl, marginBottom: 8 }}>Projected value at maturity</div>
+            {/* Method toggle */}
+            <div style={{ display: 'flex', border: '1px solid var(--cream3)', borderRadius: 6, overflow: 'hidden', width: 'fit-content', marginBottom: 14 }}>
+              {(['illustration', 'rate'] as ProjMethod[]).map(m => (
+                <button key={m} onClick={() => upd('projMethod', m)} style={{
+                  fontSize: 12, padding: '5px 14px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
+                  background: rec.projMethod === m ? 'var(--cream2)' : 'transparent',
+                  color: rec.projMethod === m ? 'var(--ink)' : 'var(--ink3)',
+                  fontWeight: rec.projMethod === m ? 600 : 400,
+                }}>
+                  {m === 'illustration' ? 'From illustration' : 'By projected rate'}
+                </button>
               ))}
             </div>
-            {goalsData.map((g,i)=>(
-              <GoalContextRow key={i} {...g} />
+
+            {rec.projMethod === 'illustration' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
+                <div>
+                  <label style={S.lbl}>Policy / maturity term (yrs)</label>
+                  <input type="number" style={S.inp} value={rec.illusTerm || ''} onChange={e => upd('illusTerm', Number(e.target.value))} placeholder="yrs" />
+                </div>
+                <div>
+                  <label style={S.lbl}>Guaranteed value (S$)</label>
+                  <input type="number" style={S.inp} value={rec.illusGuaranteed || ''} onChange={e => upd('illusGuaranteed', Number(e.target.value))} placeholder="0" />
+                </div>
+                <div>
+                  <label style={S.lbl}>Non-guaranteed value (S$)</label>
+                  <input type="number" style={S.inp} value={rec.illusNonGuaranteed || ''} onChange={e => upd('illusNonGuaranteed', Number(e.target.value))} placeholder="0 (uses guaranteed if blank)" />
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                <div>
+                  <label style={S.lbl}>Investment horizon (yrs)</label>
+                  <input type="number" style={S.inp} value={rec.rateYears || ''} onChange={e => upd('rateYears', Number(e.target.value))} placeholder="yrs" />
+                </div>
+                <div>
+                  <label style={S.lbl}>Projected annual return (% p.a.)</label>
+                  <input type="number" step="0.1" style={S.inp} value={rec.rateReturn || ''} onChange={e => upd('rateReturn', Number(e.target.value))} placeholder="e.g. 6" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Replacement section */}
+        {rec.mode === 'replacement' && (
+          <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={{ ...S.lbl, marginBottom: 10 }}>Replacing existing policies</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {existingPolicies.map(pol => {
+                  const selected = !!rec.replacedPolicies.find(p => p.policyId === pol.id)
+                  return (
+                    <button key={pol.id} onClick={() => {
+                      const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
+                      if (exists) {
+                        upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
+                      } else {
+                        upd('replacedPolicies', [...rec.replacedPolicies, {
+                          policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName,
+                          annualPremium: pol.annualPremium, currentCashValue: pol.currentCashValue,
+                        }])
+                      }
+                    }} style={{
+                      fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Inter',
+                      border: `1px solid ${selected ? '#2D5A4E' : 'var(--cream3)'}`,
+                      background: selected ? '#D1FAE5' : '#fff',
+                      color: selected ? '#1E4D35' : 'var(--ink2)',
+                    }}>
+                      {selected ? '✓ ' : ''}{pol.policyName || pol.companyName}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Benefits / Limitations */}
+        <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={S.lbl}>Benefits</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 70, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
+          </div>
+          <div>
+            <label style={S.lbl}>Limitations</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 70, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" />
+          </div>
+        </div>
+
+        {/* Summary bar */}
+        {(totalInvested > 0 || projValue > 0) && (
+          <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            {[
+              { label: 'Total invested', val: fmt(totalInvested), color: '#854F0B' },
+              { label: 'Projected value', val: fmt(projValue), color: '#1E4D35' },
+              { label: irr > 0 ? `Projected gain (${irr.toFixed(1)}% IRR)` : 'Projected gain', val: (gain >= 0 ? '+' : '') + fmt(gain), color: gain >= 0 ? '#1E4D35' : '#9B1C1C' },
+            ].map(m => (
+              <div key={m.label} style={{ background: 'var(--cream)', borderRadius: 8, padding: '10px 14px', border: '1px solid var(--cream3)' }}>
+                <div style={S.lbl}>{m.label}</div>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 600, color: m.color }}>{m.val}</div>
+              </div>
             ))}
           </div>
         )}
 
-        {wealthRecs.length === 0 ? (
-          <div style={{
-            textAlign:'center', padding:'32px 16px', color:'var(--ink3)',
-            fontFamily:'Inter', fontSize:13, fontStyle:'italic',
-          }}>
-            No wealth recommendations yet — click <strong>+ Add Wealth Rec</strong> to begin
-          </div>
-        ) : (
-          wealthRecs.map(r => (
-            <WealthCard key={r.id} rec={r} onChange={u=>updateWealthRec(r.id,u)} onDelete={()=>deleteWealthRec(r.id)} />
-          ))
-        )}
+        {/* Actions */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {rec.isChosen ? (
+            <>
+              <button onClick={() => setShowImpact(true)} style={{
+                fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+                border: '1px solid #2D5A4E', background: 'transparent', color: '#2D5A4E', fontWeight: 600,
+              }}>View impact</button>
+              <button onClick={onChoose} style={{
+                fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+                border: '1px solid var(--cream3)', background: 'transparent', color: 'var(--ink2)',
+              }}>Unmark as chosen</button>
+            </>
+          ) : (
+            <button onClick={onChoose} style={{
+              fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+              border: 'none', background: 'var(--charcoal)', color: 'var(--cream)', fontWeight: 600,
+            }}>Mark as chosen</button>
+          )}
+          <button onClick={onDelete} style={{
+            fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter',
+            border: '1px solid var(--cream3)', background: 'transparent', color: '#9B1C1C', marginLeft: 'auto',
+          }}>Remove</button>
+        </div>
       </div>
 
-      {/* ── Wealth Distribution ── */}
-      <div style={sectionCard}>
-        <SectionHeader
-          title='Wealth Distribution'
-          subtitle='Estate, legacy & distribution planning recommendations'
-          count={distribRecs.length}
-          onAdd={addDistrib}
-          addLabel='Add Distribution Rec'
+      {showImpact && (
+        <AccImpactModal
+          rec={rec}
+          goals={goals}
+          existingPortfolioValue={existingPortfolioValue}
+          onClose={() => setShowImpact(false)}
         />
+      )}
+    </>
+  )
+}
 
-        {/* Estate status context from objectives */}
-        {ffData?.estate && (
-          <div style={{
-            background:'#fff', border:'1px solid var(--cream3)', borderRadius:8,
-            padding:'14px 16px', marginBottom:16,
-          }}>
-            <div style={{ fontFamily:'Inter', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--ink3)', marginBottom:10 }}>
-              Current Estate Status — from Strategic Objectives
-            </div>
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              {[
-                { label:'Will', val: ffData.estate[person === 'spouse' ? 'spouse' : 'client']?.willStatus },
-                { label:'LPA',  val: ffData.estate[person === 'spouse' ? 'spouse' : 'client']?.lpaStatus },
-                { label:'CPF Nomination', val: ffData.estate[person === 'spouse' ? 'spouse' : 'client']?.cpfNomStatus },
-                { label:'Trust', val: ffData.estate[person === 'spouse' ? 'spouse' : 'client']?.trustStatus },
-              ].map(item=>{
-                if (!item.val) return null
-                const isGood = item.val === 'has_will' || item.val === 'has_lpa' || item.val === 'nominated' || item.val === 'has_trust'
-                const isNone = item.val === 'no_will' || item.val === 'no_lpa' || item.val === 'not_nominated' || item.val === 'no_trust'
-                return (
-                  <div key={item.label} style={{
-                    display:'flex', alignItems:'center', gap:6, padding:'5px 10px',
-                    background: isGood ? '#D1FAE5' : isNone ? '#FEE2E2' : '#FEF3C7',
-                    borderRadius:6,
-                  }}>
-                    <span style={{fontFamily:'Inter',fontSize:11,color:'var(--ink2)',fontWeight:600}}>{item.label}</span>
-                    <span style={{fontSize:10,color: isGood ? '#1E4D35' : isNone ? '#9B1C1C' : '#854F0B'}}>
-                      {isGood ? '✓' : isNone ? '✗' : '⚠'}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
+// ─── SECTION HEADER ───────────────────────────────────────────────────────────
 
-        {distribRecs.length === 0 ? (
-          <div style={{
-            textAlign:'center', padding:'32px 16px', color:'var(--ink3)',
-            fontFamily:'Inter', fontSize:13, fontStyle:'italic',
-          }}>
-            No distribution recommendations yet — click <strong>+ Add Distribution Rec</strong> to begin
-          </div>
-        ) : (
-          distribRecs.map(r => (
-            <DistribCard key={r.id} rec={r} onChange={u=>updateDistribRec(r.id,u)} onDelete={()=>deleteDistribRec(r.id)} />
-          ))
-        )}
+function SectionHeader({ title, subtitle, onAdd, canAdd }: {
+  title: string; subtitle: string; onAdd: () => void; canAdd: boolean
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 20, paddingBottom: 14, borderBottom: '1px solid var(--cream3)' }}>
+      <div>
+        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.1 }}>{title}</div>
+        <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>{subtitle}</div>
       </div>
+      <button
+        onClick={onAdd}
+        disabled={!canAdd}
+        style={{
+          background: canAdd ? 'var(--charcoal)' : 'var(--cream3)', color: canAdd ? 'var(--cream)' : 'var(--ink3)',
+          border: 'none', borderRadius: 6, padding: '8px 16px', fontFamily: 'Inter', fontSize: 12,
+          cursor: canAdd ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 6,
+        }}
+      >
+        <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+        {canAdd ? 'Add option' : 'Max 3 options'}
+      </button>
     </div>
   )
 }
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+
 export default function RecommendationsPage() {
   const supabase = createClient()
-
-  // Client / family state
-  const [clientId,   setClientId]   = useState<string|null>(null)
+  const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
-  const [spouseName, setSpouseName] = useState('Spouse')
-  const [isCouple,   setIsCouple]   = useState(false)
-  const [children,   setChildren]   = useState<any[]>([])
-  const [ffData,     setFfData]     = useState<any>({})
+  const [data, setData] = useState<RecPageData>(EMPTY)
+  const [saving, setSaving] = useState(false)
+  const [saveOk, setSaveOk] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Gap & goals data (read-only from other tabs)
-  const [clientGaps,  setClientGaps]  = useState({ dtpd:{need:0,have:0}, ci:{need:0,have:0} })
-  const [spouseGaps,  setSpouseGaps]  = useState({ dtpd:{need:0,have:0}, ci:{need:0,have:0} })
-  const [clientGoals, setClientGoals] = useState<{icon:string;label:string;corpus:number;monthly:number;shortfall:number}[]>([])
-  const [spouseGoals, setSpouseGoals] = useState<{icon:string;label:string;corpus:number;monthly:number;shortfall:number}[]>([])
-  const [jointGoals,  setJointGoals]  = useState<{icon:string;label:string;corpus:number;monthly:number;shortfall:number}[]>([])
+  // Existing policies from protection_portfolio
+  const [existingPolicies, setExistingPolicies] = useState<{
+    id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number
+  }[]>([])
 
-  // Reference data
-  const [companies, setCompanies] = useState<{id:number;name:string;category_id:number}[]>([])
-  const [products,  setProducts]  = useState<{id:number;name:string;category_id:number;company_id:number}[]>([])
+  // Goals for accumulation waterfall
+  const [goals, setGoals] = useState<GoalItem[]>([])
+  const [existingPortfolioValue, setExistingPortfolioValue] = useState(0)
 
-  // Rec data
-  const [recData,  setRecData]  = useState<RecData>(EMPTY_REC_DATA)
-  const [saving,   setSaving]   = useState(false)
-  const [saveOk,   setSaveOk]   = useState(false)
-  const saveTimer = useRef<ReturnType<typeof setTimeout>|null>(null)
-
-  // UI
-  const [activeTab, setActiveTab] = useState('client')
-  const [error,     setError]     = useState<string|null>(null)
-
-  // ── Load client ID ──────────────────────────────────────────────────────────
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
     if (id) setClientId(id)
@@ -827,275 +1057,258 @@ export default function RecommendationsPage() {
 
   useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
 
-  // ── Load all data ───────────────────────────────────────────────────────────
   async function loadAll(id: string) {
     try {
       setError(null)
-      const sc = createClient()
+      const { data: ffRows } = await supabase
+        .from('fact_finding').select('section,data').eq('client_id', id)
+        .in('section', ['financials', 'protection_portfolio', 'capital_mandate', 'retirement', 'education', 'accumulation', 'strategic_recommendations_v2'])
 
-      const [
-        { data: ffRows },
-        { data: familyRows },
-        { data: comps },
-        { data: prods },
-      ] = await Promise.all([
-        sc.from('fact_finding').select('section,data').eq('client_id', id)
-          .in('section',['financials','protection_needs','protection_portfolio','retirement','accumulation','education','estate','objectives','capital_mandate','strategic_recommendations']),
-        sc.from('family_members').select('*').eq('client_id', id),
-        sc.from('ins_companies').select('*').eq('active',true).order('sort_order'),
-        sc.from('ins_products').select('*').eq('active',true).order('sort_order'),
-      ])
-
-      if (comps) setCompanies(comps)
-      if (prods) setProducts(prods)
-
-      // Build merged FF
-      const by: Record<string,any> = {}
-      if (ffRows) ffRows.forEach((r:any) => { by[r.section] = r.data })
-
-      const fin  = by['financials']    ?? {}
-      const pNeeds = by['protection_needs'] ?? {}
-      const pPort  = by['protection_portfolio'] ?? {}
-      const accRow = by['accumulation'] ?? {}
-      const retRow = by['retirement']   ?? {}
-      const eduRow = by['education']    ?? {}
-      const estateRow = by['estate']    ?? {}
-      const objRow = by['objectives']   ?? {}
-      const cmRow  = by['capital_mandate'] ?? {}
+      const by: Record<string, any> = {}
+      if (ffRows) ffRows.forEach((r: any) => { by[r.section] = r.data })
 
       // Client name
+      const fin = by['financials'] ?? {}
       const cName = fin?.client?.firstName
-        ? `${fin.client.firstName} ${fin.client.lastName||''}`.trim()
+        ? `${fin.client.firstName} ${fin.client.lastName || ''}`.trim()
         : 'Client'
-      const sName = fin?.spouse?.firstName
-        ? `${fin.spouse.firstName} ${fin.spouse.lastName||''}`.trim()
-        : fin?.person2?.firstName
-          ? `${fin.person2.firstName} ${fin.person2.lastName||''}`.trim()
-          : 'Spouse'
       setClientName(cName)
-      setSpouseName(sName)
 
-      // Couple mode
-      const coupled = objRow?.protection?.planType === 'couple'
-        || objRow?.planType === 'couple'
-        || fin?.mode === 'couple'
-        || fin?.planType === 'couple'
-      setIsCouple(coupled)
-
-      // Children from family_members
-      const kids = familyRows
-        ? familyRows.filter((m:any) => ['son','daughter','child'].includes((m.relationship||'').toLowerCase()))
-        : []
-      setChildren(kids)
-
-      // Gaps from protection_needs
-      const prot = pNeeds?.protection ?? {}
+      // Existing policies from protection_portfolio
+      const pPort = by['protection_portfolio'] ?? {}
       const policies: any[] = pPort?.risk_management?.policies ?? []
-      const ACTIVE = ['In-Force','Premium Holiday','Paid-up']
-      const activePolicies = policies.filter((p:any) => ACTIVE.includes(p.status))
-
-      const sumBenefit = (person:string, type:'death'|'ci') => {
-        return activePolicies
-          .filter((p:any)=>p.person===person)
-          .reduce((s:number,p:any)=>{
-            const mult = p.multiplier || 1
-            if (type==='death') return s + (p.baseDeath||0)*mult + (p.baseTPD||0)*mult
-            return s + (p.baseAdvCI||0)*mult + (p.baseEarlyCI||0)*mult
-          },0)
-      }
-      setClientGaps({
-        dtpd: { need: prot.p1_dtpd_need || 0, have: sumBenefit('client','death') },
-        ci:   { need: prot.p1_ci_need   || 0, have: sumBenefit('client','ci') },
-      })
-      setSpouseGaps({
-        dtpd: { need: prot.p2_dtpd_need || 0, have: sumBenefit('spouse','death') },
-        ci:   { need: prot.p2_ci_need   || 0, have: sumBenefit('spouse','ci') },
-      })
-
-      // Goals from capital_mandate
-      const cmGoals: any[] = cmRow?.portfolio?.vehicles ? [] : []
-      // Pull from accumulation goals
-      const accGoals: {icon:string;label:string;corpus:number;monthly:number;shortfall:number;owner:string}[] = []
-      ;(accRow?.acc?.goals || []).forEach((g:any)=>{
-        accGoals.push({
-          icon:'💰', label: g.label || 'Wealth Goal',
-          corpus: g.targetCorpus || 0, monthly: g.monthlyRequired || 0,
-          shortfall: 0, owner: g.owner || 'client',
+      const ACTIVE = ['In-Force', 'Premium Holiday', 'Paid-up']
+      const mapped = policies
+        .filter((p: any) => ACTIVE.includes(p.status))
+        .map((p: any) => {
+          const premFreq = p.frequency || p.premiumMode || 'Annual'
+          const annualPrem = premFreq === 'Monthly'
+            ? (p.premiumCash || 0) * 12
+            : premFreq === 'Quarterly'
+              ? (p.premiumCash || 0) * 4
+              : (p.premiumCash || 0)
+          return {
+            id: p.id,
+            policyName: p.productName || p.briefDescription || '',
+            companyName: p.companyName || '',
+            annualPremium: annualPrem,
+            currentCashValue: p.currentCashValue || 0,
+          }
         })
-      })
-      // Retirement goal
-      const ret = retRow?.ret ?? retRow ?? {}
-      const retCorpus = ret?.client?.corpusNeeded || ret?.corpusNeeded || 0
+      setExistingPolicies(mapped)
+
+      // Goals for waterfall
+      const cm = by['capital_mandate'] ?? {}
+      const ret = by['retirement'] ?? {}
+      const edu = by['education'] ?? {}
+      const clientAge = fin?.client?.age
+        ? Number(fin.client.age)
+        : fin?.client?.dob
+          ? new Date().getFullYear() - Number(String(fin.client.dob).slice(0, 4))
+          : 35
+
+      const builtGoals: GoalItem[] = []
+      // Retirement
+      const retCorpus = ret?.corpusNeeded || cm?.settings?.retirementCorpus || 0
+      const retAge = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
       if (retCorpus > 0) {
-        accGoals.unshift({
-          icon:'🌅', label:'Retirement', corpus: retCorpus, monthly: 0, shortfall: 0, owner:'joint',
-        })
+        builtGoals.push({ id: 'retirement', label: 'Retirement', icon: '🌅', targetCorpus: retCorpus, targetAge: retAge, existingProjected: 0 })
       }
       // Education goals
-      ;(eduRow?.edu?.children || []).forEach((c:any)=>{
-        if (c.corpus > 0) accGoals.push({
-          icon:'🎓', label:`${c.name}'s Education`, corpus:c.corpus||0, monthly:c.monthlyRequired||0, shortfall:0, owner:'joint',
-        })
+      ;(edu?.edu?.children || []).forEach((c: any) => {
+        if ((c.corpus || 0) > 0) {
+          builtGoals.push({ id: `edu_${c.childId || c.name}`, label: `${c.name}'s Education`, icon: '🎓', targetCorpus: c.corpus, targetAge: clientAge + (c.yearsAway || 18), existingProjected: 0 })
+        }
       })
-      setClientGoals(accGoals.filter(g=>g.owner==='client'))
-      setSpouseGoals(accGoals.filter(g=>g.owner==='spouse'))
-      setJointGoals(accGoals.filter(g=>g.owner==='joint'))
+      // Custom goals from capital mandate
+      ;(cm?.customGoals || []).forEach((g: any) => {
+        if ((g.targetCorpus || 0) > 0) {
+          builtGoals.push({ id: g.id || `goal_${g.label}`, label: g.label, icon: g.icon || '✦', targetCorpus: g.targetCorpus, targetAge: g.targetAge || 0, existingProjected: 0 })
+        }
+      })
 
-      // Merge estate data into ffData
-      setFfData({ ...fin, estate: estateRow?.estate ?? estateRow ?? {} })
+      // Sort by target age
+      builtGoals.sort((a, b) => a.targetAge - b.targetAge)
+      setGoals(builtGoals)
+
+      // Existing portfolio projected value from capital mandate
+      const portValue = cm?.retirementShortfall != null
+        ? Math.max(0, (cm?.settings?.retirementCorpus || 0) - (cm?.retirementShortfall || 0))
+        : 0
+      setExistingPortfolioValue(portValue)
 
       // Load saved recommendations
-      const saved = by['strategic_recommendations']
-      if (saved?.recData) setRecData(saved.recData)
-      else setRecData(EMPTY_REC_DATA)
-
-    } catch(e:any) {
-      setError('Failed to load data: ' + e.message)
+      const saved = by['strategic_recommendations_v2']
+      if (saved?.protection || saved?.accumulation) {
+        setData({ protection: saved.protection || [], accumulation: saved.accumulation || [] })
+      } else {
+        setData(EMPTY)
+      }
+    } catch (e: any) {
+      setError('Failed to load: ' + e.message)
     }
   }
 
-  // ── Auto-save ───────────────────────────────────────────────────────────────
-  const schedSave = useCallback((data:RecData) => {
+  const schedSave = useCallback((d: RecPageData) => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => save(data), 1200)
+    saveTimer.current = setTimeout(() => save(d), 1200)
   }, [clientId])
 
-  async function save(data:RecData) {
+  async function save(d: RecPageData) {
     if (!clientId) return
     setSaving(true)
     try {
-      const sc = createClient()
-      const { data: rows } = await sc.from('fact_finding').select('id')
-        .eq('client_id',clientId).eq('section','strategic_recommendations')
-        .order('created_at',{ascending:false}).limit(1)
-      const payload = { recData: data, updatedAt: new Date().toISOString() }
+      const payload = { ...d, updatedAt: new Date().toISOString() }
+      const { data: rows } = await supabase.from('fact_finding').select('id')
+        .eq('client_id', clientId).eq('section', 'strategic_recommendations_v2')
       if (rows && rows.length > 0) {
-        await sc.from('fact_finding').update({ data:payload, updated_at:new Date().toISOString() }).eq('id',rows[0].id)
+        await supabase.from('fact_finding').update({ data: payload }).eq('id', rows[0].id)
       } else {
-        await sc.from('fact_finding').insert({ client_id:clientId, section:'strategic_recommendations', data:payload })
+        await supabase.from('fact_finding').insert({ client_id: clientId, section: 'strategic_recommendations_v2', data: payload })
       }
       setSaveOk(true)
-      setTimeout(()=>setSaveOk(false), 2000)
-    } catch(e) { console.error('Save failed',e) }
+      setTimeout(() => setSaveOk(false), 2000)
+    } catch (e) { console.error('Save failed', e) }
     setSaving(false)
   }
 
-  function handleChange(data:RecData) {
-    setRecData(data)
-    schedSave(data)
+  function handleChange(d: RecPageData) { setData(d); schedSave(d) }
+
+  // ── Protection helpers ──────────────────────────────────────────────────────
+  function addProt() {
+    if (data.protection.length >= 3) return
+    const rank = RANK_LABELS[data.protection.length]
+    const rec: ProtRec = {
+      id: newId(), rank, mode: 'new', productName: '', insurer: '', coverageType: '',
+      sumAssured: 0, annualPremium: 0, premiumTerm: '', policyTerm: '',
+      benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
+    }
+    handleChange({ ...data, protection: [...data.protection, rec] })
+  }
+  function updateProt(id: string, r: ProtRec) {
+    handleChange({ ...data, protection: data.protection.map(x => x.id === id ? r : x) })
+  }
+  function deleteProt(id: string) {
+    const next = data.protection.filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
+    handleChange({ ...data, protection: next })
+  }
+  function chooseProt(id: string) {
+    handleChange({ ...data, protection: data.protection.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) })
   }
 
-  // ── Tabs ────────────────────────────────────────────────────────────────────
-  const tabs = [
-    { key:'client', label: clientName },
-    ...(isCouple ? [{ key:'spouse', label: spouseName }] : []),
-    ...(children.length > 0 ? children.map((c:any)=>({ key:`child_${c.id||c.name}`, label: c.name || 'Child' })) : []),
-  ]
-
-  // Goals for current tab
-  function getGoals(person:string) {
-    const jt = jointGoals
-    if (person==='client') return [...jt, ...clientGoals]
-    if (person==='spouse') return [...jt, ...spouseGoals]
-    return []  // children don't have goals context
+  // ── Accumulation helpers ────────────────────────────────────────────────────
+  function addAcc() {
+    if (data.accumulation.length >= 3) return
+    const rank = RANK_LABELS[data.accumulation.length]
+    const rec: AccRec = {
+      id: newId(), rank, mode: 'new', productType: '', company: '', planType: '',
+      hasLumpSum: false, lumpSumAmount: 0, hasRegular: true,
+      regularFreq: 'Monthly', regularAmount: 0, regularYears: 0,
+      projMethod: 'illustration', illusTerm: 0, illusGuaranteed: 0, illusNonGuaranteed: 0,
+      rateYears: 0, rateReturn: 0, replacedPolicies: [], benefits: '', limitations: '',
+      allocatedGoalIds: [], isChosen: false,
+    }
+    handleChange({ ...data, accumulation: [...data.accumulation, rec] })
   }
-  function getGaps(person:string) {
-    if (person==='client') return clientGaps
-    if (person==='spouse') return spouseGaps
-    return { dtpd:{need:0,have:0}, ci:{need:0,have:0} }
+  function updateAcc(id: string, r: AccRec) {
+    handleChange({ ...data, accumulation: data.accumulation.map(x => x.id === id ? r : x) })
   }
-
-  // Summary counts for hero band
-  const totalProt  = recData.protection.length
-  const totalWealth = recData.wealth.length
-  const totalDistrib = recData.distribution.length
-  const highPriority = [
-    ...recData.protection.filter(r=>r.priority==='High'),
-    ...recData.wealth.filter(r=>r.priority==='High'),
-    ...recData.distribution.filter(r=>r.urgency==='Immediate'),
-  ].length
+  function deleteAcc(id: string) {
+    const next = data.accumulation.filter(x => x.id !== id).map((r, i) => ({ ...r, rank: RANK_LABELS[i] }))
+    handleChange({ ...data, accumulation: next })
+  }
+  function chooseAcc(id: string) {
+    handleChange({ ...data, accumulation: data.accumulation.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) })
+  }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', minHeight:'100%' }}>
-      {/* ── Hero band ── */}
-      <div style={{ background:'var(--charcoal)', padding:'0 48px' }}>
-        <div style={{ paddingTop:32, paddingBottom:24 }}>
-          <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+      {/* Hero band */}
+      <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
+        <div style={{ paddingTop: 32, paddingBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontFamily:'Inter', fontSize:10, letterSpacing:'0.15em', textTransform:'uppercase', color:'#9A9690', marginBottom:6 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9A9690', marginBottom: 6 }}>
                 Advisory Summary
               </div>
-              <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:30, fontWeight:300, color:'#F0EDE8', lineHeight:1.1 }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 30, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.1 }}>
                 Strategic Recommendations
               </div>
-              <div style={{ fontFamily:'Inter', fontSize:12, color:'#9A9690', marginTop:6, fontStyle:'italic' }}>
-                Consolidated product &amp; planning recommendations across all areas
+              <div style={{ fontFamily: 'Inter', fontSize: 12, color: '#9A9690', marginTop: 6, fontStyle: 'italic' }}>
+                {clientName} · Product recommendations &amp; impact analysis
               </div>
             </div>
-            {/* Stats */}
-            <div style={{ display:'flex', gap:24, alignItems:'flex-end' }}>
-              {[
-                { label:'Protection', val:totalProt, color:'#c8a96e' },
-                { label:'Wealth',     val:totalWealth, color:'#4A9E8A' },
-                { label:'Distribution', val:totalDistrib, color:'#9B7BAA' },
-                { label:'High Priority', val:highPriority, color:'#FF8A80' },
-              ].map(s=>(
-                <div key={s.label} style={{ textAlign:'center' }}>
-                  <div style={{ fontFamily:'Cormorant Garamond,serif', fontSize:28, fontWeight:300, color:s.color, lineHeight:1 }}>{s.val}</div>
-                  <div style={{ fontFamily:'Inter', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase', color:'#9A9690', marginTop:3 }}>{s.label}</div>
-                </div>
-              ))}
-              {/* Save indicator */}
-              <div style={{ fontFamily:'Inter', fontSize:11, color: saveOk ? '#4A9E8A' : saving ? '#c8a96e' : 'transparent', marginLeft:8, transition:'color 0.3s', alignSelf:'center' }}>
-                {saveOk ? '✓ Saved' : saving ? 'Saving…' : '.'}
-              </div>
+            <div style={{ fontFamily: 'Inter', fontSize: 11, color: saveOk ? '#4A9E8A' : saving ? '#c8a96e' : 'transparent', transition: 'color 0.3s' }}>
+              {saveOk ? '✓ Saved' : saving ? 'Saving…' : '.'}
             </div>
           </div>
         </div>
-
-        {/* Person tabs */}
-        <div style={{ display:'flex', gap:0, borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:4 }}>
-          {tabs.map(t=>(
-            <button key={t.key} onClick={()=>setActiveTab(t.key)} style={{
-              background:'none', border:'none', padding:'12px 20px', cursor:'pointer',
-              fontFamily:'Inter', fontSize:12, letterSpacing:'0.06em',
-              color: activeTab===t.key ? '#F0EDE8' : '#9A9690',
-              borderBottom: activeTab===t.key ? '2px solid #A8834A' : '2px solid transparent',
-              transition:'all 0.2s',
-            }}>{t.label}</button>
-          ))}
-        </div>
       </div>
 
-      {/* ── Content ── */}
-      <div style={{ flex:1, padding:'32px 48px', maxWidth:1100 }}>
+      {/* Content */}
+      <div style={{ flex: 1, padding: '32px 48px', maxWidth: 1100 }}>
         {error && (
-          <div style={{ background:'#FEE2E2', border:'1px solid #FCA5A5', borderRadius:8, padding:'12px 16px', marginBottom:20, fontFamily:'Inter', fontSize:13, color:'#9B1C1C' }}>
+          <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '12px 16px', marginBottom: 20, fontFamily: 'Inter', fontSize: 13, color: '#9B1C1C' }}>
             {error}
           </div>
         )}
 
-        {tabs.map(t=>(
-          <div key={t.key} style={{ display: activeTab===t.key ? 'block' : 'none' }}>
-            <PersonSection
-              person={t.key}
-              personLabel={t.label}
-              recData={recData}
-              onChangeRecData={handleChange}
-              ffData={ffData}
-              gapData={getGaps(t.key)}
-              goalsData={getGoals(t.key)}
-              companies={companies}
-              products={products}
-            />
-          </div>
-        ))}
+        {/* ── Wealth Protection ── */}
+        <div style={S.sectionWrap}>
+          <SectionHeader
+            title="Wealth protection"
+            subtitle="Insurance & risk coverage recommendations (max 3 options)"
+            onAdd={addProt}
+            canAdd={data.protection.length < 3}
+          />
+          {data.protection.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>
+              No protection recommendations yet — click <strong>Add option</strong> to begin
+            </div>
+          ) : (
+            data.protection.map((rec, idx) => (
+              <ProtCard
+                key={rec.id}
+                rec={rec}
+                rankIdx={idx}
+                onChange={r => updateProt(rec.id, r)}
+                onDelete={() => deleteProt(rec.id)}
+                onChoose={() => chooseProt(rec.id)}
+                existingPolicies={existingPolicies}
+                canAddMore={data.protection.length < 3}
+              />
+            ))
+          )}
+        </div>
 
-        {tabs.length === 0 && (
-          <div style={{ textAlign:'center', padding:'80px 0', color:'var(--ink3)', fontFamily:'Inter', fontSize:13 }}>
-            No client selected. Please select a client from the dashboard.
-          </div>
-        )}
+        {/* ── Wealth Accumulation ── */}
+        <div style={S.sectionWrap}>
+          <SectionHeader
+            title="Wealth accumulation"
+            subtitle="Investment & savings recommendations (max 3 options)"
+            onAdd={addAcc}
+            canAdd={data.accumulation.length < 3}
+          />
+          {data.accumulation.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>
+              No accumulation recommendations yet — click <strong>Add option</strong> to begin
+            </div>
+          ) : (
+            data.accumulation.map((rec, idx) => (
+              <AccCard
+                key={rec.id}
+                rec={rec}
+                rankIdx={idx}
+                onChange={r => updateAcc(rec.id, r)}
+                onDelete={() => deleteAcc(rec.id)}
+                onChoose={() => chooseAcc(rec.id)}
+                goals={goals}
+                existingPortfolioValue={existingPortfolioValue}
+                existingPolicies={existingPolicies}
+              />
+            ))
+          )}
+        </div>
       </div>
     </div>
   )
