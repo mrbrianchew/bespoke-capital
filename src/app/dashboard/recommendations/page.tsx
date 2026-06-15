@@ -1821,7 +1821,7 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
   // Accumulation — regular contributions only (cash outflow)
   const accRecs = (data.accumulationByPerson[activePerson] || []).filter(r => r.isChosen)
   accRecs.forEach(r => {
-    const freqMult = r.regularFreq === 'monthly' ? 12 : r.regularFreq === 'quarterly' ? 4 : r.regularFreq === 'half-yearly' ? 2 : 1
+    const freqMult = r.regularFreq === 'Monthly' ? 12 : r.regularFreq === 'Quarterly' ? 4 : 1
     const annualContrib = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
     if (annualContrib > 0 || r.hasLumpSum) {
       const label = r.company || r.planType || 'Accumulation plan'
