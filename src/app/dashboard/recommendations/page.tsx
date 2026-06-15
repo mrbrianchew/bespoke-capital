@@ -1140,6 +1140,7 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   onChoose: () => void
   existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; monthlyBenefit: number; benefitTerm: string }[]
   ltcCompanies: { id: number; name: string }[]
+  products: InsProduct[]
   coverageTypes: string[]
   personName: string
   monthlyIncome: number
