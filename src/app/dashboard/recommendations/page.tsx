@@ -1145,7 +1145,7 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   onChange: (r: ProtRec) => void
   onDelete: () => void
   onChoose: () => void
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; monthlyBenefit: number; benefitTerm: string }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; monthlyBenefit: number; benefitTerm: string; premiumMedisave: number }[]
   ltcCompanies: { id: number; name: string }[]
   products: InsProduct[]
   coverageTypes: string[]
