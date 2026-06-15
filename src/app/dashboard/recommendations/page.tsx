@@ -56,6 +56,9 @@ interface ProtRec {
   // LTC-specific
   monthlyBenefit: number
   benefitPaymentPeriod: string
+  coverageTerm: string          // ADLs or occupation class
+  premiumMedisave: number       // auto-derived: min(annualPremium, 600)
+  premiumCash: number           // auto-derived: max(annualPremium - 600, 0)
   annualPremium: number
   premiumTerm: string
   policyTerm: string
@@ -270,16 +273,27 @@ function ModeToggle({ mode, onChange }: { mode: RecMode; onChange: (m: RecMode) 
 
 // ─── COMPARE TABLE ────────────────────────────────────────────────────────────
 
-function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMode, newCashPremium }: {
+function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMode, newCashPremium, ltcMode, newProductName, newMedisavePremium, newCashOnlyPremium }: {
   replaced: ReplacedPolicy[]; newPremium: number; newSA: number; newCoverageType: string
   medicalMode?: boolean; newCashPremium?: number
+  ltcMode?: boolean; newProductName?: string; newMedisavePremium?: number; newCashOnlyPremium?: number
 }) {
-  const oldTotal     = replaced.reduce((s, p) => s + p.annualPremium, 0)
-  const oldCashTotal = replaced.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)
-  const existingNames = replaced.map(p => p.policyName || p.companyName).filter(Boolean).join(', ')
+  const oldTotal        = replaced.reduce((s, p) => s + p.annualPremium, 0)
+  const oldMedisaveTotal = replaced.reduce((s, p) => s + (p.premiumMedisave || 0), 0)
+  const oldCashTotal    = replaced.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)
+  const existingNames   = replaced.map(p => p.policyName || p.companyName).filter(Boolean).join(', ')
+
+  // For non-LTC/medical comparison
   const compareNew = medicalMode ? (newCashPremium ?? newPremium) : newPremium
   const compareOld = medicalMode ? oldCashTotal : oldTotal
-  const delta = compareNew - compareOld
+  const delta      = compareNew - compareOld
+
+  // LTC deltas
+  const ltcMedisaveNew = newMedisavePremium ?? 0
+  const ltcCashNew     = newCashOnlyPremium ?? 0
+  const ltcMedisaveDelta = ltcMedisaveNew - oldMedisaveTotal
+  const ltcCashDelta   = ltcCashNew - oldCashTotal
+
   const td: React.CSSProperties = { padding: '6px 10px', fontFamily: 'Inter', fontSize: 12, borderBottom: '1px solid var(--cream3)' }
   const th: React.CSSProperties = { ...td, fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', fontWeight: 600 }
   return (
@@ -291,22 +305,62 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMod
           <tr>
             <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Plan(s)</td>
             <td style={{ ...td, color: '#9B1C1C' }}>{existingNames || '—'}</td>
-            <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{newCoverageType || '—'}</td>
+            <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{newProductName || newCoverageType || '—'}</td>
             <td style={td}>—</td>
           </tr>
-          <tr>
-            <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>
-              {medicalMode ? 'Cash premium / yr' : 'Annual premium'}
-            </td>
-            <td style={{ ...td, color: '#9B1C1C' }}>{fmt(compareOld)}</td>
-            <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(compareNew)}</td>
-            <td style={{ ...td, color: delta > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
-              {delta > 0 ? '+' : ''}{fmt(delta)} / yr
-            </td>
-          </tr>
+          {ltcMode ? (
+            <>
+              <tr>
+                <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Medisave / yr</td>
+                <td style={{ ...td, color: '#9B1C1C' }}>{fmt(oldMedisaveTotal)}</td>
+                <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(ltcMedisaveNew)}</td>
+                <td style={{ ...td, color: ltcMedisaveDelta > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
+                  {ltcMedisaveDelta > 0 ? '+' : ''}{fmt(ltcMedisaveDelta)} / yr
+                </td>
+              </tr>
+              <tr>
+                <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Cash premium / yr</td>
+                <td style={{ ...td, color: '#9B1C1C' }}>{fmt(oldCashTotal)}</td>
+                <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(ltcCashNew)}</td>
+                <td style={{ ...td, color: ltcCashDelta > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
+                  {ltcCashDelta > 0 ? '+' : ''}{fmt(ltcCashDelta)} / yr
+                </td>
+              </tr>
+            </>
+          ) : medicalMode ? (
+            <>
+              <tr>
+                <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Medisave / yr</td>
+                <td style={{ ...td, color: '#9B1C1C' }}>{fmt(oldMedisaveTotal)}</td>
+                <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(newPremium - (newCashPremium ?? 0))}</td>
+                <td style={{ ...td, color: (newPremium - (newCashPremium ?? 0)) - oldMedisaveTotal > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
+                  {(() => { const d = (newPremium - (newCashPremium ?? 0)) - oldMedisaveTotal; return (d > 0 ? '+' : '') + fmt(d) + ' / yr' })()}
+                </td>
+              </tr>
+              <tr>
+                <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Cash premium / yr</td>
+                <td style={{ ...td, color: '#9B1C1C' }}>{fmt(oldCashTotal)}</td>
+                <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(newCashPremium ?? 0)}</td>
+                <td style={{ ...td, color: delta > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
+                  {delta > 0 ? '+' : ''}{fmt(delta)} / yr
+                </td>
+              </tr>
+            </>
+          ) : (
+            <tr>
+              <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Annual premium</td>
+              <td style={{ ...td, color: '#9B1C1C' }}>{fmt(compareOld)}</td>
+              <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(compareNew)}</td>
+              <td style={{ ...td, color: delta > 0 ? '#9B1C1C' : '#1E4D35', fontWeight: 600 }}>
+                {delta > 0 ? '+' : ''}{fmt(delta)} / yr
+              </td>
+            </tr>
+          )}
           {newSA > 0 && (
             <tr>
-              <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>Sum assured</td>
+              <td style={{ ...td, color: 'var(--ink3)', fontSize: 11 }}>
+                {ltcMode ? 'Monthly benefit' : 'Sum assured'}
+              </td>
               <td style={{ ...td, color: '#9B1C1C' }}>—</td>
               <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{fmt(newSA)}</td>
               <td style={td}>—</td>
@@ -320,7 +374,7 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMod
 
 // ─── PROTECTION IMPACT MODAL ──────────────────────────────────────────────────
 
-function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOverride, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium }: {
+function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOverride, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium, ltcMode }: {
   rec: ProtRec
   monthlyIncome: number
   monthlyExpenses: number
@@ -329,6 +383,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
   medicalMode?: boolean
   medicalCashPremium?: number
   medicalOldCashPremium?: number
+  ltcMode?: boolean
 }) {
   const [cvValues, setCvValues] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {}
@@ -338,10 +393,16 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
 
   const isReplacement = rec.mode === 'replacement'
   const oldPremium    = rec.replacedPolicies.reduce((s, p) => s + p.annualPremium, 0)
+  const oldMedisave   = rec.replacedPolicies.reduce((s, p) => s + (p.premiumMedisave || 0), 0)
+  const oldCash       = rec.replacedPolicies.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)
+
+  // LTC: auto-split at $600 cap
+  const ltcMedisave   = ltcMode ? Math.min(rec.annualPremium, 600) : 0
+  const ltcCash       = ltcMode ? Math.max(rec.annualPremium - 600, 0) : 0
 
   // For medical: compare cash portions only
-  const displayNewPremium = medicalMode ? (medicalCashPremium ?? rec.annualPremium) : rec.annualPremium
-  const displayOldPremium = medicalMode ? (medicalOldCashPremium ?? oldPremium) : oldPremium
+  const displayNewPremium = medicalMode ? (medicalCashPremium ?? rec.annualPremium) : ltcMode ? ltcCash : rec.annualPremium
+  const displayOldPremium = medicalMode ? (medicalOldCashPremium ?? oldPremium) : ltcMode ? oldCash : oldPremium
   const netAnnual     = displayNewPremium - displayOldPremium
   const netMonthly    = netAnnual / 12
 
@@ -349,9 +410,10 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
   const policyTermYrs = parseInt(rec.policyTerm) || 20
   const yearsCV       = netAnnual > 0 ? Math.floor(totalCV / netAnnual) : 999
 
-  // Cash flow: use saved surplus directly, fallback to derived
+  // Cash flow: use cash-only portion for LTC
   const annualSurplus         = annualSurplusOverride ?? (monthlyIncome - monthlyExpenses) * 12
-  const newAdditionAnnual     = !isReplacement ? displayNewPremium : 0
+  const cashOutflow           = ltcMode ? ltcCash : displayNewPremium
+  const newAdditionAnnual     = !isReplacement ? cashOutflow : 0
   const surplusAfterAnnual    = isReplacement
     ? annualSurplus - netAnnual
     : annualSurplus - newAdditionAnnual
@@ -389,39 +451,75 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
 
         {/* Premium impact */}
         <div style={{ ...S.lbl, marginBottom: 8 }}>Premium impact</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-          {metCard(
-            medicalMode ? 'New cash premium' : 'New annual premium',
-            fmt(displayNewPremium) + ' / yr',
-            medicalMode ? 'Cash portion only (excl. Medisave)' : (rec.premiumTerm ? `${rec.premiumTerm} payment term` : ''),
-            '#854F0B'
-          )}
-          {isReplacement
-            ? metCard(
-                medicalMode ? 'Old cash premiums freed up' : 'Old premiums freed up',
-                fmt(displayOldPremium) + ' / yr',
-                `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`,
-                '#1E4D35'
-              )
-            : !medicalMode
-              ? metCard('Coverage', fmt(rec.sumAssured), rec.coverageType || 'Sum assured / benefit', '#1E4D35')
-              : null
-          }
-        </div>
-        {isReplacement && (
-          <div style={{ marginBottom: 20 }}>
-            {metCard(
-              'Net annual change (cash)',
-              (netAnnual > 0 ? '+' : '') + fmt(netAnnual) + ' / yr',
-              netAnnual > 0 ? 'Additional cash outflow' : 'Annual cash savings',
-              netAnnual > 0 ? '#9B1C1C' : '#1E4D35'
+        {ltcMode ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              {metCard('New annual premium (Medisave)', fmt(ltcMedisave) + ' / yr', 'Medisave portion (max S$600/yr)', '#7A9CBF')}
+              {isReplacement
+                ? metCard('Old premium (Medisave)', fmt(oldMedisave) + ' / yr', `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`, '#1E4D35')
+                : metCard('Monthly benefit', fmt(rec.monthlyBenefit), rec.benefitPaymentPeriod || 'Benefit period', '#1E4D35')
+              }
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              {metCard('Annual premium (Cash)', fmt(ltcCash) + ' / yr', 'Cash portion above S$600/yr cap', '#854F0B')}
+              {isReplacement
+                ? metCard('Old premium (Cash)', fmt(oldCash) + ' / yr', 'Cash portion of replaced policies', '#854F0B')
+                : null
+              }
+            </div>
+            {isReplacement && (
+              <div style={{ marginBottom: 16 }}>
+                {metCard(
+                  'Net annual change (Cash)',
+                  (netAnnual > 0 ? '+' : '') + fmt(netAnnual) + ' / yr',
+                  netAnnual > 0 ? 'Additional cash outflow' : 'Annual cash savings',
+                  netAnnual > 0 ? '#9B1C1C' : '#1E4D35'
+                )}
+              </div>
             )}
-          </div>
-        )}
-        {isReplacement && !medicalMode && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-            {metCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
-          </div>
+            {/* Monthly benefit change + coverage term */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+              {metCard('Monthly benefit change', fmt(rec.monthlyBenefit), rec.coverageType || 'Monthly benefit', '#1E4D35')}
+              {rec.coverageTerm && metCard('Coverage term', rec.coverageTerm, rec.benefitPaymentPeriod || '', '#9B7BAA')}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+              {metCard(
+                medicalMode ? 'New cash premium' : 'New annual premium',
+                fmt(displayNewPremium) + ' / yr',
+                medicalMode ? 'Cash portion only (excl. Medisave)' : (rec.premiumTerm ? `${rec.premiumTerm} payment term` : ''),
+                '#854F0B'
+              )}
+              {isReplacement
+                ? metCard(
+                    medicalMode ? 'Old cash premiums freed up' : 'Old premiums freed up',
+                    fmt(displayOldPremium) + ' / yr',
+                    `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`,
+                    '#1E4D35'
+                  )
+                : !medicalMode
+                  ? metCard('Coverage', fmt(rec.sumAssured), rec.coverageType || 'Sum assured / benefit', '#1E4D35')
+                  : null
+              }
+            </div>
+            {isReplacement && (
+              <div style={{ marginBottom: 20 }}>
+                {metCard(
+                  'Net annual change (cash)',
+                  (netAnnual > 0 ? '+' : '') + fmt(netAnnual) + ' / yr',
+                  netAnnual > 0 ? 'Additional cash outflow' : 'Annual cash savings',
+                  netAnnual > 0 ? '#9B1C1C' : '#1E4D35'
+                )}
+              </div>
+            )}
+            {isReplacement && !medicalMode && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                {metCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
+              </div>
+            )}
+          </>
         )}
 
         {/* Cash flow impact */}
@@ -449,8 +547,8 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
           )}
         </div>
 
-        {/* Cash value section — replacements only, not for medical */}
-        {isReplacement && rec.replacedPolicies.length > 0 && !medicalMode && (
+        {/* Cash value section — replacements only, not for medical or LTC */}
+        {isReplacement && rec.replacedPolicies.length > 0 && !medicalMode && !ltcMode && (
           <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 16 }}>
             <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 12 }}>Cash value mitigation</div>
             {rec.replacedPolicies.map(p => (
@@ -979,6 +1077,9 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
             sumAssured: 0,
             monthlyBenefit: 0,
             benefitPaymentPeriod: '',
+            coverageTerm: '',
+            premiumMedisave: 0,
+            premiumCash: 0,
             coverageType: COVERAGE_MODE_LABELS[rec.coverageMode],
             policyTerm: 'Lifetime renewable',
             annualPremium: totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0),
@@ -1002,6 +1103,10 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
 
 const LTC_COVERAGE_TYPES = ['LTC Supplement', 'Disability Income']
 const BENEFIT_PAYMENT_PERIODS = ['To Age 55', 'To Age 60', 'To Age 65', 'To Age 70', 'Lifetime']
+const LTC_COVERAGE_TERMS: Record<string, string[]> = {
+  'LTC Supplement': ['1/6 ADLs', '2/6 ADLs', '3/6 ADLs'],
+  'Disability Income': ['Own Occupation', 'Modified Own Occupation', 'Any Occupation'],
+}
 
 function LtcCard({ rec, onChange, onDelete, onChoose,
   existingPolicies, ltcCompanies, products, coverageTypes, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
@@ -1021,9 +1126,19 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof ProtRec>(k: K, v: ProtRec[K]) { onChange({ ...rec, [k]: v }) }
 
+  // Auto-split premium at $600 Medisave cap
+  function handlePremiumChange(total: number) {
+    const ms   = Math.min(total, 600)
+    const cash = Math.max(total - 600, 0)
+    onChange({ ...rec, annualPremium: total, premiumMedisave: ms, premiumCash: cash })
+  }
+
   // Products filtered by selected insurer
   const selComp = ltcCompanies.find(c => c.name === rec.insurer)
   const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
+
+  // Coverage term options depend on coverage type
+  const coverageTermOptions = LTC_COVERAGE_TERMS[rec.coverageType] ?? []
 
   // Replacement picker: LTC category + person name match
   function personMatch(lifeAssured: string, tabName: string): boolean {
@@ -1042,15 +1157,13 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   function togglePolicy(pol: typeof ltcPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: 0, currentCashValue: pol.currentCashValue }])
-  }
-
-  function updateReplacedField(policyId: string, field: 'annualPremium' | 'currentCashValue', val: number) {
-    upd('replacedPolicies', rec.replacedPolicies.map(p => p.policyId === policyId ? { ...p, [field]: val } : p))
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: Math.min(pol.annualPremium, 600), currentCashValue: 0 }])
   }
 
   const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
   const effectiveCoverageTypes = coverageTypes.length > 0 ? coverageTypes : LTC_COVERAGE_TYPES
+  const ltcMedisave = Math.min(rec.annualPremium || 0, 600)
+  const ltcCash     = Math.max((rec.annualPremium || 0) - 600, 0)
 
   return (
     <>
@@ -1062,17 +1175,16 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
           <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
         </div>
 
-        {/* Core fields */}
+        {/* Core fields — row 1: Coverage Type / Insurer / Product */}
         <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
-          {/* Coverage type */}
           <div>
             <label style={S.lbl}>Coverage type</label>
-            <select style={S.inp} value={rec.coverageType} onChange={e => upd('coverageType', e.target.value)}>
+            <select style={S.inp} value={rec.coverageType}
+              onChange={e => onChange({ ...rec, coverageType: e.target.value, coverageTerm: '' })}>
               <option value="">Select type…</option>
               {effectiveCoverageTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
-          {/* Insurer — LTC-filtered */}
           <div>
             <label style={S.lbl}>Insurer</label>
             <select style={S.inp} value={rec.insurer}
@@ -1081,7 +1193,6 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
               {ltcCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           </div>
-          {/* Product — filtered by insurer */}
           <div>
             <label style={S.lbl}>Product name</label>
             <select style={S.inp} value={rec.productName} onChange={e => upd('productName', e.target.value)}
@@ -1091,12 +1202,11 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
             </select>
           </div>
 
-          {/* Monthly benefit */}
+          {/* Row 2: Monthly Benefit / Benefit Payment Period / Coverage Terms */}
           <div>
             <label style={S.lbl}>Monthly benefit (S$)</label>
             <input type="number" style={S.inp} value={rec.monthlyBenefit || ''} onChange={e => upd('monthlyBenefit', Number(e.target.value))} placeholder="0" />
           </div>
-          {/* Benefit payment period */}
           <div>
             <label style={S.lbl}>Benefit payment period</label>
             <select style={S.inp} value={rec.benefitPaymentPeriod} onChange={e => upd('benefitPaymentPeriod', e.target.value)}>
@@ -1104,13 +1214,32 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
               {BENEFIT_PAYMENT_PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          {/* Annual premium */}
           <div>
-            <label style={S.lbl}>Annual premium (S$)</label>
-            <input type="number" style={S.inp} value={rec.annualPremium || ''} onChange={e => upd('annualPremium', Number(e.target.value))} placeholder="0" />
+            <label style={S.lbl}>Coverage terms</label>
+            <select style={S.inp} value={rec.coverageTerm} onChange={e => upd('coverageTerm', e.target.value)}
+              disabled={coverageTermOptions.length === 0}>
+              <option value="">{coverageTermOptions.length === 0 ? 'Select coverage type first' : 'Select term…'}</option>
+              {coverageTermOptions.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
           </div>
 
-          {/* Premium / Policy term */}
+          {/* Row 3: Annual Premium (total input) + auto-split display */}
+          <div>
+            <label style={S.lbl}>Annual premium (S$)</label>
+            <input type="number" style={S.inp} value={rec.annualPremium || ''} onChange={e => handlePremiumChange(Number(e.target.value))} placeholder="0" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 4 }}>
+            <div style={{ background: 'var(--cream2)', border: '1px solid var(--cream3)', borderRadius: 4, padding: '5px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Medisave / yr</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#7A9CBF', fontWeight: 600 }}>{fmt(ltcMedisave)}</span>
+            </div>
+            <div style={{ background: 'var(--cream2)', border: '1px solid var(--cream3)', borderRadius: 4, padding: '5px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)' }}>Cash premium / yr</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#854F0B', fontWeight: 600 }}>{fmt(ltcCash)}</span>
+            </div>
+          </div>
+
+          {/* Row 4: Premium / Policy term */}
           <div>
             <label style={S.lbl}>Premium term / Policy term</label>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -1118,6 +1247,8 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
               <input style={S.inp} value={rec.policyTerm} onChange={e => upd('policyTerm', e.target.value)} placeholder="e.g. Life" />
             </div>
           </div>
+
+          {/* Row 5: Benefits + Limitations side by side */}
           <div style={{ gridColumn: '1/4', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
               <label style={S.lbl}>Benefits</label>
@@ -1155,22 +1286,16 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
                 })}
               </div>
               {rec.replacedPolicies.length > 0 && (
-                <div>
-                  {rec.replacedPolicies.map(p => (
-                    <div key={p.policyId} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'end', marginBottom: 8 }}>
-                      <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink2)', paddingBottom: 6 }}>{p.policyName || p.companyName}</div>
-                      <div>
-                        <label style={S.lbl}>Annual premium</label>
-                        <input type="number" style={{ ...S.inp, width: 120 }} value={p.annualPremium || ''} onChange={e => updateReplacedField(p.policyId, 'annualPremium', Number(e.target.value))} />
-                      </div>
-                      <div>
-                        <label style={S.lbl}>Cash value</label>
-                        <input type="number" style={{ ...S.inp, width: 120 }} value={p.currentCashValue || ''} onChange={e => updateReplacedField(p.policyId, 'currentCashValue', Number(e.target.value))} />
-                      </div>
-                    </div>
-                  ))}
-                  <CompareTable replaced={rec.replacedPolicies} newPremium={rec.annualPremium} newSA={rec.monthlyBenefit} newCoverageType={rec.coverageType} />
-                </div>
+                <CompareTable
+                  replaced={rec.replacedPolicies}
+                  newPremium={rec.annualPremium}
+                  newSA={rec.monthlyBenefit}
+                  newCoverageType={rec.coverageType}
+                  ltcMode={true}
+                  newProductName={rec.productName || rec.coverageType}
+                  newMedisavePremium={ltcMedisave}
+                  newCashOnlyPremium={ltcCash}
+                />
               )}
             </div>
           </div>
@@ -1190,7 +1315,7 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
         </div>
       </div>
 
-      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} onClose={() => setShowImpact(false)} />}
+      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} ltcMode={true} onClose={() => setShowImpact(false)} />}
     </>
   )
 }
@@ -1901,7 +2026,7 @@ export default function RecommendationsPage() {
     if (recs.length >= 3) return
     const rec: ProtRec = {
       id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
-      productName: '', insurer: '', coverageType: '', sumAssured: 0, monthlyBenefit: 0, benefitPaymentPeriod: '', annualPremium: 0,
+      productName: '', insurer: '', coverageType: '', sumAssured: 0, monthlyBenefit: 0, benefitPaymentPeriod: '', coverageTerm: '', premiumMedisave: 0, premiumCash: 0, annualPremium: 0,
       premiumTerm: '', policyTerm: '', benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
     }
     const byPerson = { ...data[catKey(cat)], [person]: [...recs, rec] }
