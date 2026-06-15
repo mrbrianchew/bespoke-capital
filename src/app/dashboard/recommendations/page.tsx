@@ -1129,7 +1129,14 @@ const LTC_BENEFIT_TERMS: Record<string, string[]> = {
   'disability income': ['Own Occupation', 'Modified Own Occupation', 'Any Occupation'],
 }
 function getLtcBenefitTerms(coverageType: string): string[] {
-  return LTC_BENEFIT_TERMS[coverageType.toLowerCase().trim()] ?? []
+  const ct = coverageType.toLowerCase().trim()
+  if (ct.includes('disability') || ct.includes('income')) {
+    return ['Own Occupation', 'Modified Own Occupation', 'Any Occupation']
+  }
+  if (ct.includes('ltc') || ct.includes('careshield') || ct.includes('supplement') || ct.includes('supp')) {
+    return ['1/6 ADLs', '2/6 ADLs', '3/6 ADLs']
+  }
+  return []
 }
 
 function LtcCard({ rec, onChange, onDelete, onChoose,
@@ -1181,7 +1188,7 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   function togglePolicy(pol: typeof ltcPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: Math.min(pol.annualPremium, 600), currentCashValue: 0, monthlyBenefit: pol.monthlyBenefit || 0, benefitTerm: pol.benefitTerm || '' }])
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: pol.premiumMedisave || 0, currentCashValue: 0, monthlyBenefit: pol.monthlyBenefit || 0, benefitTerm: pol.benefitTerm || '' }])
   }
 
   const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
@@ -1959,8 +1966,10 @@ export default function RecommendationsPage() {
       setExistingPolicies(
         policies.filter((p: any) => ACTIVE.includes(p.status)).map((p: any) => {
           const freq = p.frequency || p.premiumMode || 'Annual'
-          const annualPrem = freq === 'Monthly' ? (p.premiumCash || 0) * 12 : freq === 'Quarterly' ? (p.premiumCash || 0) * 4 : (p.premiumCash || 0)
-          const msAnnual = (p.premiumMedisave || 0) * (freq === 'Monthly' ? 12 : freq === 'Quarterly' ? 4 : 1)
+          const mult = freq === 'Monthly' ? 12 : freq === 'Quarterly' ? 4 : 1
+          const msAnnual   = (p.premiumMedisave || 0) * mult
+          const cashAnnual = (p.premiumCash || 0) * mult
+          const annualPrem = msAnnual + cashAnnual
           return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, premiumMedisave: msAnnual, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '', monthlyBenefit: p.monthlyBenefit || 0, benefitTerm: p.benefitTerm || p.payoutTerm || '' }
         })
       )
