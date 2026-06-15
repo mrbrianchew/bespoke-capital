@@ -1966,9 +1966,14 @@ export default function RecommendationsPage() {
       setExistingPolicies(
         policies.filter((p: any) => ACTIVE.includes(p.status)).map((p: any) => {
           const freq = p.frequency || p.premiumMode || 'Annual'
-          const mult = freq === 'Monthly' ? 12 : freq === 'Quarterly' ? 4 : 1
-          const msAnnual   = (p.premiumMedisave || 0) * mult
-          const cashAnnual = (p.premiumCash || 0) * mult
+          const mult = freq === 'Monthly' ? 12 : freq === 'Quarterly' ? 4 : freq === 'Semi-Annual' ? 2 : 1
+          let msAnnual   = (p.premiumMedisave || 0) * mult
+          let cashAnnual = (p.premiumCash || 0) * mult
+          // LTC: if advisor entered total in cash field with no Medisave split, auto-apply $600 cap
+          if (p.categoryCode === 'ltc' && msAnnual === 0 && cashAnnual > 0) {
+            msAnnual   = Math.min(cashAnnual, 600)
+            cashAnnual = Math.max(cashAnnual - 600, 0)
+          }
           const annualPrem = msAnnual + cashAnnual
           return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, premiumMedisave: msAnnual, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '', monthlyBenefit: p.monthlyBenefit || 0, benefitTerm: p.benefitTerm || p.payoutTerm || '' }
         })
