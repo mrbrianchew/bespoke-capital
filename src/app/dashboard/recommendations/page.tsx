@@ -16,7 +16,7 @@ const RANK_LABELS: RankLabel[] = ['Recommended', 'Alternative 1', 'Alternative 2
 const PROT_CATEGORIES: { key: ProtCategory; label: string; hint: string; color: string; dbCode: string }[] = [
   { key: 'medical',  label: 'Medical Insurance',             hint: 'Medical & hospitalisation coverage',  color: '#7A9CBF', dbCode: 'medical' },
   { key: 'ltc',      label: 'Long Term Care Protection',     hint: 'LTC / disability income protection',  color: '#9B7BAA', dbCode: 'ltc' },
-  { key: 'expense',  label: 'Expense Protection',            hint: 'Life, CI, ECI, Term, Whole Life',     color: '#c8a96e', dbCode: 'life' },
+  { key: 'expense',  label: 'Core Protection',               hint: 'Life, CI, ECI, Term, Whole Life',     color: '#c8a96e', dbCode: 'life' },
   { key: 'general',  label: 'General Insurance',             hint: 'Personal accident, travel, home',     color: '#8A9A7E', dbCode: 'general' },
 ]
 
@@ -68,6 +68,20 @@ interface ProtRec {
   limitations: string
   replacedPolicies: ReplacedPolicy[]
   isChosen: boolean
+  // Expense / Core Protection specific
+  baseDeathBenefit: number
+  baseTpdBenefit: number
+  baseAdvCiBenefit: number
+  baseEarlyCiBenefit: number
+  coverageMultiplier: number
+  multiplierEnd: string
+  deathBenefit: number
+  tpdBenefit: number
+  advCiBenefit: number
+  earlyCiBenefit: number
+  interestRate: string
+  premiumWaiver: string
+  isUsdPolicy: boolean
 }
 
 interface AccRec {
@@ -1104,6 +1118,9 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
             coverageType: COVERAGE_MODE_LABELS[rec.coverageMode],
             policyTerm: 'Lifetime renewable',
             annualPremium: totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0),
+            baseDeathBenefit: 0, baseTpdBenefit: 0, baseAdvCiBenefit: 0, baseEarlyCiBenefit: 0,
+            coverageMultiplier: 1, multiplierEnd: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0,
+            interestRate: '', premiumWaiver: 'Nil', isUsdPolicy: false,
           }}
           monthlyIncome={monthlyIncome}
           monthlyExpenses={monthlyExpenses}
@@ -1365,6 +1382,330 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
       </div>
 
       {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} ltcMode={true} onClose={() => setShowImpact(false)} />}
+    </>
+  )
+}
+
+
+// ─── COVERAGE TYPE CONSTANTS ──────────────────────────────────────────────────
+
+const EXPENSE_COVERAGE_TYPES = [
+  { code: 'WL',       label: 'WL - Whole Life' },
+  { code: 'LWL',      label: 'LWL - Limited Premium Whole Life' },
+  { code: 'L.Term',   label: 'L.Term - Level Term' },
+  { code: 'D.Term',   label: 'D.Term - Decreasing Term / MRTA' },
+  { code: 'ILP',      label: 'ILP - Investment Linked Plan' },
+  { code: 'UL',       label: 'UL - Universal Life' },
+  { code: 'IUL',      label: 'IUL - Indexed Universal Life' },
+  { code: 'VUL',      label: 'VUL - Variable Universal Life' },
+  { code: 'Grp Term', label: 'Grp Term - Group Term' },
+]
+
+const COVERAGE_MULTIPLIERS = Array.from({ length: 20 }, (_, i) => parseFloat(((i + 1) * 0.5).toFixed(1)))
+const MULTIPLIER_ENDS = ['Age 55', 'Age 60', 'Age 65', 'Age 70', 'Age 75', 'Age 76', 'Age 80', 'Age 81', 'Age 85', 'Age 90']
+const PREMIUM_WAIVER_OPTIONS = ['CI Waiver Benefit', 'Early CI Waiver Benefit', 'Payor Waiver Benefit', 'Nil']
+const USD_COVERAGE_TYPES = ['UL', 'IUL', 'VUL']
+
+// ─── EXPENSE CARD (CORE PROTECTION) ───────────────────────────────────────────
+
+function ExpenseCard({ rec, onChange, onDelete, onChoose,
+  existingPolicies, lifeCompanies, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride, usdRate }: {
+  rec: ProtRec
+  onChange: (r: ProtRec) => void
+  onDelete: () => void
+  onChoose: () => void
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string }[]
+  lifeCompanies: { id: number; name: string }[]
+  personName: string
+  monthlyIncome: number
+  monthlyExpenses: number
+  annualSurplusOverride?: number
+  usdRate: number
+}) {
+  const [showImpact, setShowImpact] = useState(false)
+  function upd<K extends keyof ProtRec>(k: K, v: ProtRec[K]) { onChange({ ...rec, [k]: v }) }
+
+  const ct = rec.coverageType
+  const isWL  = ct === 'WL' || ct === 'LWL'
+  const isTerm   = ct === 'L.Term'
+  const isDTerm  = ct === 'D.Term'
+  const isILP    = ct === 'ILP'
+  const isUL     = ct === 'UL' || ct === 'IUL' || ct === 'VUL'
+  const isGrp    = ct === 'Grp Term'
+  const isUsd    = USD_COVERAGE_TYPES.includes(ct)
+  const currLabel = isUsd ? 'USD' : 'S$'
+
+  // Annualised premium in SGD for cashflow (UL/IUL/VUL convert via usdRate)
+  const annualPremSGD = isUsd ? rec.annualPremium * usdRate : rec.annualPremium
+
+  // WL/LWL computed benefits = base × multiplier
+  const mult = rec.coverageMultiplier || 1
+  const compDeath  = isWL ? Math.round(rec.baseDeathBenefit * mult) : rec.deathBenefit
+  const compTpd    = isWL ? Math.round(rec.baseTpdBenefit   * mult) : rec.tpdBenefit
+  const compAdvCi  = isWL ? Math.round(rec.baseAdvCiBenefit * mult) : rec.advCiBenefit
+  const compEarlyCI = isWL ? Math.round(rec.baseEarlyCiBenefit * mult) : rec.earlyCiBenefit
+
+  function personMatch(lifeAssured: string, tabName: string): boolean {
+    if (!lifeAssured) return true
+    const la = lifeAssured.toLowerCase().trim()
+    const tn = tabName.toLowerCase().trim()
+    if (la === tn || tn.includes(la) || la.includes(tn)) return true
+    const laWords = la.split(/\s+/)
+    const tnWords = tn.split(/\s+/)
+    return laWords.some(w => w.length > 1 && tnWords.includes(w))
+  }
+
+  const lifePolicies = existingPolicies.filter(p =>
+    p.categoryCode === 'life' && personMatch(p.lifeAssured, personName)
+  )
+
+  function togglePolicy(pol: typeof existingPolicies[0]) {
+    const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
+    if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '' }])
+  }
+
+  function updateReplacedField(policyId: string, field: 'annualPremium' | 'currentCashValue', val: number) {
+    upd('replacedPolicies', rec.replacedPolicies.map(p => p.policyId === policyId ? { ...p, [field]: val } : p))
+  }
+
+  const fmt = (n: number) => n ? n.toLocaleString('en-SG', { maximumFractionDigits: 0 }) : '—'
+  const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
+
+  return (
+    <>
+      <div style={{ ...S.card, border: borderStyle, marginBottom: 16 }}>
+        {/* Top bar */}
+        <div style={{ background: 'var(--cream)', padding: '12px 16px', borderBottom: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <RankBadge rank={rec.rank} />
+          {rec.isChosen && <ChosenBadge />}
+          {isUsd && (
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', fontFamily: 'Inter' }}>
+              USD Policy — Premiums &amp; benefits in USD
+            </span>
+          )}
+          <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+        </div>
+
+        <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
+          {/* Row 1: Coverage Type → Insurer → Product Name */}
+          <div>
+            <label style={S.lbl}>Coverage type</label>
+            <select style={S.inp} value={rec.coverageType}
+              onChange={e => onChange({ ...rec, coverageType: e.target.value, isUsdPolicy: USD_COVERAGE_TYPES.includes(e.target.value) })}>
+              <option value="">Select type…</option>
+              {EXPENSE_COVERAGE_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.lbl}>Insurer</label>
+            <select style={S.inp} value={rec.insurer} onChange={e => upd('insurer', e.target.value)}>
+              <option value="">Select insurer…</option>
+              {lifeCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.lbl}>Product name</label>
+            <input style={S.inp} value={rec.productName} onChange={e => upd('productName', e.target.value)} placeholder="e.g. MultiPay CI Advantage" />
+          </div>
+
+          {/* ── WL / LWL fields ── */}
+          {isWL && (<>
+            <div>
+              <label style={S.lbl}>Base Death Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.baseDeathBenefit || ''} onChange={e => upd('baseDeathBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <label style={S.lbl}>Base TPD Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.baseTpdBenefit || ''} onChange={e => upd('baseTpdBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <label style={S.lbl}>Base Adv CI Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.baseAdvCiBenefit || ''} onChange={e => upd('baseAdvCiBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <label style={S.lbl}>Base Early CI Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.baseEarlyCiBenefit || ''} onChange={e => upd('baseEarlyCiBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <label style={S.lbl}>Coverage Multiplier</label>
+              <select style={S.inp} value={rec.coverageMultiplier || 1} onChange={e => upd('coverageMultiplier', parseFloat(e.target.value))}>
+                {COVERAGE_MULTIPLIERS.map(m => <option key={m} value={m}>{m}×</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={S.lbl}>Multiplier End</label>
+              <select style={S.inp} value={rec.multiplierEnd} onChange={e => upd('multiplierEnd', e.target.value)}>
+                <option value="">Select age…</option>
+                {MULTIPLIER_ENDS.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            {/* Computed benefits read-only panel */}
+            {(rec.baseDeathBenefit > 0 || rec.baseTpdBenefit > 0 || rec.baseAdvCiBenefit > 0 || rec.baseEarlyCiBenefit > 0) && (
+              <div style={{ gridColumn: '1 / -1', background: 'var(--cream)', border: '1px solid var(--cream3)', borderRadius: 8, padding: '12px 16px' }}>
+                <div style={{ ...S.lbl, marginBottom: 10 }}>Effective benefits at {mult}× multiplier{rec.multiplierEnd ? ` (until ${rec.multiplierEnd})` : ''}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                  {[
+                    { label: 'Death', val: compDeath },
+                    { label: 'TPD', val: compTpd },
+                    { label: 'Adv CI', val: compAdvCi },
+                    { label: 'Early CI', val: compEarlyCI },
+                  ].map(({ label, val }) => (
+                    <div key={label} style={{ background: '#fff', borderRadius: 6, padding: '8px 12px', border: '1px solid var(--cream3)' }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink3)', fontFamily: 'Inter', marginBottom: 3 }}>{label}</div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, fontWeight: 600, color: 'var(--charcoal)' }}>
+                        {currLabel} {fmt(val)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>)}
+
+          {/* ── L.Term / D.Term / ILP / Grp Term fields ── */}
+          {(isTerm || isDTerm || isILP || isGrp) && (<>
+            <div>
+              <label style={S.lbl}>Death Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.deathBenefit || ''} onChange={e => upd('deathBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <label style={S.lbl}>TPD Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.tpdBenefit || ''} onChange={e => upd('tpdBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <label style={S.lbl}>Adv CI Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.advCiBenefit || ''} onChange={e => upd('advCiBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            <div>
+              <label style={S.lbl}>Early CI Benefit ({currLabel})</label>
+              <input type="number" style={S.inp} value={rec.earlyCiBenefit || ''} onChange={e => upd('earlyCiBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+            {isDTerm && (
+              <div>
+                <label style={S.lbl}>Interest Rate</label>
+                <input style={S.inp} value={rec.interestRate} onChange={e => upd('interestRate', e.target.value)} placeholder="e.g. 4.5%" />
+              </div>
+            )}
+          </>)}
+
+          {/* ── UL / IUL / VUL fields ── */}
+          {isUL && (<>
+            <div>
+              <label style={S.lbl}>Death Benefit (USD)</label>
+              <input type="number" style={S.inp} value={rec.deathBenefit || ''} onChange={e => upd('deathBenefit', Number(e.target.value))} placeholder="0" />
+            </div>
+          </>)}
+
+          {/* ── Shared: Premium Waiver (all except WL/LWL) ── */}
+          {!isWL && ct && (
+            <div>
+              <label style={S.lbl}>Premium Waiver</label>
+              <select style={S.inp} value={rec.premiumWaiver || 'Nil'} onChange={e => upd('premiumWaiver', e.target.value)}>
+                {PREMIUM_WAIVER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* ── Shared: Premium Term / Coverage Term ── */}
+          {ct && (<>
+            <div>
+              <label style={S.lbl}>Premium term</label>
+              <input style={S.inp} value={rec.premiumTerm} onChange={e => upd('premiumTerm', e.target.value)} placeholder="e.g. 20 yrs / ILP" />
+            </div>
+            <div>
+              <label style={S.lbl}>Coverage term</label>
+              <input style={S.inp} value={rec.policyTerm} onChange={e => upd('policyTerm', e.target.value)} placeholder="e.g. Life / Age 70" />
+            </div>
+            <div>
+              <label style={S.lbl}>Annual premium ({currLabel})</label>
+              <div style={{ position: 'relative' }}>
+                <input type="number" style={S.inp} value={rec.annualPremium || ''} onChange={e => upd('annualPremium', Number(e.target.value))} placeholder="0" />
+                {isUsd && rec.annualPremium > 0 && (
+                  <div style={{ fontSize: 10, color: 'var(--ink3)', fontFamily: 'Inter', marginTop: 2 }}>
+                    ≈ S$ {Math.round(rec.annualPremium * usdRate).toLocaleString('en-SG')} SGD
+                  </div>
+                )}
+              </div>
+            </div>
+          </>)}
+
+          {/* ── Benefits / Limitations ── */}
+          {ct && (<>
+            <div style={{ gridColumn: isUL ? '1/3' : '1/3' }}>
+              <label style={S.lbl}>Benefits</label>
+              <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
+            </div>
+            {!isDTerm && (
+              <div>
+                <label style={S.lbl}>Limitations</label>
+                <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" />
+              </div>
+            )}
+          </>)}
+        </div>
+
+        {/* Replacement section — Core Protection policies */}
+        {rec.mode === 'replacement' && (
+          <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={{ ...S.lbl, marginBottom: 10 }}>Replacing existing Core Protection policies</div>
+              {lifePolicies.length === 0 && (
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No Core Protection policies found — add them in the Protection Portfolio tab first.</div>
+              )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {lifePolicies.map(pol => {
+                  const selected = !!rec.replacedPolicies.find(p => p.policyId === pol.id)
+                  return (
+                    <button key={pol.id} onClick={() => togglePolicy(pol)} style={{
+                      fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Inter',
+                      border: `1px solid ${selected ? '#2D5A4E' : 'var(--cream3)'}`,
+                      background: selected ? '#D1FAE5' : '#fff',
+                      color: selected ? '#1E4D35' : 'var(--ink2)',
+                      fontWeight: selected ? 600 : 400,
+                    }}>
+                      {selected ? '✓ ' : ''}{pol.policyName || pol.companyName}
+                    </button>
+                  )
+                })}
+              </div>
+              {rec.replacedPolicies.length > 0 && (
+                <div>
+                  {rec.replacedPolicies.map(p => (
+                    <div key={p.policyId} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'end', marginBottom: 8 }}>
+                      <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink2)', paddingBottom: 6 }}>{p.policyName || p.companyName}</div>
+                      <div>
+                        <label style={S.lbl}>Annual premium</label>
+                        <input type="number" style={{ ...S.inp, width: 120 }} value={p.annualPremium || ''} onChange={e => updateReplacedField(p.policyId, 'annualPremium', Number(e.target.value))} />
+                      </div>
+                      <div>
+                        <label style={S.lbl}>Cash value</label>
+                        <input type="number" style={{ ...S.inp, width: 120 }} value={p.currentCashValue || ''} onChange={e => updateReplacedField(p.policyId, 'currentCashValue', Number(e.target.value))} />
+                      </div>
+                    </div>
+                  ))}
+                  <CompareTable replaced={rec.replacedPolicies} newPremium={annualPremSGD} newSA={isWL ? compDeath : rec.deathBenefit || rec.sumAssured} newCoverageType={ct} />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {rec.isChosen ? (
+            <>
+              <button onClick={() => setShowImpact(true)} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid #2D5A4E', background: 'transparent', color: '#2D5A4E', fontWeight: 600 }}>View impact</button>
+              <button onClick={onChoose} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid var(--cream3)', background: 'transparent', color: 'var(--ink2)' }}>Unmark as chosen</button>
+            </>
+          ) : (
+            <button onClick={onChoose} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: 'none', background: 'var(--charcoal)', color: 'var(--cream)', fontWeight: 600 }}>Mark as chosen</button>
+          )}
+          <button onClick={onDelete} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid var(--cream3)', background: 'transparent', color: '#9B1C1C', marginLeft: 'auto' }}>Remove</button>
+        </div>
+      </div>
+
+      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} onClose={() => setShowImpact(false)} />}
     </>
   )
 }
@@ -1802,9 +2143,9 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
   expenseRecs.forEach(r => {
     if (r.mode === 'replacement') {
       const oldPrem = r.replacedPolicies.reduce((s, p) => s + p.annualPremium, 0)
-      rows.push({ label: r.productName || r.coverageType || 'Expense plan', section: 'Expense Protection', cashDelta: r.annualPremium - oldPrem, mode: r.mode })
+      rows.push({ label: r.productName || r.coverageType || 'Expense plan', section: 'Core Protection', cashDelta: r.annualPremium - oldPrem, mode: r.mode })
     } else {
-      rows.push({ label: r.productName || r.coverageType || 'Expense plan', section: 'Expense Protection', cashDelta: r.annualPremium, mode: r.mode })
+      rows.push({ label: r.productName || r.coverageType || 'Expense plan', section: 'Core Protection', cashDelta: r.annualPremium, mode: r.mode })
     }
   })
 
@@ -2002,6 +2343,8 @@ export default function RecommendationsPage() {
   const [companies, setCompanies] = useState<{ id: number; name: string }[]>([])
   const [medicalCompanies, setMedicalCompanies] = useState<{ id: number; name: string }[]>([])
   const [ltcCompanies, setLtcCompanies] = useState<{ id: number; name: string }[]>([])
+  const [lifeCompanies, setLifeCompanies] = useState<{ id: number; name: string }[]>([])
+  const [usdRate, setUsdRate] = useState<number>(1.35)  // SGD per USD fallback
   const [medisaveBands, setMedisaveBands] = useState<MedisaveBand[]>([])
   const [products, setProducts]   = useState<InsProduct[]>([])
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
@@ -2079,6 +2422,19 @@ export default function RecommendationsPage() {
       } else {
         setLtcCompanies(companiesList)
       }
+      // Life insurers: filter by ins_categories code='life'
+      const lifeCat = (cats || []).find((c: any) => c.code === 'life')
+      if (lifeCat) {
+        setLifeCompanies(companiesList.filter((c: any) => c.category_id === lifeCat.id))
+      } else {
+        setLifeCompanies(companiesList)
+      }
+      // Fetch live USD→SGD rate
+      try {
+        const fxRes = await fetch('https://api.frankfurter.app/latest?from=USD&to=SGD')
+        const fxData = await fxRes.json()
+        if (fxData?.rates?.SGD) setUsdRate(fxData.rates.SGD)
+      } catch { /* keep fallback */ }
 
 
       // Coverage types per category — map from ins_policy_types filtered by ins_categories
@@ -2316,6 +2672,9 @@ export default function RecommendationsPage() {
       id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
       productName: '', insurer: '', coverageType: '', sumAssured: 0, monthlyBenefit: 0, benefitPaymentPeriod: '', benefitTerm: '', premiumMedisave: 0, premiumCash: 0, annualPremium: 0,
       premiumTerm: '', policyTerm: '', benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
+      baseDeathBenefit: 0, baseTpdBenefit: 0, baseAdvCiBenefit: 0, baseEarlyCiBenefit: 0,
+      coverageMultiplier: 1, multiplierEnd: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0,
+      interestRate: '', premiumWaiver: 'Nil', isUsdPolicy: false,
     }
     const byPerson = { ...data[catKey(cat)], [person]: [...recs, rec] }
     handleChange({ ...data, [catKey(cat)]: byPerson })
@@ -2635,6 +2994,19 @@ export default function RecommendationsPage() {
                       personName={personTabs.find(t => t.key === activePerson)?.label || ''}
                       monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
                       annualSurplusOverride={annualSurplus}
+                    />
+                  ) : cat.key === 'expense' ? (
+                    <ExpenseCard
+                      key={rec.id} rec={rec}
+                      onChange={r => updateProt(cat.key, rec.id, r)}
+                      onDelete={() => deleteProt(cat.key, rec.id)}
+                      onChoose={() => chooseProt(cat.key, rec.id)}
+                      existingPolicies={existingPolicies}
+                      lifeCompanies={lifeCompanies}
+                      personName={personTabs.find(t => t.key === activePerson)?.label || ''}
+                      monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
+                      annualSurplusOverride={annualSurplus}
+                      usdRate={usdRate}
                     />
                   ) : (
                   <ProtCard
