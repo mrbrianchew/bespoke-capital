@@ -1757,6 +1757,236 @@ function ProtSection({ cat, recs, onAdd, onUpdate, onDelete, onChoose,
 
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
+// ─── CASHFLOW SIDEBAR ─────────────────────────────────────────────────────────
+
+function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, personTabs }: {
+  open: boolean
+  onClose: () => void
+  data: RecPageData
+  activePerson: string
+  annualSurplus: number
+  personTabs: { key: string; label: string }[]
+}) {
+  const personLabel = personTabs.find(t => t.key === activePerson)?.label || 'Client'
+
+  // ── derive cash impact for each chosen card ───────────────────────────────
+  type ImpactRow = { label: string; section: string; cashDelta: number; mode: RecMode }
+  const rows: ImpactRow[] = []
+
+  // Medical — cash only (exclude Medisave)
+  const medRecs = (data.medicalByPerson[activePerson] || []).filter(r => r.isChosen)
+  medRecs.forEach(r => {
+    const newCash = r.premiumCash + (r.rider?.annualPremium || 0)
+    if (r.mode === 'replacement') {
+      const oldCash = r.replacedPolicies.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)
+      rows.push({ label: r.productName || r.briefCoverage || 'Medical plan', section: 'Medical Insurance', cashDelta: newCash - oldCash, mode: r.mode })
+    } else {
+      rows.push({ label: r.productName || r.briefCoverage || 'Medical plan', section: 'Medical Insurance', cashDelta: newCash, mode: r.mode })
+    }
+  })
+
+  // LTC — cash only (above $600 cap)
+  const ltcRecs = (data.ltcByPerson[activePerson] || []).filter(r => r.isChosen)
+  ltcRecs.forEach(r => {
+    const newCash = Math.max(r.annualPremium - 600, 0)
+    if (r.mode === 'replacement') {
+      const oldCash = r.replacedPolicies.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)
+      rows.push({ label: r.productName || r.coverageType || 'LTC plan', section: 'LTC Protection', cashDelta: newCash - oldCash, mode: r.mode })
+    } else {
+      rows.push({ label: r.productName || r.coverageType || 'LTC plan', section: 'LTC Protection', cashDelta: newCash, mode: r.mode })
+    }
+  })
+
+  // Expense / General — full premium (no Medisave)
+  const expenseRecs = (data.expenseByPerson[activePerson] || []).filter(r => r.isChosen)
+  expenseRecs.forEach(r => {
+    if (r.mode === 'replacement') {
+      const oldPrem = r.replacedPolicies.reduce((s, p) => s + p.annualPremium, 0)
+      rows.push({ label: r.productName || r.coverageType || 'Expense plan', section: 'Expense Protection', cashDelta: r.annualPremium - oldPrem, mode: r.mode })
+    } else {
+      rows.push({ label: r.productName || r.coverageType || 'Expense plan', section: 'Expense Protection', cashDelta: r.annualPremium, mode: r.mode })
+    }
+  })
+
+  const generalRecs = (data.generalByPerson[activePerson] || []).filter(r => r.isChosen)
+  generalRecs.forEach(r => {
+    if (r.mode === 'replacement') {
+      const oldPrem = r.replacedPolicies.reduce((s, p) => s + p.annualPremium, 0)
+      rows.push({ label: r.productName || r.coverageType || 'General plan', section: 'General Insurance', cashDelta: r.annualPremium - oldPrem, mode: r.mode })
+    } else {
+      rows.push({ label: r.productName || r.coverageType || 'General plan', section: 'General Insurance', cashDelta: r.annualPremium, mode: r.mode })
+    }
+  })
+
+  // Accumulation — regular contributions only (cash outflow)
+  const accRecs = (data.accumulationByPerson[activePerson] || []).filter(r => r.isChosen)
+  accRecs.forEach(r => {
+    const freqMult = r.regularFreq === 'monthly' ? 12 : r.regularFreq === 'quarterly' ? 4 : r.regularFreq === 'half-yearly' ? 2 : 1
+    const annualContrib = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
+    if (annualContrib > 0 || r.hasLumpSum) {
+      const label = r.company || r.planType || 'Accumulation plan'
+      rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib, mode: r.mode })
+    }
+  })
+
+  const additions    = rows.filter(r => r.mode !== 'replacement')
+  const replacements = rows.filter(r => r.mode === 'replacement')
+  const totalAdditions    = additions.reduce((s, r) => s + r.cashDelta, 0)
+  const totalReplacements = replacements.reduce((s, r) => s + r.cashDelta, 0)
+  const netAnnualCash     = totalAdditions + totalReplacements
+  const surplusAfter      = annualSurplus - netAnnualCash
+  const chosenCount       = rows.length
+
+  const rowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--cream3)' }
+  const labelStyle: React.CSSProperties = { fontFamily: 'Inter', fontSize: 12, color: 'var(--ink2)' }
+  const sectionLabelStyle: React.CSSProperties = { fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', marginTop: 14, marginBottom: 4 }
+  const valStyle = (n: number): React.CSSProperties => ({
+    fontFamily: 'DM Mono, monospace', fontSize: 13, fontWeight: 600,
+    color: n > 0 ? '#9B1C1C' : n < 0 ? '#1E4D35' : 'var(--ink3)'
+  })
+
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.3)', zIndex: 998 }} />
+      )}
+
+      {/* Floating trigger button */}
+      <button
+        onClick={onClose}
+        style={{
+          position: 'fixed', right: open ? 364 : 0, top: '50%', transform: 'translateY(-50%)',
+          zIndex: 1000, background: 'var(--charcoal)', color: 'var(--cream)',
+          border: 'none', borderRadius: '8px 0 0 8px', padding: '14px 10px',
+          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+          transition: 'right 0.3s ease', boxShadow: '-2px 0 12px rgba(0,0,0,0.15)',
+          fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.06em',
+        }}
+      >
+        <span style={{ fontSize: 16 }}>{open ? '→' : '←'}</span>
+        <span style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          Cashflow
+        </span>
+        {chosenCount > 0 && (
+          <span style={{ background: '#A8834A', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>
+            {chosenCount}
+          </span>
+        )}
+      </button>
+
+      {/* Slide-in panel */}
+      <div style={{
+        position: 'fixed', top: 0, right: 0, height: '100vh', width: 360,
+        background: 'var(--cream)', borderLeft: '1px solid var(--cream3)',
+        boxShadow: '-8px 0 32px rgba(0,0,0,0.12)', zIndex: 999,
+        transform: open ? 'translateX(0)' : 'translateX(100%)',
+        transition: 'transform 0.3s ease',
+        display: 'flex', flexDirection: 'column', overflowY: 'auto',
+      }}>
+        {/* Header */}
+        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: 'var(--cream)', zIndex: 1 }}>
+          <div>
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, fontWeight: 600, color: 'var(--charcoal)' }}>Cashflow Impact</div>
+            <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>{personLabel} · chosen recommendations</div>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18, color: 'var(--ink3)', padding: 4 }}>✕</button>
+        </div>
+
+        {chosenCount === 0 ? (
+          <div style={{ padding: 24, fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic', textAlign: 'center', marginTop: 40 }}>
+            No chosen recommendations yet.<br />Mark cards as chosen to see cashflow impact.
+          </div>
+        ) : (
+          <div style={{ padding: '16px 20px', flex: 1 }}>
+
+            {/* New Additions */}
+            {additions.length > 0 && (
+              <>
+                <div style={sectionLabelStyle}>New additions</div>
+                {additions.map((r, i) => (
+                  <div key={i} style={rowStyle}>
+                    <div>
+                      <div style={labelStyle}>{r.label}</div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{r.section}</div>
+                    </div>
+                    <div style={valStyle(r.cashDelta)}>+{fmt(r.cashDelta)} / yr</div>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginBottom: 4 }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>Total additions</div>
+                  <div style={valStyle(totalAdditions)}>+{fmt(totalAdditions)} / yr</div>
+                </div>
+              </>
+            )}
+
+            {/* Replacements */}
+            {replacements.length > 0 && (
+              <>
+                <div style={{ ...sectionLabelStyle, marginTop: additions.length > 0 ? 20 : 14 }}>Replacements (net change)</div>
+                {replacements.map((r, i) => (
+                  <div key={i} style={rowStyle}>
+                    <div>
+                      <div style={labelStyle}>{r.label}</div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{r.section}</div>
+                    </div>
+                    <div style={valStyle(r.cashDelta)}>
+                      {r.cashDelta > 0 ? '+' : ''}{fmt(r.cashDelta)} / yr
+                    </div>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginBottom: 4 }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>Net replacement change</div>
+                  <div style={valStyle(totalReplacements)}>
+                    {totalReplacements > 0 ? '+' : ''}{fmt(totalReplacements)} / yr
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Divider */}
+            <div style={{ borderTop: '2px solid var(--charcoal)', margin: '20px 0 12px' }} />
+
+            {/* Combined net */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 700, color: 'var(--charcoal)' }}>Net annual cash impact</div>
+              <div style={{ ...valStyle(netAnnualCash), fontSize: 16 }}>
+                {netAnnualCash > 0 ? '+' : ''}{fmt(netAnnualCash)} / yr
+              </div>
+            </div>
+
+            {/* Surplus section */}
+            {annualSurplus > 0 && (
+              <div style={{ background: 'var(--cream2)', border: '1px solid var(--cream3)', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ ...sectionLabelStyle, marginTop: 0 }}>Annual surplus</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={labelStyle}>Current surplus</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1E4D35', fontWeight: 600 }}>{fmt(annualSurplus)} / yr</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={labelStyle}>All chosen premiums</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#9B1C1C', fontWeight: 600 }}>−{fmt(Math.abs(netAnnualCash))} / yr</span>
+                </div>
+                <div style={{ borderTop: '1px solid var(--cream3)', paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 700, color: 'var(--charcoal)' }}>Surplus remaining</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, fontWeight: 700, color: surplusAfter >= 0 ? '#1E4D35' : '#9B1C1C' }}>
+                    {fmt(surplusAfter)} / yr
+                  </span>
+                </div>
+                <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 6 }}>
+                  ≈ {fmt(surplusAfter / 12)} / mo
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ─── PAGE ─────────────────────────────────────────────────────────────────────
+
 export default function RecommendationsPage() {
   const supabase = createClient()
   const [clientId, setClientId]   = useState<string | null>(null)
@@ -1778,6 +2008,7 @@ export default function RecommendationsPage() {
 
   // Person tabs
   const [activePerson, setActivePerson] = useState<string>('client')
+  const [showSidebar, setShowSidebar]   = useState(false)
   const [personTabs, setPersonTabs] = useState<{ key: string; label: string; age: number }[]>([
     { key: 'client', label: 'Client', age: 35 }
   ])
@@ -2514,6 +2745,14 @@ export default function RecommendationsPage() {
             )}
           </div>
         )}
+      <CashflowSidebar
+        open={showSidebar}
+        onClose={() => setShowSidebar(s => !s)}
+        data={data}
+        activePerson={activePerson}
+        annualSurplus={annualSurplus}
+        personTabs={personTabs}
+      />
       </div>
     </div>
   )
