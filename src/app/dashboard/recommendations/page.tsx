@@ -1001,18 +1001,19 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
 // ─── LTC CARD ─────────────────────────────────────────────────────────────────
 
 const LTC_COVERAGE_TYPES = ['LTC Supplement', 'Disability Income']
-const BENEFIT_PAYMENT_PERIODS = ['1 year', '2 years', '3 years', '5 years', '10 years', 'To age 65', 'To age 70', 'Lifetime']
+const BENEFIT_PAYMENT_PERIODS = ['To Age 55', 'To Age 60', 'To Age 65', 'To Age 70', 'Lifetime']
 
 function LtcCard({ rec, onChange, onDelete, onChoose,
-  existingPolicies, ltcCompanies, products, coverageTypes, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
+  existingPolicies, ltcCompanies, products, coverageTypes, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
   rec: ProtRec
   onChange: (r: ProtRec) => void
   onDelete: () => void
   onChoose: () => void
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string }[]
   ltcCompanies: { id: number; name: string }[]
   products: InsProduct[]
   coverageTypes: string[]
+  personName: string
   monthlyIncome: number
   monthlyExpenses: number
   annualSurplusOverride?: number
@@ -1024,7 +1025,21 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   const selComp = ltcCompanies.find(c => c.name === rec.insurer)
   const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
 
-  function togglePolicy(pol: typeof existingPolicies[0]) {
+  // Replacement picker: LTC category + person name match
+  function personMatch(lifeAssured: string, tabName: string): boolean {
+    if (!lifeAssured) return true
+    const la = lifeAssured.toLowerCase().trim()
+    const tn = tabName.toLowerCase().trim()
+    if (la === tn) return true
+    const laWords = la.split(/\s+/)
+    const tnWords = tn.split(/\s+/)
+    return laWords.some(w => w.length > 1 && tnWords.includes(w))
+  }
+  const ltcPolicies = existingPolicies.filter(p =>
+    p.categoryCode === 'ltc' && personMatch(p.lifeAssured, personName)
+  )
+
+  function togglePolicy(pol: typeof ltcPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
     else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: 0, currentCashValue: pol.currentCashValue }])
@@ -1103,13 +1118,15 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
               <input style={S.inp} value={rec.policyTerm} onChange={e => upd('policyTerm', e.target.value)} placeholder="e.g. Life" />
             </div>
           </div>
-          <div style={{ gridColumn: '2/4' }}>
-            <label style={S.lbl}>Benefits</label>
-            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
-          </div>
-          <div style={{ gridColumn: '1/2' }}>
-            <label style={S.lbl}>Limitations</label>
-            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" />
+          <div style={{ gridColumn: '1/4', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <label style={S.lbl}>Benefits</label>
+              <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
+            </div>
+            <div>
+              <label style={S.lbl}>Limitations</label>
+              <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" />
+            </div>
           </div>
         </div>
 
@@ -1118,11 +1135,11 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
               <div style={{ ...S.lbl, marginBottom: 10 }}>Replacing existing policies</div>
-              {existingPolicies.length === 0 && (
-                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No existing policies found — add them in the Protection Portfolio tab first.</div>
+              {ltcPolicies.length === 0 && (
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No existing LTC policies found for this person — add them in the Protection Portfolio tab first.</div>
               )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                {existingPolicies.map(pol => {
+                {ltcPolicies.map(pol => {
                   const selected = !!rec.replacedPolicies.find(p => p.policyId === pol.id)
                   return (
                     <button key={pol.id} onClick={() => togglePolicy(pol)} style={{
@@ -2202,6 +2219,7 @@ export default function RecommendationsPage() {
                       existingPolicies={existingPolicies}
                       ltcCompanies={ltcCompanies} products={products}
                       coverageTypes={coverageMap[cat.key]}
+                      personName={personTabs.find(t => t.key === activePerson)?.label || ''}
                       monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
                       annualSurplusOverride={annualSurplus}
                     />
