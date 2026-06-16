@@ -409,7 +409,7 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMod
                     <td style={{ ...td, color: '#9B1C1C' }}>{oldVal > 0 ? fmt(oldVal) : '—'}</td>
                     <td style={{ ...td, color: '#1E4D35', fontWeight: 600 }}>{newVal > 0 ? fmt(newVal) : '—'}</td>
                     <td style={{ ...td, color: d > 0 ? '#1E4D35' : d < 0 ? '#9B1C1C' : 'var(--ink3)', fontWeight: 600 }}>
-                      {oldVal > 0 && newVal > 0 ? (d > 0 ? '+' : '') + fmt(d) : '—'}
+                      {(oldVal > 0 || newVal > 0) ? (d > 0 ? '+' : '') + fmt(d) : '—'}
                     </td>
                   </tr>
                 )
