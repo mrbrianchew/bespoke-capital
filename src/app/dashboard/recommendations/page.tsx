@@ -2055,11 +2055,12 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
 
 // ─── ACCUMULATION CARD ────────────────────────────────────────────────────────
 
-function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, existingPolicies, monthlyIncome, monthlyExpenses }: {
+function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, existingPolicies, monthlyIncome, monthlyExpenses, accumulationCompanies }: {
   rec: AccRec; onChange: (r: AccRec) => void; onDelete: () => void; onChoose: () => void
   goals: GoalItem[]; existingPortfolioValue: number
   existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
   monthlyIncome: number; monthlyExpenses: number
+  accumulationCompanies: { id: number; name: string }[]
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof AccRec>(k: K, v: AccRec[K]) { onChange({ ...rec, [k]: v }) }
@@ -2094,15 +2095,21 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
 
         {/* Core fields */}
         <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
-          <div><label style={S.lbl}>Product / Type</label><input style={S.inp} value={rec.productType} onChange={e => upd('productType', e.target.value)} placeholder="e.g. Gro Capital Ease II" /></div>
-          <div><label style={S.lbl}>Company</label><input style={S.inp} value={rec.company} onChange={e => upd('company', e.target.value)} placeholder="e.g. NTUC Income" /></div>
           <div>
-            <label style={S.lbl}>Plan</label>
+            <label style={S.lbl}>Product Type</label>
             <select style={S.inp} value={rec.planType} onChange={e => upd('planType', e.target.value)}>
               <option value="">Select…</option>
               {PLAN_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
+          <div>
+            <label style={S.lbl}>Company</label>
+            <select style={S.inp} value={rec.company} onChange={e => upd('company', e.target.value)}>
+              <option value="">Select insurer…</option>
+              {accumulationCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          <div><label style={S.lbl}>Product Name / Account</label><input style={S.inp} value={rec.productType} onChange={e => upd('productType', e.target.value)} placeholder="e.g. Gro Capital Ease II" /></div>
         </div>
 
         {/* Contribution */}
@@ -2537,6 +2544,7 @@ export default function RecommendationsPage() {
   const [ltcCompanies, setLtcCompanies] = useState<{ id: number; name: string }[]>([])
   const [lifeCompanies, setLifeCompanies] = useState<{ id: number; name: string }[]>([])
   const [generalCompanies, setGeneralCompanies] = useState<{ id: number; name: string }[]>([])
+  const [accumulationCompanies, setAccumulationCompanies] = useState<{ id: number; name: string }[]>([])
   const [usdRate, setUsdRate] = useState<number>(1.35)  // SGD per USD fallback
   const [clientLifeExpectancy, setClientLifeExpectancy] = useState<number>(85)
   const [clientGender, setClientGender] = useState<string>('')
@@ -2633,6 +2641,13 @@ export default function RecommendationsPage() {
         setGeneralCompanies(companiesList.filter((c: any) => c.category_id === generalCat.id))
       } else {
         setGeneralCompanies(companiesList)
+      }
+      // Accumulation / Endowment companies: filter by ins_categories code='endowment'
+      const endowmentCat = (cats || []).find((c: any) => c.code === 'endowment')
+      if (endowmentCat) {
+        setAccumulationCompanies(companiesList.filter((c: any) => c.category_id === endowmentCat.id))
+      } else {
+        setAccumulationCompanies(companiesList)
       }
       // Fetch live USD→SGD rate
       try {
@@ -3286,6 +3301,7 @@ export default function RecommendationsPage() {
                     goals={goals} existingPortfolioValue={existingPortfolioValue}
                     existingPolicies={existingPolicies}
                     monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
+                    accumulationCompanies={accumulationCompanies}
                   />
                 ))
               )}
