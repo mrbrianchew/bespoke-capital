@@ -88,6 +88,10 @@ interface ProtRec {
   interestRate: string
   premiumWaiver: string
   isUsdPolicy: boolean
+  // General Insurance specific
+  accidentalDeathBenefit: number
+  accidentalDisabilityBenefit: number
+  medicalExpenseBenefit: number
 }
 
 interface AccRec {
@@ -1483,6 +1487,114 @@ const MULTIPLIER_ENDS = ['Age 55', 'Age 60', 'Age 65', 'Age 70', 'Age 75', 'Age 
 const PREMIUM_WAIVER_OPTIONS = ['CI Waiver Benefit', 'Early CI Waiver Benefit', 'Payor Waiver Benefit', 'Nil']
 const USD_COVERAGE_TYPES = ['UL', 'IUL', 'VUL']
 
+const GENERAL_COVERAGE_TYPES = [
+  { code: 'PA',    label: 'Personal Accident' },
+  { code: 'Travel', label: 'Travel Insurance' },
+  { code: 'Home',  label: 'Home Insurance' },
+  { code: 'Motor', label: 'Motor Insurance' },
+  { code: 'FDW',   label: 'Foreign Domestic Worker' },
+]
+
+// ─── GENERAL CARD ─────────────────────────────────────────────────────────────
+
+function GeneralCard({ rec, onChange, onDelete, onChoose, generalCompanies, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
+  rec: ProtRec
+  onChange: (r: ProtRec) => void
+  onDelete: () => void
+  onChoose: () => void
+  generalCompanies: { id: number; name: string }[]
+  monthlyIncome: number
+  monthlyExpenses: number
+  annualSurplusOverride?: number
+}) {
+  function upd<K extends keyof ProtRec>(k: K, v: ProtRec[K]) { onChange({ ...rec, [k]: v }) }
+
+  const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
+
+  return (
+    <div style={{ ...S.card, border: borderStyle, marginBottom: 16 }}>
+      {/* Top bar */}
+      <div style={{ background: 'var(--cream)', padding: '12px 16px', borderBottom: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <RankBadge rank={rec.rank} />
+        {rec.isChosen && <ChosenBadge />}
+        <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+      </div>
+
+      <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
+        {/* Row 1: Coverage Type → Insurer → Product Name */}
+        <div>
+          <label style={S.lbl}>Coverage type</label>
+          <select style={S.inp} value={rec.coverageType} onChange={e => upd('coverageType', e.target.value)}>
+            <option value="">Select type…</option>
+            {GENERAL_COVERAGE_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={S.lbl}>Insurer</label>
+          <select style={S.inp} value={rec.insurer} onChange={e => upd('insurer', e.target.value)}>
+            <option value="">Select insurer…</option>
+            {generalCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={S.lbl}>Product name</label>
+          <input style={S.inp} value={rec.productName} onChange={e => upd('productName', e.target.value)} placeholder="e.g. PA Protector Plus" />
+        </div>
+
+        {rec.coverageType && (<>
+          {/* Benefit fields */}
+          <div>
+            <label style={S.lbl}>Accidental Death Benefit (S$)</label>
+            <input type="number" style={S.inp} value={rec.accidentalDeathBenefit || ''} onChange={e => upd('accidentalDeathBenefit', Number(e.target.value))} placeholder="0" />
+          </div>
+          <div>
+            <label style={S.lbl}>Accidental Disability Benefit (S$)</label>
+            <input type="number" style={S.inp} value={rec.accidentalDisabilityBenefit || ''} onChange={e => upd('accidentalDisabilityBenefit', Number(e.target.value))} placeholder="0" />
+          </div>
+          <div>
+            <label style={S.lbl}>Medical Expense Benefit (S$)</label>
+            <input type="number" style={S.inp} value={rec.medicalExpenseBenefit || ''} onChange={e => upd('medicalExpenseBenefit', Number(e.target.value))} placeholder="0" />
+          </div>
+
+          {/* Premium Term / Policy Term (default Renewable) */}
+          <div>
+            <label style={S.lbl}>Premium term</label>
+            <input style={S.inp} value={rec.premiumTerm || 'Renewable'} onChange={e => upd('premiumTerm', e.target.value)} placeholder="Renewable" />
+          </div>
+          <div>
+            <label style={S.lbl}>Policy term</label>
+            <input style={S.inp} value={rec.policyTerm || 'Renewable'} onChange={e => upd('policyTerm', e.target.value)} placeholder="Renewable" />
+          </div>
+          <div>
+            <label style={S.lbl}>Annual premium (S$)</label>
+            <input type="number" style={S.inp} value={rec.annualPremium || ''} onChange={e => upd('annualPremium', Number(e.target.value))} placeholder="0" />
+          </div>
+
+          {/* Benefits / Limitations */}
+          <div style={{ gridColumn: '1/3' }}>
+            <label style={S.lbl}>Benefits</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
+          </div>
+          <div>
+            <label style={S.lbl}>Limitations</label>
+            <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" />
+          </div>
+        </>)}
+      </div>
+
+      {/* Actions */}
+      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {rec.isChosen ? (
+          <button onClick={onChoose} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid var(--cream3)', background: 'transparent', color: 'var(--ink2)' }}>Unmark as chosen</button>
+        ) : (
+          <button onClick={onChoose} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: 'none', background: 'var(--charcoal)', color: 'var(--cream)', fontWeight: 600 }}>Mark as chosen</button>
+        )}
+        <button onClick={onDelete} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid var(--cream3)', background: 'transparent', color: '#9B1C1C', marginLeft: 'auto' }}>Remove</button>
+      </div>
+    </div>
+  )
+}
+
 // ─── EXPENSE CARD (CORE PROTECTION) ───────────────────────────────────────────
 
 function ExpenseCard({ rec, onChange, onDelete, onChoose,
@@ -2423,6 +2535,7 @@ export default function RecommendationsPage() {
   const [medicalCompanies, setMedicalCompanies] = useState<{ id: number; name: string }[]>([])
   const [ltcCompanies, setLtcCompanies] = useState<{ id: number; name: string }[]>([])
   const [lifeCompanies, setLifeCompanies] = useState<{ id: number; name: string }[]>([])
+  const [generalCompanies, setGeneralCompanies] = useState<{ id: number; name: string }[]>([])
   const [usdRate, setUsdRate] = useState<number>(1.35)  // SGD per USD fallback
   const [clientLifeExpectancy, setClientLifeExpectancy] = useState<number>(85)
   const [clientGender, setClientGender] = useState<string>('')
@@ -2512,6 +2625,13 @@ export default function RecommendationsPage() {
         setLifeCompanies(companiesList.filter((c: any) => c.category_id === lifeCat.id))
       } else {
         setLifeCompanies(companiesList)
+      }
+      // General insurers: filter by ins_categories code='general'
+      const generalCat = (cats || []).find((c: any) => c.code === 'general')
+      if (generalCat) {
+        setGeneralCompanies(companiesList.filter((c: any) => c.category_id === generalCat.id))
+      } else {
+        setGeneralCompanies(companiesList)
       }
       // Fetch live USD→SGD rate
       try {
@@ -2766,6 +2886,7 @@ export default function RecommendationsPage() {
       baseDeathBenefit: 0, baseTpdBenefit: 0, baseAdvCiBenefit: 0, baseEarlyCiBenefit: 0,
       coverageMultiplier: 1, multiplierEnd: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0,
       interestRate: '', premiumWaiver: 'Nil', isUsdPolicy: false,
+      accidentalDeathBenefit: 0, accidentalDisabilityBenefit: 0, medicalExpenseBenefit: 0,
     }
     const byPerson = { ...data[catKey(cat)], [person]: [...recs, rec] }
     handleChange({ ...data, [catKey(cat)]: byPerson })
@@ -3100,6 +3221,16 @@ export default function RecommendationsPage() {
                       usdRate={usdRate}
                       lifeExpectancy={clientLifeExpectancy}
                       clientAge={clientAgeState}
+                    />
+                  ) : cat.key === 'general' ? (
+                    <GeneralCard
+                      key={rec.id} rec={rec}
+                      onChange={r => updateProt(cat.key, rec.id, r)}
+                      onDelete={() => deleteProt(cat.key, rec.id)}
+                      onChoose={() => chooseProt(cat.key, rec.id)}
+                      generalCompanies={generalCompanies}
+                      monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
+                      annualSurplusOverride={annualSurplus}
                     />
                   ) : (
                   <ProtCard
