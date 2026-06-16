@@ -2667,7 +2667,7 @@ export default function RecommendationsPage() {
       const clientAge = fin?.client?.dob
         ? new Date().getFullYear() - Number(String(fin.client.dob).slice(0, 4))
         : 35
-      setClientAgeState(clientAge)
+      setClientAgeState(clientAge2 || clientAge)
       const builtGoals: GoalItem[] = []
       const retCorpus = ret?.corpusNeeded || 0
       const retAge    = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
