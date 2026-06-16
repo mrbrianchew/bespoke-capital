@@ -49,6 +49,8 @@ interface ReplacedPolicy {
   tpdBenefit: number
   advCiBenefit: number
   earlyCiBenefit: number
+  inceptionDate: string
+  premiumMaturity: string
 }
 
 interface ProtRec {
@@ -439,7 +441,7 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMod
 
 // ─── PROTECTION IMPACT MODAL ──────────────────────────────────────────────────
 
-function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOverride, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium, ltcMode }: {
+function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOverride, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium, ltcMode, expenseMode, lifeExpectancy }: {
   rec: ProtRec
   monthlyIncome: number
   monthlyExpenses: number
@@ -449,7 +451,34 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
   medicalCashPremium?: number
   medicalOldCashPremium?: number
   ltcMode?: boolean
+  expenseMode?: boolean
+  lifeExpectancy?: number
 }) {
+  // Helper: compute remaining premium years for an existing replaced policy
+  function remainingPremYears(p: ReplacedPolicy): number {
+    const pm = p.premiumMaturity || ''
+    const currentYear = new Date().getFullYear()
+    if (!pm || pm === 'Renewable') return 0
+    if (pm === 'Lifetime') return lifeExpectancy || 85
+    // Age X format e.g. "Age 65" — can't resolve without DOB, treat as lifetime
+    if (/^Age\s+\d+$/i.test(pm)) return 0
+    // YYYY-MM-DD date
+    const matYear = new Date(pm).getFullYear()
+    if (!isNaN(matYear)) return Math.max(0, matYear - currentYear)
+    return 0
+  }
+
+  // Helper: parse new product premium term as years
+  function newPremTermYears(): number {
+    const pt = rec.premiumTerm || ''
+    if (!pt) return 20
+    const num = parseInt(pt)
+    if (!isNaN(num) && num > 0) return num
+    // "ILP" or "Whole Life" style — use policyTerm or fallback
+    const pol = parseInt(rec.policyTerm || '')
+    if (!isNaN(pol) && pol > 0) return pol
+    return 20
+  }
   const [cvValues, setCvValues] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {}
     rec.replacedPolicies.forEach(p => { init[p.policyId] = p.currentCashValue || 0 })
@@ -473,6 +502,18 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
 
   const totalCV       = Object.values(cvValues).reduce((s, v) => s + v, 0)
   const policyTermYrs = parseInt(rec.policyTerm) || 20
+
+  // Expense replacement: per-policy old cost over remaining years, capped at new term
+  const newTermYrs    = expenseMode ? newPremTermYears() : policyTermYrs
+  const oldTotalCost  = expenseMode
+    ? rec.replacedPolicies.reduce((s, p) => {
+        const remYrs = Math.min(remainingPremYears(p), newTermYrs)
+        return s + p.annualPremium * remYrs
+      }, 0)
+    : displayOldPremium * newTermYrs
+  const newTotalCost  = expenseMode ? displayNewPremium * newTermYrs : Math.max(0, netAnnual) * policyTermYrs
+  const totalNetOutcomeExpense = oldTotalCost - newTotalCost - totalCV  // positive = saved
+
   const yearsCV       = netAnnual > 0 ? Math.floor(totalCV / netAnnual) : 999
 
   // Cash flow: use cash-only portion for LTC
@@ -484,7 +525,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
     : annualSurplus - newAdditionAnnual
   const surplusAfterMonthly   = surplusAfterAnnual / 12
 
-  const totalNetOutcome = totalCV - Math.max(0, netAnnual) * policyTermYrs
+  const totalNetOutcome = expenseMode ? totalNetOutcomeExpense : totalCV - Math.max(0, netAnnual) * policyTermYrs
 
   const overlay: React.CSSProperties = {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000,
@@ -646,18 +687,28 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
                 </div>
               )}
             </div>
-            {!medicalMode && <div style={{
-              background: totalNetOutcome >= 0 ? '#D1FAE5' : '#FEE2E2',
-              borderRadius: 8, padding: '12px 16px',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12,
-            }}>
-              <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                Total net outcome over {policyTermYrs}-year premium term
-              </span>
-              <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: totalNetOutcome >= 0 ? '#1E4D35' : '#9B1C1C' }}>
-                {totalNetOutcome >= 0 ? '' : '-'}{fmt(Math.abs(totalNetOutcome))} {totalNetOutcome >= 0 ? 'saved' : 'increase'}
-              </span>
-            </div>}
+            {!medicalMode && (<>
+              {expenseMode && isReplacement && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                    {metCard('Old cost (remaining yrs)', fmt(oldTotalCost), `${rec.replacedPolicies.map(p => Math.min(remainingPremYears(p), newTermYrs) + ' yrs').join(', ')} remaining`, '#9B1C1C')}
+                    {metCard(`New cost (${newTermYrs}-yr term)`, fmt(newTotalCost), `${fmt(displayNewPremium)} / yr × ${newTermYrs} yrs`, '#854F0B')}
+                  </div>
+                </div>
+              )}
+              <div style={{
+                background: totalNetOutcome >= 0 ? '#D1FAE5' : '#FEE2E2',
+                borderRadius: 8, padding: '12px 16px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12,
+              }}>
+                <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                  Total net outcome over {expenseMode ? newTermYrs : policyTermYrs}-year premium term
+                </span>
+                <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: totalNetOutcome >= 0 ? '#1E4D35' : '#9B1C1C' }}>
+                  {totalNetOutcome >= 0 ? '' : '-'}{fmt(Math.abs(totalNetOutcome))} {totalNetOutcome >= 0 ? 'saved' : 'increase'}
+                </span>
+              </div>
+            </>)}
           </div>
         )}
       </div>
@@ -897,7 +948,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
   function togglePolicy(pol: typeof existingPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0 }])
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0, inceptionDate: '', premiumMaturity: '' }])
   }
 
   const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
@@ -1235,7 +1286,7 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   function togglePolicy(pol: typeof ltcPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: pol.premiumMedisave || 0, currentCashValue: 0, monthlyBenefit: pol.monthlyBenefit || 0, benefitTerm: pol.benefitTerm || '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0 }])
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: pol.premiumMedisave || 0, currentCashValue: 0, monthlyBenefit: pol.monthlyBenefit || 0, benefitTerm: pol.benefitTerm || '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0, inceptionDate: '', premiumMaturity: '' }])
   }
 
   const borderStyle = rec.isChosen ? '2px solid #2D5A4E' : '1px solid var(--cream3)'
@@ -1439,18 +1490,19 @@ const USD_COVERAGE_TYPES = ['UL', 'IUL', 'VUL']
 // ─── EXPENSE CARD (CORE PROTECTION) ───────────────────────────────────────────
 
 function ExpenseCard({ rec, onChange, onDelete, onChoose,
-  existingPolicies, lifeCompanies, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride, usdRate }: {
+  existingPolicies, lifeCompanies, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride, usdRate, lifeExpectancy }: {
   rec: ProtRec
   onChange: (r: ProtRec) => void
   onDelete: () => void
   onChoose: () => void
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; deathBenefit: number; tpdBenefit: number; advCiBenefit: number; earlyCiBenefit: number }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; deathBenefit: number; tpdBenefit: number; advCiBenefit: number; earlyCiBenefit: number; inceptionDate: string; premiumMaturity: string }[]
   lifeCompanies: { id: number; name: string }[]
   personName: string
   monthlyIncome: number
   monthlyExpenses: number
   annualSurplusOverride?: number
   usdRate: number
+  lifeExpectancy: number
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof ProtRec>(k: K, v: ProtRec[K]) { onChange({ ...rec, [k]: v }) }
@@ -1492,7 +1544,7 @@ function ExpenseCard({ rec, onChange, onDelete, onChoose,
   function togglePolicy(pol: typeof existingPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: pol.deathBenefit || 0, tpdBenefit: pol.tpdBenefit || 0, advCiBenefit: pol.advCiBenefit || 0, earlyCiBenefit: pol.earlyCiBenefit || 0 }])
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: pol.deathBenefit || 0, tpdBenefit: pol.tpdBenefit || 0, advCiBenefit: pol.advCiBenefit || 0, earlyCiBenefit: pol.earlyCiBenefit || 0, inceptionDate: pol.inceptionDate || '', premiumMaturity: pol.premiumMaturity || '' }])
   }
 
   function updateReplacedField(policyId: string, field: 'annualPremium' | 'currentCashValue', val: number) {
@@ -1735,7 +1787,7 @@ function ExpenseCard({ rec, onChange, onDelete, onChoose,
         </div>
       </div>
 
-      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} onClose={() => setShowImpact(false)} />}
+      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} expenseMode={true} lifeExpectancy={lifeExpectancy} onClose={() => setShowImpact(false)} />}
     </>
   )
 }
@@ -1762,7 +1814,7 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
   function togglePolicy(pol: typeof existingPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
     if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0 }])
+    else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0, inceptionDate: '', premiumMaturity: '' }])
   }
 
   function updateReplacedField(policyId: string, field: 'annualPremium' | 'currentCashValue', val: number) {
@@ -2017,7 +2069,7 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
                     <button key={pol.id} onClick={() => {
                       const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
                       if (exists) upd('replacedPolicies', rec.replacedPolicies.filter(p => p.policyId !== pol.id))
-                      else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0 }])
+                      else upd('replacedPolicies', [...rec.replacedPolicies, { policyId: pol.id, policyName: pol.policyName, companyName: pol.companyName, annualPremium: pol.annualPremium, premiumMedisave: (pol as any).premiumMedisave || 0, currentCashValue: pol.currentCashValue, monthlyBenefit: 0, benefitTerm: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0, inceptionDate: '', premiumMaturity: '' }])
                     }} style={{
                       fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Inter',
                       border: `1px solid ${selected ? '#2D5A4E' : 'var(--cream3)'}`,
@@ -2375,6 +2427,8 @@ export default function RecommendationsPage() {
   const [ltcCompanies, setLtcCompanies] = useState<{ id: number; name: string }[]>([])
   const [lifeCompanies, setLifeCompanies] = useState<{ id: number; name: string }[]>([])
   const [usdRate, setUsdRate] = useState<number>(1.35)  // SGD per USD fallback
+  const [clientLifeExpectancy, setClientLifeExpectancy] = useState<number>(85)
+  const [clientGender, setClientGender] = useState<string>('')
   const [medisaveBands, setMedisaveBands] = useState<MedisaveBand[]>([])
   const [products, setProducts]   = useState<InsProduct[]>([])
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
@@ -2392,6 +2446,7 @@ export default function RecommendationsPage() {
     premiumMedisave: number; currentCashValue: number; lifeAssured: string; categoryCode: string
     monthlyBenefit: number; benefitTerm: string
     deathBenefit: number; tpdBenefit: number; advCiBenefit: number; earlyCiBenefit: number
+    inceptionDate: string; premiumMaturity: string
   }[]>([])
 
   // Cash flow from Financial Profile
@@ -2431,7 +2486,7 @@ export default function RecommendationsPage() {
         supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
         supabase.from('family_members').select('*').eq('client_id', id),
         supabase.from('medisave_withdrawal_limits').select('*').order('sort_order', { ascending: true }),
-        supabase.from('clients').select('id,name,dob').eq('id', id).maybeSingle(),
+        supabase.from('clients').select('id,name,dob,gender').eq('id', id).maybeSingle(),
       ])
 
       // Reference data
@@ -2594,7 +2649,7 @@ export default function RecommendationsPage() {
           }
           const annualPrem = msAnnual + cashAnnual
           const mult2 = p.multiplier > 1 ? p.multiplier : 1
-          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, premiumMedisave: msAnnual, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '', monthlyBenefit: p.monthlyBenefit || 0, benefitTerm: p.benefitTerm || p.payoutTerm || '', deathBenefit: Math.round((p.baseDeath || 0) * mult2), tpdBenefit: Math.round((p.baseTPD || 0) * mult2), advCiBenefit: Math.round((p.baseAdvCI || 0) * mult2), earlyCiBenefit: Math.round((p.baseEarlyCI || 0) * mult2) }
+          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, premiumMedisave: msAnnual, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '', monthlyBenefit: p.monthlyBenefit || 0, benefitTerm: p.benefitTerm || p.payoutTerm || '', deathBenefit: Math.round((p.baseDeath || 0) * mult2), tpdBenefit: Math.round((p.baseTPD || 0) * mult2), advCiBenefit: Math.round((p.baseAdvCI || 0) * mult2), earlyCiBenefit: Math.round((p.baseEarlyCI || 0) * mult2), inceptionDate: p.inceptionDate || '', premiumMaturity: p.premiumMaturity || '' }
         })
       )
 
@@ -2602,6 +2657,11 @@ export default function RecommendationsPage() {
       const cm  = by['capital_mandate'] ?? {}
       const ret = by['retirement'] ?? {}
       const edu = by['education'] ?? {}
+      // Life expectancy: from retirement section, else gender-based default
+      const retLifeExp = ret?.ret?.client?.lifeExpectancy || ret?.client?.lifeExpectancy || 0
+      const genderStr  = clientRow?.gender || ''
+      setClientGender(genderStr)
+      setClientLifeExpectancy(retLifeExp || (genderStr === 'Female' ? 88 : 86))
       const clientAge = fin?.client?.dob
         ? new Date().getFullYear() - Number(String(fin.client.dob).slice(0, 4))
         : 35
@@ -3039,6 +3099,7 @@ export default function RecommendationsPage() {
                       monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
                       annualSurplusOverride={annualSurplus}
                       usdRate={usdRate}
+                      lifeExpectancy={clientLifeExpectancy}
                     />
                   ) : (
                   <ProtCard
