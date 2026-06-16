@@ -441,7 +441,7 @@ function CompareTable({ replaced, newPremium, newSA, newCoverageType, medicalMod
 
 // ─── PROTECTION IMPACT MODAL ──────────────────────────────────────────────────
 
-function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOverride, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium, ltcMode, expenseMode, lifeExpectancy }: {
+function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOverride, onClose, medicalMode, medicalCashPremium, medicalOldCashPremium, ltcMode, expenseMode, lifeExpectancy, clientAge }: {
   rec: ProtRec
   monthlyIncome: number
   monthlyExpenses: number
@@ -453,13 +453,14 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
   ltcMode?: boolean
   expenseMode?: boolean
   lifeExpectancy?: number
+  clientAge?: number
 }) {
   // Helper: compute remaining premium years for an existing replaced policy
   function remainingPremYears(p: ReplacedPolicy): number {
     const pm = p.premiumMaturity || ''
     const currentYear = new Date().getFullYear()
     if (!pm || pm === 'Renewable') return 0
-    if (pm === 'Lifetime') return lifeExpectancy || 85
+    if (pm === 'Lifetime') return Math.max(0, (lifeExpectancy || 85) - (clientAge || 35))
     // Age X format e.g. "Age 65" — can't resolve without DOB, treat as lifetime
     if (/^Age\s+\d+$/i.test(pm)) return 0
     // YYYY-MM-DD date
@@ -507,8 +508,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
   const newTermYrs    = expenseMode ? newPremTermYears() : policyTermYrs
   const oldTotalCost  = expenseMode
     ? rec.replacedPolicies.reduce((s, p) => {
-        const remYrs = Math.min(remainingPremYears(p), newTermYrs)
-        return s + p.annualPremium * remYrs
+        return s + p.annualPremium * remainingPremYears(p)
       }, 0)
     : displayOldPremium * newTermYrs
   const newTotalCost  = expenseMode ? displayNewPremium * newTermYrs : Math.max(0, netAnnual) * policyTermYrs
@@ -691,7 +691,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
               {expenseMode && isReplacement && (
                 <div style={{ marginBottom: 10 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                    {metCard('Old cost (remaining yrs)', fmt(oldTotalCost), `${rec.replacedPolicies.map(p => { const r = remainingPremYears(p); return (r >= (lifeExpectancy || 85) ? '~' + r : r) + ' yrs' }).join(', ')} remaining (capped at ${newTermYrs} yrs)`, '#9B1C1C')}
+                    {metCard('Old cost (remaining yrs)', fmt(oldTotalCost), `${rec.replacedPolicies.map(p => { const r = remainingPremYears(p); return (r >= (lifeExpectancy || 85) ? '~' + r : r) + ' yrs' }).join(', ')} remaining`, '#9B1C1C')}
                     {metCard(`New cost (${newTermYrs}-yr term)`, fmt(newTotalCost), `${fmt(displayNewPremium)} / yr × ${newTermYrs} yrs`, '#854F0B')}
                   </div>
                 </div>
@@ -1490,7 +1490,7 @@ const USD_COVERAGE_TYPES = ['UL', 'IUL', 'VUL']
 // ─── EXPENSE CARD (CORE PROTECTION) ───────────────────────────────────────────
 
 function ExpenseCard({ rec, onChange, onDelete, onChoose,
-  existingPolicies, lifeCompanies, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride, usdRate, lifeExpectancy }: {
+  existingPolicies, lifeCompanies, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride, usdRate, lifeExpectancy, clientAge }: {
   rec: ProtRec
   onChange: (r: ProtRec) => void
   onDelete: () => void
@@ -1503,6 +1503,7 @@ function ExpenseCard({ rec, onChange, onDelete, onChoose,
   annualSurplusOverride?: number
   usdRate: number
   lifeExpectancy: number
+  clientAge: number
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof ProtRec>(k: K, v: ProtRec[K]) { onChange({ ...rec, [k]: v }) }
@@ -1787,7 +1788,7 @@ function ExpenseCard({ rec, onChange, onDelete, onChoose,
         </div>
       </div>
 
-      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} expenseMode={true} lifeExpectancy={lifeExpectancy} onClose={() => setShowImpact(false)} />}
+      {showImpact && <ProtImpactModal rec={rec} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} annualSurplusOverride={annualSurplusOverride} expenseMode={true} lifeExpectancy={lifeExpectancy} clientAge={clientAge} onClose={() => setShowImpact(false)} />}
     </>
   )
 }
@@ -2429,6 +2430,7 @@ export default function RecommendationsPage() {
   const [usdRate, setUsdRate] = useState<number>(1.35)  // SGD per USD fallback
   const [clientLifeExpectancy, setClientLifeExpectancy] = useState<number>(85)
   const [clientGender, setClientGender] = useState<string>('')
+  const [clientAgeState, setClientAgeState] = useState<number>(35)
   const [medisaveBands, setMedisaveBands] = useState<MedisaveBand[]>([])
   const [products, setProducts]   = useState<InsProduct[]>([])
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
@@ -2665,6 +2667,7 @@ export default function RecommendationsPage() {
       const clientAge = fin?.client?.dob
         ? new Date().getFullYear() - Number(String(fin.client.dob).slice(0, 4))
         : 35
+      setClientAgeState(clientAge)
       const builtGoals: GoalItem[] = []
       const retCorpus = ret?.corpusNeeded || 0
       const retAge    = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
@@ -3100,6 +3103,7 @@ export default function RecommendationsPage() {
                       annualSurplusOverride={annualSurplus}
                       usdRate={usdRate}
                       lifeExpectancy={clientLifeExpectancy}
+                      clientAge={clientAgeState}
                     />
                   ) : (
                   <ProtCard
