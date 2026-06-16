@@ -512,7 +512,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
       }, 0)
     : displayOldPremium * newTermYrs
   const newTotalCost  = expenseMode ? displayNewPremium * newTermYrs : Math.max(0, netAnnual) * policyTermYrs
-  const totalNetOutcomeExpense = oldTotalCost - newTotalCost - totalCV  // positive = saved
+  const totalNetOutcomeExpense = (oldTotalCost - newTotalCost) + totalCV  // positive = saved
 
   const yearsCV       = netAnnual > 0 ? Math.floor(totalCV / netAnnual) : 999
 
@@ -691,7 +691,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
               {expenseMode && isReplacement && (
                 <div style={{ marginBottom: 10 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                    {metCard('Old cost (remaining yrs)', fmt(oldTotalCost), `${rec.replacedPolicies.map(p => Math.min(remainingPremYears(p), newTermYrs) + ' yrs').join(', ')} remaining`, '#9B1C1C')}
+                    {metCard('Old cost (remaining yrs)', fmt(oldTotalCost), `${rec.replacedPolicies.map(p => { const r = remainingPremYears(p); return (r >= (lifeExpectancy || 85) ? '~' + r : r) + ' yrs' }).join(', ')} remaining (capped at ${newTermYrs} yrs)`, '#9B1C1C')}
                     {metCard(`New cost (${newTermYrs}-yr term)`, fmt(newTotalCost), `${fmt(displayNewPremium)} / yr × ${newTermYrs} yrs`, '#854F0B')}
                   </div>
                 </div>
