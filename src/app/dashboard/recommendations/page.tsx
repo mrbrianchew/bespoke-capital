@@ -1202,6 +1202,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
             baseDeathBenefit: 0, baseTpdBenefit: 0, baseAdvCiBenefit: 0, baseEarlyCiBenefit: 0,
             coverageMultiplier: 1, multiplierEnd: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0,
             interestRate: '', premiumWaiver: 'Nil', isUsdPolicy: false,
+            accidentalDeathBenefit: 0, accidentalDisabilityBenefit: 0, medicalExpenseBenefit: 0,
           }}
           monthlyIncome={monthlyIncome}
           monthlyExpenses={monthlyExpenses}
