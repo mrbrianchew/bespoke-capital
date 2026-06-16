@@ -620,11 +620,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
                 )}
               </div>
             )}
-            {isReplacement && !medicalMode && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-                {metCard('Coverage increase', fmt(rec.sumAssured), rec.coverageType || 'Sum assured', '#1E4D35')}
-              </div>
-            )}
+
           </>
         )}
 
