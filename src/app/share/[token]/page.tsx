@@ -396,6 +396,8 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [policies, setPolicies] = useState<Policy[]>([])
   const [clientAge, setClientAge] = useState(40)
   const [clientName, setClientName] = useState('')
+  const [shareType, setShareType] = useState<'portfolio'|'payment_summary'>('portfolio')
+  const [includedPersons, setIncludedPersons] = useState<string[]>([])
   const year = new Date().getFullYear()
   const page1Ref = useRef<HTMLDivElement>(null)
 
@@ -423,18 +425,27 @@ export default function SharePage({ params }: { params: { token: string } }) {
     if (res.status === 401) { setWrongPw(true); setTimeout(() => setWrongPw(false), 100); return }
     if (!res.ok) { setStage('notfound'); return }
 
-    const { client, person, policies: all } = await res.json()
+    const { client, person, policies: all, shareType: sType, includedPersons: iPersons } = await res.json()
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
       else if (client.age) setClientAge(Number(client.age))
     }
-    const filtered = (all as Policy[]).filter(p => {
-      if (!ACTIVE_STATUSES.includes(p.status)) return false
-      if (person === 'dependents') return p.person !== 'client' && p.person !== 'spouse'
-      return p.person === (person || 'client')
-    })
-    setPolicies(filtered)
+    const st: 'portfolio'|'payment_summary' = sType === 'payment_summary' ? 'payment_summary' : 'portfolio'
+    setShareType(st)
+    setIncludedPersons(iPersons || [])
+
+    // For payment_summary the API already filtered by included_persons; just filter active
+    if (st === 'payment_summary') {
+      setPolicies((all as Policy[]).filter(p => !['Terminated','Surrendered','Matured'].includes(p.status)))
+    } else {
+      const filtered = (all as Policy[]).filter(p => {
+        if (!ACTIVE_STATUSES.includes(p.status)) return false
+        if (person === 'dependents') return p.person !== 'client' && p.person !== 'spouse'
+        return p.person === (person || 'client')
+      })
+      setPolicies(filtered)
+    }
     setStage('unlocked')
   }
 
@@ -477,6 +488,135 @@ export default function SharePage({ params }: { params: { token: string } }) {
     <PasswordGate hint={hint} onUnlock={handleUnlock} wrongPw={wrongPw}/>
   )
 
+  // ── PAYMENT SUMMARY SHARE VIEW ─────────────────────────────────────────────
+  if (shareType === 'payment_summary') {
+    // Helpers for renewal date + status (duplicated here to keep share page self-contained)
+    function computeRenewalDate(p: Policy): Date | null {
+      if (!p.inceptionDate || p.frequency === 'Single') return null
+      const start = new Date(p.inceptionDate)
+      if (isNaN(start.getTime())) return null
+      const today = new Date()
+      const freqMs: Record<string, number> = { Annual: 365.25, 'Semi-Annual': 182.625, Quarterly: 91.3125, Monthly: 30.4375 }
+      const ms = (freqMs[p.frequency] || 365.25) * 24 * 60 * 60 * 1000
+      let next = new Date(start)
+      next.setFullYear(today.getFullYear())
+      while (next < new Date(today.getTime() - ms)) next = new Date(next.getTime() + ms)
+      return next
+    }
+    function getStatus(p: Policy): { label: string; color: string; bg: string } {
+      if (p.frequency === 'Single') return { label: 'Single Premium', color: '#888', bg: '#F5F5F5' }
+      const renewal = computeRenewalDate(p)
+      if (!renewal) return { label: '—', color: '#AAA', bg: '#FAFAFA' }
+      const diffDays = (renewal.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      if (diffDays >= 0 && diffDays <= 30) return { label: 'Upcoming Renewal', color: '#92400E', bg: '#FEF3C7' }
+      if (diffDays > 30) {
+        const yr = renewal.getFullYear()
+        return { label: `Paid for ${yr - 1}/${String(yr).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
+      }
+      if (diffDays >= -30) return ['In-Force','Premium Holiday'].includes(p.status)
+        ? { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
+        : { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
+      return ['In-Force','Premium Holiday'].includes(p.status)
+        ? { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
+        : { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
+    }
+    function fmtRenewal(p: Policy): string {
+      const d = computeRenewalDate(p)
+      if (!d) return '—'
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    }
+    const fmtP = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
+    const groups = Array.from(new Set(policies.map(p => p.lifeAssured || p.person || '—')))
+      .map(la => ({ la, policies: policies.filter(p => (p.lifeAssured || p.person || '—') === la) }))
+    const colH: React.CSSProperties = { padding:'8px 12px', textAlign:'left', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase', color:'#888', fontWeight:500, background:'#FAFAF8', borderBottom:'1px solid #E0DDD6', whiteSpace:'nowrap' }
+    const colD: React.CSSProperties = { padding:'10px 12px', fontSize:11, color:'#1C1A17', verticalAlign:'middle', borderBottom:'0.5px solid #ECEAE4', whiteSpace:'nowrap' }
+    return (
+      <div style={{ background:'#F5F3EE', minHeight:'100vh', fontFamily:'Inter,sans-serif' }}>
+        <style>{`@media print { @page{size:A4 landscape;margin:1.2cm 1.5cm} *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important} .no-print{display:none!important} body{background:white!important} }`}</style>
+        {/* Sticky nav */}
+        <div className="no-print" style={{ position:'sticky', top:0, zIndex:100, background:'#1C1A17', padding:'10px 24px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+            <div style={{ fontSize:10, letterSpacing:'0.15em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)' }}>Bespoke Capital</div>
+            <div style={{ width:1, height:14, background:'rgba(255,255,255,0.15)' }} />
+            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:16, fontWeight:300, color:'#F0EDE8' }}>
+              Payment Summary {year} — {clientName}
+            </div>
+          </div>
+          <button onClick={()=>window.print()} style={{ padding:'8px 20px', background:'#A8834A', color:'white', border:'none', cursor:'pointer', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', fontFamily:'Inter,sans-serif', fontWeight:500 }}>
+            Download PDF
+          </button>
+        </div>
+        {/* Hero */}
+        <div style={{ background:'#1C1A17', padding:'24px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div>
+            <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', marginBottom:6 }}>Bespoke Capital · Wealth Protection</div>
+            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:26, fontWeight:300, color:'#F0EDE8' }}>Payment Summary {year} — {clientName}</div>
+          </div>
+          <div style={{ textAlign:'right' }}>
+            <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)', marginBottom:2 }}>Total Annual Premium</div>
+            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:24, fontWeight:300, color:'#C4A464' }}>{fmt(policies.reduce((s,p)=>s+annualPrem(p),0))}</div>
+          </div>
+        </div>
+        {/* Tables grouped by life assured */}
+        <div style={{ padding:'32px 40px', display:'flex', flexDirection:'column', gap:32 }}>
+          {groups.map(({ la, policies: grpPols }) => (
+            <div key={la}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+                <div style={{ width:3, height:18, background:'#c8a96e', borderRadius:2 }} />
+                <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:18, color:'#1C1A17', fontWeight:600 }}>{la}</div>
+                <div style={{ fontSize:11, color:'#888', marginLeft:4 }}>{grpPols.length} {grpPols.length===1?'policy':'policies'}</div>
+              </div>
+              <div style={{ background:'white', border:'0.5px solid #E0DDD6', borderRadius:12, overflow:'hidden' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={colH}>Policy No</th>
+                      <th style={colH}>Product Name</th>
+                      <th style={colH}>Renewal Date</th>
+                      <th style={{...colH,textAlign:'right'}}>Prem (MS)</th>
+                      <th style={{...colH,textAlign:'right'}}>Prem (Cash)</th>
+                      <th style={colH}>Mode</th>
+                      <th style={colH}>Frequency</th>
+                      <th style={colH}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grpPols.map((p,i) => {
+                      const s = getStatus(p)
+                      return (
+                        <tr key={p.id} style={{ background: i%2===0?'white':'#FAFAF8' }}>
+                          <td style={{...colD,fontFamily:'DM Mono,monospace',fontSize:10,color:'#555'}}>{p.policyNo||'—'}</td>
+                          <td style={colD}>
+                            <div style={{fontWeight:500}}>{p.productName||p.companyName||'—'}</div>
+                            {p.companyName&&p.productName&&<div style={{fontSize:10,color:'#AAA'}}>{p.companyName}</div>}
+                          </td>
+                          <td style={{...colD,fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtRenewal(p)}</td>
+                          <td style={{...colD,textAlign:'right',fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtP(p.premiumMedisave)}</td>
+                          <td style={{...colD,textAlign:'right',fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtP(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))}</td>
+                          <td style={{...colD,fontSize:10,color:'#555'}}>{p.premiumMode||'—'}</td>
+                          <td style={{...colD,fontSize:10,color:'#555'}}>{p.frequency||'—'}</td>
+                          <td style={colD}>
+                            <span style={{ display:'inline-block', padding:'2px 8px', borderRadius:20, fontSize:9, fontWeight:600, color:s.color, background:s.bg, whiteSpace:'nowrap' }}>{s.label}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Footer */}
+        <div style={{ background:'#1C1A17', padding:'20px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)' }}>This document is confidential and prepared solely for {clientName}. © {year} Bespoke Capital.</div>
+          <div style={{ fontSize:10, color:'rgba(168,131,74,0.6)' }}>Chew Zhiquan Brian · Bespoke Capital</div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── PORTFOLIO SHARE VIEW ────────────────────────────────────────────────────
   const catBuckets = [
     {code:'medical',  label:'Medical Insurance',                  accent:'#7A9CBF',hint:'Hospitalisation & surgical coverage'},
     {code:'ltc',      label:'Long Term Disability Care Insurance', accent:'#9B7BAA',hint:'Disability income & long-term care'},
