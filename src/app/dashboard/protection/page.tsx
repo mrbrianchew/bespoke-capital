@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef, useMemo, useCallback, Suspense } fr
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import ProtectionOverview from './ProtectionOverview'
+import DateInput from '@/components/DateInput'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
@@ -2422,7 +2423,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
 
           {/* ── Dates ── */}
           <div style={g3}>
-            <div><label style={lbl}>Inception Date</label><input type="date" value={form.inceptionDate} onChange={e=>f('inceptionDate',e.target.value)} style={inp}/></div>
+            <div><label style={lbl}>Inception Date</label><DateInput value={form.inceptionDate} onChange={v=>f('inceptionDate',v)} style={inp}/></div>
             <div>
               <label style={lbl}>Premium Maturity</label>
               <select value={premMatMode==='preset'?(form.premiumMaturity||''):(premMatMode==='date'?'__date':'__other')} onChange={e=>{if(e.target.value==='__date'){setPremMatMode('date');f('premiumMaturity','');}else if(e.target.value==='__other'){setPremMatMode('text');f('premiumMaturity','');}else{setPremMatMode('preset');f('premiumMaturity',e.target.value);}}} style={s}>
@@ -2433,7 +2434,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 <option value="__date">Input Date</option>
                 <option value="__other">Type Manually</option>
               </select>
-              {premMatMode==='date'&&<input type="date" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} style={{...inp,marginTop:6}}/>}
+              {premMatMode==='date'&&<DateInput value={form.premiumMaturity||''} onChange={v=>f('premiumMaturity',v)} style={{...inp,marginTop:6}}/>}
               {premMatMode==='text'&&<input type="text" value={form.premiumMaturity||''} onChange={e=>f('premiumMaturity',e.target.value)} placeholder="Type manually" style={{...inp,marginTop:6}}/>}
             </div>
             <div>
@@ -2446,7 +2447,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
                 <option value="__date">Input Date</option>
                 <option value="__other">Type Manually</option>
               </select>
-              {covMatMode==='date'&&<input type="date" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} style={{...inp,marginTop:6}}/>}
+              {covMatMode==='date'&&<DateInput value={form.coverageMaturity||''} onChange={v=>f('coverageMaturity',v)} style={{...inp,marginTop:6}}/>}
               {covMatMode==='text'&&<input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp,marginTop:6}}/>}
             </div>
           </div>
