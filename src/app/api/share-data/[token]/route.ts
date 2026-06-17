@@ -15,7 +15,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   return NextResponse.json({ hint: share.password_hint || '', expired })
 }
 
-// POST — verifies password, returns client + policies
+// POST — verifies password, returns client + policies (+ share type metadata)
 export async function POST(req: Request, { params }: { params: { token: string } }) {
   const { passwordHash } = await req.json()
 
@@ -36,9 +36,29 @@ export async function POST(req: Request, { params }: { params: { token: string }
     .eq('section', 'protection_portfolio')
     .maybeSingle()
 
+  const allPolicies: any[] = row?.data?.risk_management?.policies || []
+  const shareType: string = share.share_type || 'portfolio'
+  const includedPersons: string[] | null = share.included_persons || null
+
+  // For payment_summary, filter to included life assureds
+  let policies = allPolicies
+  if (shareType === 'payment_summary' && includedPersons && includedPersons.length > 0) {
+    policies = allPolicies.filter((p: any) =>
+      includedPersons.includes(p.lifeAssured || p.person || '—')
+    )
+  } else if (shareType === 'portfolio') {
+    // Existing behaviour: filter by person
+    const person = share.person
+    if (person && person !== 'all') {
+      policies = allPolicies.filter((p: any) => p.person === person)
+    }
+  }
+
   return NextResponse.json({
     client,
     person: share.person,
-    policies: row?.data?.risk_management?.policies || [],
+    policies,
+    shareType,
+    includedPersons,
   })
 }
