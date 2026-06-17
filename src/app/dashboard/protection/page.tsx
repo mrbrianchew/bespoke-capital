@@ -160,7 +160,7 @@ function ProtectionPage() {
 
   // UI state
   const searchParams = useSearchParams()
-  const [activeTab, setActiveTab] = useState<'overview'|'portfolio'|'renewal'>(() =>
+  const [activeTab, setActiveTab] = useState<'overview'|'portfolio'|'payment_summary'>(() =>
     searchParams.get('tab') === 'portfolio' ? 'portfolio' : 'overview'
   )
   const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
@@ -177,6 +177,17 @@ const [sharePassword, setSharePassword] = useState('')
 const [shareHint, setShareHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
 const [shareGenerating, setShareGenerating] = useState(false)
 const [shareCopied, setShareCopied] = useState(false)
+// Payment Summary share modal
+const [showPaymentShareModal, setShowPaymentShareModal] = useState(false)
+const [psShareIncluded, setPsShareIncluded] = useState<string[]>([])
+const [psShareExpiry, setPsShareExpiry] = useState<'7d'|'30d'|'permanent'>('30d')
+const [psSharePassword, setPsSharePassword] = useState('')
+const [psShareHint, setPsShareHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
+const [psShareGenerating, setPsShareGenerating] = useState(false)
+const [psShareLink, setPsShareLink] = useState('')
+const [psShareCopied, setPsShareCopied] = useState(false)
+// Status overrides for payment summary (policyId → label override)
+const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
@@ -584,6 +595,36 @@ async function handleGenerateShare() {
   }
 }
 
+async function handleGeneratePaymentShare() {
+  if (!psSharePassword.trim() || psShareIncluded.length === 0) return
+  setPsShareGenerating(true)
+  try {
+    const encoder = new TextEncoder()
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(psSharePassword.trim()))
+    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(36)).join('').slice(0,12)
+    let expiresAt: string|null = null
+    if (psShareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
+    if (psShareExpiry==='30d') expiresAt = new Date(Date.now()+30*24*3600*1000).toISOString()
+    const { error } = await supabase.from('client_shares').insert({
+      client_id: clientId,
+      token,
+      expires_at: expiresAt,
+      password_hash: hashHex,
+      password_hint: psShareHint,
+      person: 'all',
+      share_type: 'payment_summary',
+      included_persons: psShareIncluded,
+    })
+    if (error) throw error
+    setPsShareLink(`${window.location.origin}/share/${token}`)
+  } catch(e) {
+    console.error('Payment share failed:', e)
+  } finally {
+    setPsShareGenerating(false)
+  }
+}
+
   return (
     <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
       {/* Hero */}
@@ -597,10 +638,10 @@ async function handleGenerateShare() {
             {saveError && <span style={{fontSize:12,color:'#E53935',fontWeight:500}}>⚠ Save failed</span>}
             {saving && !saveError && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
             <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3}}>
-              {(['overview','portfolio','renewal'] as const).map(t=>(
+              {(['overview','portfolio','payment_summary'] as const).map(t=>(
                 <button key={t} onClick={()=>setActiveTab(t)}
                   style={{padding:'6px 18px',borderRadius:4,border:'none',cursor:'pointer',fontSize:12,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:500,background:activeTab===t?'rgba(200,169,110,0.2)':'transparent',color:activeTab===t?'#c8a96e':'rgba(255,255,255,0.45)'}}>
-                  {t==='overview'?'Overview':t==='portfolio'?'Portfolio':'Renewal'}
+                  {t==='overview'?'Overview':t==='portfolio'?'Portfolio':'Payment Summary'}
                 </button>
               ))}
             </div>
@@ -845,9 +886,31 @@ async function handleGenerateShare() {
         </div>
       )}
 
-      {/* ── RENEWAL ── */}
-      {activeTab==='renewal' && (
-        <RenewalTab allPolicies={rmData.policies} clientName={clientName} spouseName={spouseName} />
+      {/* ── PAYMENT SUMMARY ── */}
+      {activeTab==='payment_summary' && (
+        <RenewalTab
+          allPolicies={rmData.policies}
+          clientName={clientName}
+          spouseName={spouseName}
+          statusOverrides={statusOverrides}
+          onStatusOverride={(id, label) => setStatusOverrides(prev => {
+            if (!label) { const next = {...prev}; delete next[id]; return next }
+            return { ...prev, [id]: label }
+          })}
+          onShare={() => {
+            // Pre-populate included persons with all unique life assureds
+            const las = Array.from(new Set(
+              rmData.policies
+                .filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
+                .map(p => p.lifeAssured || p.person || '—')
+            ))
+            setPsShareIncluded(las)
+            setPsShareLink('')
+            setPsSharePassword('')
+            setPsShareCopied(false)
+            setShowPaymentShareModal(true)
+          }}
+        />
       )}
 
             {showModal && editingPolicy && (
@@ -863,6 +926,109 @@ async function handleGenerateShare() {
           onClose={()=>{ setShowModal(false); setEditingPolicy(null) }}
         />
       )}
+{showPaymentShareModal && (
+  <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.7)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <div style={{background:'white',width:'100%',maxWidth:540,boxShadow:'0 24px 64px rgba(0,0,0,0.3)',maxHeight:'90vh',overflowY:'auto'}}>
+      <div style={{padding:'18px 26px',borderBottom:'1px solid var(--line)',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white',zIndex:1}}>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,color:'var(--ink)'}}>Share Payment Summary</div>
+        <button onClick={()=>{setShowPaymentShareModal(false);setPsShareLink('');setPsSharePassword('');setPsShareCopied(false)}}
+          style={{background:'none',border:'none',cursor:'pointer',fontSize:18,color:'var(--ink3)'}}>✕</button>
+      </div>
+      <div style={{padding:'20px 26px',display:'flex',flexDirection:'column',gap:16}}>
+        {!psShareLink ? (
+          <>
+            {/* Life assureds to include */}
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Life Assureds to Include</div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap' as const}}>
+                {Array.from(new Set(
+                  rmData.policies
+                    .filter(p=>!['Terminated','Surrendered','Matured'].includes(p.status))
+                    .map(p=>p.lifeAssured||p.person||'—')
+                )).map(la => {
+                  const displayName = la==='client'?clientName:la==='spouse'?spouseName:la
+                  const included = psShareIncluded.includes(la)
+                  return (
+                    <button key={la}
+                      onClick={()=>setPsShareIncluded(prev=>included?prev.filter(x=>x!==la):[...prev,la])}
+                      style={{padding:'7px 16px',fontSize:12,border:`1px solid ${included?'#1C1A17':'var(--line)'}`,
+                        background:included?'#1C1A17':'white',color:included?'white':'var(--ink)',cursor:'pointer'}}>
+                      {displayName}
+                    </button>
+                  )
+                })}
+              </div>
+              {psShareIncluded.length === 0 && (
+                <div style={{fontSize:11,color:'#E53935',marginTop:6}}>Select at least one life assured.</div>
+              )}
+            </div>
+            {/* Link expiry */}
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Link Expiry</div>
+              <div style={{display:'flex',gap:8}}>
+                {([['7d','7 Days'],['30d','30 Days'],['permanent','Permanent']] as const).map(([val,label])=>(
+                  <button key={val} onClick={()=>setPsShareExpiry(val)}
+                    style={{padding:'7px 16px',fontSize:12,border:`1px solid ${psShareExpiry===val?'#1C1A17':'var(--line)'}`,
+                      background:psShareExpiry===val?'#1C1A17':'white',color:psShareExpiry===val?'white':'var(--ink)',cursor:'pointer'}}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Password */}
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Password</div>
+              <input type="text" value={psSharePassword} onChange={e=>setPsSharePassword(e.target.value)}
+                placeholder="e.g. 567A1980"
+                style={{width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:13,outline:'none',boxSizing:'border-box' as const,fontFamily:'DM Mono,monospace'}}/>
+            </div>
+            {/* Password hint */}
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Password Hint (shown to client)</div>
+              <textarea value={psShareHint} onChange={e=>setPsShareHint(e.target.value)} rows={3}
+                style={{width:'100%',padding:'8px 10px',border:'1px solid var(--line)',background:'var(--cream)',color:'var(--ink)',fontSize:12,outline:'none',resize:'vertical' as const,boxSizing:'border-box' as const,fontFamily:'Inter,sans-serif',lineHeight:1.6}}/>
+            </div>
+            <button onClick={handleGeneratePaymentShare}
+              disabled={!psSharePassword.trim()||psShareIncluded.length===0||psShareGenerating}
+              style={{padding:'10px',background:(psSharePassword.trim()&&psShareIncluded.length>0)?'#1C1A17':'#ccc',color:'white',border:'none',cursor:(psSharePassword.trim()&&psShareIncluded.length>0)?'pointer':'default',fontSize:13,fontWeight:500}}>
+              {psShareGenerating?'Generating…':'Generate Link'}
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{padding:'16px',background:'#F5F3EE',border:'1px solid #E0DDD6'}}>
+              <div style={{fontSize:10,color:'var(--ink3)',marginBottom:6,letterSpacing:'0.08em',textTransform:'uppercase'}}>Your shareable link</div>
+              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,color:'var(--ink)',marginBottom:6}}>
+                Payment Summary {new Date().getFullYear()} — {clientName}
+              </div>
+              <div style={{fontSize:10,color:'var(--ink3)',fontFamily:'DM Mono,monospace',wordBreak:'break-all' as const}}>{psShareLink}</div>
+            </div>
+            <div style={{fontSize:12,color:'var(--ink3)',lineHeight:1.6,background:'#FFFBF5',padding:'12px',border:'1px solid #F0E8D8'}}>
+              Copy the button below and paste into WhatsApp. The client sees a tappable link with the document title.
+            </div>
+            <button onClick={async()=>{
+              const year = new Date().getFullYear()
+              const text = `Payment Summary ${year} — ${clientName}\n\n${psShareLink}`
+              await navigator.clipboard.writeText(text)
+              setPsShareCopied(true)
+              setTimeout(()=>setPsShareCopied(false),3000)
+            }}
+              style={{padding:'10px',background:'#1C1A17',color:'#c8a96e',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
+              {psShareCopied?'✓ Copied to clipboard!':'Copy "Payment Summary ' + new Date().getFullYear() + ' — ' + clientName + '"'}
+            </button>
+            <div style={{fontSize:11,color:'var(--ink3)',textAlign:'center'}}>
+              {psShareExpiry==='permanent'?'This link does not expire.':psShareExpiry==='7d'?'Expires in 7 days.':'Expires in 30 days.'}
+            </div>
+            <button onClick={()=>{setPsShareLink('');setPsSharePassword('')}}
+              style={{padding:'8px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:12}}>
+              Generate Another Link
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  </div>
+)}
 {showShareModal && (
   <div style={{position:'fixed',inset:0,background:'rgba(28,26,23,0.7)',zIndex:50,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
     <div style={{background:'white',width:'100%',maxWidth:520,boxShadow:'0 24px 64px rgba(0,0,0,0.3)'}}>
@@ -2430,11 +2596,26 @@ function fmtRenewalDate(p: Policy): string {
 }
 
 // ─── RenewalTab ──────────────────────────────────────────────────────────────
-function RenewalTab({ allPolicies, clientName, spouseName }: {
-  allPolicies: Policy[]; clientName: string; spouseName: string
+const PAYMENT_STATUS_OPTS = [
+  { label: 'Upcoming Renewal', color: '#92400E', bg: '#FEF3C7' },
+  { label: 'Paid',             color: '#166534', bg: '#DCFCE7' },
+  { label: 'Missed Premium',   color: '#9A3412', bg: '#FEE2E2' },
+  { label: 'Lapsed',           color: '#7F1D1D', bg: '#FEE2E2' },
+  { label: 'Reinstated',       color: '#1D4ED8', bg: '#DBEAFE' },
+  { label: 'Single Premium',   color: '#888',    bg: '#F5F5F5' },
+]
+
+function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onStatusOverride, onShare }: {
+  allPolicies: Policy[]
+  clientName: string
+  spouseName: string
+  statusOverrides: Record<string, string>
+  onStatusOverride: (id: string, label: string) => void
+  onShare: () => void
 }) {
   const COL_CARD_BG = '#FFFFFF'
   const COL_BORDER  = 'rgba(0,0,0,0.06)'
+  const [editingStatusId, setEditingStatusId] = useState<string|null>(null)
 
   // Build display name for life assured
   function laDisplay(la: string): string {
@@ -2480,13 +2661,19 @@ function RenewalTab({ allPolicies, clientName, spouseName }: {
   return (
     <div style={{ padding: '36px 48px', flex: 1 }}>
       {/* Page header */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ fontFamily: 'Cormorant Garamond,Georgia,serif', fontSize: 22, color: 'var(--ink)' }}>
-          Renewal Tracker
+      <div style={{ marginBottom: 28, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontFamily: 'Cormorant Garamond,Georgia,serif', fontSize: 22, color: 'var(--ink)' }}>
+            Payment Summary
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 2 }}>
+            {activePols.length} active {activePols.length === 1 ? 'policy' : 'policies'} · payment status as of today
+          </div>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 2 }}>
-          {activePols.length} active {activePols.length === 1 ? 'policy' : 'policies'} · renewal status as of today
-        </div>
+        <button onClick={onShare}
+          style={{padding:'8px 18px',background:'#1C1A17',color:'#c8a96e',border:'1px solid #c8a96e',cursor:'pointer',fontSize:12,flexShrink:0}}>
+          Share
+        </button>
       </div>
 
       {activePols.length === 0 ? (
@@ -2526,14 +2713,18 @@ function RenewalTab({ allPolicies, clientName, spouseName }: {
                         <th style={headStyle(100, 'right')}>Prem (Cash)</th>
                         <th style={headStyle(110)}>Mode</th>
                         <th style={headStyle(90)}>Frequency</th>
-                        <th style={headStyle(155)}>Status</th>
+                        <th style={headStyle(180)}>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {grpPols.map((p, i) => {
-                        const status = getRenewalStatus(p)
+                        const autoStatus = getRenewalStatus(p)
+                        const overrideLabel = statusOverrides[p.id]
+                        const overrideOpt = overrideLabel ? PAYMENT_STATUS_OPTS.find(o => o.label === overrideLabel) : null
+                        const status = overrideOpt ? overrideOpt : autoStatus
                         const rowBg = i % 2 === 0 ? '#FFFFFF' : '#FAFAF9'
                         const fmtPrem = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
+                        const isEditingThis = editingStatusId === p.id
                         return (
                           <tr key={p.id} style={{ background: rowBg }}>
                             <td style={{ ...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#555' }}>
@@ -2559,20 +2750,61 @@ function RenewalTab({ allPolicies, clientName, spouseName }: {
                             </td>
                             <td style={{ ...colStyle(110), fontSize: 11, color: '#555' }}>{p.premiumMode || '—'}</td>
                             <td style={{ ...colStyle(90), fontSize: 11, color: '#555' }}>{p.frequency || '—'}</td>
-                            <td style={colStyle(155)}>
-                              <span style={{
-                                display: 'inline-block',
-                                padding: '3px 9px',
-                                borderRadius: 20,
-                                fontSize: 10,
-                                fontWeight: 600,
-                                letterSpacing: '0.03em',
-                                color: status.color,
-                                background: status.bg,
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {status.label}
-                              </span>
+                            <td style={{ ...colStyle(180), position: 'relative' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '3px 9px',
+                                  borderRadius: 20,
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  letterSpacing: '0.03em',
+                                  color: status.color,
+                                  background: status.bg,
+                                  whiteSpace: 'nowrap',
+                                }}>
+                                  {status.label}
+                                  {overrideLabel && <span style={{ fontSize: 8, opacity: 0.6, marginLeft: 4 }}>●</span>}
+                                </span>
+                                <button
+                                  onClick={() => setEditingStatusId(isEditingThis ? null : p.id)}
+                                  title="Override status"
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#AAA', fontSize: 12, lineHeight: 1, flexShrink: 0 }}>
+                                  ✎
+                                </button>
+                              </div>
+                              {/* Status picker dropdown */}
+                              {isEditingThis && (
+                                <div style={{
+                                  position: 'absolute', top: '100%', right: 0, zIndex: 20,
+                                  background: 'white', border: '1px solid rgba(0,0,0,0.1)',
+                                  borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                  minWidth: 190, padding: '6px 0',
+                                }}>
+                                  {PAYMENT_STATUS_OPTS.map(opt => (
+                                    <button key={opt.label}
+                                      onClick={() => { onStatusOverride(p.id, opt.label); setEditingStatusId(null) }}
+                                      style={{
+                                        display: 'block', width: '100%', textAlign: 'left',
+                                        padding: '7px 14px', border: 'none', background: 'none',
+                                        cursor: 'pointer', fontSize: 12,
+                                        fontWeight: overrideLabel === opt.label || (!overrideLabel && autoStatus.label === opt.label) ? 600 : 400,
+                                      }}>
+                                      <span style={{
+                                        display: 'inline-block', padding: '2px 8px', borderRadius: 20,
+                                        fontSize: 10, fontWeight: 600, color: opt.color, background: opt.bg,
+                                      }}>{opt.label}</span>
+                                    </button>
+                                  ))}
+                                  {overrideLabel && (
+                                    <button
+                                      onClick={() => { onStatusOverride(p.id, ''); setEditingStatusId(null) }}
+                                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 11, color: '#AAA', borderTop: '1px solid rgba(0,0,0,0.06)', marginTop: 4 }}>
+                                      Reset to auto
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )
