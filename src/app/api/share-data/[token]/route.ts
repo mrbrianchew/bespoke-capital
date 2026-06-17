@@ -37,6 +37,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
     .maybeSingle()
 
   const allPolicies: any[] = row?.data?.risk_management?.policies || []
+  const statusOverrides: Record<string, string> = row?.data?.risk_management?.statusOverrides || {}
   const shareType: string = share.share_type || 'portfolio'
   const includedPersons: string[] | null = share.included_persons || null
   const hiddenPolicyIds: string[] = share.hidden_policy_ids || []
@@ -68,5 +69,6 @@ export async function POST(req: Request, { params }: { params: { token: string }
     policies,
     shareType,
     includedPersons,
+    statusOverrides: shareType === 'payment_summary' ? statusOverrides : undefined,
   })
 }
