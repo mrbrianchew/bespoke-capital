@@ -6,6 +6,15 @@ import Link from 'next/link'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
+// Year-only age calculation (matches the convention used across the app —
+// see dashboard/page.tsx getAge). DOB is the reliable source; the stored
+// `age` column is stale and only used as a fallback when dob is missing.
+function getAge(dob: string | null | undefined): number | null {
+  if (!dob) return null
+  const birth = new Date(dob)
+  return Math.max(0, new Date().getFullYear() - birth.getFullYear())
+}
+
 const NAV = [
   { href: '/dashboard', label: 'Executive Summary', icon: '⊞', id: 'overview' },
   { href: '/dashboard/financials', label: 'Financial Profile', icon: '◎', id: 'factfinding' },
@@ -84,7 +93,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="w-8 h-8 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: '#C4A882' }}>{initials(activeClient.name)}</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>{activeClient.name}</div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Age {activeClient.age || '?'} · Since {activeClient.start_year || '?'}</div>
+                  <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Age {getAge(activeClient.dob) ?? activeClient.age ?? '?'} · Since {activeClient.start_year || '?'}</div>
                 </div>
                 <span className="text-xs" style={{ color: 'var(--ink3)' }}>⌄</span>
               </>
@@ -101,7 +110,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <div className="w-7 h-7 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: activeClient?.id === c.id ? 'var(--gold)' : 'var(--ink2)' }}>{initials(c.name)}</div>
                   <div>
                     <div className="text-sm font-medium" style={{ color: activeClient?.id === c.id ? 'var(--gold-tag)' : 'var(--ink)' }}>{c.name}</div><button onClick={e => { e.stopPropagation(); deleteClient(c.id) }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#C0392B', cursor: 'pointer', fontSize: 13, padding: '0 6px' }}>✕</button>
-                    <div className="text-xs" style={{ color: 'var(--ink3)' }}>Age {c.age || '?'}</div>
+                    <div className="text-xs" style={{ color: 'var(--ink3)' }}>Age {getAge(c.dob) ?? c.age ?? '?'}</div>
                   </div>
                   {activeClient?.id === c.id && <span className="ml-auto text-xs" style={{ color: 'var(--gold)' }}>✓</span>}
                 </button>
