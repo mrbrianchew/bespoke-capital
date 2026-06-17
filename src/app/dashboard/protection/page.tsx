@@ -188,7 +188,8 @@ const [psShareLink, setPsShareLink] = useState('')
 const [psShareCopied, setPsShareCopied] = useState(false)
 // Status overrides for payment summary (policyId → label override)
 const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
-
+// Hidden policies for payment summary (policyId → true)
+const [hiddenPolicies, setHiddenPolicies] = useState<Record<string, boolean>>({})
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
     if (id) { setClientId(id); clientIdRef.current = id }
@@ -615,6 +616,7 @@ async function handleGeneratePaymentShare() {
       person: 'all',
       share_type: 'payment_summary',
       included_persons: psShareIncluded,
+      hidden_policy_ids: Object.keys(hiddenPolicies).filter(id => hiddenPolicies[id]),
     })
     if (error) throw error
     setPsShareLink(`${window.location.origin}/share/${token}`)
@@ -897,11 +899,18 @@ async function handleGeneratePaymentShare() {
             if (!label) { const next = {...prev}; delete next[id]; return next }
             return { ...prev, [id]: label }
           })}
+          hiddenPolicies={hiddenPolicies}
+          onToggleHidden={(id) => setHiddenPolicies(prev => {
+            const next = {...prev}
+            if (next[id]) delete next[id]; else next[id] = true
+            return next
+          })}
           onShare={() => {
             // Pre-populate included persons with all unique life assureds
             const las = Array.from(new Set(
               rmData.policies
                 .filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
+                .filter(p => !hiddenPolicies[p.id])
                 .map(p => p.lifeAssured || p.person || '—')
             ))
             setPsShareIncluded(las)
@@ -2605,12 +2614,14 @@ const PAYMENT_STATUS_OPTS = [
   { label: 'Single Premium',   color: '#888',    bg: '#F5F5F5' },
 ]
 
-function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onStatusOverride, onShare }: {
+function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onStatusOverride, hiddenPolicies, onToggleHidden, onShare }: {
   allPolicies: Policy[]
   clientName: string
   spouseName: string
   statusOverrides: Record<string, string>
   onStatusOverride: (id: string, label: string) => void
+  hiddenPolicies: Record<string, boolean>
+  onToggleHidden: (id: string) => void
   onShare: () => void
 }) {
   const COL_CARD_BG = '#FFFFFF'
@@ -2626,6 +2637,8 @@ function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onSt
 
   // Group by lifeAssured
   const activePols = allPolicies.filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
+  const visibleCount = activePols.filter(p => !hiddenPolicies[p.id]).length
+  const hiddenCount  = activePols.filter(p => hiddenPolicies[p.id]).length
   const groups = Array.from(new Set(activePols.map(p => p.lifeAssured || p.person || '—')))
     .map(la => ({
       la,
@@ -2667,7 +2680,7 @@ function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onSt
             Payment Summary
           </div>
           <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 2 }}>
-            {activePols.length} active {activePols.length === 1 ? 'policy' : 'policies'} · payment status as of today
+            {visibleCount} visible · {activePols.length} total{hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''} · payment status as of today
           </div>
         </div>
         <button onClick={onShare}
@@ -2725,6 +2738,26 @@ function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onSt
                         const rowBg = i % 2 === 0 ? '#FFFFFF' : '#FAFAF9'
                         const fmtPrem = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
                         const isEditingThis = editingStatusId === p.id
+                        const isHidden = !!hiddenPolicies[p.id]
+
+                        if (isHidden) {
+                          return (
+                            <tr key={p.id} style={{ background: '#F8F8F8' }}>
+                              <td colSpan={8} style={{ padding: '7px 12px', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <span style={{ fontSize: 11, color: '#BBB', fontStyle: 'italic', flex: 1 }}>
+                                    {p.productName || p.companyName || '—'}{p.policyNo ? ` · ${p.policyNo}` : ''} — hidden from share
+                                  </span>
+                                  <button onClick={() => onToggleHidden(p.id)} title="Show this policy"
+                                    style={{ background: 'none', border: '1px solid #DDD', borderRadius: 4, cursor: 'pointer', padding: '2px 8px', fontSize: 10, color: '#888' }}>
+                                    Show
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        }
+
                         return (
                           <tr key={p.id} style={{ background: rowBg }}>
                             <td style={{ ...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#555' }}>
@@ -2771,6 +2804,12 @@ function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onSt
                                   title="Override status"
                                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#AAA', fontSize: 12, lineHeight: 1, flexShrink: 0 }}>
                                   ✎
+                                </button>
+                                <button
+                                  onClick={() => onToggleHidden(p.id)}
+                                  title="Hide from share"
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#CCC', fontSize: 13, lineHeight: 1, flexShrink: 0 }}>
+                                  ✕
                                 </button>
                               </div>
                               {/* Status picker dropdown */}
