@@ -96,6 +96,17 @@ function fmt(n: number | null | undefined) {
   if (!n || n === 0) return '—'
   return '$' + Math.round(n).toLocaleString()
 }
+// Premium-specific formatter: shows cents only when the value has a non-zero
+// fractional part (e.g. $1,200.50 stays, $1,200.00 displays as $1,200).
+function fmtPremium(n: number | null | undefined) {
+  if (!n || n === 0) return '—'
+  const rounded = Math.round(n * 100) / 100
+  const hasCents = Math.abs(rounded - Math.round(rounded)) > 1e-9
+  return '$' + rounded.toLocaleString(undefined, {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })
+}
 function gapSt(need: number, have: number) {
   if (need <= 0) return { label: 'N/A',     color: '#555',    bg: '#F0EEE9' }
   if (have >= need) return { label: 'Covered', color: '#2D6A4F', bg: '#E8F5E9' }
@@ -682,7 +693,7 @@ async function handleGeneratePaymentShare() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}} className="no-print">
             <div>
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'var(--ink)'}}>Wealth Protection Portfolio</div>
-              <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{activePolicies.length} active {activePolicies.length===1?'policy':'policies'} · Total annual premium {fmt(totalPrem)}</div>
+              <div style={{fontSize:12,color:'var(--ink3)',marginTop:2}}>{activePolicies.length} active {activePolicies.length===1?'policy':'policies'} · Total annual premium {fmtPremium(totalPrem)}</div>
             </div>
 <button onClick={()=>{setShowShareModal(true);setShareLink('');setSharePassword('');setShareCopied(false)}}
   style={{padding:'8px 18px',background:'#1C1A17',color:'#c8a96e',border:'1px solid #c8a96e',cursor:'pointer',fontSize:12}}>
@@ -703,7 +714,7 @@ async function handleGeneratePaymentShare() {
                   style={{padding:'10px 22px',border:'none',borderBottom:`2px solid ${isActive?'#c8a96e':'transparent'}`,background:'transparent',cursor:'pointer',fontSize:13,color:isActive?'#A8834A':'var(--ink3)',fontWeight:isActive?600:400,transition:'all 0.15s',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:2}}>
                   <span>{label}</span>
                   <span style={{fontSize:10,color:isActive?'#c8a96e':'var(--ink3)',fontFamily:'DM Mono,monospace',fontWeight:400}}>
-                    {tabPolicies.length} {tabPolicies.length===1?'policy':'policies'}{tabPrem>0?` · ${fmt(tabPrem)}`:''}
+                    {tabPolicies.length} {tabPolicies.length===1?'policy':'policies'}{tabPrem>0?` · ${fmtPremium(tabPrem)}`:''}
                   </span>
                 </button>
               )
@@ -767,7 +778,7 @@ async function handleGeneratePaymentShare() {
                         <div style={{width:3,height:18,background:isDependent?'#7B9E87':'#c8a96e'}}/>
                         <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,color:'var(--ink)'}}>{label}</div>
                         {isDependent && <span style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',padding:'2px 7px',border:'1px solid var(--line)'}}>Dependent</span>}
-                        {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)',marginLeft:8}}>Annual premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(secPrem)}</strong></span>}
+                        {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)',marginLeft:8}}>Annual premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmtPremium(secPrem)}</strong></span>}
                       </div>
                       <button onClick={()=>openNew(addKey)} className="no-print"
                         style={{padding:'7px 16px',background:isDependent?'#F5FAF6':'var(--ink)',color:isDependent?'#2D6A4F':'white',border:isDependent?'1px solid #7B9E87':'none',cursor:'pointer',fontSize:12}}>
@@ -797,7 +808,7 @@ async function handleGeneratePaymentShare() {
                             </div>
                             {catPrem>0 && (
                               <span style={{fontSize:11,color:'var(--ink3)'}}>
-                                <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmt(catPrem)}</strong>/yr
+                                <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmtPremium(catPrem)}</strong>/yr
                               </span>
                             )}
                           </div>
@@ -1659,12 +1670,12 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             {/* Medisave premium (only if any policy has it) */}
             {hasMedisave && (
               <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:(p.premiumMedisave||0)>0?'var(--ink)':'var(--ink3)'}}>
-                {(p.premiumMedisave||0)>0 ? fmt(p.premiumMedisave) : '—'}
+                {(p.premiumMedisave||0)>0 ? fmtPremium(p.premiumMedisave) : '—'}
               </div>
             )}
             {/* Premium (Cash) */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:(p.premiumCash||0)>0?'var(--ink)':'var(--ink3)'}}>
-              {(p.premiumCash||0)>0 ? fmt(p.premiumCash) : '—'}
+              {(p.premiumCash||0)>0 ? fmtPremium(p.premiumCash) : '—'}
             </div>
             {/* Frequency + Mode */}
             <div style={{fontSize:10,color:'var(--ink3)'}}>
@@ -1689,10 +1700,10 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmt(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
+              {fmtPremium(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
+              {fmtPremium(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
             </div>
             <div />
             <div />
@@ -1702,7 +1713,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmt(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
+              {fmtPremium(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
             </div>
             <div />
             <div />
@@ -1779,8 +1790,8 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               </div>
               {/* Premium */}
               <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-                {fmt(p.premiumCash)}
-                {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
+                {fmtPremium(p.premiumCash)}
+                {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmtPremium(p.premiumMedisave)} MS</div>}
               </div>
               {/* Frequency + Mode */}
               <div style={{fontSize:10,color:'var(--ink3)'}}>
@@ -1816,7 +1827,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
             {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'earlyCI'),p),0))}
           </div>
-          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
+          <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmtPremium(sub)}</div>
           <div/><div/><div/>
         </div>
       </div>
@@ -1860,8 +1871,8 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             </div>
             {/* Premium */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-              {fmt(p.premiumCash)}
-              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmt(p.premiumMedisave)} MS</div>}
+              {fmtPremium(p.premiumCash)}
+              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmtPremium(p.premiumMedisave)} MS</div>}
             </div>
             {/* Frequency + Mode */}
             <div style={{fontSize:10,color:'var(--ink3)'}}>
@@ -1885,7 +1896,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       {/* Subtotal */}
       <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
         <div style={{gridColumn:'1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
-        <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmt(sub)}</div>
+        <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmtPremium(sub)}</div>
         <div/><div/><div/>
       </div>
     </div>
@@ -2391,7 +2402,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               <label style={lbl}>Premium — Cash ({form.isUSD && isLife ? 'USD' : 'SGD'})</label>
               <input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/>
               {form.isUSD && isLife && (form.premiumCash||0)>0 && (
-                <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt((form.premiumCash||0)*fx)} SGD</div>
+                <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmtPremium((form.premiumCash||0)*fx)} SGD</div>
               )}
             </div>
             {((isMedical && !isRider) || isLTC) && <div><label style={lbl}>Premium — Medisave ($)</label><input type="number" value={form.premiumMedisave||''} onChange={e=>f('premiumMedisave',+e.target.value)} style={inp}/></div>}
@@ -2909,7 +2920,6 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totAdvCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseAdvCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totEarCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseEarlyCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
-  const roundedTotPrem = Math.round(totPrem)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
   const W=560, H=170, PL=50, PR=12, PT=20, PB=18
@@ -2945,7 +2955,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Total Annual Premium', value:roundedTotPrem, accent:'#A8834A', highlight: true},
+          {label:'Total Annual Premium', value:totPrem, accent:'#A8834A', highlight: true, isPremium: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
             background: COL_CARD_BG,
@@ -2982,7 +2992,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               color: kpi.highlight ? kpi.accent : '#1A1A1A',
               letterSpacing: '-0.02em',
               lineHeight: 1.2
-            }}>{fmtWhole(kpi.value)}</div>
+            }}>{kpi.isPremium ? fmtPremium(kpi.value) : fmtWhole(kpi.value)}</div>
           </div>
         ))}
       </div>
@@ -3132,7 +3142,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
                     textAlign: 'right',
                     fontWeight: amt > 0 ? 500 : 400
                   }}>
-                    {amt > 0 ? `$${amt.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}` : '—'}
+                    {amt > 0 ? fmtPremium(amt) : '—'}
                   </div>
                 </div>
               )
