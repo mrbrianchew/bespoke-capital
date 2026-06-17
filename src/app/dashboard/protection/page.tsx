@@ -2619,6 +2619,14 @@ function getRenewalStatus(p: Policy): { label: string; color: string; bg: string
   if (['Terminated', 'Surrendered', 'Matured'].includes(p.status)) {
     return { label: p.status, color: '#888', bg: '#F5F5F5' }
   }
+  // Paid-up and Premium Holiday — client isn't currently paying premium,
+  // so show the literal status instead of running renewal date math.
+  if (p.status === 'Paid-up') {
+    return { label: 'Paid-up', color: '#1D4ED8', bg: '#DBEAFE' }
+  }
+  if (p.status === 'Premium Holiday') {
+    return { label: 'Premium Holiday', color: '#92400E', bg: '#FEF3C7' }
+  }
   if (p.frequency === 'Single') {
     return { label: 'Single Premium', color: '#888', bg: '#F5F5F5' }
   }
@@ -2641,14 +2649,14 @@ function getRenewalStatus(p: Policy): { label: string; color: string; bg: string
   // (date math landing slightly in the past doesn't mean a payment was missed).
   // "Reinstated" is no longer auto-derived — it's a manual-override-only status.
   if (diffDays >= -30) {
-    if (p.status === 'In-Force' || p.status === 'Premium Holiday') {
+    if (p.status === 'In-Force') {
       const year = renewal.getFullYear()
       return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
     }
     return { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
   }
   // > 30 days overdue
-  if (p.status === 'In-Force' || p.status === 'Premium Holiday') {
+  if (p.status === 'In-Force') {
     const year = renewal.getFullYear()
     return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
   }
