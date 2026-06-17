@@ -520,6 +520,9 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || localSpouseCI)   
     return p.isUSD ? val * (p.fxRate || 1.35) : val
   }
   function annualPremSGD(p: Policy) {
+    // Paid-up and Premium Holiday policies are still active for coverage,
+    // but the client isn't currently paying premium on them — exclude from totals.
+    if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
     const cash  = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
     const total = cash + (p.premiumMedisave||0)
     switch (p.frequency) {
@@ -1621,6 +1624,7 @@ function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,annualPremium}:{title
 // ─── Policy Table ─────────────────────────────────────────────────────────────
 function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
   function _sub(p: Policy) {
+    if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
     const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
     const total = cash + (p.premiumMedisave||0)
     switch (p.frequency) {
@@ -1630,6 +1634,11 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
       case 'Single':      return total
       default:            return total
     }
+  }
+  
+  // Whether a policy currently has premium being paid (excludes Paid-up/Premium Holiday)
+  function isPaying(p: Policy) {
+    return p.status !== 'Paid-up' && p.status !== 'Premium Holiday'
   }
   
   // Helper to convert benefit to SGD for subtotal
@@ -1716,10 +1725,10 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmtPremium(policies.reduce((s,p)=>s+(p.premiumMedisave||0),0))}
+              {fmtPremium(policies.filter(isPaying).reduce((s,p)=>s+(p.premiumMedisave||0),0))}
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmtPremium(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
+              {fmtPremium(policies.filter(isPaying).reduce((s,p)=>s+(p.premiumCash||0),0))}
             </div>
             <div />
             <div />
@@ -1729,7 +1738,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmtPremium(policies.reduce((s,p)=>s+(p.premiumCash||0),0))}
+              {fmtPremium(policies.filter(isPaying).reduce((s,p)=>s+(p.premiumCash||0),0))}
             </div>
             <div />
             <div />
@@ -2523,6 +2532,9 @@ function _toSGD(val: number, p: Policy) {
   return p.isUSD ? val * (p.fxRate || 1.35) : val
 }
 function _annualPrem(p: Policy) {
+  // Paid-up and Premium Holiday policies are still active for coverage,
+  // but the client isn't currently paying premium on them — exclude from totals.
+  if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
   const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
   const total = cash + (p.premiumMedisave||0)
   switch (p.frequency) {
@@ -2926,6 +2938,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const monthly = MONTHS.map((_,mi) => {
     let total = 0
     for (const p of policies) {
+      if (p.status === 'Paid-up' || p.status === 'Premium Holiday') continue
       if (_payMonths(p).includes(mi+1)) {
         const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
         total += cash + (p.premiumMedisave||0)
