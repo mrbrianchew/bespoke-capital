@@ -60,8 +60,8 @@ interface Policy {
   fxRate?: number   // USD/SGD rate stored at time of entry
 }
 
-interface RiskMgmtData { policies: Policy[]; advisorNotes: string }
-const EMPTY_RM: RiskMgmtData = { policies: [], advisorNotes: '' }
+interface RiskMgmtData { policies: Policy[]; advisorNotes: string; statusOverrides?: Record<string, string> }
+const EMPTY_RM: RiskMgmtData = { policies: [], advisorNotes: '', statusOverrides: {} }
 
 function emptyPolicy(person: string, ph = '', la = ''): Policy {
   return {
@@ -371,7 +371,10 @@ if (familyRows && familyRows.length > 0) {
 }
 
       const rm = merged.risk_management
-            if (rm) setRmData({ ...EMPTY_RM, ...rm })
+            if (rm) {
+              setRmData({ ...EMPTY_RM, ...rm })
+              setStatusOverrides(rm.statusOverrides || {})
+            }
     }
   } catch (err) {
     console.error('Load error:', err)
@@ -895,10 +898,14 @@ async function handleGeneratePaymentShare() {
           clientName={clientName}
           spouseName={spouseName}
           statusOverrides={statusOverrides}
-          onStatusOverride={(id, label) => setStatusOverrides(prev => {
-            if (!label) { const next = {...prev}; delete next[id]; return next }
-            return { ...prev, [id]: label }
-          })}
+          onStatusOverride={(id, label) => {
+            setStatusOverrides(prev => {
+              const next = {...prev}
+              if (!label) delete next[id]; else next[id] = label
+              updateRm({ ...rmData, statusOverrides: next })
+              return next
+            })
+          }}
           hiddenPolicies={hiddenPolicies}
           onToggleHidden={(id) => setHiddenPolicies(prev => {
             const next = {...prev}
