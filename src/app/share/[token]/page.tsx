@@ -398,6 +398,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [clientName, setClientName] = useState('')
   const [shareType, setShareType] = useState<'portfolio'|'payment_summary'>('portfolio')
   const [includedPersons, setIncludedPersons] = useState<string[]>([])
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
   const year = new Date().getFullYear()
   const page1Ref = useRef<HTMLDivElement>(null)
 
@@ -425,7 +426,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
     if (res.status === 401) { setWrongPw(true); setTimeout(() => setWrongPw(false), 100); return }
     if (!res.ok) { setStage('notfound'); return }
 
-    const { client, person, policies: all, shareType: sType, includedPersons: iPersons } = await res.json()
+    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides } = await res.json()
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
@@ -434,6 +435,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
     const st: 'portfolio'|'payment_summary' = sType === 'payment_summary' ? 'payment_summary' : 'portfolio'
     setShareType(st)
     setIncludedPersons(iPersons || [])
+    setStatusOverrides(sOverrides || {})
 
     // For payment_summary the API already filtered by included_persons; just filter active
     if (st === 'payment_summary') {
@@ -527,6 +529,23 @@ export default function SharePage({ params }: { params: { token: string } }) {
       if (!d) return '—'
       return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     }
+    // Advisor-set manual overrides take precedence over the auto-derived status
+    const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
+      'Upcoming Renewal': { color: '#92400E', bg: '#FEF3C7' },
+      'Paid':             { color: '#166534', bg: '#DCFCE7' },
+      'Missed Premium':   { color: '#9A3412', bg: '#FEE2E2' },
+      'Lapsed':           { color: '#7F1D1D', bg: '#FEE2E2' },
+      'Reinstated':       { color: '#1D4ED8', bg: '#DBEAFE' },
+      'Single Premium':   { color: '#888',    bg: '#F5F5F5' },
+    }
+    const getDisplayStatus = (p: Policy): { label: string; color: string; bg: string } => {
+      const override = statusOverrides[p.id]
+      if (override) {
+        const c = STATUS_COLORS[override] || { color: '#888', bg: '#F5F5F5' }
+        return { label: override, ...c }
+      }
+      return getStatus(p)
+    }
     const fmtP = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
     const groups = Array.from(new Set(policies.map(p => p.lifeAssured || p.person || '—')))
       .map(la => ({ la, policies: policies.filter(p => (p.lifeAssured || p.person || '—') === la) }))
@@ -601,7 +620,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
                     </thead>
                     <tbody>
                       {grpPols.map((p,i) => {
-                        const s = getStatus(p)
+                        const s = getDisplayStatus(p)
                         return (
                           <tr key={p.id} style={{ background: i%2===0?'white':'#FAFAF8' }}>
                             <td style={{...colD,fontFamily:'DM Mono,monospace',fontSize:10,color:'#555'}}>{p.policyNo||'—'}</td>
@@ -628,7 +647,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
               {/* Mobile cards */}
               <div className="ps-cards" style={{ display:'flex', flexDirection:'column', gap:10 }}>
                 {grpPols.map((p) => {
-                  const s = getStatus(p)
+                  const s = getDisplayStatus(p)
                   return (
                     <div key={p.id} style={{ background:'white', border:'0.5px solid #E0DDD6', borderRadius:10, padding:'14px 16px' }}>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
