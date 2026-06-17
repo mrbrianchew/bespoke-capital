@@ -696,6 +696,7 @@ async function handleGenerateShare() {
                       personName={label}
                       personAge={personAge}
                       policies={policies}
+                      allPolicies={rmData.policies}
                     />
                   <div style={{pageBreakAfter:'always',breakAfter:'page'}} />
                   </>
@@ -2354,9 +2355,205 @@ function _fmtK(n: number) {
   return `$${Math.round(n).toLocaleString()}`
 }
 
+// ─── Renewal Status Logic ────────────────────────────────────────────────────
+function computeRenewalDate(p: Policy): Date | null {
+  if (!p.inceptionDate || p.frequency === 'Single') return null
+  const start = new Date(p.inceptionDate)
+  if (isNaN(start.getTime())) return null
+  const today = new Date()
+  let next = new Date(start)
+  // Advance to this year first
+  next.setFullYear(today.getFullYear())
+  // If already passed this year, move to next cycle
+  const freqMs: Record<string, number> = {
+    Annual: 365.25, 'Semi-Annual': 182.625, Quarterly: 91.3125, Monthly: 30.4375,
+  }
+  const days = freqMs[p.frequency] || 365.25
+  const ms = days * 24 * 60 * 60 * 1000
+  // If this year's date is more than (days) in the past, advance
+  while (next < new Date(today.getTime() - ms)) next = new Date(next.getTime() + ms)
+  // Wind forward until we find next upcoming or recently-passed date
+  while (next < new Date(today.getTime() - ms)) next = new Date(next.getTime() + ms)
+  return next
+}
+
+type RenewalStatus =
+  | { label: 'Upcoming Renewal'; color: string; bg: string }
+  | { label: string; color: string; bg: string }
+
+function getRenewalStatus(p: Policy): { label: string; color: string; bg: string } {
+  // Inactive policy statuses — show directly
+  if (['Terminated', 'Surrendered', 'Matured'].includes(p.status)) {
+    return { label: p.status, color: '#888', bg: '#F5F5F5' }
+  }
+  if (p.frequency === 'Single') {
+    return { label: 'Single Premium', color: '#888', bg: '#F5F5F5' }
+  }
+  const renewal = computeRenewalDate(p)
+  if (!renewal) return { label: '—', color: '#AAA', bg: '#FAFAFA' }
+
+  const today = new Date()
+  const diffMs = renewal.getTime() - today.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+
+  if (diffDays >= 0 && diffDays <= 30) {
+    return { label: 'Upcoming Renewal', color: '#92400E', bg: '#FEF3C7' }
+  }
+  if (diffDays > 30) {
+    // Paid — show which year the current period covers
+    const year = renewal.getFullYear()
+    return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
+  }
+  // diffDays < 0 — overdue
+  if (diffDays >= -30) {
+    if (p.status === 'In-Force' || p.status === 'Premium Holiday') {
+      return { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
+    }
+    return { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
+  }
+  // > 30 days overdue
+  if (p.status === 'In-Force') {
+    return { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
+  }
+  return { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
+}
+
+function fmtRenewalDate(p: Policy): string {
+  const d = computeRenewalDate(p)
+  if (!d) return '—'
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// ─── RenewalTracker ──────────────────────────────────────────────────────────
+function RenewalTracker({ allPolicies }: { allPolicies: Policy[] }) {
+  const COL_CARD_BG = '#FFFFFF'
+  const COL_BORDER  = 'rgba(0,0,0,0.06)'
+
+  // Show all non-terminated policies
+  const rows = allPolicies.filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
+
+  if (rows.length === 0) return null
+
+  const colStyle = (width?: number): React.CSSProperties => ({
+    padding: '10px 12px',
+    fontSize: 12,
+    color: '#333',
+    fontFamily: 'Inter, system-ui, sans-serif',
+    verticalAlign: 'middle',
+    borderBottom: '1px solid rgba(0,0,0,0.05)',
+    width: width ? `${width}px` : undefined,
+    whiteSpace: 'nowrap' as const,
+  })
+
+  const headStyle = (width?: number): React.CSSProperties => ({
+    padding: '10px 12px',
+    fontSize: 10,
+    fontWeight: 600,
+    color: '#8B8B8B',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    borderBottom: '2px solid rgba(0,0,0,0.08)',
+    width: width ? `${width}px` : undefined,
+    whiteSpace: 'nowrap' as const,
+    background: '#FAFAF9',
+  })
+
+  return (
+    <div style={{
+      marginTop: 16,
+      background: COL_CARD_BG,
+      border: `1px solid ${COL_BORDER}`,
+      borderRadius: 16,
+      padding: '22px 24px 20px 24px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+    }}>
+      <div style={{marginBottom: 16}}>
+        <div style={{
+          fontSize: 11,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: '#8B8B8B',
+          marginBottom: 4,
+          fontWeight: 500,
+        }}>Renewal Tracker</div>
+        <div style={{fontSize: 12, color: '#AAA'}}>{rows.length} {rows.length === 1 ? 'policy' : 'policies'} across all persons</div>
+      </div>
+
+      <div style={{overflowX: 'auto'}}>
+        <table style={{width: '100%', borderCollapse: 'collapse', tableLayout: 'auto'}}>
+          <thead>
+            <tr>
+              <th style={headStyle(110)}>Policy No</th>
+              <th style={headStyle()}>Product Name</th>
+              <th style={headStyle(90)}>Life Assured</th>
+              <th style={headStyle(110)}>Renewal Date</th>
+              <th style={{...headStyle(100), textAlign: 'right'}}>Prem (MS)</th>
+              <th style={{...headStyle(100), textAlign: 'right'}}>Prem (Cash)</th>
+              <th style={headStyle(110)}>Mode</th>
+              <th style={headStyle(90)}>Frequency</th>
+              <th style={headStyle(150)}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p, i) => {
+              const status = getRenewalStatus(p)
+              const isEven = i % 2 === 0
+              const rowBg = isEven ? '#FFFFFF' : '#FAFAF9'
+              const fmtPrem = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
+              return (
+                <tr key={p.id} style={{background: rowBg}}>
+                  <td style={{...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#555'}}>
+                    {p.policyNo || '—'}
+                  </td>
+                  <td style={colStyle()}>
+                    <div style={{fontWeight: 500, color: '#1A1A1A'}}>{p.productName || p.companyName || '—'}</div>
+                    {p.companyName && p.productName && (
+                      <div style={{fontSize: 10, color: '#AAA', marginTop: 1}}>{p.companyName}</div>
+                    )}
+                  </td>
+                  <td style={{...colStyle(90), fontSize: 11, color: '#555'}}>{p.lifeAssured || '—'}</td>
+                  <td style={{...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11}}>
+                    {fmtRenewalDate(p)}
+                  </td>
+                  <td style={{...colStyle(100), textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11}}>
+                    {fmtPrem(p.premiumMedisave)}
+                  </td>
+                  <td style={{...colStyle(100), textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11}}>
+                    {fmtPrem(p.isUSD ? (p.premiumCash||0) * (p.fxRate||1.35) : (p.premiumCash||0))}
+                    {p.isUSD && (p.premiumCash||0) > 0 && (
+                      <div style={{fontSize: 9, color: '#AAA'}}>USD</div>
+                    )}
+                  </td>
+                  <td style={{...colStyle(110), fontSize: 11, color: '#555'}}>{p.premiumMode || '—'}</td>
+                  <td style={{...colStyle(90), fontSize: 11, color: '#555'}}>{p.frequency || '—'}</td>
+                  <td style={colStyle(150)}>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '3px 9px',
+                      borderRadius: 20,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: '0.03em',
+                      color: status.color,
+                      background: status.bg,
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {status.label}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ─── PersonPortfolioCharts (Apple-Style Premium Design) ──────────────────────
-function PersonPortfolioCharts({ personName, personAge, policies }: {
-  personName: string; personAge: number; policies: Policy[]
+function PersonPortfolioCharts({ personName, personAge, policies, allPolicies }: {
+  personName: string; personAge: number; policies: Policy[]; allPolicies: Policy[]
 }) {
   // ── Coverage timeline ──────────────────────────────────────────────────────
   const timeline: {age:number;d:number;t:number;ci:number}[] = []
@@ -2621,6 +2818,10 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
            </div>
               </div>
       </div>
+
+      {/* ── Renewal Tracker ───────────────────────────────────────────────── */}
+      <RenewalTracker allPolicies={allPolicies} />
+
     </div>
   )
 }
