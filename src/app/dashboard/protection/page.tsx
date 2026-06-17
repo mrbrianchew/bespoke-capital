@@ -113,6 +113,19 @@ function gapSt(need: number, have: number) {
   if (have > 0)     return { label: 'Partial',  color: '#854F0B', bg: '#FEF3C7' }
   return                   { label: 'Gap',      color: '#9B1C1C', bg: '#FEE2E2' }
 }
+// Status badge colors for active policies, matching the existing app palette
+// (green = In-Force/paying, blue = Paid-up, amber = Premium Holiday, gray = inactive)
+function policyStatusBadge(status: string): { label: string; color: string; bg: string } {
+  switch (status) {
+    case 'In-Force':        return { label: 'In-Force',        color: '#166534', bg: '#DCFCE7' }
+    case 'Paid-up':         return { label: 'Paid-up',         color: '#1D4ED8', bg: '#DBEAFE' }
+    case 'Premium Holiday': return { label: 'Premium Holiday', color: '#92400E', bg: '#FEF3C7' }
+    case 'Terminated':      return { label: 'Terminated',      color: '#888',    bg: '#F5F5F5' }
+    case 'Surrendered':     return { label: 'Surrendered',     color: '#888',    bg: '#F5F5F5' }
+    case 'Matured':         return { label: 'Matured',         color: '#888',    bg: '#F5F5F5' }
+    default:                return { label: status || '—',     color: '#888',    bg: '#F5F5F5' }
+  }
+}
 
 // Helper to format dates nicely
 function formatDate(dateStr: string): string {
@@ -1656,6 +1669,9 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
             <div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
+                {(() => { const sb = policyStatusBadge(p.status); return (
+                  <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:sb.color,background:sb.bg,borderRadius:10,padding:'2px 7px',whiteSpace:'nowrap'}}>{sb.label}</span>
+                )})()}
               </div>
               {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
                 {p.policyholder&&<span>PH: {p.policyholder}</span>}
@@ -1745,6 +1761,9 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
                   {p.isUSD && <span style={{fontSize:9,fontWeight:700,color:'#A8834A',background:'#FDF6EC',border:'1px solid #c8a96e',padding:'1px 5px',borderRadius:2,letterSpacing:'0.06em'}}>USD</span>}
+                  {(() => { const sb = policyStatusBadge(p.status); return (
+                    <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:sb.color,background:sb.bg,borderRadius:10,padding:'2px 7px',whiteSpace:'nowrap'}}>{sb.label}</span>
+                  )})()}
                 </div>
                 {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
                   {p.policyholder&&<span>PH: {p.policyholder}</span>}
@@ -1852,6 +1871,9 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
                 {p.isUSD && <span style={{fontSize:9,fontWeight:700,color:'#A8834A',background:'#FDF6EC',border:'1px solid #c8a96e',padding:'1px 5px',borderRadius:2,letterSpacing:'0.06em'}}>USD</span>}
+                {(() => { const sb = policyStatusBadge(p.status); return (
+                  <span style={{fontSize:9,fontWeight:600,letterSpacing:'0.03em',color:sb.color,background:sb.bg,borderRadius:10,padding:'2px 7px',whiteSpace:'nowrap'}}>{sb.label}</span>
+                )})()}
               </div>
               {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:2}}>
                 {p.policyholder&&<span>PH: {p.policyholder}</span>}
