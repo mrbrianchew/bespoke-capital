@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import DateInput from '@/components/DateInput'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -1334,12 +1335,10 @@ function EditMemberModal({
             }}>
               Date of Birth
             </label>
-            <input
-              type="date"
+            <DateInput
               value={formData.dob}
-              onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+              onChange={(v) => setFormData({ ...formData, dob: v })}
               style={{
-                width: '100%',
                 padding: '10px 12px',
                 fontFamily: 'Inter',
                 fontSize: 14,
