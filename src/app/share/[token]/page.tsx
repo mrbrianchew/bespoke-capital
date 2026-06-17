@@ -491,7 +491,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   // ── PAYMENT SUMMARY SHARE VIEW ─────────────────────────────────────────────
   if (shareType === 'payment_summary') {
     // Helpers for renewal date + status (duplicated here to keep share page self-contained)
-    function computeRenewalDate(p: Policy): Date | null {
+    const computeRenewalDate = (p: Policy): Date | null => {
       if (!p.inceptionDate || p.frequency === 'Single') return null
       const start = new Date(p.inceptionDate)
       if (isNaN(start.getTime())) return null
@@ -503,7 +503,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       while (next < new Date(today.getTime() - ms)) next = new Date(next.getTime() + ms)
       return next
     }
-    function getStatus(p: Policy): { label: string; color: string; bg: string } {
+    const getStatus = (p: Policy): { label: string; color: string; bg: string } => {
       if (p.frequency === 'Single') return { label: 'Single Premium', color: '#888', bg: '#F5F5F5' }
       const renewal = computeRenewalDate(p)
       if (!renewal) return { label: '—', color: '#AAA', bg: '#FAFAFA' }
@@ -520,7 +520,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
         ? { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
         : { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
     }
-    function fmtRenewal(p: Policy): string {
+    const fmtRenewal = (p: Policy): string => {
       const d = computeRenewalDate(p)
       if (!d) return '—'
       return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
