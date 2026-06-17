@@ -532,83 +532,134 @@ export default function SharePage({ params }: { params: { token: string } }) {
     const colD: React.CSSProperties = { padding:'10px 12px', fontSize:11, color:'#1C1A17', verticalAlign:'middle', borderBottom:'0.5px solid #ECEAE4', whiteSpace:'nowrap' }
     return (
       <div style={{ background:'#F5F3EE', minHeight:'100vh', fontFamily:'Inter,sans-serif' }}>
-        <style>{`@media print { @page{size:A4 landscape;margin:1.2cm 1.5cm} *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important} .no-print{display:none!important} body{background:white!important} }`}</style>
+        <style>{`
+          @media print { @page{size:A4 landscape;margin:1.2cm 1.5cm} *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important} .no-print{display:none!important} body{background:white!important} }
+          .ps-table { display: table; width: 100%; }
+          .ps-cards { display: none; }
+          @media (max-width: 700px) {
+            .ps-table { display: none !important; }
+            .ps-cards { display: block !important; }
+            .ps-nav-title { display: none !important; }
+            .ps-hero { padding: 16px 20px !important; flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
+            .ps-hero-prem { text-align: left !important; }
+            .ps-body { padding: 20px 16px !important; }
+            .ps-footer { padding: 16px 20px !important; flex-direction: column !important; gap: 4px !important; }
+          }
+        `}</style>
         {/* Sticky nav */}
-        <div className="no-print" style={{ position:'sticky', top:0, zIndex:100, background:'#1C1A17', padding:'10px 24px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-            <div style={{ fontSize:10, letterSpacing:'0.15em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)' }}>Bespoke Capital</div>
-            <div style={{ width:1, height:14, background:'rgba(255,255,255,0.15)' }} />
-            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:16, fontWeight:300, color:'#F0EDE8' }}>
+        <div className="no-print" style={{ position:'sticky', top:0, zIndex:100, background:'#1C1A17', padding:'10px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ fontSize:10, letterSpacing:'0.15em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', flexShrink:0 }}>Bespoke Capital</div>
+            <div className="ps-nav-title" style={{ width:1, height:14, background:'rgba(255,255,255,0.15)', flexShrink:0 }} />
+            <div className="ps-nav-title" style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:15, fontWeight:300, color:'#F0EDE8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
               Payment Summary {year} — {clientName}
             </div>
           </div>
-          <button onClick={()=>window.print()} style={{ padding:'8px 20px', background:'#A8834A', color:'white', border:'none', cursor:'pointer', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', fontFamily:'Inter,sans-serif', fontWeight:500 }}>
-            Download PDF
+          <button onClick={()=>window.print()} style={{ padding:'8px 16px', background:'#A8834A', color:'white', border:'none', cursor:'pointer', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', fontFamily:'Inter,sans-serif', fontWeight:500, flexShrink:0 }}>
+            PDF
           </button>
         </div>
         {/* Hero */}
-        <div style={{ background:'#1C1A17', padding:'24px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div className="ps-hero" style={{ background:'#1C1A17', padding:'24px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div>
             <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', marginBottom:6 }}>Bespoke Capital · Wealth Protection</div>
-            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:26, fontWeight:300, color:'#F0EDE8' }}>Payment Summary {year} — {clientName}</div>
+            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:24, fontWeight:300, color:'#F0EDE8' }}>Payment Summary {year}</div>
+            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:18, fontWeight:300, color:'rgba(240,237,232,0.7)', marginTop:2 }}>{clientName}</div>
           </div>
-          <div style={{ textAlign:'right' }}>
+          <div className="ps-hero-prem" style={{ textAlign:'right' }}>
             <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)', marginBottom:2 }}>Total Annual Premium</div>
             <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:24, fontWeight:300, color:'#C4A464' }}>{fmt(policies.reduce((s,p)=>s+annualPrem(p),0))}</div>
           </div>
         </div>
-        {/* Tables grouped by life assured */}
-        <div style={{ padding:'32px 40px', display:'flex', flexDirection:'column', gap:32 }}>
+        {/* Content */}
+        <div className="ps-body" style={{ padding:'32px 40px', display:'flex', flexDirection:'column', gap:32 }}>
           {groups.map(({ la, policies: grpPols }) => (
             <div key={la}>
               <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-                <div style={{ width:3, height:18, background:'#c8a96e', borderRadius:2 }} />
+                <div style={{ width:3, height:18, background:'#c8a96e', borderRadius:2, flexShrink:0 }} />
                 <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:18, color:'#1C1A17', fontWeight:600 }}>{la}</div>
                 <div style={{ fontSize:11, color:'#888', marginLeft:4 }}>{grpPols.length} {grpPols.length===1?'policy':'policies'}</div>
               </div>
-              <div style={{ background:'white', border:'0.5px solid #E0DDD6', borderRadius:12, overflow:'hidden' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={colH}>Policy No</th>
-                      <th style={colH}>Product Name</th>
-                      <th style={colH}>Renewal Date</th>
-                      <th style={{...colH,textAlign:'right'}}>Prem (MS)</th>
-                      <th style={{...colH,textAlign:'right'}}>Prem (Cash)</th>
-                      <th style={colH}>Mode</th>
-                      <th style={colH}>Frequency</th>
-                      <th style={colH}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {grpPols.map((p,i) => {
-                      const s = getStatus(p)
-                      return (
-                        <tr key={p.id} style={{ background: i%2===0?'white':'#FAFAF8' }}>
-                          <td style={{...colD,fontFamily:'DM Mono,monospace',fontSize:10,color:'#555'}}>{p.policyNo||'—'}</td>
-                          <td style={colD}>
-                            <div style={{fontWeight:500}}>{p.productName||p.companyName||'—'}</div>
-                            {p.companyName&&p.productName&&<div style={{fontSize:10,color:'#AAA'}}>{p.companyName}</div>}
-                          </td>
-                          <td style={{...colD,fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtRenewal(p)}</td>
-                          <td style={{...colD,textAlign:'right',fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtP(p.premiumMedisave)}</td>
-                          <td style={{...colD,textAlign:'right',fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtP(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))}</td>
-                          <td style={{...colD,fontSize:10,color:'#555'}}>{p.premiumMode||'—'}</td>
-                          <td style={{...colD,fontSize:10,color:'#555'}}>{p.frequency||'—'}</td>
-                          <td style={colD}>
-                            <span style={{ display:'inline-block', padding:'2px 8px', borderRadius:20, fontSize:9, fontWeight:600, color:s.color, background:s.bg, whiteSpace:'nowrap' }}>{s.label}</span>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+
+              {/* Desktop table */}
+              <div className="ps-table" style={{ background:'white', border:'0.5px solid #E0DDD6', borderRadius:12, overflow:'hidden' }}>
+                <div style={{ overflowX:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', minWidth:640 }}>
+                    <thead>
+                      <tr>
+                        <th style={colH}>Policy No</th>
+                        <th style={colH}>Product Name</th>
+                        <th style={colH}>Renewal Date</th>
+                        <th style={{...colH,textAlign:'right'}}>Prem (MS)</th>
+                        <th style={{...colH,textAlign:'right'}}>Prem (Cash)</th>
+                        <th style={colH}>Mode</th>
+                        <th style={colH}>Freq.</th>
+                        <th style={colH}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grpPols.map((p,i) => {
+                        const s = getStatus(p)
+                        return (
+                          <tr key={p.id} style={{ background: i%2===0?'white':'#FAFAF8' }}>
+                            <td style={{...colD,fontFamily:'DM Mono,monospace',fontSize:10,color:'#555'}}>{p.policyNo||'—'}</td>
+                            <td style={colD}>
+                              <div style={{fontWeight:500}}>{p.productName||p.companyName||'—'}</div>
+                              {p.companyName&&p.productName&&<div style={{fontSize:10,color:'#AAA'}}>{p.companyName}</div>}
+                            </td>
+                            <td style={{...colD,fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtRenewal(p)}</td>
+                            <td style={{...colD,textAlign:'right',fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtP(p.premiumMedisave)}</td>
+                            <td style={{...colD,textAlign:'right',fontFamily:'DM Mono,monospace',fontSize:10}}>{fmtP(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))}</td>
+                            <td style={{...colD,fontSize:10,color:'#555'}}>{p.premiumMode||'—'}</td>
+                            <td style={{...colD,fontSize:10,color:'#555'}}>{p.frequency||'—'}</td>
+                            <td style={colD}>
+                              <span style={{ display:'inline-block', padding:'2px 8px', borderRadius:20, fontSize:9, fontWeight:600, color:s.color, background:s.bg, whiteSpace:'nowrap' }}>{s.label}</span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="ps-cards" style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {grpPols.map((p) => {
+                  const s = getStatus(p)
+                  return (
+                    <div key={p.id} style={{ background:'white', border:'0.5px solid #E0DDD6', borderRadius:10, padding:'14px 16px' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
+                        <div>
+                          <div style={{ fontWeight:600, fontSize:13, color:'#1C1A17' }}>{p.productName||p.companyName||'—'}</div>
+                          {p.companyName&&p.productName&&<div style={{ fontSize:11, color:'#AAA', marginTop:1 }}>{p.companyName}</div>}
+                          {p.policyNo&&<div style={{ fontSize:10, color:'#999', fontFamily:'DM Mono,monospace', marginTop:2 }}>{p.policyNo}</div>}
+                        </div>
+                        <span style={{ display:'inline-block', padding:'3px 9px', borderRadius:20, fontSize:10, fontWeight:600, color:s.color, background:s.bg, whiteSpace:'nowrap', flexShrink:0, marginLeft:8 }}>{s.label}</span>
+                      </div>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'6px 16px' }}>
+                        {[
+                          ['Renewal Date', fmtRenewal(p)],
+                          ['Frequency', p.frequency||'—'],
+                          ['Prem (Medisave)', fmtP(p.premiumMedisave)],
+                          ['Prem (Cash)', fmtP(p.isUSD?(p.premiumCash||0)*(p.fxRate||1.35):(p.premiumCash||0))],
+                          ['Payment Mode', p.premiumMode||'—'],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <div style={{ fontSize:9, letterSpacing:'0.08em', textTransform:'uppercase', color:'#AAA', marginBottom:1 }}>{label}</div>
+                            <div style={{ fontSize:12, color:'#1C1A17', fontFamily: label.includes('Prem')||label==='Renewal Date' ? 'DM Mono,monospace' : 'inherit' }}>{value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}
         </div>
         {/* Footer */}
-        <div style={{ background:'#1C1A17', padding:'20px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div className="ps-footer" style={{ background:'#1C1A17', padding:'20px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)' }}>This document is confidential and prepared solely for {clientName}. © {year} Bespoke Capital.</div>
           <div style={{ fontSize:10, color:'rgba(168,131,74,0.6)' }}>Chew Zhiquan Brian · Bespoke Capital</div>
         </div>
