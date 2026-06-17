@@ -39,18 +39,26 @@ export async function POST(req: Request, { params }: { params: { token: string }
   const allPolicies: any[] = row?.data?.risk_management?.policies || []
   const shareType: string = share.share_type || 'portfolio'
   const includedPersons: string[] | null = share.included_persons || null
+  const hiddenPolicyIds: string[] = share.hidden_policy_ids || []
 
-  // For payment_summary, filter to included life assureds
   let policies = allPolicies
-  if (shareType === 'payment_summary' && includedPersons && includedPersons.length > 0) {
-    policies = allPolicies.filter((p: any) =>
-      includedPersons.includes(p.lifeAssured || p.person || '—')
-    )
-  } else if (shareType === 'portfolio') {
-    // Existing behaviour: filter by person
+
+  if (shareType === 'payment_summary') {
+    // Filter by included life assureds
+    if (includedPersons && includedPersons.length > 0) {
+      policies = policies.filter((p: any) =>
+        includedPersons.includes(p.lifeAssured || p.person || '—')
+      )
+    }
+    // Filter out hidden policy ids
+    if (hiddenPolicyIds.length > 0) {
+      policies = policies.filter((p: any) => !hiddenPolicyIds.includes(p.id))
+    }
+  } else {
+    // Portfolio: existing person filter
     const person = share.person
     if (person && person !== 'all') {
-      policies = allPolicies.filter((p: any) => p.person === person)
+      policies = policies.filter((p: any) => p.person === person)
     }
   }
 
