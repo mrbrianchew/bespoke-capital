@@ -160,7 +160,7 @@ function ProtectionPage() {
 
   // UI state
   const searchParams = useSearchParams()
-  const [activeTab, setActiveTab] = useState<'overview'|'portfolio'>(() =>
+  const [activeTab, setActiveTab] = useState<'overview'|'portfolio'|'renewal'>(() =>
     searchParams.get('tab') === 'portfolio' ? 'portfolio' : 'overview'
   )
   const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
@@ -597,10 +597,10 @@ async function handleGenerateShare() {
             {saveError && <span style={{fontSize:12,color:'#E53935',fontWeight:500}}>⚠ Save failed</span>}
             {saving && !saveError && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
             <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3}}>
-              {(['overview','portfolio'] as const).map(t=>(
+              {(['overview','portfolio','renewal'] as const).map(t=>(
                 <button key={t} onClick={()=>setActiveTab(t)}
                   style={{padding:'6px 18px',borderRadius:4,border:'none',cursor:'pointer',fontSize:12,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:500,background:activeTab===t?'rgba(200,169,110,0.2)':'transparent',color:activeTab===t?'#c8a96e':'rgba(255,255,255,0.45)'}}>
-                  {t==='overview'?'Overview':'Portfolio'}
+                  {t==='overview'?'Overview':t==='portfolio'?'Portfolio':'Renewal'}
                 </button>
               ))}
             </div>
@@ -696,7 +696,6 @@ async function handleGenerateShare() {
                       personName={label}
                       personAge={personAge}
                       policies={policies}
-                      allPolicies={rmData.policies}
                     />
                   <div style={{pageBreakAfter:'always',breakAfter:'page'}} />
                   </>
@@ -845,6 +844,12 @@ async function handleGenerateShare() {
           })}
         </div>
       )}
+
+      {/* ── RENEWAL ── */}
+      {activeTab==='renewal' && (
+        <RenewalTab allPolicies={rmData.policies} clientName={clientName} spouseName={spouseName} />
+      )}
+
             {showModal && editingPolicy && (
         <PolicyModal
           policy={editingPolicy}
@@ -2424,15 +2429,28 @@ function fmtRenewalDate(p: Policy): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-// ─── RenewalTracker ──────────────────────────────────────────────────────────
-function RenewalTracker({ allPolicies }: { allPolicies: Policy[] }) {
+// ─── RenewalTab ──────────────────────────────────────────────────────────────
+function RenewalTab({ allPolicies, clientName, spouseName }: {
+  allPolicies: Policy[]; clientName: string; spouseName: string
+}) {
   const COL_CARD_BG = '#FFFFFF'
   const COL_BORDER  = 'rgba(0,0,0,0.06)'
 
-  // Show all non-terminated policies
-  const rows = allPolicies.filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
+  // Build display name for life assured
+  function laDisplay(la: string): string {
+    if (!la || la === 'client') return clientName
+    if (la === 'spouse') return spouseName
+    return la
+  }
 
-  if (rows.length === 0) return null
+  // Group by lifeAssured
+  const activePols = allPolicies.filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
+  const groups = Array.from(new Set(activePols.map(p => p.lifeAssured || p.person || '—')))
+    .map(la => ({
+      la,
+      displayName: laDisplay(la),
+      policies: activePols.filter(p => (p.lifeAssured || p.person || '—') === la),
+    }))
 
   const colStyle = (width?: number): React.CSSProperties => ({
     padding: '10px 12px',
@@ -2445,7 +2463,7 @@ function RenewalTracker({ allPolicies }: { allPolicies: Policy[] }) {
     whiteSpace: 'nowrap' as const,
   })
 
-  const headStyle = (width?: number): React.CSSProperties => ({
+  const headStyle = (width?: number, align?: 'right'): React.CSSProperties => ({
     padding: '10px 12px',
     fontSize: 10,
     fontWeight: 600,
@@ -2456,104 +2474,125 @@ function RenewalTracker({ allPolicies }: { allPolicies: Policy[] }) {
     width: width ? `${width}px` : undefined,
     whiteSpace: 'nowrap' as const,
     background: '#FAFAF9',
+    textAlign: align || 'left',
   })
 
   return (
-    <div style={{
-      marginTop: 16,
-      background: COL_CARD_BG,
-      border: `1px solid ${COL_BORDER}`,
-      borderRadius: 16,
-      padding: '22px 24px 20px 24px',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-    }}>
-      <div style={{marginBottom: 16}}>
-        <div style={{
-          fontSize: 11,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color: '#8B8B8B',
-          marginBottom: 4,
-          fontWeight: 500,
-        }}>Renewal Tracker</div>
-        <div style={{fontSize: 12, color: '#AAA'}}>{rows.length} {rows.length === 1 ? 'policy' : 'policies'} across all persons</div>
+    <div style={{ padding: '36px 48px', flex: 1 }}>
+      {/* Page header */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontFamily: 'Cormorant Garamond,Georgia,serif', fontSize: 22, color: 'var(--ink)' }}>
+          Renewal Tracker
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 2 }}>
+          {activePols.length} active {activePols.length === 1 ? 'policy' : 'policies'} · renewal status as of today
+        </div>
       </div>
 
-      <div style={{overflowX: 'auto'}}>
-        <table style={{width: '100%', borderCollapse: 'collapse', tableLayout: 'auto'}}>
-          <thead>
-            <tr>
-              <th style={headStyle(110)}>Policy No</th>
-              <th style={headStyle()}>Product Name</th>
-              <th style={headStyle(90)}>Life Assured</th>
-              <th style={headStyle(110)}>Renewal Date</th>
-              <th style={{...headStyle(100), textAlign: 'right'}}>Prem (MS)</th>
-              <th style={{...headStyle(100), textAlign: 'right'}}>Prem (Cash)</th>
-              <th style={headStyle(110)}>Mode</th>
-              <th style={headStyle(90)}>Frequency</th>
-              <th style={headStyle(150)}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p, i) => {
-              const status = getRenewalStatus(p)
-              const isEven = i % 2 === 0
-              const rowBg = isEven ? '#FFFFFF' : '#FAFAF9'
-              const fmtPrem = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
-              return (
-                <tr key={p.id} style={{background: rowBg}}>
-                  <td style={{...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#555'}}>
-                    {p.policyNo || '—'}
-                  </td>
-                  <td style={colStyle()}>
-                    <div style={{fontWeight: 500, color: '#1A1A1A'}}>{p.productName || p.companyName || '—'}</div>
-                    {p.companyName && p.productName && (
-                      <div style={{fontSize: 10, color: '#AAA', marginTop: 1}}>{p.companyName}</div>
-                    )}
-                  </td>
-                  <td style={{...colStyle(90), fontSize: 11, color: '#555'}}>{p.lifeAssured || '—'}</td>
-                  <td style={{...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11}}>
-                    {fmtRenewalDate(p)}
-                  </td>
-                  <td style={{...colStyle(100), textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11}}>
-                    {fmtPrem(p.premiumMedisave)}
-                  </td>
-                  <td style={{...colStyle(100), textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11}}>
-                    {fmtPrem(p.isUSD ? (p.premiumCash||0) * (p.fxRate||1.35) : (p.premiumCash||0))}
-                    {p.isUSD && (p.premiumCash||0) > 0 && (
-                      <div style={{fontSize: 9, color: '#AAA'}}>USD</div>
-                    )}
-                  </td>
-                  <td style={{...colStyle(110), fontSize: 11, color: '#555'}}>{p.premiumMode || '—'}</td>
-                  <td style={{...colStyle(90), fontSize: 11, color: '#555'}}>{p.frequency || '—'}</td>
-                  <td style={colStyle(150)}>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '3px 9px',
-                      borderRadius: 20,
-                      fontSize: 10,
-                      fontWeight: 600,
-                      letterSpacing: '0.03em',
-                      color: status.color,
-                      background: status.bg,
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {status.label}
-                    </span>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      {activePols.length === 0 ? (
+        <div style={{ background: 'white', border: '0.5px dashed var(--line)', padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--ink3)' }}>
+          No active policies to display.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {groups.map(({ la, displayName, policies: grpPols }) => (
+            <div key={la}>
+              {/* Group heading */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 3, height: 18, background: '#c8a96e', borderRadius: 2, flexShrink: 0 }} />
+                <div style={{ fontFamily: 'Cormorant Garamond,Georgia,serif', fontSize: 18, color: 'var(--ink)', fontWeight: 600 }}>
+                  {displayName}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)', marginLeft: 4 }}>
+                  {grpPols.length} {grpPols.length === 1 ? 'policy' : 'policies'}
+                </div>
+              </div>
+
+              <div style={{
+                background: COL_CARD_BG,
+                border: `1px solid ${COL_BORDER}`,
+                borderRadius: 12,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+                overflow: 'hidden',
+              }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
+                    <thead>
+                      <tr>
+                        <th style={headStyle(110)}>Policy No</th>
+                        <th style={headStyle()}>Product Name</th>
+                        <th style={headStyle(110)}>Renewal Date</th>
+                        <th style={headStyle(100, 'right')}>Prem (MS)</th>
+                        <th style={headStyle(100, 'right')}>Prem (Cash)</th>
+                        <th style={headStyle(110)}>Mode</th>
+                        <th style={headStyle(90)}>Frequency</th>
+                        <th style={headStyle(155)}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {grpPols.map((p, i) => {
+                        const status = getRenewalStatus(p)
+                        const rowBg = i % 2 === 0 ? '#FFFFFF' : '#FAFAF9'
+                        const fmtPrem = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
+                        return (
+                          <tr key={p.id} style={{ background: rowBg }}>
+                            <td style={{ ...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#555' }}>
+                              {p.policyNo || '—'}
+                            </td>
+                            <td style={colStyle()}>
+                              <div style={{ fontWeight: 500, color: '#1A1A1A' }}>{p.productName || p.companyName || '—'}</div>
+                              {p.companyName && p.productName && (
+                                <div style={{ fontSize: 10, color: '#AAA', marginTop: 1 }}>{p.companyName}</div>
+                              )}
+                            </td>
+                            <td style={{ ...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11 }}>
+                              {fmtRenewalDate(p)}
+                            </td>
+                            <td style={{ ...colStyle(100), textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>
+                              {fmtPrem(p.premiumMedisave)}
+                            </td>
+                            <td style={{ ...colStyle(100), textAlign: 'right', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>
+                              {fmtPrem(p.isUSD ? (p.premiumCash || 0) * (p.fxRate || 1.35) : (p.premiumCash || 0))}
+                              {p.isUSD && (p.premiumCash || 0) > 0 && (
+                                <div style={{ fontSize: 9, color: '#AAA' }}>USD</div>
+                              )}
+                            </td>
+                            <td style={{ ...colStyle(110), fontSize: 11, color: '#555' }}>{p.premiumMode || '—'}</td>
+                            <td style={{ ...colStyle(90), fontSize: 11, color: '#555' }}>{p.frequency || '—'}</td>
+                            <td style={colStyle(155)}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '3px 9px',
+                                borderRadius: 20,
+                                fontSize: 10,
+                                fontWeight: 600,
+                                letterSpacing: '0.03em',
+                                color: status.color,
+                                background: status.bg,
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {status.label}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
+
 // ─── PersonPortfolioCharts (Apple-Style Premium Design) ──────────────────────
-function PersonPortfolioCharts({ personName, personAge, policies, allPolicies }: {
-  personName: string; personAge: number; policies: Policy[]; allPolicies: Policy[]
+function PersonPortfolioCharts({ personName, personAge, policies }: {
+  personName: string; personAge: number; policies: Policy[]
 }) {
   // ── Coverage timeline ──────────────────────────────────────────────────────
   const timeline: {age:number;d:number;t:number;ci:number}[] = []
@@ -2819,8 +2858,7 @@ function PersonPortfolioCharts({ personName, personAge, policies, allPolicies }:
               </div>
       </div>
 
-      {/* ── Renewal Tracker ───────────────────────────────────────────────── */}
-      <RenewalTracker allPolicies={allPolicies} />
+      {/* ── Renewal Tracker removed — now in dedicated tab ── */}
 
     </div>
   )
