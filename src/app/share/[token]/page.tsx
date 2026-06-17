@@ -513,12 +513,14 @@ export default function SharePage({ params }: { params: { token: string } }) {
         const yr = renewal.getFullYear()
         return { label: `Paid for ${yr - 1}/${String(yr).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
       }
-      if (diffDays >= -30) return ['In-Force','Premium Holiday'].includes(p.status)
-        ? { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
-        : { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
-      return ['In-Force','Premium Holiday'].includes(p.status)
-        ? { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
-        : { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
+      // Overdue (within or beyond grace period). Active/in-force policies are
+      // treated as paid — "Reinstated" is manual-override-only, not auto-derived.
+      if (['In-Force','Premium Holiday'].includes(p.status)) {
+        const yr = renewal.getFullYear()
+        return { label: `Paid for ${yr - 1}/${String(yr).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
+      }
+      if (diffDays >= -30) return { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
+      return { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
     }
     const fmtRenewal = (p: Policy): string => {
       const d = computeRenewalDate(p)
