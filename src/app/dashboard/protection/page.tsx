@@ -2584,16 +2584,20 @@ function getRenewalStatus(p: Policy): { label: string; color: string; bg: string
     const year = renewal.getFullYear()
     return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
   }
-  // diffDays < 0 — overdue
+  // diffDays < 0 — overdue. Active/in-force policies are treated as paid
+  // (date math landing slightly in the past doesn't mean a payment was missed).
+  // "Reinstated" is no longer auto-derived — it's a manual-override-only status.
   if (diffDays >= -30) {
     if (p.status === 'In-Force' || p.status === 'Premium Holiday') {
-      return { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
+      const year = renewal.getFullYear()
+      return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
     }
     return { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
   }
   // > 30 days overdue
-  if (p.status === 'In-Force') {
-    return { label: 'Reinstated', color: '#1D4ED8', bg: '#DBEAFE' }
+  if (p.status === 'In-Force' || p.status === 'Premium Holiday') {
+    const year = renewal.getFullYear()
+    return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
   }
   return { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
 }
