@@ -93,7 +93,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="w-8 h-8 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: '#C4A882' }}>{initials(activeClient.name)}</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>{activeClient.name}</div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Age {getAge(activeClient.dob) ?? activeClient.age ?? '?'} · Since {activeClient.start_year || '?'}</div>
+                  <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Age {getAge(activeClient.dob) ?? activeClient.age ?? '?'}</div>
                 </div>
                 <span className="text-xs" style={{ color: 'var(--ink3)' }}>⌄</span>
               </>
@@ -170,7 +170,6 @@ function AddClientModal({ userId, onClose, onSaved }: { userId: string; onClose:
   const [name, setName] = useState('')
   const [dob, setDob] = useState('')
   const [gender, setGender] = useState('')
-  const [startYear, setStartYear] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const supabase = createClient()
@@ -192,8 +191,7 @@ function AddClientModal({ userId, onClose, onSaved }: { userId: string; onClose:
     const age = dob ? calcAge(dob) : null
     const { data, error: err } = await supabase.from('clients').insert({
       name: name.trim(), dob: dob || null, gender: gender || null,
-      age, start_year: startYear ? parseInt(startYear) : null,
-      advisor_id: userId
+      age, advisor_id: userId
     }).select().single()
     if (err) { setError(err.message); setLoading(false); return }
     const categories = ['Will / Estate Planning', 'Investments Planning', 'Wealth Protection (Life)', 'Health / Medical Insurance', 'Critical Illness Coverage', 'Disability Income Protection', 'Education Planning']
@@ -208,7 +206,7 @@ function AddClientModal({ userId, onClose, onSaved }: { userId: string; onClose:
           <div className="font-serif text-xl">Add New Client</div>
         </div>
         <div className="px-6 py-5 space-y-4">
-          {[{ label: 'Full Name', type: 'text', val: name, set: setName, req: true, ph: 'e.g. Andy Au' }, { label: 'Date of Birth', type: 'date', val: dob, set: setDob, req: false, ph: '' }, { label: 'Investment Start Year', type: 'number', val: startYear, set: setStartYear, req: false, ph: 'e.g. 2019' }].map(f => (
+          {[{ label: 'Full Name', type: 'text', val: name, set: setName, req: true, ph: 'e.g. Andy Au' }, { label: 'Date of Birth', type: 'date', val: dob, set: setDob, req: false, ph: '' }].map(f => (
             <div key={f.label}>
               <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>{f.label}</label>
               <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} required={f.req} placeholder={f.ph} className="w-full px-3 py-2.5 text-sm outline-none" style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--cream)' }} />
