@@ -1,4 +1,4 @@
-import { getCpfEmpRate, CPF_OW_CEILING, amortisedOutstanding, ageFromDob } from './calc'
+import { getCpfEmpRate, CPF_OW_CEILING, amortisedOutstanding, ageYearOnly } from './calc'
 
 export interface OverviewSnapshot {
   client: { name: string; age: number }
@@ -46,8 +46,8 @@ export function buildOverviewSnapshot(input: {
   const dependents = familyMembers.filter(f => ['Son', 'Daughter', 'Child'].includes(f.relationship))
   const isCouple = !!spouseMember
 
-  const clientAge = ageFromDob(client.dob)
-  const spouseAge = spouseMember?.dob ? ageFromDob(spouseMember.dob) : 0
+  const clientAge = ageYearOnly(client.dob)
+  const spouseAge = spouseMember?.dob ? ageYearOnly(spouseMember.dob) : 0
 
   // ── ASSETS ──────────────────────────────────────────────────────────────
   const cashReserves = (fin.a_savings ?? 0) + (fin.a_fixed_deposit ?? 0) +
@@ -151,28 +151,28 @@ export function buildOverviewSnapshot(input: {
   return {
     client: { name: client.name, age: clientAge },
     spouse: isCouple ? { name: spouseMember!.name, age: spouseAge } : null,
-    dependents: dependents.map(d => ({ name: d.name, age: d.dob ? ageFromDob(d.dob) : 0 })),
-    netWorth,
-    annualInflow,
-    annualSurplus,
+    dependents: dependents.map(d => ({ name: d.name, age: ageYearOnly(d.dob) })),
+    netWorth: Math.round(netWorth),
+    annualInflow: Math.round(annualInflow),
+    annualSurplus: Math.round(annualSurplus),
     assetBreakdown: [
-      { label: 'Cash Reserves', value: cashReserves },
-      { label: 'CPF Statutory Balances', value: cpfBalances },
-      { label: 'Investment Portfolio', value: investmentPortfolio },
-      { label: 'Managed Investment Portfolios', value: managedPortfolios },
-      { label: 'Real Estate Portfolio', value: realEstateGross },
+      { label: 'Cash Reserves', value: Math.round(cashReserves) },
+      { label: 'CPF Statutory Balances', value: Math.round(cpfBalances) },
+      { label: 'Investment Portfolio', value: Math.round(investmentPortfolio) },
+      { label: 'Managed Investment Portfolios', value: Math.round(managedPortfolios) },
+      { label: 'Real Estate Portfolio', value: Math.round(realEstateGross) },
     ],
     liabilities: [
-      { label: 'Mortgage Liability', value: mortgageOutstanding },
-      { label: 'Other Debts', value: otherDebts },
+      { label: 'Mortgage Liability', value: Math.round(mortgageOutstanding) },
+      { label: 'Other Debts', value: Math.round(otherDebts) },
     ],
     expenseBreakdown: [
-      { label: 'Financial Obligations', value: financialObligations },
-      { label: 'Mortgage', value: mortgageDisplay },
-      { label: 'Household & Living', value: householdExpense },
-      { label: 'Personal', value: personalExpense },
-      { label: 'Children', value: childrenExpense },
-      { label: 'Lifestyle', value: lifestyleExpense },
+      { label: 'Financial Obligations', value: Math.round(financialObligations) },
+      { label: 'Mortgage', value: Math.round(mortgageDisplay) },
+      { label: 'Household & Living', value: Math.round(householdExpense) },
+      { label: 'Personal', value: Math.round(personalExpense) },
+      { label: 'Children', value: Math.round(childrenExpense) },
+      { label: 'Lifestyle', value: Math.round(lifestyleExpense) },
     ],
     generatedAt: new Date().toISOString(),
   }
