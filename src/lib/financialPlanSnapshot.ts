@@ -10,7 +10,21 @@ export interface OverviewSnapshot {
   assetBreakdown: { label: string; value: number }[]
   liabilities: { label: string; value: number }[]
   expenseBreakdown: { label: string; value: number }[]
+  expenseBenchmark: { label: string; actualValue: number; actualPct: number; benchmarkPct: number }[]
   generatedAt: string
+}
+
+// Industry guideline percentages — confirmed by Brian, sums to 100%.
+// Only meaningful against the full 8-category detailed breakdown.
+const BENCHMARK_PCT: Record<string, number> = {
+  'Financial Obligations': 12,
+  Mortgage: 25,
+  'Household & Living': 15,
+  Personal: 7,
+  Children: 8,
+  Lifestyle: 5,
+  Insurance: 8,
+  Savings: 20,
 }
 
 const DETAILED_KEYS_BY_CAT: Record<string, { keys: string[]; keys2: string[]; customKey: string }> = {
@@ -196,6 +210,27 @@ export function buildOverviewSnapshot(input: {
           { label: 'Children', value: Math.round(childrenExpense) },
           { label: 'Lifestyle', value: Math.round(lifestyleExpense) },
         ],
+    expenseBenchmark: expMode === 'detailed'
+      ? (() => {
+          const cats = [
+            { label: 'Financial Obligations', value: financialObligations },
+            { label: 'Mortgage', value: mortgageDisplay },
+            { label: 'Household & Living', value: householdExpense },
+            { label: 'Personal', value: personalExpense },
+            { label: 'Children', value: childrenExpense },
+            { label: 'Lifestyle', value: lifestyleExpense },
+            { label: 'Insurance', value: insuranceExpense },
+            { label: 'Savings', value: savingsExpense },
+          ]
+          const total = cats.reduce((s, c) => s + c.value, 0)
+          return cats.map(c => ({
+            label: c.label,
+            actualValue: Math.round(c.value),
+            actualPct: total > 0 ? Math.round((c.value / total) * 100) : 0,
+            benchmarkPct: BENCHMARK_PCT[c.label] ?? 0,
+          }))
+        })()
+      : [],
     generatedAt: new Date().toISOString(),
   }
 }
