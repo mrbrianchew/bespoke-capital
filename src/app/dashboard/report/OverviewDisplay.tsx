@@ -101,14 +101,14 @@ function BenchmarkBarChart({ data }: { data: { label: string; actualPct: number;
           tooltip: { ...tooltipBase(), callbacks: { label: (ctx: any) => `  ${ctx.dataset.label}: ${ctx.parsed.y}%` } },
         },
         scales: {
-          x: { ticks: { font: { size: 9.5 }, color: '#9A9690', maxRotation: 45, minRotation: 45 }, grid: { display: false } },
+          x: { ticks: { font: { size: 11 }, color: '#9A9690', maxRotation: 0, minRotation: 0 }, grid: { display: false } },
           y: { ticks: { font: { size: 10 }, color: '#9A9690', callback: (v: any) => v + '%' }, grid: { color: '#ECE9E1' } },
         },
       },
     })
     return () => chart.destroy()
   }, [data])
-  return <div style={{ position: 'relative', height: 200 }}><canvas ref={ref} /></div>
+  return <div style={{ position: 'relative', height: 240 }}><canvas ref={ref} /></div>
 }
 
 function Legend({ data, colors }: { data: { label: string; value: number }[]; colors: string[] }) {
@@ -183,9 +183,9 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
             <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Liabilities</div>
             {mortgage && <PlainRow label={mortgage.label} value={mortgage.value} italic />}
             {otherDebts && <PlainRow label={otherDebts.label} value={otherDebts.value} italic />}
-            <div style={{ background: 'var(--cream2)', borderRadius: 12, padding: '12px 16px', marginTop: 14 }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold-tag)', fontStyle: 'italic' }}>Net Worth</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 21, color: 'var(--ink)', marginTop: 2 }}>{fmt(snapshot.netWorth)}</div>
+            <div style={{ background: '#F5EFE3', border: '1.5px solid var(--gold)', borderRadius: 12, padding: '14px 18px', marginTop: 14 }}>
+              <div style={{ fontSize: 13, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold-tag)', fontWeight: 600 }}>Net Worth</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, color: 'var(--ink)', marginTop: 4 }}>{fmt(snapshot.netWorth)}</div>
             </div>
           </div>
         </div>
@@ -210,9 +210,14 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
           <div>
             <DonutChart data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} id="expense-donut" />
             <Legend data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} />
-            {hasBenchmark && <div style={{ marginTop: 18 }}><BenchmarkBarChart data={snapshot.expenseBenchmark} /></div>}
           </div>
         </div>
+        {hasBenchmark && (
+          <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>Actual vs Benchmark</div>
+            <BenchmarkBarChart data={snapshot.expenseBenchmark} />
+          </div>
+        )}
       </div>
     </div>
   )
