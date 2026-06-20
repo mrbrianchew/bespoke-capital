@@ -24,7 +24,7 @@ const BENCHMARK_PCT: Record<string, number> = {
   Children: 8,
   Lifestyle: 5,
   Insurance: 8,
-  Savings: 20,
+  'Savings / Investments': 20,
 }
 
 const DETAILED_KEYS_BY_CAT: Record<string, { keys: string[]; keys2: string[]; customKey: string }> = {
@@ -200,7 +200,7 @@ export function buildOverviewSnapshot(input: {
           { label: 'Children', value: Math.round(childrenExpense) },
           { label: 'Lifestyle', value: Math.round(lifestyleExpense) },
           { label: 'Insurance', value: Math.round(insuranceExpense) },
-          { label: 'Savings', value: Math.round(savingsExpense) },
+          { label: 'Savings / Investments', value: Math.round(savingsExpense) },
         ]
       : [
           { label: 'Financial Obligations', value: Math.round(financialObligations) },
@@ -220,7 +220,7 @@ export function buildOverviewSnapshot(input: {
             { label: 'Children', value: childrenExpense },
             { label: 'Lifestyle', value: lifestyleExpense },
             { label: 'Insurance', value: insuranceExpense },
-            { label: 'Savings', value: savingsExpense },
+            { label: 'Savings / Investments', value: savingsExpense },
           ]
           const total = cats.reduce((s, c) => s + c.value, 0)
           return cats.map(c => ({
