@@ -133,13 +133,24 @@ function PlainRow({ label, value, italic }: { label: string; value: number; ital
   )
 }
 
+const INVERTED_BENCHMARK_CATEGORIES = ['Savings / Investments'] // more than benchmark is good here, unlike expense categories
+
+function comparisonColor(label: string, actualPct: number, benchmarkPct?: number): string {
+  if (typeof benchmarkPct !== 'number' || actualPct === benchmarkPct) return 'var(--ink3)'
+  const isInverted = INVERTED_BENCHMARK_CATEGORIES.includes(label)
+  const isOver = actualPct > benchmarkPct
+  if (isInverted) return isOver ? 'var(--emerald)' : 'var(--rouge)'
+  return isOver ? 'var(--rouge)' : 'var(--emerald)'
+}
+
 function CashflowRow({ label, value, actualPct, benchmarkPct }: { label: string; value: number; actualPct: number; benchmarkPct?: number }) {
+  const pctColor = comparisonColor(label, actualPct, benchmarkPct)
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
       <span style={{ fontSize: 13, color: 'var(--ink2)', flex: 1 }}>{label}</span>
       <span style={{ fontSize: 13, fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(value)}</span>
-      <span style={{ fontSize: 11, color: 'var(--ink3)', width: typeof benchmarkPct === 'number' ? 78 : 32, textAlign: 'right' }}>
-        {actualPct}%{typeof benchmarkPct === 'number' && <span style={{ color: '#C9C5BB' }}> vs {benchmarkPct}%</span>}
+      <span style={{ fontSize: 11, fontWeight: 500, color: pctColor, width: typeof benchmarkPct === 'number' ? 78 : 32, textAlign: 'right' }}>
+        {actualPct}%{typeof benchmarkPct === 'number' && <span style={{ color: '#C9C5BB', fontWeight: 400 }}> vs {benchmarkPct}%</span>}
       </span>
     </div>
   )
