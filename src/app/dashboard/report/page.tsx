@@ -2,16 +2,20 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
+import { buildProtectionDTPDSnapshot, ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
 import OverviewDisplay from './OverviewDisplay'
+import ProtectionDisplay from './ProtectionDisplay'
 
 export default function ReportPage() {
   const supabase = createClient()
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('')
+  const [spouseName, setSpouseName] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const [snapshot, setSnapshot] = useState<OverviewSnapshot | null>(null)
+  const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionDTPDSnapshot | null>(null)
 
   const [password, setPassword] = useState('')
   const [passwordHint, setPasswordHint] = useState('')
@@ -38,8 +42,8 @@ export default function ReportPage() {
     setError('')
     const [{ data: client }, { data: family }, { data: ffRows }] = await Promise.all([
       supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
-      supabase.from('family_members').select('name, relationship, dob').eq('client_id', id),
-      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'estate', 'protection_needs']),
+      supabase.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', id),
+      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'estate', 'protection_needs', 'protection_portfolio']),
     ])
     if (!client) { setError('Client not found.'); setLoading(false); return }
     setClientName(client.name)
@@ -47,24 +51,40 @@ export default function ReportPage() {
     const merged: Record<string, any> = {}
     for (const row of ffRows || []) merged[row.section] = row.data || {}
 
-    setLoadedData({
+    const isCouple = (family || []).some((f: any) => f.relationship === 'Spouse')
+    const spouse = (family || []).find((f: any) => f.relationship === 'Spouse')
+    setSpouseName(spouse?.name || '')
+    const children = (family || []).filter((f: any) => ['Son', 'Daughter', 'Child'].includes(f.relationship))
+    const policies = merged['protection_portfolio']?.risk_management?.policies || []
+
+    const data = {
       client: { name: client.name, dob: client.dob || '' },
       familyMembers: (family || []).map((f: any) => ({ name: f.name, relationship: f.relationship, dob: f.dob })),
       fin: merged['financials'] || {},
       estateData: merged['estate'] || {},
       nonMortgageDebts: merged['protection_needs']?.protection?.nonMortgageDebts || [],
-    })
-    setLoading(false)
-  }
+    }
+    setLoadedData(data)
 
-  function handlePreview() {
-    if (!loadedData) return
     try {
-      const result = buildOverviewSnapshot(loadedData)
-      setSnapshot(result)
+      setSnapshot(buildOverviewSnapshot(data))
     } catch (e: any) {
       setError('Snapshot build failed: ' + e.message)
     }
+
+    try {
+      setProtectionSnapshot(buildProtectionDTPDSnapshot({
+        ff: merged['financials'] || {},
+        protection: merged['protection_needs']?.protection || {},
+        policies,
+        children: children.map((c: any) => ({ id: c.id, dob: c.dob, gender: c.gender })),
+        isCouple,
+      }))
+    } catch (e: any) {
+      setError('Protection snapshot build failed: ' + e.message)
+    }
+
+    setLoading(false)
   }
 
   async function handleGenerateAndSave() {
@@ -115,16 +135,9 @@ export default function ReportPage() {
 
         {!loading && !error && (
           <>
-            <button
-              onClick={handlePreview}
-              style={{ background: 'var(--gold)', color: 'white', padding: '10px 20px', borderRadius: 6, border: 'none', fontSize: 14, cursor: 'pointer' }}
-            >
-              Preview Snapshot
-            </button>
-
             {snapshot && (
               <>
-                <div style={{ marginTop: 24 }}>
+                <div>
                   <OverviewDisplay snapshot={snapshot} />
                 </div>
 
@@ -137,6 +150,23 @@ export default function ReportPage() {
                     {JSON.stringify(snapshot, null, 2)}
                   </pre>
                 </details>
+
+                {protectionSnapshot && (
+                  <>
+                    <div style={{ marginTop: 32 }}>
+                      <ProtectionDisplay snapshot={protectionSnapshot} clientName={clientName} spouseName={spouseName} />
+                    </div>
+                    <details style={{ marginTop: 16 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw protection data</summary>
+                      <pre style={{
+                        marginTop: 12, background: '#1C1A17', color: '#E8E4DC', padding: 20,
+                        borderRadius: 8, fontSize: 12, overflow: 'auto', maxHeight: 400,
+                      }}>
+                        {JSON.stringify(protectionSnapshot, null, 2)}
+                      </pre>
+                    </details>
+                  </>
+                )}
 
                 <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
