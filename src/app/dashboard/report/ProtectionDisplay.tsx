@@ -78,7 +78,7 @@ export default function ProtectionDisplay({ snapshot, clientName, spouseName }: 
   spouseName?: string
 }) {
   return (
-    <div style={{ background: '#F5F3EE', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--line)', padding: '32px 44px' }}>
+    <div>
       <PersonSection name={clientName} breakdown={snapshot.client} />
       {snapshot.spouse && <PersonSection name={spouseName || 'Spouse'} breakdown={snapshot.spouse} />}
     </div>
