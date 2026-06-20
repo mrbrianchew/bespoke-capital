@@ -3,8 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { buildProtectionDTPDSnapshot, ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
-import OverviewDisplay from './OverviewDisplay'
-import ProtectionDisplay from './ProtectionDisplay'
+import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 
 export default function ReportPage() {
   const supabase = createClient()
@@ -21,14 +20,6 @@ export default function ReportPage() {
   const [passwordHint, setPasswordHint] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedLink, setSavedLink] = useState('')
-
-  const [loadedData, setLoadedData] = useState<{
-    client: { name: string; dob: string }
-    familyMembers: { name: string; relationship: string; dob?: string }[]
-    fin: Record<string, any>
-    estateData: Record<string, any>
-    nonMortgageDebts: { amount?: number }[]
-  } | null>(null)
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
@@ -64,7 +55,6 @@ export default function ReportPage() {
       estateData: merged['estate'] || {},
       nonMortgageDebts: merged['protection_needs']?.protection?.nonMortgageDebts || [],
     }
-    setLoadedData(data)
 
     try {
       setSnapshot(buildOverviewSnapshot(data))
@@ -87,8 +77,8 @@ export default function ReportPage() {
     setLoading(false)
   }
 
-  async function handleGenerateAndSave() {
-    if (!clientId || !snapshot || !password.trim()) return
+  async function handleGenerateAndSave(plan: PlanSnapshot) {
+    if (!clientId || !password.trim()) return
     setSaving(true)
     setError('')
     try {
@@ -98,7 +88,7 @@ export default function ReportPage() {
       const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(36)).join('').slice(0, 12)
       const { data: { user } } = await supabase.auth.getUser()
 
-      const label = `Overview Snapshot — ${new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}`
+      const label = `Financial Plan — ${new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}`
 
       const { error } = await supabase.from('financial_plans').insert({
         client_id: clientId,
@@ -106,7 +96,7 @@ export default function ReportPage() {
         share_token: token,
         password_hash: hashHex,
         password_hint: passwordHint || null,
-        snapshot_data: snapshot,
+        snapshot_data: plan,
         created_by: user?.id,
       })
       if (error) throw error
@@ -117,6 +107,10 @@ export default function ReportPage() {
       setSaving(false)
     }
   }
+
+  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot)
+    ? { clientName, spouseName: spouseName || undefined, overview: snapshot, protection: protectionSnapshot }
+    : null
 
   return (
     <div className="flex flex-col min-h-full">
@@ -133,86 +127,63 @@ export default function ReportPage() {
         {loading && <p>Loading client data…</p>}
         {error && <p style={{ color: 'var(--rouge)' }}>{error}</p>}
 
-        {!loading && !error && (
+        {!loading && !error && plan && (
           <>
-            {snapshot && (
-              <>
-                <div>
-                  <OverviewDisplay snapshot={snapshot} />
-                </div>
+            <FinancialPlanView plan={plan} />
 
-                <details style={{ marginTop: 16 }}>
-                  <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw snapshot data</summary>
-                  <pre style={{
-                    marginTop: 12, background: '#1C1A17', color: '#E8E4DC', padding: 20,
-                    borderRadius: 8, fontSize: 12, overflow: 'auto', maxHeight: 400,
-                  }}>
-                    {JSON.stringify(snapshot, null, 2)}
-                  </pre>
-                </details>
+            <details style={{ marginTop: 16 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw plan data</summary>
+              <pre style={{
+                marginTop: 12, background: '#1C1A17', color: '#E8E4DC', padding: 20,
+                borderRadius: 8, fontSize: 12, overflow: 'auto', maxHeight: 400,
+              }}>
+                {JSON.stringify(plan, null, 2)}
+              </pre>
+            </details>
 
-                {protectionSnapshot && (
-                  <>
-                    <div style={{ marginTop: 32 }}>
-                      <ProtectionDisplay snapshot={protectionSnapshot} clientName={clientName} spouseName={spouseName} />
-                    </div>
-                    <details style={{ marginTop: 16 }}>
-                      <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw protection data</summary>
-                      <pre style={{
-                        marginTop: 12, background: '#1C1A17', color: '#E8E4DC', padding: 20,
-                        borderRadius: 8, fontSize: 12, overflow: 'auto', maxHeight: 400,
-                      }}>
-                        {JSON.stringify(protectionSnapshot, null, 2)}
-                      </pre>
-                    </details>
-                  </>
-                )}
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
+                Generate &amp; save this as a real plan
+              </div>
+              <input
+                type="password"
+                placeholder="Set a password for this link"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
+              />
+              <input
+                type="text"
+                placeholder="Password hint (optional)"
+                value={passwordHint}
+                onChange={e => setPasswordHint(e.target.value)}
+                style={{ display: 'block', marginBottom: 12, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
+              />
+              <button
+                onClick={() => handleGenerateAndSave(plan)}
+                disabled={saving || !password.trim()}
+                style={{ background: 'var(--charcoal)', color: 'white', padding: '10px 20px', borderRadius: 6, border: 'none', fontSize: 14, cursor: 'pointer', opacity: saving || !password.trim() ? 0.5 : 1 }}
+              >
+                {saving ? 'Saving…' : 'Generate & Save Plan'}
+              </button>
 
-                <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
-                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
-                    Generate &amp; save this as a real plan
+              {savedLink && (
+                <div style={{ marginTop: 16, fontSize: 13 }}>
+                  <p style={{ marginBottom: 6 }}>Saved. Share this link with the client:</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <a href={savedLink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold-tag)', textDecoration: 'underline' }}>
+                      {savedLink}
+                    </a>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(savedLink)}
+                      style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
+                    >
+                      Copy
+                    </button>
                   </div>
-                  <input
-                    type="password"
-                    placeholder="Set a password for this link"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Password hint (optional)"
-                    value={passwordHint}
-                    onChange={e => setPasswordHint(e.target.value)}
-                    style={{ display: 'block', marginBottom: 12, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
-                  />
-                  <button
-                    onClick={handleGenerateAndSave}
-                    disabled={saving || !password.trim()}
-                    style={{ background: 'var(--charcoal)', color: 'white', padding: '10px 20px', borderRadius: 6, border: 'none', fontSize: 14, cursor: 'pointer', opacity: saving || !password.trim() ? 0.5 : 1 }}
-                  >
-                    {saving ? 'Saving…' : 'Generate & Save Plan'}
-                  </button>
-
-                  {savedLink && (
-                    <div style={{ marginTop: 16, fontSize: 13 }}>
-                      <p style={{ marginBottom: 6 }}>Saved. Share this link with the client:</p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <a href={savedLink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold-tag)', textDecoration: 'underline' }}>
-                          {savedLink}
-                        </a>
-                        <button
-                          onClick={() => navigator.clipboard.writeText(savedLink)}
-                          style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
-                        >
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>
