@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
+import OverviewDisplay from './OverviewDisplay'
 
 export default function ReportPage() {
   const supabase = createClient()
@@ -108,7 +109,7 @@ export default function ReportPage() {
         </div>
       </div>
 
-      <div style={{ padding: '48px', maxWidth: 720 }}>
+      <div style={{ padding: '48px', maxWidth: 960 }}>
         {loading && <p>Loading client data…</p>}
         {error && <p style={{ color: 'var(--rouge)' }}>{error}</p>}
 
@@ -123,12 +124,19 @@ export default function ReportPage() {
 
             {snapshot && (
               <>
-                <pre style={{
-                  marginTop: 24, background: '#1C1A17', color: '#E8E4DC', padding: 20,
-                  borderRadius: 8, fontSize: 12, overflow: 'auto', maxHeight: 500,
-                }}>
-                  {JSON.stringify(snapshot, null, 2)}
-                </pre>
+                <div style={{ marginTop: 24 }}>
+                  <OverviewDisplay snapshot={snapshot} />
+                </div>
+
+                <details style={{ marginTop: 16 }}>
+                  <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw snapshot data</summary>
+                  <pre style={{
+                    marginTop: 12, background: '#1C1A17', color: '#E8E4DC', padding: 20,
+                    borderRadius: 8, fontSize: 12, overflow: 'auto', maxHeight: 400,
+                  }}>
+                    {JSON.stringify(snapshot, null, 2)}
+                  </pre>
+                </details>
 
                 <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
                   <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
