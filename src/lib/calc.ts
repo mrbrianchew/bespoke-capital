@@ -73,6 +73,17 @@ export function ageFromDob(dob: string): number {
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
   return age
 }
+// Year-only age (currentYear − birthYear, no adjustment for whether the
+// birthday has passed yet this year). This is the convention used throughout
+// the dashboard (see the duplicated local `getAge` in dashboard/page.tsx,
+// objectives/page.tsx, EducationSection.tsx, layout.tsx) — deliberately
+// different from ageFromDob above. Use this one for anything that needs to
+// match what the rest of the app displays.
+export function ageYearOnly(dob?: string): number {
+  if (!dob) return 0
+  const birth = new Date(dob)
+  return Math.max(0, new Date().getFullYear() - birth.getFullYear())
+}
 // CPF employee contribution rates (Ordinary Wage tiers)
 export const SC_RATES = [
   { max_age: 35, employee: 20 }, { max_age: 45, employee: 20 },
