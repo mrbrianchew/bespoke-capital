@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import OverviewDisplay from '@/app/dashboard/report/OverviewDisplay'
+import FinancialPlanView from '@/app/dashboard/report/FinancialPlanView'
 
 interface Policy {
   id: string; categoryCode: string; policyTypeCode: string
@@ -508,7 +508,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
     return (
       <div style={{ background: '#F5F3EE', minHeight: '100vh', padding: '32px 16px' }}>
         <div style={{ maxWidth: 880, margin: '0 auto' }}>
-          <OverviewDisplay snapshot={planSnapshot} />
+          <FinancialPlanView plan={planSnapshot} />
         </div>
       </div>
     )
