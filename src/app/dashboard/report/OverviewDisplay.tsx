@@ -90,46 +90,10 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub: st
 }
 
 export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapshot }) {
-  const generatedDate = new Date(snapshot.generatedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })
   const totalLiabilities = snapshot.liabilities.reduce((s, l) => s + l.value, 0)
 
   return (
-    <div style={{ background: '#F5F3EE', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--line)' }}>
-      {/* Hero */}
-      <div style={{ background: 'var(--charcoal)', padding: '36px 44px 30px' }}>
-        <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(240,237,232,0.4)' }}>
-          Bespoke Capital · Private Wealth
-        </div>
-        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 32, fontWeight: 600, color: '#F5F0E8', marginTop: 6 }}>
-          {snapshot.client.name}{snapshot.spouse ? ` & ${snapshot.spouse.name}` : ''}
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(240,237,232,0.45)', fontStyle: 'italic', marginTop: 4 }}>
-          Financial Plan Overview · As of {generatedDate}
-        </div>
-
-        <div style={{ display: 'flex', gap: 28, marginTop: 20, flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(240,237,232,0.35)' }}>Primary Client</div>
-            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, color: '#F0EDE6' }}>{snapshot.client.name} · Age {snapshot.client.age}</div>
-          </div>
-          {snapshot.spouse && (
-            <div>
-              <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(240,237,232,0.35)' }}>Spouse</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, color: '#F0EDE6' }}>{snapshot.spouse.name} · Age {snapshot.spouse.age}</div>
-            </div>
-          )}
-          {snapshot.dependents.length > 0 && (
-            <div>
-              <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(240,237,232,0.35)' }}>Dependents</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, color: '#F0EDE6' }}>
-                {snapshot.dependents.map(d => `${d.name} (${d.age})`).join('  ·  ')}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={{ padding: '32px 44px 44px' }}>
+    <div>
         {/* Stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 32 }}>
           <StatCard label="Net Worth" value={fmt(snapshot.netWorth)} sub="Liquid &amp; equity" />
@@ -171,7 +135,6 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
           <Legend data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} />
           <DonutChart data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} id="expense-donut" />
         </div>
-      </div>
     </div>
   )
 }
