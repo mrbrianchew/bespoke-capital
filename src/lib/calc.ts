@@ -73,6 +73,14 @@ export function ageFromDob(dob: string): number {
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
   return age
 }
+// Future value of a level annuity-due — used by the protection needs engine
+// (family dependency, CI family dependency) to turn a constant annual amount
+// into a lump-sum capital requirement over a term, compounding at `rate`.
+export function fv(rate: number, nper: number, pmt: number): number {
+  if (nper <= 0) return 0
+  if (rate === 0) return pmt * nper
+  return pmt * ((Math.pow(1 + rate, nper) - 1) / rate) * (1 + rate)
+}
 // Year-only age (currentYear − birthYear, no adjustment for whether the
 // birthday has passed yet this year). This is the convention used throughout
 // the dashboard (see the duplicated local `getAge` in dashboard/page.tsx,
