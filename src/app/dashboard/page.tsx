@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { getCpfEmpRate, amortisedOutstanding, CPF_OW_CEILING } from '@/lib/calc'
 import DateInput from '@/components/DateInput'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -657,31 +658,6 @@ console.log('[RET] ' + JSON.stringify({
   const estSpouse      = estate.spouse  || {}
   const estHasData     = Object.keys(estClient).length > 0
 
-  function amortisedOutstanding(prop: any): number {
-    if (prop.outstanding > 0) return prop.outstanding
-    const initialLoan = prop.initialLoanAmount ?? 0
-    const annualRate  = prop.interestRate ?? 0
-    const tenure      = prop.initialTenure ?? 25
-    const start       = prop.loanStartDate ?? ''
-    if (!initialLoan || !tenure) return 0
-    const parts = start.split('/')
-    if (parts.length !== 2) return initialLoan
-    const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
-    const today = new Date()
-    const months = (today.getFullYear() - startDate.getFullYear()) * 12 +
-      (today.getMonth() - startDate.getMonth())
-    if (months <= 0) return initialLoan
-    const n = tenure * 12
-    if (months >= n) return 0
-    if (!annualRate) return Math.round(initialLoan * (1 - months / n))
-    const rv = annualRate / 100 / 12
-    const pmt = initialLoan * rv * Math.pow(1 + rv, n) / (Math.pow(1 + rv, n) - 1)
-    return Math.max(0, Math.round(
-      initialLoan * Math.pow(1 + rv, months) -
-      pmt * (Math.pow(1 + rv, months) - 1) / rv
-    ))
-  }
-
   const allProps   = (fin.properties || []) as any[]
   const propEquity = allProps.reduce((s: number, p: any) =>
     s + Math.max(0, (p.propertyValue ?? p.purchasePrice ?? 0) - amortisedOutstanding(p)), 0)
@@ -778,29 +754,13 @@ const p2Cit    = isCouple ? ((fin.person2 as any)?.citizenship || 'SC') : 'SC'
 const p2PrYear = isCouple ? ((fin.person2 as any)?.pr_year || '3+') : '3+'
 
 // CPF rates (same tiers as financials page)
-const SC_RATES = [
-  { max_age: 35, employee: 20 }, { max_age: 45, employee: 20 },
-  { max_age: 50, employee: 20 }, { max_age: 55, employee: 20 },
-  { max_age: 60, employee: 18 }, { max_age: 65, employee: 14.5 },
-  { max_age: 70, employee: 7.5 }, { max_age: 999, employee: 5 },
-]
-const PR1_RATES = [{ max_age: 999, employee: 5 }]
-const PR2_RATES = [{ max_age: 999, employee: 15 }]
-
-function getCpfEmpRate(age: number, cit: string, prYear: string): number {
-  if (!['SC', 'PR'].includes(cit)) return 0
-  const tiers = cit === 'PR' ? (prYear === '1' ? PR1_RATES : prYear === '2' ? PR2_RATES : SC_RATES) : SC_RATES
-  return (tiers.find(t => age <= t.max_age) || tiers[tiers.length - 1]).employee
-}
-
-const owCap = 8000
 const p1EmpRate = getCpfEmpRate(clientAge, p1Cit, p1PrYear) / 100
-const p1MonthlyCpf = Math.floor(Math.min(p1Gross, owCap) * p1EmpRate)
+const p1MonthlyCpf = Math.floor(Math.min(p1Gross, CPF_OW_CEILING) * p1EmpRate)
 const p1BonusCpf = Math.floor(p1Bonus * p1EmpRate)
 const p1TakeHome = (p1Gross - p1MonthlyCpf) * 12 + (p1Bonus - p1BonusCpf)
 
 const p2EmpRate = isCouple ? getCpfEmpRate(spouseAge, p2Cit, p2PrYear) / 100 : 0
-const p2MonthlyCpf = isCouple ? Math.floor(Math.min(p2Gross, owCap) * p2EmpRate) : 0
+const p2MonthlyCpf = isCouple ? Math.floor(Math.min(p2Gross, CPF_OW_CEILING) * p2EmpRate) : 0
 const p2BonusCpf = isCouple ? Math.floor(p2Bonus * p2EmpRate) : 0
 const p2TakeHome = isCouple ? (p2Gross - p2MonthlyCpf) * 12 + (p2Bonus - p2BonusCpf) : 0
 
