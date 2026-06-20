@@ -73,3 +73,42 @@ export function ageFromDob(dob: string): number {
   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
   return age
 }
+// CPF employee contribution rates (Ordinary Wage tiers)
+export const SC_RATES = [
+  { max_age: 35, employee: 20 }, { max_age: 45, employee: 20 },
+  { max_age: 50, employee: 20 }, { max_age: 55, employee: 20 },
+  { max_age: 60, employee: 18 }, { max_age: 65, employee: 14.5 },
+  { max_age: 70, employee: 7.5 }, { max_age: 999, employee: 5 },
+]
+export const PR1_RATES = [{ max_age: 999, employee: 5 }]
+export const PR2_RATES = [{ max_age: 999, employee: 15 }]
+export const CPF_OW_CEILING = 8000
+export function getCpfEmpRate(age: number, cit: string, prYear: string): number {
+  if (!['SC', 'PR'].includes(cit)) return 0
+  const tiers = cit === 'PR' ? (prYear === '1' ? PR1_RATES : prYear === '2' ? PR2_RATES : SC_RATES) : SC_RATES
+  return (tiers.find(t => age <= t.max_age) || tiers[tiers.length - 1]).employee
+}
+export function amortisedOutstanding(prop: any): number {
+  if (prop.outstanding > 0) return prop.outstanding
+  const initialLoan = prop.initialLoanAmount ?? 0
+  const annualRate  = prop.interestRate ?? 0
+  const tenure      = prop.initialTenure ?? 25
+  const start       = prop.loanStartDate ?? ''
+  if (!initialLoan || !tenure) return 0
+  const parts = start.split('/')
+  if (parts.length !== 2) return initialLoan
+  const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+  const today2 = new Date()
+  const months = (today2.getFullYear() - startDate.getFullYear()) * 12 +
+    (today2.getMonth() - startDate.getMonth())
+  if (months <= 0) return initialLoan
+  const n = tenure * 12
+  if (months >= n) return 0
+  if (!annualRate) return Math.round(initialLoan * (1 - months / n))
+  const rv = annualRate / 100 / 12
+  const pmt = initialLoan * rv * Math.pow(1 + rv, n) / (Math.pow(1 + rv, n) - 1)
+  return Math.max(0, Math.round(
+    initialLoan * Math.pow(1 + rv, months) -
+    pmt * (Math.pow(1 + rv, months) - 1) / rv
+  ))
+}
