@@ -165,9 +165,20 @@ export default function ReportPage() {
                   </button>
 
                   {savedLink && (
-                    <p style={{ marginTop: 16, fontSize: 13 }}>
-                      Saved. Link: <code>{savedLink}</code>
-                    </p>
+                    <div style={{ marginTop: 16, fontSize: 13 }}>
+                      <p style={{ marginBottom: 6 }}>Saved. Share this link with the client:</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <a href={savedLink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold-tag)', textDecoration: 'underline' }}>
+                          {savedLink}
+                        </a>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(savedLink)}
+                          style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </>
