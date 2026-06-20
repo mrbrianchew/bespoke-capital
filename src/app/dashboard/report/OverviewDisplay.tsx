@@ -11,6 +11,7 @@ function fmt(n: number): string {
 }
 
 const ASSET_COLORS = ['#A8834A', '#2A5E46', '#7A9CBF', '#8A6C3A', '#1C1A17']
+const EXPENSE_COLORS = ['#A8834A', '#1C1A17', '#2A5E46', '#7A9CBF', '#9A7C5A', '#8A2828', '#C9A65F', '#5A7A8A']
 
 function tooltipBase() {
   return {
@@ -20,16 +21,13 @@ function tooltipBase() {
     padding: 12,
     titleFont: { size: 12, weight: 'bold' as const },
     bodyFont: { size: 12 },
-    callbacks: {
-      label: (ctx: any) => `  ${ctx.label}: ${fmt(ctx.parsed)}`,
-    },
   }
 }
 
 function DonutChart({ data, colors, id }: { data: { label: string; value: number }[]; colors: string[]; id: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
-    if (!ref.current) return
+    if (!ref.current || data.length === 0) return
     const existing = Chart.getChart(ref.current)
     if (existing) existing.destroy()
     const ctx = ref.current.getContext('2d')
@@ -38,26 +36,44 @@ function DonutChart({ data, colors, id }: { data: { label: string; value: number
       type: 'doughnut',
       data: {
         labels: data.map(d => d.label),
-        datasets: [{
-          data: data.map(d => d.value),
-          backgroundColor: colors,
-          borderColor: '#FFFFFF',
-          borderWidth: 3,
-        }],
+        datasets: [{ data: data.map(d => d.value), backgroundColor: colors, borderColor: '#FFFFFF', borderWidth: 3 }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '62%',
+        cutout: '55%',
         plugins: {
           legend: { display: false },
-          tooltip: tooltipBase(),
+          tooltip: {
+            ...tooltipBase(),
+            callbacks: { label: (ctx: any) => `  ${ctx.label}: ${fmt(ctx.parsed)}` },
+          },
         },
       },
+      plugins: [{
+        id: 'pctLabels',
+        afterDraw(chart: any) {
+          const { ctx: c } = chart
+          const meta = chart.getDatasetMeta(0)
+          const total = data.reduce((s, d) => s + d.value, 0)
+          c.save()
+          c.font = '10px Inter, sans-serif'
+          c.fillStyle = '#FFFFFF'
+          c.textAlign = 'center'
+          c.textBaseline = 'middle'
+          meta.data.forEach((arc: any, i: number) => {
+            const pct = total > 0 ? Math.round((data[i].value / total) * 100) : 0
+            if (pct < 3) return
+            const point = arc.getCenterPoint()
+            c.fillText(pct + '%', point.x, point.y)
+          })
+          c.restore()
+        },
+      }],
     })
     return () => chart.destroy()
   }, [data, colors])
-  return <div style={{ position: 'relative', height: 220 }}><canvas key={id} ref={ref} /></div>
+  return <div style={{ position: 'relative', height: 190 }}><canvas key={id} ref={ref} /></div>
 }
 
 function BenchmarkBarChart({ data }: { data: { label: string; actualPct: number; benchmarkPct: number }[] }) {
@@ -73,8 +89,8 @@ function BenchmarkBarChart({ data }: { data: { label: string; actualPct: number;
       data: {
         labels: data.map(d => d.label),
         datasets: [
-          { label: 'Actual', data: data.map(d => d.actualPct), backgroundColor: '#A8834A', borderRadius: 4, maxBarThickness: 22 },
-          { label: 'Benchmark', data: data.map(d => d.benchmarkPct), backgroundColor: '#1C1A17', borderRadius: 4, maxBarThickness: 22 },
+          { label: 'Actual', data: data.map(d => d.actualPct), backgroundColor: '#A8834A', borderRadius: 4, maxBarThickness: 18 },
+          { label: 'Benchmark', data: data.map(d => d.benchmarkPct), backgroundColor: '#1C1A17', borderRadius: 4, maxBarThickness: 18 },
         ],
       },
       options: {
@@ -82,54 +98,49 @@ function BenchmarkBarChart({ data }: { data: { label: string; actualPct: number;
         maintainAspectRatio: false,
         plugins: {
           legend: { position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 11 }, color: '#4A4740' } },
-          tooltip: {
-            ...tooltipBase(),
-            callbacks: { label: (ctx: any) => `  ${ctx.dataset.label}: ${ctx.parsed.y}%` },
-          },
+          tooltip: { ...tooltipBase(), callbacks: { label: (ctx: any) => `  ${ctx.dataset.label}: ${ctx.parsed.y}%` } },
         },
         scales: {
-          x: { ticks: { font: { size: 10 }, color: '#9A9690', maxRotation: 45, minRotation: 45 }, grid: { display: false } },
+          x: { ticks: { font: { size: 9.5 }, color: '#9A9690', maxRotation: 45, minRotation: 45 }, grid: { display: false } },
           y: { ticks: { font: { size: 10 }, color: '#9A9690', callback: (v: any) => v + '%' }, grid: { color: '#ECE9E1' } },
         },
       },
     })
     return () => chart.destroy()
   }, [data])
-  return <div style={{ position: 'relative', height: 240 }}><canvas ref={ref} /></div>
+  return <div style={{ position: 'relative', height: 200 }}><canvas ref={ref} /></div>
 }
 
 function Legend({ data, colors }: { data: { label: string; value: number }[]; colors: string[] }) {
-  const total = data.reduce((s, d) => s + d.value, 0)
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2" style={{ gap: '4px 16px' }}>
+    <div className="grid grid-cols-1 sm:grid-cols-2" style={{ gap: '4px 16px', marginTop: 12 }}>
       {data.map((d, i) => (
-        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
           <span style={{ width: 9, height: 9, borderRadius: '50%', background: colors[i % colors.length], flexShrink: 0 }} />
-          <span style={{ fontSize: 12.5, color: 'var(--ink2)' }}>{d.label}</span>
+          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>{d.label}</span>
         </div>
       ))}
     </div>
   )
 }
 
-function ListRow({ label, value, pct, color }: { label: string; value: number; pct: number; color: string }) {
+function PlainRow({ label, value, italic }: { label: string; value: number; italic?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
-      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-      <span style={{ fontSize: 13, color: 'var(--ink2)', flex: 1 }}>{label}</span>
-      <span style={{ fontSize: 13, fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(value)}</span>
-      <span style={{ fontSize: 11, color: 'var(--ink3)', width: 32, textAlign: 'right' }}>{pct}%</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
+      <span style={{ fontSize: 13, color: 'var(--ink2)', fontStyle: italic ? 'italic' : 'normal' }}>{label}</span>
+      <span style={{ fontSize: 13, fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{value > 0 ? fmt(value) : '—'}</span>
     </div>
   )
 }
 
-function ListRowWithBenchmark({ label, value, actualPct, benchmarkPct, color }: { label: string; value: number; actualPct: number; benchmarkPct: number; color: string }) {
+function CashflowRow({ label, value, actualPct, benchmarkPct }: { label: string; value: number; actualPct: number; benchmarkPct?: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
-      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
       <span style={{ fontSize: 13, color: 'var(--ink2)', flex: 1 }}>{label}</span>
       <span style={{ fontSize: 13, fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(value)}</span>
-      <span style={{ fontSize: 11, color: 'var(--ink3)', width: 70, textAlign: 'right' }}>{actualPct}% <span style={{ color: '#C9C5BB' }}>vs {benchmarkPct}%</span></span>
+      <span style={{ fontSize: 11, color: 'var(--ink3)', width: typeof benchmarkPct === 'number' ? 78 : 32, textAlign: 'right' }}>
+        {actualPct}%{typeof benchmarkPct === 'number' && <span style={{ color: '#C9C5BB' }}> vs {benchmarkPct}%</span>}
+      </span>
     </div>
   )
 }
@@ -146,6 +157,8 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub: st
 
 export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapshot }) {
   const hasBenchmark = snapshot.expenseBenchmark.length > 0
+  const otherDebts = snapshot.liabilities.find(l => l.label === 'Other Debts')
+  const mortgage = snapshot.liabilities.find(l => l.label !== 'Other Debts')
 
   return (
     <div>
@@ -156,60 +169,48 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
         <StatCard label="Annual Surplus" value={fmt(snapshot.annualSurplus)} sub="Take-home minus expenses" />
       </div>
 
-      {/* Asset composition */}
+      {/* Asset composition & liabilities — plain two-column list, no chart */}
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 19, color: 'var(--ink)', marginBottom: 14 }}>
         Asset Composition &amp; Liabilities
       </div>
       <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 22px', marginBottom: 36 }}>
-        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'center' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 32 }}>
           <div>
-            {snapshot.assetBreakdown.map((d, i) => (
-              <ListRow key={d.label} label={d.label} value={d.value}
-                pct={Math.round(d.value / Math.max(1, snapshot.assetBreakdown.reduce((s, x) => s + x.value, 0)) * 100)}
-                color={ASSET_COLORS[i % ASSET_COLORS.length]} />
-            ))}
+            <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Asset Composition</div>
+            {snapshot.assetBreakdown.map(d => <PlainRow key={d.label} label={d.label} value={d.value} italic />)}
           </div>
           <div>
-            <DonutChart data={snapshot.assetBreakdown} colors={ASSET_COLORS} id="asset-donut" />
-            <Legend data={snapshot.assetBreakdown} colors={ASSET_COLORS} />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12, marginTop: 22, flexWrap: 'wrap' }}>
-          {snapshot.liabilities.map(l => (
-            <div key={l.label} style={{ flex: 1, minWidth: 150, background: 'var(--cream2)', borderRadius: 12, padding: '12px 16px' }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{l.label}</div>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'var(--rouge)', marginTop: 2 }}>{fmt(l.value)}</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Liabilities</div>
+            {mortgage && <PlainRow label={mortgage.label} value={mortgage.value} italic />}
+            {otherDebts && <PlainRow label={otherDebts.label} value={otherDebts.value} italic />}
+            <div style={{ background: 'var(--cream2)', borderRadius: 12, padding: '12px 16px', marginTop: 14 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold-tag)', fontStyle: 'italic' }}>Net Worth</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 21, color: 'var(--ink)', marginTop: 2 }}>{fmt(snapshot.netWorth)}</div>
             </div>
-          ))}
-          <div style={{ flex: 1, minWidth: 150, background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 16px' }}>
-            <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold-tag)', fontStyle: 'italic' }}>Net Worth</div>
-            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 19, color: 'var(--ink)', marginTop: 2 }}>{fmt(snapshot.netWorth)}</div>
           </div>
         </div>
       </div>
 
-      {/* Annual cashflow */}
+      {/* Annual cashflow — donut (composition) + bar chart (actual vs benchmark) */}
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 19, color: 'var(--ink)', marginBottom: 14 }}>
         Annual Cashflow
       </div>
       <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 22px' }}>
-        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'center' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'start' }}>
           <div>
             {hasBenchmark
-              ? snapshot.expenseBenchmark.map((d, i) => (
-                  <ListRowWithBenchmark key={d.label} label={d.label} value={d.actualValue} actualPct={d.actualPct} benchmarkPct={d.benchmarkPct} color={ASSET_COLORS[i % ASSET_COLORS.length]} />
+              ? snapshot.expenseBenchmark.map(d => (
+                  <CashflowRow key={d.label} label={d.label} value={d.actualValue} actualPct={d.actualPct} benchmarkPct={d.benchmarkPct} />
                 ))
-              : snapshot.expenseBreakdown.map((d, i) => (
-                  <ListRow key={d.label} label={d.label} value={d.value}
-                    pct={Math.round(d.value / Math.max(1, snapshot.expenseBreakdown.reduce((s, x) => s + x.value, 0)) * 100)}
-                    color={ASSET_COLORS[i % ASSET_COLORS.length]} />
-                ))}
+              : snapshot.expenseBreakdown.map(d => {
+                  const total = snapshot.expenseBreakdown.reduce((s, x) => s + x.value, 0)
+                  return <CashflowRow key={d.label} label={d.label} value={d.value} actualPct={Math.round(d.value / Math.max(1, total) * 100)} />
+                })}
           </div>
           <div>
-            {hasBenchmark
-              ? <BenchmarkBarChart data={snapshot.expenseBenchmark} />
-              : <DonutChart data={snapshot.expenseBreakdown} colors={ASSET_COLORS} id="expense-donut" />}
+            <DonutChart data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} id="expense-donut" />
+            <Legend data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} />
+            {hasBenchmark && <div style={{ marginTop: 18 }}><BenchmarkBarChart data={snapshot.expenseBenchmark} /></div>}
           </div>
         </div>
       </div>
