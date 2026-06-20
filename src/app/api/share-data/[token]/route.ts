@@ -10,65 +10,94 @@ const supabaseAdmin = createClient(
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const { data: share } = await supabaseAdmin
     .from('client_shares').select('password_hint,expires_at').eq('token', params.token).maybeSingle()
-  if (!share) return NextResponse.json({ error: 'not_found' }, { status: 404 })
-  const expired = share.expires_at ? new Date(share.expires_at) < new Date() : false
-  return NextResponse.json({ hint: share.password_hint || '', expired })
+  if (share) {
+    const expired = share.expires_at ? new Date(share.expires_at) < new Date() : false
+    return NextResponse.json({ hint: share.password_hint || '', expired })
+  }
+
+  // Not a client_shares token — check financial_plans
+  const { data: plan } = await supabaseAdmin
+    .from('financial_plans').select('password_hint,status').eq('share_token', params.token).maybeSingle()
+  if (plan) {
+    if (plan.status === 'archived') return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    return NextResponse.json({ hint: plan.password_hint || '', expired: false })
+  }
+
+  return NextResponse.json({ error: 'not_found' }, { status: 404 })
 }
 
 // POST — verifies password, returns client + policies (+ share type metadata)
+//        or, for financial plans, the frozen snapshot directly
 export async function POST(req: Request, { params }: { params: { token: string } }) {
   const { passwordHash } = await req.json()
 
   const { data: share } = await supabaseAdmin
     .from('client_shares').select('*').eq('token', params.token).maybeSingle()
-  if (!share) return NextResponse.json({ error: 'not_found' }, { status: 404 })
-  if (share.expires_at && new Date(share.expires_at) < new Date())
-    return NextResponse.json({ error: 'expired' }, { status: 410 })
-  if (passwordHash !== share.password_hash)
-    return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
 
-  const { data: client } = await supabaseAdmin
-    .from('clients').select('name,age,dob').eq('id', share.client_id).maybeSingle()
+  if (share) {
+    if (share.expires_at && new Date(share.expires_at) < new Date())
+      return NextResponse.json({ error: 'expired' }, { status: 410 })
+    if (passwordHash !== share.password_hash)
+      return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
 
-  const { data: row } = await supabaseAdmin
-    .from('fact_finding').select('data')
-    .eq('client_id', share.client_id)
-    .eq('section', 'protection_portfolio')
-    .maybeSingle()
+    const { data: client } = await supabaseAdmin
+      .from('clients').select('name,age,dob').eq('id', share.client_id).maybeSingle()
 
-  const allPolicies: any[] = row?.data?.risk_management?.policies || []
-  const statusOverrides: Record<string, string> = row?.data?.risk_management?.statusOverrides || {}
-  const shareType: string = share.share_type || 'portfolio'
-  const includedPersons: string[] | null = share.included_persons || null
-  const hiddenPolicyIds: string[] = share.hidden_policy_ids || []
+    const { data: row } = await supabaseAdmin
+      .from('fact_finding').select('data')
+      .eq('client_id', share.client_id)
+      .eq('section', 'protection_portfolio')
+      .maybeSingle()
 
-  let policies = allPolicies
+    const allPolicies: any[] = row?.data?.risk_management?.policies || []
+    const statusOverrides: Record<string, string> = row?.data?.risk_management?.statusOverrides || {}
+    const shareType: string = share.share_type || 'portfolio'
+    const includedPersons: string[] | null = share.included_persons || null
+    const hiddenPolicyIds: string[] = share.hidden_policy_ids || []
 
-  if (shareType === 'payment_summary') {
-    // Filter by included life assureds
-    if (includedPersons && includedPersons.length > 0) {
-      policies = policies.filter((p: any) =>
-        includedPersons.includes(p.lifeAssured || p.person || '—')
-      )
+    let policies = allPolicies
+
+    if (shareType === 'payment_summary') {
+      // Filter by included life assureds
+      if (includedPersons && includedPersons.length > 0) {
+        policies = policies.filter((p: any) =>
+          includedPersons.includes(p.lifeAssured || p.person || '—')
+        )
+      }
+      // Filter out hidden policy ids
+      if (hiddenPolicyIds.length > 0) {
+        policies = policies.filter((p: any) => !hiddenPolicyIds.includes(p.id))
+      }
+    } else {
+      // Portfolio: existing person filter
+      const person = share.person
+      if (person && person !== 'all') {
+        policies = policies.filter((p: any) => p.person === person)
+      }
     }
-    // Filter out hidden policy ids
-    if (hiddenPolicyIds.length > 0) {
-      policies = policies.filter((p: any) => !hiddenPolicyIds.includes(p.id))
-    }
-  } else {
-    // Portfolio: existing person filter
-    const person = share.person
-    if (person && person !== 'all') {
-      policies = policies.filter((p: any) => p.person === person)
-    }
+
+    return NextResponse.json({
+      client,
+      person: share.person,
+      policies,
+      shareType,
+      includedPersons,
+      statusOverrides: shareType === 'payment_summary' ? statusOverrides : undefined,
+    })
   }
 
+  // Not a client_shares token — check financial_plans
+  const { data: plan } = await supabaseAdmin
+    .from('financial_plans').select('*').eq('share_token', params.token).maybeSingle()
+
+  if (!plan) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (plan.status === 'archived') return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  if (passwordHash !== plan.password_hash)
+    return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
+
   return NextResponse.json({
-    client,
-    person: share.person,
-    policies,
-    shareType,
-    includedPersons,
-    statusOverrides: shareType === 'payment_summary' ? statusOverrides : undefined,
+    shareType: 'financial_plan',
+    label: plan.label,
+    snapshot: plan.snapshot_data,
   })
 }
