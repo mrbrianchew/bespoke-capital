@@ -14,7 +14,9 @@ export interface OverviewSnapshot {
 }
 
 const DETAILED_KEYS_BY_CAT: Record<string, { keys: string[]; keys2: string[]; customKey: string }> = {
-  financial: { keys: ['d_vehicle_repay', 'd_personal_loan_repay', 'd_rental_expense', 'd_income_tax', 'd_insurance', 'd_regular_savings'], keys2: ['d2_vehicle_repay', 'd2_personal_loan_repay', 'd2_rental_expense', 'd2_income_tax', 'd2_insurance', 'd2_regular_savings'], customKey: 'd_custom_financial' },
+  financial: { keys: ['d_vehicle_repay', 'd_personal_loan_repay', 'd_rental_expense', 'd_income_tax'], keys2: ['d2_vehicle_repay', 'd2_personal_loan_repay', 'd2_rental_expense', 'd2_income_tax'], customKey: 'd_custom_financial' },
+  insurance: { keys: ['d_insurance'], keys2: ['d2_insurance'], customKey: '' },
+  savings: { keys: ['d_regular_savings'], keys2: ['d2_regular_savings'], customKey: '' },
   cpf_oa: { keys: ['d_mortgage_cpf'], keys2: ['d2_mortgage_cpf'], customKey: 'd_custom_financial' },
   mortgage: { keys: ['d_mortgage_cash'], keys2: ['d2_mortgage_cash'], customKey: 'd_custom_financial' },
   household: { keys: ['d_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household'], keys2: ['d2_conservancy', 'd2_utilities', 'd2_family_food', 'd2_maid', 'd2_other_household'], customKey: 'd_custom_household' },
@@ -108,6 +110,7 @@ export function buildOverviewSnapshot(input: {
 
   function detailedSum(keys: string[], customKey: string, isSpouse: boolean): number {
     const std = keys.reduce((s, k) => s + ((fin[k] as number) ?? 0), 0)
+    if (!customKey) return std
     const custom = ((fin[customKey] as any[]) ?? []).reduce((s, i) => s + ((isSpouse ? i.amount2 : i.amount) ?? 0), 0)
     return std + custom
   }
@@ -119,20 +122,26 @@ export function buildOverviewSnapshot(input: {
     let p2Total = 0
     if (expMode === 'detailed' && detailed.keys.length > 0) {
       p1Total = detailedSum(detailed.keys, detailed.customKey, false)
-    } else {
+    } else if (simple) {
       p1Total = (fin[simple.key] as number) ?? 0
+    } else {
+      p1Total = 0 // no simple-mode equivalent exists for this category (e.g. insurance, savings)
     }
     if (isCouple) {
       if (expMode === 'detailed' && detailed.keys2.length > 0) {
         p2Total = detailedSum(detailed.keys2, detailed.customKey, true)
-      } else {
+      } else if (simple) {
         p2Total = (fin[simple.key2] as number) ?? 0
+      } else {
+        p2Total = 0
       }
     }
     return p1Total + p2Total
   }
 
   const financialObligations = catTotal('financial')
+  const insuranceExpense = catTotal('insurance')
+  const savingsExpense = catTotal('savings')
   const mortgageCashOnly = catTotal('mortgage')
   const mortgageCpfOa = catTotal('cpf_oa')
   const mortgageDisplay = mortgageCashOnly + mortgageCpfOa
@@ -144,7 +153,9 @@ export function buildOverviewSnapshot(input: {
   // CPF-OA mortgage is excluded from cash-relevant outflows — it's paid from CPF,
   // not cash, so it doesn't reduce deployable surplus. Matches the existing
   // dashboard logic exactly (annExpClient excludes s_cpf_oa for the same reason).
-  const totalExpenses = financialObligations + mortgageCashOnly + householdExpense + personalExpense + childrenExpense + lifestyleExpense
+  // Insurance and savings are split out for display (detailed mode only) but
+  // still count toward the same total as before — splitting doesn't change the sum.
+  const totalExpenses = financialObligations + insuranceExpense + savingsExpense + mortgageCashOnly + householdExpense + personalExpense + childrenExpense + lifestyleExpense
 
   const annualSurplus = totalTakeHome - totalExpenses
 
@@ -166,14 +177,25 @@ export function buildOverviewSnapshot(input: {
       { label: 'Mortgage Liability', value: Math.round(mortgageOutstanding) },
       { label: 'Other Debts', value: Math.round(otherDebts) },
     ],
-    expenseBreakdown: [
-      { label: 'Financial Obligations', value: Math.round(financialObligations) },
-      { label: 'Mortgage', value: Math.round(mortgageDisplay) },
-      { label: 'Household & Living', value: Math.round(householdExpense) },
-      { label: 'Personal', value: Math.round(personalExpense) },
-      { label: 'Children', value: Math.round(childrenExpense) },
-      { label: 'Lifestyle', value: Math.round(lifestyleExpense) },
-    ],
+    expenseBreakdown: expMode === 'detailed'
+      ? [
+          { label: 'Financial Obligations', value: Math.round(financialObligations) },
+          { label: 'Mortgage', value: Math.round(mortgageDisplay) },
+          { label: 'Household & Living', value: Math.round(householdExpense) },
+          { label: 'Personal', value: Math.round(personalExpense) },
+          { label: 'Children', value: Math.round(childrenExpense) },
+          { label: 'Lifestyle', value: Math.round(lifestyleExpense) },
+          { label: 'Insurance', value: Math.round(insuranceExpense) },
+          { label: 'Savings', value: Math.round(savingsExpense) },
+        ]
+      : [
+          { label: 'Financial Obligations', value: Math.round(financialObligations) },
+          { label: 'Mortgage', value: Math.round(mortgageDisplay) },
+          { label: 'Household & Living', value: Math.round(householdExpense) },
+          { label: 'Personal', value: Math.round(personalExpense) },
+          { label: 'Children', value: Math.round(childrenExpense) },
+          { label: 'Lifestyle', value: Math.round(lifestyleExpense) },
+        ],
     generatedAt: new Date().toISOString(),
   }
 }
