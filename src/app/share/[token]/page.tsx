@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import OverviewDisplay from '@/app/dashboard/report/OverviewDisplay'
 
 interface Policy {
   id: string; categoryCode: string; policyTypeCode: string
@@ -396,7 +397,9 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [policies, setPolicies] = useState<Policy[]>([])
   const [clientAge, setClientAge] = useState(40)
   const [clientName, setClientName] = useState('')
-  const [shareType, setShareType] = useState<'portfolio'|'payment_summary'>('portfolio')
+  const [shareType, setShareType] = useState<'portfolio'|'payment_summary'|'financial_plan'>('portfolio')
+  const [planSnapshot, setPlanSnapshot] = useState<any>(null)
+  const [planLabel, setPlanLabel] = useState('')
   const [includedPersons, setIncludedPersons] = useState<string[]>([])
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
   const year = new Date().getFullYear()
@@ -426,7 +429,17 @@ export default function SharePage({ params }: { params: { token: string } }) {
     if (res.status === 401) { setWrongPw(true); setTimeout(() => setWrongPw(false), 100); return }
     if (!res.ok) { setStage('notfound'); return }
 
-    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides } = await res.json()
+    const responseData = await res.json()
+
+    if (responseData.shareType === 'financial_plan') {
+      setShareType('financial_plan')
+      setPlanSnapshot(responseData.snapshot)
+      setPlanLabel(responseData.label || '')
+      setStage('unlocked')
+      return
+    }
+
+    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides } = responseData
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
@@ -489,6 +502,17 @@ export default function SharePage({ params }: { params: { token: string } }) {
   if (stage==='gate') return (
     <PasswordGate hint={hint} onUnlock={handleUnlock} wrongPw={wrongPw}/>
   )
+
+  // ── FINANCIAL PLAN SHARE VIEW ──────────────────────────────────────────────
+  if (shareType === 'financial_plan' && planSnapshot) {
+    return (
+      <div style={{ background: '#F5F3EE', minHeight: '100vh', padding: '32px 16px' }}>
+        <div style={{ maxWidth: 880, margin: '0 auto' }}>
+          <OverviewDisplay snapshot={planSnapshot} />
+        </div>
+      </div>
+    )
+  }
 
   // ── PAYMENT SUMMARY SHARE VIEW ─────────────────────────────────────────────
   if (shareType === 'payment_summary') {
