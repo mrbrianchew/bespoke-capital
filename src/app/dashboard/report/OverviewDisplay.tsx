@@ -101,7 +101,7 @@ function BenchmarkBarChart({ data }: { data: { label: string; actualPct: number;
           tooltip: { ...tooltipBase(), callbacks: { label: (ctx: any) => `  ${ctx.dataset.label}: ${ctx.parsed.y}%` } },
         },
         scales: {
-          x: { ticks: { font: { size: 11 }, color: '#9A9690', maxRotation: 0, minRotation: 0 }, grid: { display: false } },
+          x: { ticks: { font: { size: 10.5 }, color: '#9A9690', maxRotation: 28, minRotation: 28, autoSkip: false }, grid: { display: false } },
           y: { ticks: { font: { size: 10 }, color: '#9A9690', callback: (v: any) => v + '%' }, grid: { color: '#ECE9E1' } },
         },
       },
