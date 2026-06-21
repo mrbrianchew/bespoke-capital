@@ -11,6 +11,7 @@ export interface OverviewSnapshot {
   liabilities: { label: string; value: number }[]
   expenseBreakdown: { label: string; value: number }[]
   expenseBenchmark: { label: string; actualValue: number; actualPct: number; benchmarkPct: number }[]
+  directives?: { title: string; body: string }[]
   generatedAt: string
 }
 
