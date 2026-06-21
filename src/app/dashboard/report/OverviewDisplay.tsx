@@ -177,13 +177,12 @@ function DirectiveItem({ title, body, isLast }: { title: string; body: string; i
   )
 }
 
-function StatCard({ label, value, sub, pointer }: { label: string; value: string; sub: string; pointer?: string }) {
+function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
       <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{label}</div>
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 27, color: 'var(--ink)', marginTop: 4 }}>{value}</div>
       <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>{sub}</div>
-      {pointer && <div style={{ fontSize: 11, color: 'var(--gold-tag)', fontStyle: 'italic', marginTop: 2 }}>{pointer}</div>}
     </div>
   )
 }
@@ -199,7 +198,7 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 36 }}>
         <StatCard label="Net Worth" value={fmt(snapshot.netWorth)} sub="Liquid &amp; equity" />
         <StatCard label="Annual Inflow" value={fmt(snapshot.annualInflow)} sub="Gross income" />
-        <StatCard label="Annual Surplus" value={fmt(snapshot.annualSurplus)} sub="Take-home minus expenses" pointer="→ funds your protection & retirement strategy" />
+        <StatCard label="Annual Surplus" value={fmt(snapshot.annualSurplus)} sub="Take-home minus expenses" />
       </div>
 
       {/* Asset composition & liabilities — plain two-column list, no chart */}
@@ -229,7 +228,7 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
         Annual Cashflow
       </div>
       <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 22px' }}>
-        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'start' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'center' }}>
           <div>
             {hasBenchmark
               ? snapshot.expenseBenchmark.map(d => (
