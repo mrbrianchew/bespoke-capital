@@ -24,7 +24,7 @@ function tooltipBase() {
   }
 }
 
-function DonutChart({ data, colors, id }: { data: { label: string; value: number }[]; colors: string[]; id: string }) {
+function DonutChart({ data, colors, id, centerLabel, centerSub }: { data: { label: string; value: number }[]; colors: string[]; id: string; centerLabel: string; centerSub: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     if (!ref.current || data.length === 0) return
@@ -36,12 +36,19 @@ function DonutChart({ data, colors, id }: { data: { label: string; value: number
       type: 'doughnut',
       data: {
         labels: data.map(d => d.label),
-        datasets: [{ data: data.map(d => d.value), backgroundColor: colors, borderColor: '#FFFFFF', borderWidth: 3 }],
+        datasets: [{
+          data: data.map(d => d.value),
+          backgroundColor: colors,
+          borderColor: '#FFFFFF',
+          borderWidth: 2,
+          borderRadius: 3,
+          spacing: 3,
+        }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '55%',
+        cutout: '74%',
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -51,28 +58,26 @@ function DonutChart({ data, colors, id }: { data: { label: string; value: number
         },
       },
       plugins: [{
-        id: 'pctLabels',
+        id: 'centerLabel',
         afterDraw(chart: any) {
-          const { ctx: c } = chart
-          const meta = chart.getDatasetMeta(0)
-          const total = data.reduce((s, d) => s + d.value, 0)
+          const { ctx: c, chartArea } = chart
+          const cx = (chartArea.left + chartArea.right) / 2
+          const cy = (chartArea.top + chartArea.bottom) / 2
           c.save()
-          c.font = '10px Inter, sans-serif'
-          c.fillStyle = '#FFFFFF'
           c.textAlign = 'center'
           c.textBaseline = 'middle'
-          meta.data.forEach((arc: any, i: number) => {
-            const pct = total > 0 ? Math.round((data[i].value / total) * 100) : 0
-            if (pct < 3) return
-            const point = arc.getCenterPoint()
-            c.fillText(pct + '%', point.x, point.y)
-          })
+          c.font = "600 17px 'Cormorant Garamond', serif"
+          c.fillStyle = '#1C1A17'
+          c.fillText(centerLabel, cx, cy - 7)
+          c.font = '9px Inter, sans-serif'
+          c.fillStyle = '#8C8A80'
+          c.fillText(centerSub, cx, cy + 12)
           c.restore()
         },
       }],
     })
     return () => chart.destroy()
-  }, [data, colors])
+  }, [data, colors, centerLabel, centerSub])
   return <div style={{ position: 'relative', height: 190 }}><canvas key={id} ref={ref} /></div>
 }
 
@@ -112,14 +117,18 @@ function BenchmarkBarChart({ data }: { data: { label: string; actualPct: number;
 }
 
 function Legend({ data, colors }: { data: { label: string; value: number }[]; colors: string[] }) {
+  const total = data.reduce((s, d) => s + d.value, 0)
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2" style={{ gap: '4px 16px', marginTop: 12 }}>
-      {data.map((d, i) => (
-        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-          <span style={{ width: 9, height: 9, borderRadius: '50%', background: colors[i % colors.length], flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>{d.label}</span>
-        </div>
-      ))}
+      {data.map((d, i) => {
+        const pct = total > 0 ? Math.round((d.value / total) * 100) : 0
+        return (
+          <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: colors[i % colors.length], flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: 'var(--ink2)' }}>{d.label} <span style={{ color: 'var(--ink3)' }}>{pct}%</span></span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -219,7 +228,13 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
                 })}
           </div>
           <div>
-            <DonutChart data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} id="expense-donut" />
+            <DonutChart
+              data={snapshot.expenseBreakdown}
+              colors={EXPENSE_COLORS}
+              id="expense-donut"
+              centerLabel={fmt(snapshot.expenseBreakdown.reduce((s, d) => s + d.value, 0))}
+              centerSub="ANNUAL OUTFLOW"
+            />
             <Legend data={snapshot.expenseBreakdown} colors={EXPENSE_COLORS} />
           </div>
         </div>
@@ -229,6 +244,13 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
             <BenchmarkBarChart data={snapshot.expenseBenchmark} />
           </div>
         )}
+      </div>
+
+      {/* Closing pointer — points to Protection (the next built tab) until Executive Wealth Summary ships */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 14, color: 'var(--ink2)' }}>
+          Continue to Protection for how this baseline is covered <span style={{ color: 'var(--gold)' }}>→</span>
+        </span>
       </div>
     </div>
   )
