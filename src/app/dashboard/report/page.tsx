@@ -20,6 +20,7 @@ export default function ReportPage() {
   const [passwordHint, setPasswordHint] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedLink, setSavedLink] = useState('')
+  const [directives, setDirectives] = useState<{ title: string; body: string }[]>([])
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
@@ -109,8 +110,23 @@ export default function ReportPage() {
   }
 
   const plan: PlanSnapshot | null = (snapshot && protectionSnapshot)
-    ? { clientName, spouseName: spouseName || undefined, overview: snapshot, protection: protectionSnapshot }
+    ? {
+        clientName,
+        spouseName: spouseName || undefined,
+        overview: { ...snapshot, directives: directives.filter(d => d.title.trim() || d.body.trim()) },
+        protection: protectionSnapshot,
+      }
     : null
+
+  function addDirective() {
+    setDirectives(d => [...d, { title: '', body: '' }])
+  }
+  function updateDirective(i: number, field: 'title' | 'body', value: string) {
+    setDirectives(d => d.map((item, idx) => (idx === i ? { ...item, [field]: value } : item)))
+  }
+  function removeDirective(i: number) {
+    setDirectives(d => d.filter((_, idx) => idx !== i))
+  }
 
   return (
     <div className="flex flex-col min-h-full">
@@ -140,6 +156,47 @@ export default function ReportPage() {
                 {JSON.stringify(plan, null, 2)}
               </pre>
             </details>
+
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 4 }}>
+                Strategic Wealth Accumulation Directives
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 14 }}>
+                Optional. Each entry gets a title and a short written paragraph, and is frozen into the plan exactly as typed.
+              </div>
+
+              {directives.map((d, i) => (
+                <div key={i} style={{ background: 'var(--cream2)', borderRadius: 8, padding: 14, marginBottom: 10 }}>
+                  <input
+                    type="text"
+                    placeholder="Directive title, e.g. Protect the runway"
+                    value={d.title}
+                    onChange={e => updateDirective(i, 'title', e.target.value)}
+                    style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: '100%', fontSize: 13 }}
+                  />
+                  <textarea
+                    placeholder="Write the paragraph for this directive..."
+                    value={d.body}
+                    onChange={e => updateDirective(i, 'body', e.target.value)}
+                    rows={2}
+                    style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: '100%', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                  />
+                  <button
+                    onClick={() => removeDirective(i)}
+                    style={{ background: 'none', border: 'none', color: 'var(--rouge)', fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+
+              <button
+                onClick={addDirective}
+                style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}
+              >
+                + Add directive
+              </button>
+            </div>
 
             <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
               <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
