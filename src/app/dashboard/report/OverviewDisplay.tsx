@@ -165,12 +165,25 @@ function CashflowRow({ label, value, actualPct, benchmarkPct }: { label: string;
   )
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
+function DirectiveItem({ title, body, isLast }: { title: string; body: string; isLast: boolean }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: isLast ? 'none' : '1px solid var(--line)' }}>
+      <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--cream2)', border: '1px solid var(--gold)', color: 'var(--gold-tag)', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>✓</div>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 3 }}>{title}</div>
+        <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.55 }}>{body}</div>
+      </div>
+    </div>
+  )
+}
+
+function StatCard({ label, value, sub, pointer }: { label: string; value: string; sub: string; pointer?: string }) {
   return (
     <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
       <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{label}</div>
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 27, color: 'var(--ink)', marginTop: 4 }}>{value}</div>
       <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>{sub}</div>
+      {pointer && <div style={{ fontSize: 11, color: 'var(--gold-tag)', fontStyle: 'italic', marginTop: 2 }}>{pointer}</div>}
     </div>
   )
 }
@@ -186,7 +199,7 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 36 }}>
         <StatCard label="Net Worth" value={fmt(snapshot.netWorth)} sub="Liquid &amp; equity" />
         <StatCard label="Annual Inflow" value={fmt(snapshot.annualInflow)} sub="Gross income" />
-        <StatCard label="Annual Surplus" value={fmt(snapshot.annualSurplus)} sub="Take-home minus expenses" />
+        <StatCard label="Annual Surplus" value={fmt(snapshot.annualSurplus)} sub="Take-home minus expenses" pointer="→ funds your protection & retirement strategy" />
       </div>
 
       {/* Asset composition & liabilities — plain two-column list, no chart */}
@@ -245,6 +258,23 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
           </div>
         )}
       </div>
+
+      {/* Strategic Wealth Accumulation Directives — advisor-typed, only renders if present */}
+      {snapshot.directives && snapshot.directives.length > 0 && (
+        <>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 18, color: 'var(--ink)', marginTop: 36, marginBottom: 2 }}>
+            Strategic Wealth Accumulation Directives
+          </div>
+          <div style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--ink3)', marginBottom: 14 }}>
+            Prepared for {snapshot.client.name}{snapshot.spouse ? ` & ${snapshot.spouse.name}` : ''}, based on the baseline above.
+          </div>
+          <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 22px' }}>
+            {snapshot.directives.map((d, i) => (
+              <DirectiveItem key={i} title={d.title} body={d.body} isLast={i === snapshot.directives!.length - 1} />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Closing pointer — points to Protection (the next built tab) until Executive Wealth Summary ships */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
