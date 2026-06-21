@@ -14,6 +14,7 @@ export interface PlanSnapshot {
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'wealth-summary', label: 'Executive Wealth Summary', comingSoon: true },
   { id: 'protection', label: 'Protection' },
   { id: 'capital', label: 'Capital Fund', comingSoon: true },
   { id: 'recommendations', label: 'Recommendations', comingSoon: true },
@@ -49,10 +50,7 @@ export default function FinancialPlanView({ plan }: { plan: PlanSnapshot }) {
       <div className="px-5 md:px-11" style={{ background: 'var(--charcoal)', paddingTop: 26, paddingBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(240,237,232,0.4)' }}>
-              Bespoke Capital · Private Wealth
-            </div>
-            <div className="text-2xl md:text-[30px]" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, color: '#F5F0E8', marginTop: 6 }}>
+            <div className="text-2xl md:text-[30px]" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, color: '#F5F0E8' }}>
               {plan.clientName}{plan.spouseName ? ` & ${plan.spouseName}` : ''}
             </div>
             <div style={{ fontSize: 12, color: 'rgba(240,237,232,0.45)', fontStyle: 'italic', marginTop: 4 }}>
