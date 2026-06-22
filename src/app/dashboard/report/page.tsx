@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { buildProtectionDTPDSnapshot, ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
+import { buildExecutiveWealthSummarySnapshot, ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 
 export default function ReportPage() {
@@ -15,6 +16,7 @@ export default function ReportPage() {
 
   const [snapshot, setSnapshot] = useState<OverviewSnapshot | null>(null)
   const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionDTPDSnapshot | null>(null)
+  const [executiveSummary, setExecutiveSummary] = useState<ExecutiveWealthSummarySnapshot | null>(null)
 
   const [password, setPassword] = useState('')
   const [passwordHint, setPasswordHint] = useState('')
@@ -76,6 +78,12 @@ export default function ReportPage() {
     }
 
     try {
+      setExecutiveSummary(buildExecutiveWealthSummarySnapshot(data))
+    } catch (e: any) {
+      setError('Executive Wealth Summary snapshot build failed: ' + e.message)
+    }
+
+    try {
       setProtectionSnapshot(buildProtectionDTPDSnapshot({
         ff: merged['financials'] || {},
         protection: merged['protection_needs']?.protection || {},
@@ -122,12 +130,13 @@ export default function ReportPage() {
     }
   }
 
-  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot)
+  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot && executiveSummary)
     ? {
         clientName,
         spouseName: spouseName || undefined,
         overview: { ...snapshot, directives: directives.filter(d => d.title.trim() || d.body.trim()) },
         protection: protectionSnapshot,
+        executiveSummary,
       }
     : null
 
