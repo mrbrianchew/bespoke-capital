@@ -228,8 +228,8 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
         Annual Cashflow
       </div>
       <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 22px' }}>
-        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'center' }}>
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             {hasBenchmark
               ? snapshot.expenseBenchmark.map(d => (
                   <CashflowRow key={d.label} label={d.label} value={d.actualValue} actualPct={d.actualPct} benchmarkPct={d.benchmarkPct} />
@@ -239,7 +239,7 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
                   return <CashflowRow key={d.label} label={d.label} value={d.value} actualPct={Math.round(d.value / Math.max(1, total) * 100)} />
                 })}
           </div>
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <DonutChart
               data={snapshot.expenseBreakdown}
               colors={EXPENSE_COLORS}
