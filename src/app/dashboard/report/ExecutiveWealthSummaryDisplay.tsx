@@ -30,8 +30,19 @@ function TotalRow({ label, value, dark }: { label: string; value: number; dark?:
 }
 
 export default function ExecutiveWealthSummaryDisplay({ snapshot }: { snapshot: ExecutiveWealthSummarySnapshot }) {
+  const year = new Date(snapshot.generatedAt).getFullYear()
   return (
     <div>
+      {/* Title + description — replaces the person-card row for this tab */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, color: 'var(--ink)' }}>
+          Executive Wealth Summary
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--ink2)', marginTop: 4 }}>
+          A consolidated view of {snapshot.client.name}{snapshot.spouse ? ` & ${snapshot.spouse.name}` : ''}'s assets, liabilities and annual cashflow as at {year}.
+        </div>
+      </div>
+
       {/* Net Worth hero box */}
       <div style={{ background: '#F5EFE3', border: '1.5px solid var(--gold)', borderRadius: 14, padding: '22px 26px', marginBottom: 32 }}>
         <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold-tag)', fontWeight: 600 }}>
