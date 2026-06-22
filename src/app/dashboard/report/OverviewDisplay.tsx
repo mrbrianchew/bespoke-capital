@@ -275,10 +275,10 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
         </>
       )}
 
-      {/* Closing pointer — points to Protection (the next built tab) until Executive Wealth Summary ships */}
+      {/* Closing pointer — Executive Wealth Summary is the next tab in the order */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
         <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 14, color: 'var(--ink2)' }}>
-          Continue to Protection for how this baseline is covered <span style={{ color: 'var(--gold)' }}>→</span>
+          Continue to the Executive Wealth Summary for the full statement breakdown <span style={{ color: 'var(--gold)' }}>→</span>
         </span>
       </div>
     </div>
