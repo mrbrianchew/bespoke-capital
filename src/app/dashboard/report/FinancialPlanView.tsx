@@ -1,109 +1,332 @@
 'use client'
-import { useState } from 'react'
-import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
-import { ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
-import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
-import OverviewDisplay from './OverviewDisplay'
-import ProtectionDisplay from './ProtectionDisplay'
-import ExecutiveWealthSummaryDisplay from './ExecutiveWealthSummaryDisplay'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase'
+import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
+import { buildProtectionDTPDSnapshot, ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
+import { buildExecutiveWealthSummarySnapshot, ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
+import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 
-export interface PlanSnapshot {
-  clientName: string
-  spouseName?: string
-  overview: OverviewSnapshot
-  protection: ProtectionDTPDSnapshot
-  executiveSummary: ExecutiveWealthSummarySnapshot
-}
+export default function ReportPage() {
+  const supabase = createClient()
+  const [clientId, setClientId] = useState<string | null>(null)
+  const [clientName, setClientName] = useState('')
+  const [spouseName, setSpouseName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'wealth-summary', label: 'Executive Wealth Summary' },
-  { id: 'protection', label: 'Protection' },
-  { id: 'capital', label: 'Capital Fund', comingSoon: true },
-  { id: 'recommendations', label: 'Recommendations', comingSoon: true },
-]
+  const [snapshot, setSnapshot] = useState<OverviewSnapshot | null>(null)
+  const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionDTPDSnapshot | null>(null)
+  const [executiveSummary, setExecutiveSummary] = useState<ExecutiveWealthSummarySnapshot | null>(null)
 
-function initials(name: string): string {
-  return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
-}
+  const [password, setPassword] = useState('')
+  const [passwordHint, setPasswordHint] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [savedLink, setSavedLink] = useState('')
+  const [directives, setDirectives] = useState<{ title: string; body: string }[]>([])
+  const [pastPlans, setPastPlans] = useState<{ id: string; label: string; created_at: string; share_token: string; status: string | null }[]>([])
+  const [showArchived, setShowArchived] = useState(false)
 
-function PersonCard({ label, name, age, color }: { label: string; name: string; age?: number; color: string }) {
+  useEffect(() => {
+    const id = localStorage.getItem('selectedClientId')
+    if (!id) { setError('No client selected. Pick a client from the dashboard first.'); setLoading(false); return }
+    setClientId(id)
+    load(id)
+    loadPastPlans(id)
+  }, [])
+
+  async function loadPastPlans(id: string) {
+    const { data } = await supabase
+      .from('financial_plans')
+      .select('id, label, created_at, share_token, status')
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+    setPastPlans(data || [])
+  }
+
+  async function load(id: string) {
+    setLoading(true)
+    setError('')
+    const [{ data: client }, { data: family }, { data: ffRows }] = await Promise.all([
+      supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
+      supabase.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', id),
+      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'estate', 'protection_needs', 'protection_portfolio']),
+    ])
+    if (!client) { setError('Client not found.'); setLoading(false); return }
+    setClientName(client.name)
+
+    const merged: Record<string, any> = {}
+    for (const row of ffRows || []) merged[row.section] = row.data || {}
+
+    const isCouple = (family || []).some((f: any) => f.relationship === 'Spouse')
+    const spouse = (family || []).find((f: any) => f.relationship === 'Spouse')
+    setSpouseName(spouse?.name || '')
+    const children = (family || []).filter((f: any) => ['Son', 'Daughter', 'Child'].includes(f.relationship))
+    const policies = merged['protection_portfolio']?.risk_management?.policies || []
+
+    const data = {
+      client: { name: client.name, dob: client.dob || '' },
+      familyMembers: (family || []).map((f: any) => ({ name: f.name, relationship: f.relationship, dob: f.dob })),
+      fin: merged['financials'] || {},
+      estateData: merged['estate'] || {},
+      nonMortgageDebts: merged['protection_needs']?.protection?.nonMortgageDebts || [],
+    }
+
+    try {
+      setSnapshot(buildOverviewSnapshot(data))
+    } catch (e: any) {
+      setError('Snapshot build failed: ' + e.message)
+    }
+
+    try {
+      setExecutiveSummary(buildExecutiveWealthSummarySnapshot(data))
+    } catch (e: any) {
+      setError('Executive Wealth Summary snapshot build failed: ' + e.message)
+    }
+
+    try {
+      setProtectionSnapshot(buildProtectionDTPDSnapshot({
+        ff: merged['financials'] || {},
+        protection: merged['protection_needs']?.protection || {},
+        policies,
+        children: children.map((c: any) => ({ id: c.id, dob: c.dob, gender: c.gender })),
+        isCouple,
+      }))
+    } catch (e: any) {
+      setError('Protection snapshot build failed: ' + e.message)
+    }
+
+    setLoading(false)
+  }
+
+  async function handleGenerateAndSave(plan: PlanSnapshot) {
+    if (!clientId || !password.trim()) return
+    setSaving(true)
+    setError('')
+    try {
+      const encoder = new TextEncoder()
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password.trim()))
+      const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(36)).join('').slice(0, 12)
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const label = `Financial Plan — ${new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}`
+
+      const { error } = await supabase.from('financial_plans').insert({
+        client_id: clientId,
+        label,
+        share_token: token,
+        password_hash: hashHex,
+        password_hint: passwordHint || null,
+        snapshot_data: plan,
+        created_by: user?.id,
+      })
+      if (error) throw error
+      setSavedLink(`${window.location.origin}/share/${token}`)
+      loadPastPlans(clientId)
+    } catch (e: any) {
+      setError('Save failed: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot && executiveSummary)
+    ? {
+        clientName,
+        spouseName: spouseName || undefined,
+        overview: { ...snapshot, directives: directives.filter(d => d.title.trim() || d.body.trim()) },
+        protection: protectionSnapshot,
+        executiveSummary,
+      }
+    : null
+
+  function addDirective() {
+    setDirectives(d => [...d, { title: '', body: '' }])
+  }
+  function updateDirective(i: number, field: 'title' | 'body', value: string) {
+    setDirectives(d => d.map((item, idx) => (idx === i ? { ...item, [field]: value } : item)))
+  }
+  function removeDirective(i: number) {
+    setDirectives(d => d.filter((_, idx) => idx !== i))
+  }
+
+  async function archivePlan(id: string) {
+    await supabase.from('financial_plans').update({ status: 'archived' }).eq('id', id)
+    if (clientId) loadPastPlans(clientId)
+  }
+  async function restorePlan(id: string) {
+    await supabase.from('financial_plans').update({ status: 'active' }).eq('id', id)
+    if (clientId) loadPastPlans(clientId)
+  }
+  async function deletePlan(id: string, label: string) {
+    if (!window.confirm(`Permanently delete "${label}"? This cannot be undone — the link will stop working immediately.`)) return
+    await supabase.from('financial_plans').delete().eq('id', id)
+    if (clientId) loadPastPlans(clientId)
+  }
+
+  const visiblePlans = showArchived ? pastPlans : pastPlans.filter(p => p.status !== 'archived')
+
   return (
-    <div style={{ flex: 1, minWidth: 160, background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-      <div style={{ width: 38, height: 38, borderRadius: '50%', background: color, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
-        {initials(name)}
-      </div>
-      <div>
-        <div style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{label}</div>
-        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 16, color: 'var(--ink)' }}>
-          {name}{typeof age === 'number' && <span style={{ fontSize: 12, color: 'var(--ink3)', fontFamily: 'Inter, sans-serif' }}> · Age {age}</span>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default function FinancialPlanView({ plan }: { plan: PlanSnapshot }) {
-  const [active, setActive] = useState('overview')
-  const generatedDate = new Date(plan.overview.generatedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })
-
-  return (
-    <div style={{ background: '#F5F3EE', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--line)' }}>
-      {/* Hero + tabs */}
-      <div className="px-5 md:px-11" style={{ background: 'var(--charcoal)', paddingTop: 26, paddingBottom: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div className="text-2xl md:text-[30px]" style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, color: '#F5F0E8' }}>
-              {plan.clientName}{plan.spouseName ? ` & ${plan.spouseName}` : ''}
-            </div>
-            <div style={{ fontSize: 12, color: 'rgba(240,237,232,0.45)', fontStyle: 'italic', marginTop: 4 }}>
-              Financial Plan · As of {generatedDate}
-            </div>
-          </div>
-          <div style={{
-            background: '#F5F0E8', color: 'var(--charcoal)', borderRadius: 999,
-            padding: '7px 18px', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500,
-          }}>
-            {TABS.find(t => t.id === active)?.label}
+    <div className="flex flex-col min-h-full">
+      <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
+        <div className="py-8">
+          <div className="font-serif text-3xl font-light" style={{ color: '#F0EDE8' }}>Report &amp; PDF</div>
+          <div style={{ color: 'rgba(240,237,232,0.5)', fontSize: 13, marginTop: 4 }}>
+            {clientName ? `Test harness — ${clientName}` : 'Test harness'}
           </div>
         </div>
-
-        <div style={{ display: 'flex', gap: 6, marginTop: 22, overflowX: 'auto' }}>
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => !t.comingSoon && setActive(t.id)}
-              disabled={t.comingSoon}
-              style={{
-                background: t.comingSoon ? 'none' : active === t.id ? '#F5F0E8' : 'rgba(240,237,232,0.08)',
-                border: 'none', cursor: t.comingSoon ? 'default' : 'pointer', borderRadius: 999,
-                padding: '8px 16px', fontSize: 12, letterSpacing: '0.02em', fontFamily: 'Inter, sans-serif',
-                color: t.comingSoon ? 'rgba(240,237,232,0.25)' : active === t.id ? 'var(--charcoal)' : 'rgba(240,237,232,0.65)',
-                fontWeight: active === t.id ? 500 : 400,
-                whiteSpace: 'nowrap', flexShrink: 0,
-              }}
-            >
-              {t.label}{t.comingSoon ? ' (soon)' : ''}
-            </button>
-          ))}
-        </div>
       </div>
 
-      <div className="px-5 md:px-11" style={{ paddingTop: 22, paddingBottom: 36 }}>
-        <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
-          <PersonCard label="Primary Client" name={plan.clientName} age={plan.overview.client.age} color="var(--gold)" />
-          {plan.overview.spouse && (
-            <PersonCard label="Spouse" name={plan.overview.spouse.name} age={plan.overview.spouse.age} color="var(--emerald)" />
-          )}
-          {plan.overview.dependents.map(d => (
-            <PersonCard key={d.name} label="Dependent" name={d.name} age={d.age} color="#7A9CBF" />
-          ))}
-        </div>
+      <div style={{ padding: '48px', maxWidth: 960 }}>
+        {loading && <p>Loading client data…</p>}
+        {error && <p style={{ color: 'var(--rouge)' }}>{error}</p>}
 
-        {active === 'overview' && <OverviewDisplay snapshot={plan.overview} />}
-        {active === 'wealth-summary' && <ExecutiveWealthSummaryDisplay snapshot={plan.executiveSummary} />}
-        {active === 'protection' && (
-          <ProtectionDisplay snapshot={plan.protection} clientName={plan.clientName} spouseName={plan.spouseName} />
+        {!loading && !error && plan && (
+          <>
+            <FinancialPlanView plan={plan} />
+
+            <details style={{ marginTop: 16 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw plan data</summary>
+              <pre style={{
+                marginTop: 12, background: '#1C1A17', color: '#E8E4DC', padding: 20,
+                borderRadius: 8, fontSize: 12, overflow: 'auto', maxHeight: 400,
+              }}>
+                {JSON.stringify(plan, null, 2)}
+              </pre>
+            </details>
+
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 4 }}>
+                Strategic Wealth Accumulation Directives
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 14 }}>
+                Optional. Each entry gets a title and a short written paragraph, and is frozen into the plan exactly as typed.
+              </div>
+
+              {directives.map((d, i) => (
+                <div key={i} style={{ background: 'var(--cream2)', borderRadius: 8, padding: 14, marginBottom: 10 }}>
+                  <input
+                    type="text"
+                    placeholder="Directive title, e.g. Protect the runway"
+                    value={d.title}
+                    onChange={e => updateDirective(i, 'title', e.target.value)}
+                    style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: '100%', fontSize: 13 }}
+                  />
+                  <textarea
+                    placeholder="Write the paragraph for this directive..."
+                    value={d.body}
+                    onChange={e => updateDirective(i, 'body', e.target.value)}
+                    rows={2}
+                    style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: '100%', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                  />
+                  <button
+                    onClick={() => removeDirective(i)}
+                    style={{ background: 'none', border: 'none', color: 'var(--rouge)', fontSize: 12, cursor: 'pointer', padding: 0 }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+
+              <button
+                onClick={addDirective}
+                style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}
+              >
+                + Add directive
+              </button>
+            </div>
+
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
+                Generate &amp; save this as a real plan
+              </div>
+              <input
+                type="password"
+                placeholder="Set a password for this link"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
+              />
+              <input
+                type="text"
+                placeholder="Password hint (optional)"
+                value={passwordHint}
+                onChange={e => setPasswordHint(e.target.value)}
+                style={{ display: 'block', marginBottom: 12, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
+              />
+              <button
+                onClick={() => handleGenerateAndSave(plan)}
+                disabled={saving || !password.trim()}
+                style={{ background: 'var(--charcoal)', color: 'white', padding: '10px 20px', borderRadius: 6, border: 'none', fontSize: 14, cursor: 'pointer', opacity: saving || !password.trim() ? 0.5 : 1 }}
+              >
+                {saving ? 'Saving…' : 'Generate & Save Plan'}
+              </button>
+
+              {savedLink && (
+                <div style={{ marginTop: 16, fontSize: 13 }}>
+                  <p style={{ marginBottom: 6 }}>Saved. Share this link with the client:</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <a href={savedLink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold-tag)', textDecoration: 'underline' }}>
+                      {savedLink}
+                    </a>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(savedLink)}
+                      style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18 }}>Past Plans</div>
+                {pastPlans.some(p => p.status === 'archived') && (
+                  <label style={{ fontSize: 12, color: 'var(--ink3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+                    Show archived
+                  </label>
+                )}
+              </div>
+
+              {visiblePlans.length === 0 && (
+                <div style={{ fontSize: 13, color: 'var(--ink3)', marginTop: 10 }}>No saved plans yet for this client.</div>
+              )}
+
+              {visiblePlans.map(p => {
+                const link = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${p.share_token}`
+                const isArchived = p.status === 'archived'
+                return (
+                  <div key={p.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                    padding: '10px 14px', marginTop: 10, borderRadius: 8,
+                    background: isArchived ? 'var(--cream2)' : '#FFFFFF', border: '1px solid var(--line)',
+                    opacity: isArchived ? 0.65 : 1,
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13, color: 'var(--ink)' }}>
+                        {p.label}
+                        {isArchived && <span style={{ fontSize: 10, marginLeft: 8, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Archived</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
+                        {new Date(p.created_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--gold-tag)' }}>View</a>
+                      <button onClick={() => navigator.clipboard.writeText(link)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink2)', cursor: 'pointer', padding: 0 }}>Copy link</button>
+                      {isArchived
+                        ? <button onClick={() => restorePlan(p.id)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink2)', cursor: 'pointer', padding: 0 }}>Restore</button>
+                        : <button onClick={() => archivePlan(p.id)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink2)', cursor: 'pointer', padding: 0 }}>Archive</button>}
+                      <button onClick={() => deletePlan(p.id, p.label)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--rouge)', cursor: 'pointer', padding: 0 }}>Delete</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>
