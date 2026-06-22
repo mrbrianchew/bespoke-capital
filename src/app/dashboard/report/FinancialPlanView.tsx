@@ -17,7 +17,7 @@ export interface PlanSnapshot {
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'wealth-summary', label: 'Executive Wealth Summary' },
+  { id: 'wealth-summary', label: 'Wealth Summary' },
   { id: 'protection', label: 'Protection' },
   { id: 'capital', label: 'Capital Fund', comingSoon: true },
   { id: 'recommendations', label: 'Recommendations', comingSoon: true },
@@ -90,15 +90,17 @@ export default function FinancialPlanView({ plan }: { plan: PlanSnapshot }) {
       </div>
 
       <div className="px-5 md:px-11" style={{ paddingTop: 22, paddingBottom: 36 }}>
-        <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
-          <PersonCard label="Primary Client" name={plan.clientName} age={plan.overview.client.age} color="var(--gold)" />
-          {plan.overview.spouse && (
-            <PersonCard label="Spouse" name={plan.overview.spouse.name} age={plan.overview.spouse.age} color="var(--emerald)" />
-          )}
-          {plan.overview.dependents.map(d => (
-            <PersonCard key={d.name} label="Dependent" name={d.name} age={d.age} color="#7A9CBF" />
-          ))}
-        </div>
+        {active !== 'wealth-summary' && (
+          <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
+            <PersonCard label="Primary Client" name={plan.clientName} age={plan.overview.client.age} color="var(--gold)" />
+            {plan.overview.spouse && (
+              <PersonCard label="Spouse" name={plan.overview.spouse.name} age={plan.overview.spouse.age} color="var(--emerald)" />
+            )}
+            {plan.overview.dependents.map(d => (
+              <PersonCard key={d.name} label="Dependent" name={d.name} age={d.age} color="#7A9CBF" />
+            ))}
+          </div>
+        )}
 
         {active === 'overview' && <OverviewDisplay snapshot={plan.overview} />}
         {active === 'wealth-summary' && <ExecutiveWealthSummaryDisplay snapshot={plan.executiveSummary} />}
