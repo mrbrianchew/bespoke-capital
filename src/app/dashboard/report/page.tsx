@@ -21,13 +21,25 @@ export default function ReportPage() {
   const [saving, setSaving] = useState(false)
   const [savedLink, setSavedLink] = useState('')
   const [directives, setDirectives] = useState<{ title: string; body: string }[]>([])
+  const [pastPlans, setPastPlans] = useState<{ id: string; label: string; created_at: string; share_token: string; status: string | null }[]>([])
+  const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
     if (!id) { setError('No client selected. Pick a client from the dashboard first.'); setLoading(false); return }
     setClientId(id)
     load(id)
+    loadPastPlans(id)
   }, [])
+
+  async function loadPastPlans(id: string) {
+    const { data } = await supabase
+      .from('financial_plans')
+      .select('id, label, created_at, share_token, status')
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+    setPastPlans(data || [])
+  }
 
   async function load(id: string) {
     setLoading(true)
@@ -102,6 +114,7 @@ export default function ReportPage() {
       })
       if (error) throw error
       setSavedLink(`${window.location.origin}/share/${token}`)
+      loadPastPlans(clientId)
     } catch (e: any) {
       setError('Save failed: ' + e.message)
     } finally {
@@ -127,6 +140,22 @@ export default function ReportPage() {
   function removeDirective(i: number) {
     setDirectives(d => d.filter((_, idx) => idx !== i))
   }
+
+  async function archivePlan(id: string) {
+    await supabase.from('financial_plans').update({ status: 'archived' }).eq('id', id)
+    if (clientId) loadPastPlans(clientId)
+  }
+  async function restorePlan(id: string) {
+    await supabase.from('financial_plans').update({ status: 'active' }).eq('id', id)
+    if (clientId) loadPastPlans(clientId)
+  }
+  async function deletePlan(id: string, label: string) {
+    if (!window.confirm(`Permanently delete "${label}"? This cannot be undone — the link will stop working immediately.`)) return
+    await supabase.from('financial_plans').delete().eq('id', id)
+    if (clientId) loadPastPlans(clientId)
+  }
+
+  const visiblePlans = showArchived ? pastPlans : pastPlans.filter(p => p.status !== 'archived')
 
   return (
     <div className="flex flex-col min-h-full">
@@ -240,6 +269,53 @@ export default function ReportPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18 }}>Past Plans</div>
+                {pastPlans.some(p => p.status === 'archived') && (
+                  <label style={{ fontSize: 12, color: 'var(--ink3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+                    Show archived
+                  </label>
+                )}
+              </div>
+
+              {visiblePlans.length === 0 && (
+                <div style={{ fontSize: 13, color: 'var(--ink3)', marginTop: 10 }}>No saved plans yet for this client.</div>
+              )}
+
+              {visiblePlans.map(p => {
+                const link = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${p.share_token}`
+                const isArchived = p.status === 'archived'
+                return (
+                  <div key={p.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                    padding: '10px 14px', marginTop: 10, borderRadius: 8,
+                    background: isArchived ? 'var(--cream2)' : '#FFFFFF', border: '1px solid var(--line)',
+                    opacity: isArchived ? 0.65 : 1,
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13, color: 'var(--ink)' }}>
+                        {p.label}
+                        {isArchived && <span style={{ fontSize: 10, marginLeft: 8, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Archived</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
+                        {new Date(p.created_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--gold-tag)' }}>View</a>
+                      <button onClick={() => navigator.clipboard.writeText(link)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink2)', cursor: 'pointer', padding: 0 }}>Copy link</button>
+                      {isArchived
+                        ? <button onClick={() => restorePlan(p.id)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink2)', cursor: 'pointer', padding: 0 }}>Restore</button>
+                        : <button onClick={() => archivePlan(p.id)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--ink2)', cursor: 'pointer', padding: 0 }}>Archive</button>}
+                      <button onClick={() => deletePlan(p.id, p.label)} style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--rouge)', cursor: 'pointer', padding: 0 }}>Delete</button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </>
         )}
