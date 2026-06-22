@@ -229,7 +229,7 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
       </div>
       <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 22px' }}>
         <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 28, alignItems: 'stretch' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             {hasBenchmark
               ? snapshot.expenseBenchmark.map(d => (
                   <CashflowRow key={d.label} label={d.label} value={d.actualValue} actualPct={d.actualPct} benchmarkPct={d.benchmarkPct} />
