@@ -2,19 +2,22 @@
 import { useState } from 'react'
 import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
+import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import OverviewDisplay from './OverviewDisplay'
 import ProtectionDisplay from './ProtectionDisplay'
+import ExecutiveWealthSummaryDisplay from './ExecutiveWealthSummaryDisplay'
 
 export interface PlanSnapshot {
   clientName: string
   spouseName?: string
   overview: OverviewSnapshot
   protection: ProtectionDTPDSnapshot
+  executiveSummary: ExecutiveWealthSummarySnapshot
 }
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'wealth-summary', label: 'Executive Wealth Summary', comingSoon: true },
+  { id: 'wealth-summary', label: 'Executive Wealth Summary' },
   { id: 'protection', label: 'Protection' },
   { id: 'capital', label: 'Capital Fund', comingSoon: true },
   { id: 'recommendations', label: 'Recommendations', comingSoon: true },
@@ -98,6 +101,7 @@ export default function FinancialPlanView({ plan }: { plan: PlanSnapshot }) {
         </div>
 
         {active === 'overview' && <OverviewDisplay snapshot={plan.overview} />}
+        {active === 'wealth-summary' && <ExecutiveWealthSummaryDisplay snapshot={plan.executiveSummary} />}
         {active === 'protection' && (
           <ProtectionDisplay snapshot={plan.protection} clientName={plan.clientName} spouseName={plan.spouseName} />
         )}
