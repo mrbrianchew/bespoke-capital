@@ -1386,6 +1386,10 @@ useEffect(() => {
     spouseLiquid={(ff.a2_savings as number ?? 0) + (ff.a2_fixed_deposit as number ?? 0) + (ff.a2_srs as number ?? 0) + (ff.a2_shares as number ?? 0) + (ff.a2_etf as number ?? 0) + (ff.a2_unit_trust as number ?? 0) + (ff.a2_bonds as number ?? 0) + (ff.a2_alternatives as number ?? 0)}
     clientCPF={(ff.a_cpf_oa as number ?? 0) + (ff.a_cpf_sa as number ?? 0) + (ff.a_cpf_ma as number ?? 0) + (ff.a_cpf_ra as number ?? 0)}
     spouseCPF={(ff.a2_cpf_oa as number ?? 0) + (ff.a2_cpf_sa as number ?? 0) + (ff.a2_cpf_ma as number ?? 0) + (ff.a2_cpf_ra as number ?? 0)}
+    clientBusiness={(ff.a_business as number ?? 0)}
+    spouseBusiness={(ff.a2_business as number ?? 0)}
+    clientPersonalUse={(ff.a_vehicles as number ?? 0) + (ff.a_club as number ?? 0) + ((ff.a_personal_custom as any[]) ?? []).reduce((s: number, i: any) => s + (i.amount ?? 0), 0)}
+    spousePersonalUse={(ff.a2_vehicles as number ?? 0) + (ff.a2_club as number ?? 0) + ((ff.a_personal_custom as any[]) ?? []).reduce((s: number, i: any) => s + (i.amount2 ?? 0), 0)}
     properties={(ff.properties ?? []) as any[]}
     nonMortgageDebts={p.nonMortgageDebts ?? []}
     familyMembers={[...children]}
