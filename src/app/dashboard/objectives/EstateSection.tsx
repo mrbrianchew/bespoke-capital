@@ -48,6 +48,10 @@ export interface EstateProps {
   spouseLiquid?: number
   clientCPF?: number
   spouseCPF?: number
+  clientBusiness?: number
+  spouseBusiness?: number
+  clientPersonalUse?: number
+  spousePersonalUse?: number
   properties?: any[]
   nonMortgageDebts?: any[]
   familyMembers?: { id: string; name: string; relationship: string }[]
@@ -307,24 +311,30 @@ function PersonEstateCard({ person, onChange, name, color, cpfBalance }: {
 
 // ─── ESTATE SIZE CALCULATOR ───────────────────────────────────────────────────
 
-function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, propertyEquity, propertyGrossValue, totalLiabilities, mortgageLiabilities, debtLiabilities, isCouple, clientName, spouseName }: {
+function EstateSizePanel({ clientLiquid, spouseLiquid, clientCPF, spouseCPF, clientBusiness, spouseBusiness, clientPersonalUse, spousePersonalUse, propertyEquity, propertyGrossValue, totalLiabilities, mortgageLiabilities, debtLiabilities, isCouple, clientName, spouseName }: {
   clientLiquid: number; spouseLiquid: number
   clientCPF: number; spouseCPF: number
+  clientBusiness: number; spouseBusiness: number
+  clientPersonalUse: number; spousePersonalUse: number
   propertyEquity: number; propertyGrossValue: number; totalLiabilities: number
   mortgageLiabilities: number; debtLiabilities: number
   isCouple: boolean; clientName: string; spouseName: string
 }) {
-  const clientTotal  = clientLiquid + clientCPF
-  const spouseTotal  = isCouple ? spouseLiquid + spouseCPF : 0
+  const clientTotal  = clientLiquid + clientCPF + clientBusiness + clientPersonalUse
+  const spouseTotal  = isCouple ? spouseLiquid + spouseCPF + spouseBusiness + spousePersonalUse : 0
   const combinedAssets = clientTotal + spouseTotal + propertyGrossValue
   const netEstate = Math.max(0, combinedAssets - totalLiabilities)
 
   const rows = [
     { label: `${clientName} — Liquid & Investments`, client: clientLiquid,  spouse: 0,                hi: false },
     { label: `${clientName} — CPF`,                  client: clientCPF,     spouse: 0,                hi: false },
+    { label: `${clientName} — Business Ventures`,     client: clientBusiness, spouse: 0,               hi: false },
+    { label: `${clientName} — Personal Use Assets`,   client: clientPersonalUse, spouse: 0,            hi: false },
     ...(isCouple ? [
       { label: `${spouseName} — Liquid & Investments`, client: 0, spouse: spouseLiquid, hi: false },
       { label: `${spouseName} — CPF`,                  client: 0, spouse: spouseCPF,    hi: false },
+      { label: `${spouseName} — Business Ventures`,    client: 0, spouse: spouseBusiness, hi: false },
+      { label: `${spouseName} — Personal Use Assets`,  client: 0, spouse: spousePersonalUse, hi: false },
     ] : []),
     { label: 'Property (Gross Value)',               client: propertyGrossValue, spouse: 0,            hi: false },
   ]
@@ -569,6 +579,8 @@ export default function EstateSection({
   clientName = 'Client', spouseName = 'Spouse',
   clientLiquid = 0, spouseLiquid = 0,
   clientCPF = 0, spouseCPF = 0,
+  clientBusiness = 0, spouseBusiness = 0,
+  clientPersonalUse = 0, spousePersonalUse = 0,
   properties = [],
   nonMortgageDebts = [],
   familyMembers = [],
@@ -584,7 +596,7 @@ export default function EstateSection({
   const debtLiabilities = nonMortgageDebts.reduce((s: number, d: any) => s + (d.amount ?? 0), 0)
   const totalLiabilities = mortgageLiabilities + debtLiabilities
     // Calculate net estate
-const combinedAssets = clientLiquid + clientCPF + (isCouple ? spouseLiquid + spouseCPF : 0) + propertyGrossValue
+const combinedAssets = clientLiquid + clientCPF + clientBusiness + clientPersonalUse + (isCouple ? spouseLiquid + spouseCPF + spouseBusiness + spousePersonalUse : 0) + propertyGrossValue
 const netEstate = Math.max(0, combinedAssets - totalLiabilities)
 
 // ✅ Send calculated value to parent
@@ -610,6 +622,8 @@ useEffect(() => {
       <EstateSizePanel
         clientLiquid={clientLiquid} spouseLiquid={spouseLiquid}
         clientCPF={clientCPF} spouseCPF={spouseCPF}
+        clientBusiness={clientBusiness} spouseBusiness={spouseBusiness}
+        clientPersonalUse={clientPersonalUse} spousePersonalUse={spousePersonalUse}
         propertyEquity={propertyEquity}
         propertyGrossValue={propertyGrossValue}
         totalLiabilities={totalLiabilities}
