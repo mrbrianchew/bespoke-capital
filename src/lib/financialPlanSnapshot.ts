@@ -80,13 +80,22 @@ export function buildOverviewSnapshot(input: {
   const managedPortfolios = (fin.a_srs ?? 0) + (fin.a_unit_trust ?? 0) +
     (isCouple ? (fin.a2_srs ?? 0) + (fin.a2_unit_trust ?? 0) : 0)
 
+  // Previously entered on the Financials tab but never counted toward Net Worth anywhere
+  // in the app. Added per Brian's confirmation — fixed here and in EstateSection.tsx together,
+  // since EstateSection's saved netEstate is what the Report actually displays when present.
+  const businessVentures = (fin.a_business ?? 0) + (isCouple ? (fin.a2_business ?? 0) : 0)
+
+  const personalUseCustom = ((fin.a_personal_custom as any[]) ?? []).reduce((s: number, i: any) => s + (i.amount ?? 0) + (isCouple ? (i.amount2 ?? 0) : 0), 0)
+  const personalUseAssets = (fin.a_vehicles ?? 0) + (fin.a_club ?? 0) + personalUseCustom +
+    (isCouple ? (fin.a2_vehicles ?? 0) + (fin.a2_club ?? 0) : 0)
+
   const properties = (fin.properties ?? []) as any[]
   const realEstateGross = properties.reduce((s: number, p: any) => s + (p.propertyValue ?? p.purchasePrice ?? 0), 0)
   const mortgageOutstanding = properties.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
 
   const otherDebts = (nonMortgageDebts ?? []).reduce((s: number, d: any) => s + (d.amount ?? 0), 0)
 
-  const totalAssets = cashReserves + cpfBalances + investmentPortfolio + managedPortfolios + realEstateGross
+  const totalAssets = cashReserves + cpfBalances + investmentPortfolio + managedPortfolios + realEstateGross + businessVentures + personalUseAssets
   const totalLiabilities = mortgageOutstanding + otherDebts
 
   const savedNetEstate = estateData?.netEstate
@@ -187,7 +196,9 @@ export function buildOverviewSnapshot(input: {
       { label: 'Investment Portfolio', value: Math.round(investmentPortfolio) },
       { label: 'Managed Investment Portfolios', value: Math.round(managedPortfolios) },
       { label: 'Real Estate Portfolio', value: Math.round(realEstateGross) },
-    ],
+      { label: 'Business Ventures', value: Math.round(businessVentures) },
+      { label: 'Personal Use Assets', value: Math.round(personalUseAssets) },
+    ].filter(d => d.value > 0),
     liabilities: [
       { label: 'Mortgage Liability', value: Math.round(mortgageOutstanding) },
       { label: 'Other Debts', value: Math.round(otherDebts) },
