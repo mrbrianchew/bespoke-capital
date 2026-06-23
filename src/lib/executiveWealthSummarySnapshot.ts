@@ -66,9 +66,8 @@ export function buildExecutiveWealthSummarySnapshot(input: {
   client: { name: string; dob: string }
   familyMembers: { name: string; relationship: string; dob?: string }[]
   fin: Record<string, any>
-  estateData: Record<string, any>
 }): ExecutiveWealthSummarySnapshot {
-  const { client, familyMembers, fin, estateData } = input
+  const { client, familyMembers, fin } = input
 
   const spouseMember = familyMembers.find(f => f.relationship === 'Spouse') || null
   const isCouple = !!spouseMember
@@ -124,11 +123,9 @@ export function buildExecutiveWealthSummarySnapshot(input: {
 
   const totalLiabilities = mortgageOutstanding + carLoan + shortTermDebts + longTermDebts
 
-  // Net worth priority logic mirrors Overview's: saved estate.netEstate wins if present.
-  const savedNetEstate = estateData?.netEstate
-  const netWorth = (typeof savedNetEstate === 'number' && savedNetEstate > 0)
-    ? savedNetEstate
-    : Math.max(0, totalAssets - totalLiabilities)
+  // Net Worth is computed live from the Financial Profile — no longer deferring
+  // to a saved Estate Planning figure (matches Overview's snapshot logic).
+  const netWorth = Math.max(0, totalAssets - totalLiabilities)
 
   // ── CASHFLOW ──────────────────────────────────────────────────────────────
   const p1 = fin.person1 ?? {}
