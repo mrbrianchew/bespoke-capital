@@ -54,10 +54,8 @@ export function buildOverviewSnapshot(input: {
   client: { name: string; dob: string }
   familyMembers: { name: string; relationship: string; dob?: string }[]
   fin: Record<string, any>
-  estateData: Record<string, any>
-  nonMortgageDebts: { amount?: number }[]
 }): OverviewSnapshot {
-  const { client, familyMembers, fin, estateData, nonMortgageDebts } = input
+  const { client, familyMembers, fin } = input
 
   const spouseMember = familyMembers.find(f => f.relationship === 'Spouse') || null
   const dependents = familyMembers.filter(f => ['Son', 'Daughter', 'Child'].includes(f.relationship))
@@ -80,9 +78,8 @@ export function buildOverviewSnapshot(input: {
   const managedPortfolios = (fin.a_srs ?? 0) + (fin.a_unit_trust ?? 0) +
     (isCouple ? (fin.a2_srs ?? 0) + (fin.a2_unit_trust ?? 0) : 0)
 
-  // Previously entered on the Financials tab but never counted toward Net Worth anywhere
-  // in the app. Added per Brian's confirmation — fixed here and in EstateSection.tsx together,
-  // since EstateSection's saved netEstate is what the Report actually displays when present.
+  // Business Ventures and Personal Use Assets are entered on the Financial Profile
+  // and are included in Net Worth here (previously excluded — fixed per Brian's confirmation).
   const businessVentures = (fin.a_business ?? 0) + (isCouple ? (fin.a2_business ?? 0) : 0)
 
   const personalUseCustom = ((fin.a_personal_custom as any[]) ?? []).reduce((s: number, i: any) => s + (i.amount ?? 0) + (isCouple ? (i.amount2 ?? 0) : 0), 0)
@@ -93,15 +90,28 @@ export function buildOverviewSnapshot(input: {
   const realEstateGross = properties.reduce((s: number, p: any) => s + (p.propertyValue ?? p.purchasePrice ?? 0), 0)
   const mortgageOutstanding = properties.reduce((s: number, p: any) => s + amortisedOutstanding(p), 0)
 
-  const otherDebts = (nonMortgageDebts ?? []).reduce((s: number, d: any) => s + (d.amount ?? 0), 0)
+  // Other Debts — sourced from the Financial Profile's own loan fields (the same
+  // fields the Wealth Summary tab uses), not the separate Strategic Objectives debt
+  // list. Keeps this page's liabilities — and therefore Net Worth — consistent with
+  // the Wealth Summary tab, per Brian's confirmation.
+  const carLoan = (fin.l_car_loan ?? 0) + (isCouple ? (fin.l2_car_loan ?? 0) : 0)
+  const stCustom = ((fin.l_st_custom as any[]) ?? []).reduce((s: number, i: any) => s + (i.amount ?? 0) + (isCouple ? (i.amount2 ?? 0) : 0), 0)
+  const ltCustom = ((fin.l_lt_custom as any[]) ?? []).reduce((s: number, i: any) => s + (i.amount ?? 0) + (isCouple ? (i.amount2 ?? 0) : 0), 0)
+  const shortTermDebts = (fin.l_credit_card ?? 0) + (fin.l_business_loan ?? 0) + (fin.l_renovation_st ?? 0) + stCustom +
+    (isCouple ? (fin.l2_credit_card ?? 0) + (fin.l2_business_loan ?? 0) + (fin.l2_renovation_st ?? 0) : 0)
+  const longTermDebts = (fin.l_study_loan ?? 0) + (fin.l_personal_loan ?? 0) + (fin.l_renovation_lt ?? 0) + ltCustom +
+    (isCouple ? (fin.l2_study_loan ?? 0) + (fin.l2_personal_loan ?? 0) + (fin.l2_renovation_lt ?? 0) : 0)
+  const otherDebts = carLoan + shortTermDebts + longTermDebts
 
   const totalAssets = cashReserves + cpfBalances + investmentPortfolio + managedPortfolios + realEstateGross + businessVentures + personalUseAssets
   const totalLiabilities = mortgageOutstanding + otherDebts
 
-  const savedNetEstate = estateData?.netEstate
-  const netWorth = (typeof savedNetEstate === 'number' && savedNetEstate > 0)
-    ? savedNetEstate
-    : Math.max(0, totalAssets - totalLiabilities)
+  // Net Worth is computed live from the Financial Profile every time — no longer
+  // deferring to a saved Estate Planning figure. Estate Planning's own "Net Estate"
+  // is a distinct concept (e.g. CPF passes via nomination and isn't part of the
+  // estate) and is calculated independently in EstateSection.tsx; this no longer
+  // reads from or depends on it.
+  const netWorth = Math.max(0, totalAssets - totalLiabilities)
 
   // ── INCOME ──────────────────────────────────────────────────────────────
   const p1 = fin.person1 ?? {}
