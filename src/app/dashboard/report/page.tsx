@@ -49,7 +49,7 @@ export default function ReportPage() {
     const [{ data: client }, { data: family }, { data: ffRows }] = await Promise.all([
       supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
       supabase.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', id),
-      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'estate', 'protection_needs', 'protection_portfolio']),
+      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio']),
     ])
     if (!client) { setError('Client not found.'); setLoading(false); return }
     setClientName(client.name)
@@ -67,8 +67,6 @@ export default function ReportPage() {
       client: { name: client.name, dob: client.dob || '' },
       familyMembers: (family || []).map((f: any) => ({ name: f.name, relationship: f.relationship, dob: f.dob })),
       fin: merged['financials'] || {},
-      estateData: merged['estate'] || {},
-      nonMortgageDebts: merged['protection_needs']?.protection?.nonMortgageDebts || [],
     }
 
     try {
