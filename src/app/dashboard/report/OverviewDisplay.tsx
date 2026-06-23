@@ -215,11 +215,18 @@ export default function OverviewDisplay({ snapshot }: { snapshot: OverviewSnapsh
             <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Liabilities</div>
             {mortgage && <PlainRow label={mortgage.label} value={mortgage.value} italic />}
             {otherDebts && <PlainRow label={otherDebts.label} value={otherDebts.value} italic />}
-            <div style={{ background: '#F5EFE3', border: '1.5px solid var(--gold)', borderRadius: 12, padding: '14px 18px', marginTop: 14 }}>
-              <div style={{ fontSize: 13, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold-tag)', fontWeight: 600 }}>Net Worth</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, color: 'var(--ink)', marginTop: 4 }}>{fmt(snapshot.netWorth)}</div>
-            </div>
           </div>
+        </div>
+        {/* Full-width band, deliberately outside both columns — always sits below every
+            asset and liability row regardless of how many either list has, so it can
+            never be visually mistaken for an unaccounted-for line item. */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          background: '#F5EFE3', border: '1.5px solid var(--gold)', borderRadius: 12,
+          padding: '16px 22px', marginTop: 28,
+        }}>
+          <div style={{ fontSize: 13, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold-tag)', fontWeight: 600 }}>Net Worth</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, color: 'var(--ink)' }}>{fmt(snapshot.netWorth)}</div>
         </div>
       </div>
 
