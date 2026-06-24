@@ -402,6 +402,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [planLabel, setPlanLabel] = useState('')
   const [includedPersons, setIncludedPersons] = useState<string[]>([])
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
+  const [personLabels, setPersonLabels] = useState<Record<string, string>>({})
   const year = new Date().getFullYear()
   const page1Ref = useRef<HTMLDivElement>(null)
 
@@ -439,7 +440,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       return
     }
 
-    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides } = responseData
+    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels } = responseData
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
@@ -449,6 +450,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
     setShareType(st)
     setIncludedPersons(iPersons || [])
     setStatusOverrides(sOverrides || {})
+    setPersonLabels(pLabels || {})
 
     // For payment_summary the API already filtered by included_persons; just filter active
     if (st === 'payment_summary') {
@@ -571,8 +573,16 @@ export default function SharePage({ params }: { params: { token: string } }) {
       return getStatus(p)
     }
     const fmtP = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
-    const groups = Array.from(new Set(policies.map(p => p.lifeAssured || p.person || '—')))
-      .map(la => ({ la, policies: policies.filter(p => (p.lifeAssured || p.person || '—') === la) }))
+    // Group by the resolved person key (client/spouse/child_<id>), falling back to the
+    // frozen life-assured text only for legacy policies that predate the person key.
+    // This is what keeps one person's policies together even if their name was
+    // corrected after some of their policies were entered.
+    const groupKeyOf = (p: Policy) => p.person || p.lifeAssured || '—'
+    const groups = Array.from(new Set(policies.map(groupKeyOf)))
+      .map(gk => {
+        const grpPols = policies.filter(p => groupKeyOf(p) === gk)
+        return { key: gk, la: personLabels[gk] || grpPols[0]?.lifeAssured || gk, policies: grpPols }
+      })
     const colH: React.CSSProperties = { padding:'8px 12px', textAlign:'left', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase', color:'#888', fontWeight:500, background:'#FAFAF8', borderBottom:'1px solid #E0DDD6', whiteSpace:'nowrap' }
     const colD: React.CSSProperties = { padding:'10px 12px', fontSize:11, color:'#1C1A17', verticalAlign:'middle', borderBottom:'0.5px solid #ECEAE4', whiteSpace:'nowrap' }
     return (
@@ -618,8 +628,8 @@ export default function SharePage({ params }: { params: { token: string } }) {
         </div>
         {/* Content */}
         <div className="ps-body" style={{ padding:'32px 40px', display:'flex', flexDirection:'column', gap:32 }}>
-          {groups.map(({ la, policies: grpPols }) => (
-            <div key={la}>
+          {groups.map(({ key, la, policies: grpPols }) => (
+            <div key={key}>
               <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
                 <div style={{ width:3, height:18, background:'#c8a96e', borderRadius:2, flexShrink:0 }} />
                 <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:18, color:'#1C1A17', fontWeight:600 }}>{la}</div>
