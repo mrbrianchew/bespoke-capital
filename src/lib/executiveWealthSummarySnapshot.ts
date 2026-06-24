@@ -20,7 +20,18 @@ export interface ExecutiveWealthSummarySnapshot {
   expenseBreakdown: EWSLineItem[]
   totalOutflow: number
   annualSurplus: number
+  savingsRatePct: number
+  debtToAssetPct: number
+  netWorthMultiple: number
+  liquidCash: number
+  monthlyEssentialBurn: number
+  runwayMonths: number
   generatedAt: string
+}
+
+// Guards against divide-by-zero when a profile has no income/assets yet entered.
+function safeDiv(a: number, b: number): number {
+  return b > 0 ? a / b : 0
 }
 
 // Net-worth tier captions — confirmed by Brian. Auto-selected by total net worth,
@@ -203,6 +214,22 @@ export function buildExecutiveWealthSummarySnapshot(input: {
 
   const annualSurplus = totalInflow - totalOutflow
 
+  // ── KEY FINANCIAL RATIOS & EMERGENCY CASH RUNWAY ─────────────────────────
+  // Savings Rate: how much of take-home income converts to deployable surplus.
+  const savingsRatePct = safeDiv(annualSurplus, totalInflow) * 100
+  // Debt-to-Asset: leverage against the consolidated balance sheet.
+  const debtToAssetPct = safeDiv(totalLiabilities, totalAssets) * 100
+  // Net Worth Multiple: net worth expressed as a multiple of annual take-home income.
+  const netWorthMultiple = safeDiv(netWorth, totalInflow)
+
+  // Emergency Cash Runway — liquid cash only (Cash & Fixed Deposits, matches the
+  // "Cash & Liquid Equivalents" asset line), against essential monthly burn (all
+  // outflows EXCLUDING Savings & Investments, since that portion is discretionary
+  // and would simply stop being set aside during an emergency, not need to be funded).
+  const liquidCash = cashReserves
+  const monthlyEssentialBurn = (totalOutflow - savingsExpense) / 12
+  const runwayMonths = safeDiv(liquidCash, monthlyEssentialBurn)
+
   return {
     client: { name: client.name },
     spouse: isCouple ? { name: spouseMember!.name } : null,
@@ -245,6 +272,12 @@ export function buildExecutiveWealthSummarySnapshot(input: {
     ],
     totalOutflow: Math.round(totalOutflow),
     annualSurplus: Math.round(annualSurplus),
+    savingsRatePct: Math.round(savingsRatePct * 10) / 10,
+    debtToAssetPct: Math.round(debtToAssetPct * 10) / 10,
+    netWorthMultiple: Math.round(netWorthMultiple * 10) / 10,
+    liquidCash: Math.round(liquidCash),
+    monthlyEssentialBurn: Math.round(monthlyEssentialBurn),
+    runwayMonths: Math.round(runwayMonths * 10) / 10,
     generatedAt: new Date().toISOString(),
   }
 }
