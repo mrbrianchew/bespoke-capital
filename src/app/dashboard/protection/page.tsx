@@ -560,7 +560,7 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || localSpouseCI)   
     { key: 'client', label: clientName },
     ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
     ...children.map((c: any) => ({
-      key: `child_${c.name || c.id}`,
+      key: `child_${c.id || c.name}`,
       label: c.name || 'Child',
     })),
   ]
@@ -573,7 +573,7 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || localSpouseCI)   
       key: 'dependents',
       label: 'Dependents',
       isDependent: true,
-      childKeys: children.map((c: any) => `child_${c.name || c.id || c}`),
+      childKeys: children.map((c: any) => `child_${c.id || c.name || c}`),
     }] : []),
   ]
 
@@ -925,6 +925,7 @@ async function handleGeneratePaymentShare() {
           allPolicies={rmData.policies}
           clientName={clientName}
           spouseName={spouseName}
+          allPeople={allPeople}
           statusOverrides={statusOverrides}
           onStatusOverride={(id, label) => {
             setStatusOverrides(prev => {
@@ -941,12 +942,12 @@ async function handleGeneratePaymentShare() {
             return next
           })}
           onShare={() => {
-            // Pre-populate included persons with all unique life assureds
+            // Pre-populate included persons with all unique resolved person keys
             const las = Array.from(new Set(
               rmData.policies
                 .filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
                 .filter(p => !hiddenPolicies[p.id])
-                .map(p => p.lifeAssured || p.person || '—')
+                .map(p => p.person || p.lifeAssured || '—')
             ))
             setPsShareIncluded(las)
             setPsShareLink('')
@@ -988,9 +989,9 @@ async function handleGeneratePaymentShare() {
                 {Array.from(new Set(
                   rmData.policies
                     .filter(p=>!['Terminated','Surrendered','Matured'].includes(p.status))
-                    .map(p=>p.lifeAssured||p.person||'—')
+                    .map(p=>p.person||p.lifeAssured||'—')
                 )).map(la => {
-                  const displayName = la==='client'?clientName:la==='spouse'?spouseName:la
+                  const displayName = la==='client'?clientName:la==='spouse'?spouseName:(allPeople.find(p=>p.key===la)?.label||la)
                   const included = psShareIncluded.includes(la)
                   return (
                     <button key={la}
@@ -2679,10 +2680,11 @@ const PAYMENT_STATUS_OPTS = [
   { label: 'Single Premium',   color: '#888',    bg: '#F5F5F5' },
 ]
 
-function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onStatusOverride, hiddenPolicies, onToggleHidden, onShare }: {
+function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOverrides, onStatusOverride, hiddenPolicies, onToggleHidden, onShare }: {
   allPolicies: Policy[]
   clientName: string
   spouseName: string
+  allPeople: { key: string; label: string }[]
   statusOverrides: Record<string, string>
   onStatusOverride: (id: string, label: string) => void
   hiddenPolicies: Record<string, boolean>
@@ -2693,23 +2695,33 @@ function RenewalTab({ allPolicies, clientName, spouseName, statusOverrides, onSt
   const COL_BORDER  = 'rgba(0,0,0,0.06)'
   const [editingStatusId, setEditingStatusId] = useState<string|null>(null)
 
-  // Build display name for life assured
-  function laDisplay(la: string): string {
-    if (!la || la === 'client') return clientName
-    if (la === 'spouse') return spouseName
-    return la
+  // Build display name for a resolved person key, falling back to the policy's frozen
+  // lifeAssured snapshot only if the key no longer resolves against the current family list
+  // (e.g. very old data saved before the person field existed).
+  function personDisplay(personKey: string, fallback: string): string {
+    if (!personKey) return fallback || '—'
+    if (personKey === 'client') return clientName
+    if (personKey === 'spouse') return spouseName
+    const match = allPeople.find(p => p.key === personKey)
+    return match ? match.label : (fallback || personKey)
   }
 
-  // Group by lifeAssured
+  // Group by the resolved person key, not the frozen lifeAssured text — a person's name
+  // can be corrected after some of their policies were entered, but their person key stays
+  // stable, so this is what keeps one person's policies together under one heading.
+  const groupKeyOf = (p: Policy) => p.person || p.lifeAssured || '—'
   const activePols = allPolicies.filter(p => !['Terminated','Surrendered','Matured'].includes(p.status))
   const visibleCount = activePols.filter(p => !hiddenPolicies[p.id]).length
   const hiddenCount  = activePols.filter(p => hiddenPolicies[p.id]).length
-  const groups = Array.from(new Set(activePols.map(p => p.lifeAssured || p.person || '—')))
-    .map(la => ({
-      la,
-      displayName: laDisplay(la),
-      policies: activePols.filter(p => (p.lifeAssured || p.person || '—') === la),
-    }))
+  const groups = Array.from(new Set(activePols.map(groupKeyOf)))
+    .map(gk => {
+      const grpPols = activePols.filter(p => groupKeyOf(p) === gk)
+      return {
+        la: gk,
+        displayName: personDisplay(gk, grpPols[0]?.lifeAssured || gk),
+        policies: grpPols,
+      }
+    })
 
   const colStyle = (width?: number): React.CSSProperties => ({
     padding: '10px 12px',
