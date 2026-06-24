@@ -24,11 +24,14 @@ export interface ExecutiveWealthSummarySnapshot {
   annualSurplus: number
   savingsRatePct: number
   savingsRateStatus: RatioStatus
+  savingsRateRange: string
   debtToAssetPct: number
   debtToAssetStatus: RatioStatus
+  debtToAssetRange: string
   totalInvestedAssets: number
   investmentRatioPct: number
   investmentRatioStatus: RatioStatus
+  investmentRatioRange: string
   liquidCash: number
   monthlyEssentialBurn: number
   runwayMonths: number
@@ -55,6 +58,23 @@ function statusLowerBetter(value: number, goodBelow: number, watchBelow: number)
   if (value <= watchBelow) return 'watch'
   return 'concern'
 }
+
+// Builds the "Green ≥20% · Amber 10–20% · Red <10%" style range text shown in the
+// info popup, derived from the exact same threshold numbers passed to the status
+// helpers above — so the displayed range can never drift out of sync with the
+// actual color logic.
+function rangeLabel(goodAt: number, watchAt: number, direction: 'higher' | 'lower', unit: string): string {
+  if (direction === 'higher') {
+    return `Green \u2265${goodAt}${unit} \u00b7 Amber ${watchAt}\u2013${goodAt}${unit} \u00b7 Red <${watchAt}${unit}`
+  }
+  return `Green <${goodAt}${unit} \u00b7 Amber ${goodAt}\u2013${watchAt}${unit} \u00b7 Red >${watchAt}${unit}`
+}
+
+// Single source of truth for all three ratio bands — confirmed by Brian. Tune the
+// numbers here only; status colors and the popup range text both derive from these.
+const SAVINGS_RATE_GOOD = 20, SAVINGS_RATE_WATCH = 10
+const DEBT_TO_ASSET_GOOD = 30, DEBT_TO_ASSET_WATCH = 50
+const INVESTMENT_RATIO_GOOD = 50, INVESTMENT_RATIO_WATCH = 25
 
 // Net-worth tier captions — confirmed by Brian. Auto-selected by total net worth,
 // not by asset mix (intentionally simpler than category-driven phrasing).
@@ -238,14 +258,14 @@ export function buildExecutiveWealthSummarySnapshot(input: {
 
   // ── KEY FINANCIAL RATIOS & EMERGENCY CASH RUNWAY ─────────────────────────
   // Savings Rate: how much of take-home income converts to deployable surplus.
-  // Bands confirmed by Brian: Green >=20%, Amber 10-20%, Red <10%.
   const savingsRatePct = safeDiv(annualSurplus, totalInflow) * 100
-  const savingsRateStatus = statusHigherBetter(savingsRatePct, 20, 10)
+  const savingsRateStatus = statusHigherBetter(savingsRatePct, SAVINGS_RATE_GOOD, SAVINGS_RATE_WATCH)
+  const savingsRateRange = rangeLabel(SAVINGS_RATE_GOOD, SAVINGS_RATE_WATCH, 'higher', '%')
 
   // Debt-to-Asset: leverage against the consolidated balance sheet.
-  // Bands confirmed by Brian: Green <30%, Amber 30-50%, Red >50%.
   const debtToAssetPct = safeDiv(totalLiabilities, totalAssets) * 100
-  const debtToAssetStatus = statusLowerBetter(debtToAssetPct, 30, 50)
+  const debtToAssetStatus = statusLowerBetter(debtToAssetPct, DEBT_TO_ASSET_GOOD, DEBT_TO_ASSET_WATCH)
+  const debtToAssetRange = rangeLabel(DEBT_TO_ASSET_GOOD, DEBT_TO_ASSET_WATCH, 'lower', '%')
 
   // Net Investment Assets to Net Worth Ratio — standard Singapore CFP-practice metric
   // (e.g. used by CFP practitioners locally), guideline >=50% invested is healthy.
@@ -257,9 +277,9 @@ export function buildExecutiveWealthSummarySnapshot(input: {
   const investmentProperties = properties.filter((p: any) => !p.isPrimaryResidence)
   const investmentRealEstate = investmentProperties.reduce((s: number, p: any) => s + (p.propertyValue ?? p.purchasePrice ?? 0), 0)
   const totalInvestedAssets = investments + managedFunds + alternativeInvestments + businessVentures + investmentRealEstate
-  // Bands confirmed by Brian: Green >=50%, Amber 25-50%, Red <25%.
   const investmentRatioPct = safeDiv(totalInvestedAssets, netWorth) * 100
-  const investmentRatioStatus = statusHigherBetter(investmentRatioPct, 50, 25)
+  const investmentRatioStatus = statusHigherBetter(investmentRatioPct, INVESTMENT_RATIO_GOOD, INVESTMENT_RATIO_WATCH)
+  const investmentRatioRange = rangeLabel(INVESTMENT_RATIO_GOOD, INVESTMENT_RATIO_WATCH, 'higher', '%')
 
   // Emergency Cash Runway — liquid cash only (Cash & Fixed Deposits, matches the
   // "Cash & Liquid Equivalents" asset line), against essential monthly burn (all
@@ -313,11 +333,14 @@ export function buildExecutiveWealthSummarySnapshot(input: {
     annualSurplus: Math.round(annualSurplus),
     savingsRatePct: Math.round(savingsRatePct * 10) / 10,
     savingsRateStatus,
+    savingsRateRange,
     debtToAssetPct: Math.round(debtToAssetPct * 10) / 10,
     debtToAssetStatus,
+    debtToAssetRange,
     totalInvestedAssets: Math.round(totalInvestedAssets),
     investmentRatioPct: Math.round(investmentRatioPct * 10) / 10,
     investmentRatioStatus,
+    investmentRatioRange,
     liquidCash: Math.round(liquidCash),
     monthlyEssentialBurn: Math.round(monthlyEssentialBurn),
     runwayMonths: Math.round(runwayMonths * 10) / 10,
