@@ -40,7 +40,7 @@ function annualPrem(p: Policy) {
     case 'Semi-Annual': return total*2
     case 'Quarterly': return total*4
     case 'Monthly': return total*12
-    case 'Single': return total
+    case 'Single': return 0 // one-time payment, not a recurring annual premium
     default: return total
   }
 }
