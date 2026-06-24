@@ -1,5 +1,5 @@
 'use client'
-import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
+import { ExecutiveWealthSummarySnapshot, RatioStatus } from '@/lib/executiveWealthSummarySnapshot'
 
 function fmt(n: number): string {
   if (!n || isNaN(n)) return '$0'
@@ -29,12 +29,20 @@ function TotalRow({ label, value, dark }: { label: string; value: number; dark?:
   )
 }
 
-function RatioTile({ label, value, sublabel }: { label: string; value: string; sublabel?: string }) {
+const STATUS_STYLE: Record<RatioStatus, { bg: string; border: string; text: string }> = {
+  good: { bg: 'var(--emerald-l)', border: 'var(--emerald)', text: 'var(--emerald)' },
+  watch: { bg: 'var(--gold-l)', border: 'var(--gold)', text: 'var(--gold-tag)' },
+  concern: { bg: 'var(--rouge-l)', border: 'var(--rouge)', text: 'var(--rouge)' },
+}
+
+function RatioTile({ label, value, sublabel, explainer, status }: { label: string; value: string; sublabel?: string; explainer: string; status: RatioStatus }) {
+  const s = STATUS_STYLE[status]
   return (
-    <div style={{ background: 'var(--cream2)', border: '1px solid var(--line)', borderRadius: 10, padding: '14px 8px', textAlign: 'center' }}>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 21, color: 'var(--ink)' }}>{value}</div>
-      <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', marginTop: 5, lineHeight: 1.3 }}>{label}</div>
+    <div style={{ background: s.bg, border: `1.5px solid ${s.border}`, borderRadius: 10, padding: '14px 10px', textAlign: 'center' }}>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 21, color: s.text }}>{value}</div>
+      <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink2)', fontWeight: 600, marginTop: 5, lineHeight: 1.3 }}>{label}</div>
       {sublabel && <div style={{ fontSize: 9, color: 'var(--ink3)', marginTop: 1 }}>{sublabel}</div>}
+      <div style={{ fontSize: 10, color: 'var(--ink2)', marginTop: 8, lineHeight: 1.35 }}>{explainer}</div>
     </div>
   )
 }
@@ -116,23 +124,46 @@ export default function ExecutiveWealthSummaryDisplay({ snapshot }: { snapshot: 
             Key Financial Ratios
           </div>
           <div className="grid grid-cols-3" style={{ gap: 10 }}>
-            <RatioTile label="Savings Rate" value={`${snapshot.savingsRatePct}%`} />
-            <RatioTile label="Debt-to-Asset" value={`${snapshot.debtToAssetPct}%`} />
-            <RatioTile label="Net Worth Multiple" value={`${snapshot.netWorthMultiple}x`} sublabel="of income" />
+            <RatioTile
+              label="Savings Rate"
+              value={`${snapshot.savingsRatePct}%`}
+              status={snapshot.savingsRateStatus}
+              explainer="Share of take-home income converted into annual surplus."
+            />
+            <RatioTile
+              label="Debt-to-Asset"
+              value={`${snapshot.debtToAssetPct}%`}
+              status={snapshot.debtToAssetStatus}
+              explainer="Portion of total assets financed by debt."
+            />
+            <RatioTile
+              label="Investment Ratio"
+              value={`${snapshot.investmentRatioPct}%`}
+              sublabel="of net worth"
+              status={snapshot.investmentRatioStatus}
+              explainer="Share of net worth held in growth/income-producing assets, excluding the primary residence and CPF."
+            />
           </div>
+        </div>
+      </div>
 
-          {/* Emergency Cash Runway */}
-          <div style={{ background: 'var(--emerald-l)', border: '1.5px solid var(--emerald)', borderRadius: 12, padding: '16px 20px', marginTop: 16, textAlign: 'center' }}>
-            <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--emerald)', fontWeight: 600 }}>
-              Emergency Cash Runway
-            </div>
-            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, color: 'var(--ink)', marginTop: 4 }}>
-              {snapshot.runwayMonths} months
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 8, lineHeight: 1.4 }}>
-              {fmt(snapshot.liquidCash)} in cash &amp; fixed deposits covers {snapshot.runwayMonths} months of essential household expenses.
-            </div>
+      {/* Emergency Cash Runway — full-width band below both columns, deliberately
+          outside the grid so it always sits beneath whichever column runs longer. */}
+      <div style={{
+        background: 'var(--emerald-l)', border: '1.5px solid var(--emerald)', borderRadius: 12,
+        padding: '18px 24px', marginTop: 32, display: 'flex', justifyContent: 'space-between',
+        alignItems: 'center', flexWrap: 'wrap', gap: 16,
+      }}>
+        <div style={{ maxWidth: 480 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--emerald)', fontWeight: 600 }}>
+            Emergency Cash Runway
           </div>
+          <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 6, lineHeight: 1.4 }}>
+            {fmt(snapshot.liquidCash)} in cash &amp; fixed deposits covers this many months of essential household expenses (excludes Savings &amp; Investments, which would simply pause in an emergency).
+          </div>
+        </div>
+        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 32, color: 'var(--ink)', flexShrink: 0 }}>
+          {snapshot.runwayMonths} months
         </div>
       </div>
     </div>
