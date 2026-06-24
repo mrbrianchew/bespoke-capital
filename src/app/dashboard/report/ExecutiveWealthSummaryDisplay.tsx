@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import { ExecutiveWealthSummarySnapshot, RatioStatus } from '@/lib/executiveWealthSummarySnapshot'
 
 function fmt(n: number): string {
@@ -35,14 +36,40 @@ const STATUS_STYLE: Record<RatioStatus, { bg: string; border: string; text: stri
   concern: { bg: 'var(--rouge-l)', border: 'var(--rouge)', text: 'var(--rouge)' },
 }
 
-function RatioTile({ label, value, sublabel, explainer, status }: { label: string; value: string; sublabel?: string; explainer: string; status: RatioStatus }) {
+function RatioTile({ label, value, sublabel, explainer, range, status }: { label: string; value: string; sublabel?: string; explainer: string; range: string; status: RatioStatus }) {
   const s = STATUS_STYLE[status]
+  // Visible on hover (desktop) OR while pinned open by a click/tap (so it also
+  // works on touch devices, which don't fire hover events). Click toggles the pin.
+  const [hovered, setHovered] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const open = hovered || pinned
   return (
-    <div style={{ background: s.bg, border: `1.5px solid ${s.border}`, borderRadius: 10, padding: '14px 10px', textAlign: 'center' }}>
+    <div
+      style={{ position: 'relative', background: s.bg, border: `1.5px solid ${s.border}`, borderRadius: 10, padding: '14px 10px', textAlign: 'center', cursor: 'pointer' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => setPinned(p => !p)}
+    >
+      <div style={{
+        position: 'absolute', top: 6, right: 6, width: 14, height: 14, borderRadius: '50%',
+        border: `1px solid ${s.border}`, color: s.text, fontSize: 9, fontWeight: 600,
+        fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>i</div>
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 21, color: s.text }}>{value}</div>
       <div style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink2)', fontWeight: 600, marginTop: 5, lineHeight: 1.3 }}>{label}</div>
       {sublabel && <div style={{ fontSize: 9, color: 'var(--ink3)', marginTop: 1 }}>{sublabel}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink2)', marginTop: 8, lineHeight: 1.35 }}>{explainer}</div>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+          marginTop: 8, width: 200, background: 'var(--charcoal)', color: '#F0EDE8',
+          borderRadius: 8, padding: '10px 12px', fontSize: 11, lineHeight: 1.45,
+          textAlign: 'left', zIndex: 30, boxShadow: '0 8px 20px rgba(0,0,0,0.28)',
+        }}>
+          <div>{explainer}</div>
+          <div style={{ marginTop: 7, paddingTop: 7, borderTop: '1px solid rgba(240,237,232,0.18)', fontSize: 10, color: 'rgba(240,237,232,0.7)' }}>{range}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -129,12 +156,14 @@ export default function ExecutiveWealthSummaryDisplay({ snapshot }: { snapshot: 
               value={`${snapshot.savingsRatePct}%`}
               status={snapshot.savingsRateStatus}
               explainer="Share of take-home income converted into annual surplus."
+              range={snapshot.savingsRateRange}
             />
             <RatioTile
               label="Debt-to-Asset"
               value={`${snapshot.debtToAssetPct}%`}
               status={snapshot.debtToAssetStatus}
               explainer="Portion of total assets financed by debt."
+              range={snapshot.debtToAssetRange}
             />
             <RatioTile
               label="Investment Ratio"
@@ -142,6 +171,7 @@ export default function ExecutiveWealthSummaryDisplay({ snapshot }: { snapshot: 
               sublabel="of net worth"
               status={snapshot.investmentRatioStatus}
               explainer="Share of net worth held in growth/income-producing assets, excluding the primary residence and CPF."
+              range={snapshot.investmentRatioRange}
             />
           </div>
         </div>
@@ -163,7 +193,7 @@ export default function ExecutiveWealthSummaryDisplay({ snapshot }: { snapshot: 
           </div>
         </div>
         <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 32, color: 'var(--ink)', flexShrink: 0 }}>
-          {snapshot.runwayMonths} months
+          {snapshot.runwayMonths.toFixed(1)} months
         </div>
       </div>
     </div>
