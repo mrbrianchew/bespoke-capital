@@ -6,6 +6,8 @@ export interface EWSLineItem {
   value: number
 }
 
+export type RatioStatus = 'good' | 'watch' | 'concern'
+
 export interface ExecutiveWealthSummarySnapshot {
   client: { name: string }
   spouse: { name: string } | null
@@ -21,8 +23,12 @@ export interface ExecutiveWealthSummarySnapshot {
   totalOutflow: number
   annualSurplus: number
   savingsRatePct: number
+  savingsRateStatus: RatioStatus
   debtToAssetPct: number
-  netWorthMultiple: number
+  debtToAssetStatus: RatioStatus
+  totalInvestedAssets: number
+  investmentRatioPct: number
+  investmentRatioStatus: RatioStatus
   liquidCash: number
   monthlyEssentialBurn: number
   runwayMonths: number
@@ -32,6 +38,22 @@ export interface ExecutiveWealthSummarySnapshot {
 // Guards against divide-by-zero when a profile has no income/assets yet entered.
 function safeDiv(a: number, b: number): number {
   return b > 0 ? a / b : 0
+}
+
+// Three-tier status bands, confirmed by Brian against standard Singapore CFP-practice
+// benchmarks. "Higher is better" ratios (Savings Rate, Investment Ratio) vs "lower is
+// better" (Debt-to-Asset) use separate helpers so the comparison direction can't be
+// mixed up when thresholds are tuned later.
+function statusHigherBetter(value: number, goodAt: number, watchAt: number): RatioStatus {
+  if (value >= goodAt) return 'good'
+  if (value >= watchAt) return 'watch'
+  return 'concern'
+}
+
+function statusLowerBetter(value: number, goodBelow: number, watchBelow: number): RatioStatus {
+  if (value < goodBelow) return 'good'
+  if (value <= watchBelow) return 'watch'
+  return 'concern'
 }
 
 // Net-worth tier captions — confirmed by Brian. Auto-selected by total net worth,
@@ -216,11 +238,28 @@ export function buildExecutiveWealthSummarySnapshot(input: {
 
   // ── KEY FINANCIAL RATIOS & EMERGENCY CASH RUNWAY ─────────────────────────
   // Savings Rate: how much of take-home income converts to deployable surplus.
+  // Bands confirmed by Brian: Green >=20%, Amber 10-20%, Red <10%.
   const savingsRatePct = safeDiv(annualSurplus, totalInflow) * 100
+  const savingsRateStatus = statusHigherBetter(savingsRatePct, 20, 10)
+
   // Debt-to-Asset: leverage against the consolidated balance sheet.
+  // Bands confirmed by Brian: Green <30%, Amber 30-50%, Red >50%.
   const debtToAssetPct = safeDiv(totalLiabilities, totalAssets) * 100
-  // Net Worth Multiple: net worth expressed as a multiple of annual take-home income.
-  const netWorthMultiple = safeDiv(netWorth, totalInflow)
+  const debtToAssetStatus = statusLowerBetter(debtToAssetPct, 30, 50)
+
+  // Net Investment Assets to Net Worth Ratio — standard Singapore CFP-practice metric
+  // (e.g. used by CFP practitioners locally), guideline >=50% invested is healthy.
+  // Total Invested Assets excludes: Cash & Liquid Equivalents (that's liquidity, not
+  // growth capital), the Primary Residence (per the ratio's standard definition), CPF
+  // (per Brian's confirmation — treated as a separate retirement bucket, not "invested"
+  // in the active sense), and Personal Use Assets. Investment/non-primary-residence
+  // property DOES count, using the isPrimaryResidence flag already on each property.
+  const investmentProperties = properties.filter((p: any) => !p.isPrimaryResidence)
+  const investmentRealEstate = investmentProperties.reduce((s: number, p: any) => s + (p.propertyValue ?? p.purchasePrice ?? 0), 0)
+  const totalInvestedAssets = investments + managedFunds + alternativeInvestments + businessVentures + investmentRealEstate
+  // Bands confirmed by Brian: Green >=50%, Amber 25-50%, Red <25%.
+  const investmentRatioPct = safeDiv(totalInvestedAssets, netWorth) * 100
+  const investmentRatioStatus = statusHigherBetter(investmentRatioPct, 50, 25)
 
   // Emergency Cash Runway — liquid cash only (Cash & Fixed Deposits, matches the
   // "Cash & Liquid Equivalents" asset line), against essential monthly burn (all
@@ -273,8 +312,12 @@ export function buildExecutiveWealthSummarySnapshot(input: {
     totalOutflow: Math.round(totalOutflow),
     annualSurplus: Math.round(annualSurplus),
     savingsRatePct: Math.round(savingsRatePct * 10) / 10,
+    savingsRateStatus,
     debtToAssetPct: Math.round(debtToAssetPct * 10) / 10,
-    netWorthMultiple: Math.round(netWorthMultiple * 10) / 10,
+    debtToAssetStatus,
+    totalInvestedAssets: Math.round(totalInvestedAssets),
+    investmentRatioPct: Math.round(investmentRatioPct * 10) / 10,
+    investmentRatioStatus,
     liquidCash: Math.round(liquidCash),
     monthlyEssentialBurn: Math.round(monthlyEssentialBurn),
     runwayMonths: Math.round(runwayMonths * 10) / 10,
