@@ -49,6 +49,18 @@ export async function POST(req: Request, { params }: { params: { token: string }
       .eq('section', 'protection_portfolio')
       .maybeSingle()
 
+    const { data: familyRows } = await supabaseAdmin
+      .from('family_members').select('id,name,relationship').eq('client_id', share.client_id)
+
+    // Canonical person-key → current display name, mirrors the dashboard's allPeople list.
+    // Lets the share page resolve a policy's resolved `person` key (e.g. 'child_<id>')
+    // to whatever that person's current name is, instead of trusting a frozen text snapshot.
+    const personLabels: Record<string, string> = { client: client?.name || 'Client' }
+    for (const m of familyRows || []) {
+      if (m.relationship?.toLowerCase() === 'spouse') personLabels.spouse = m.name
+      else personLabels[`child_${m.id}`] = m.name
+    }
+
     const allPolicies: any[] = row?.data?.risk_management?.policies || []
     const statusOverrides: Record<string, string> = row?.data?.risk_management?.statusOverrides || {}
     const shareType: string = share.share_type || 'portfolio'
@@ -58,10 +70,11 @@ export async function POST(req: Request, { params }: { params: { token: string }
     let policies = allPolicies
 
     if (shareType === 'payment_summary') {
-      // Filter by included life assureds
+      // Filter by included persons (resolved person key, falling back to the frozen
+      // life-assured text only for legacy policies that predate the person key)
       if (includedPersons && includedPersons.length > 0) {
         policies = policies.filter((p: any) =>
-          includedPersons.includes(p.lifeAssured || p.person || '—')
+          includedPersons.includes(p.person || p.lifeAssured || '—')
         )
       }
       // Filter out hidden policy ids
@@ -82,6 +95,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
       policies,
       shareType,
       includedPersons,
+      personLabels,
       statusOverrides: shareType === 'payment_summary' ? statusOverrides : undefined,
     })
   }
