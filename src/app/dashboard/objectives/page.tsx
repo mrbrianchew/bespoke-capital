@@ -741,7 +741,7 @@ if (clientData) {
       const raw = policy.person ?? 'client'
       if (raw === 'client' || raw === 'spouse') return raw
       const dep = allFamilyMembers.find(f => f.id === raw)
-      return dep ? `child_${dep.name || dep.id}` : raw
+      return dep ? `child_${dep.id || dep.name}` : raw
     })()
     const { person: _personRaw, ...policyRest } = policy
     const newPolicy = {
