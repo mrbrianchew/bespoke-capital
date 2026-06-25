@@ -1,7 +1,7 @@
 'use client'
 import { useState, ReactNode } from 'react'
 import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, LucideIcon } from 'lucide-react'
-import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
 
@@ -41,18 +41,6 @@ function formatCoverAge(raw: string): string {
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   }
   return raw
-}
-
-// Death and TPD (or CI and ECI) are frequently the same sum assured on a single
-// policy — collapse to one figure when they match, show both when they don't.
-function comboFmt(a: number, b: number): string {
-  const av = Math.round(a)
-  const bv = Math.round(b)
-  if (av <= 0 && bv <= 0) return '—'
-  if (av > 0 && bv > 0) {
-    return av === bv ? fmtCompact(av) : `${fmtCompact(av)} / ${fmtCompact(bv)}`
-  }
-  return fmtCompact(av > 0 ? av : bv)
 }
 
 interface StoryItem {
@@ -169,23 +157,26 @@ function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
 
 function LifeInsuranceTable({ policies }: { policies: LifePolicyLineItem[] }) {
   if (policies.length === 0) return null
-  const cols = '1.6fr 1fr 1fr 0.8fr'
+  const cols = '1.5fr 0.85fr 0.85fr 0.85fr 0.85fr 0.75fr'
+  const single = (v: number) => (v > 0 ? fmtCompact(v) : '—')
 
   return (
     <div style={{ marginTop: 48 }}>
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16 }}>
         Existing life insurance portfolio
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 12, paddingBottom: 10, borderBottom: '1px solid var(--line2)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, paddingBottom: 10, borderBottom: '1px solid var(--line2)' }}>
         <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Provider / policy</div>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Death / TPD</div>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>CI / ECI</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Death</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>TPD</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>CI</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>ECI</div>
         <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Cover age</div>
       </div>
       {policies.map(pol => {
         const toSGD = (v: number) => (pol.isUSD ? v * pol.fxRate : v)
         return (
-          <div key={pol.id} style={{ display: 'grid', gridTemplateColumns: cols, gap: 12, alignItems: 'center', padding: '14px 0', borderBottom: '1px solid var(--line2)' }}>
+          <div key={pol.id} style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, alignItems: 'center', padding: '14px 0', borderBottom: '1px solid var(--line2)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--ink)' }}>
               <span>{pol.companyName}{pol.productName ? ` · ${pol.productName}` : ''}</span>
               {pol.isUSD && (
@@ -195,10 +186,16 @@ function LifeInsuranceTable({ policies }: { policies: LifePolicyLineItem[] }) {
               )}
             </div>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
-              {comboFmt(toSGD(pol.deathSA), toSGD(pol.tpdSA))}
+              {single(toSGD(pol.deathSA))}
             </div>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
-              {comboFmt(toSGD(pol.ciSA), toSGD(pol.eciSA))}
+              {single(toSGD(pol.tpdSA))}
+            </div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+              {single(toSGD(pol.ciSA))}
+            </div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+              {single(toSGD(pol.eciSA))}
             </div>
             <div style={{ fontSize: 13, color: 'var(--ink2)', textAlign: 'right' }}>
               {formatCoverAge(pol.coverAge)}
@@ -288,6 +285,50 @@ function PageNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) 
   )
 }
 
+function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunway }) {
+  const { fundedYears, targetYears, status } = runway
+  const isCovered = status === 'covered'
+  const fundedColor = isCovered ? 'var(--emerald)' : 'var(--rouge)'
+  const axisMax = Math.max(fundedYears, targetYears)
+  const ticks = [0, axisMax * 0.25, axisMax * 0.5, axisMax * 0.75, axisMax]
+  const fmtYrs = (n: number) => (Math.round(n * 10) / 10).toString()
+
+  return (
+    <div style={{ marginBottom: 44 }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>
+        Family financial runway
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, maxWidth: 480, marginBottom: 28 }}>
+        How long the existing death benefit would sustain {name}'s family at their current lifestyle, assuming inflation on that need.
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Funded today</span>
+          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: fundedColor }}>{fmtYrs(fundedYears)} yrs</span>
+        </div>
+        <div style={{ height: 10, background: 'var(--cream2)' }}>
+          <div style={{ height: '100%', width: `${axisMax > 0 ? (fundedYears / axisMax) * 100 : 0}%`, background: fundedColor }} />
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Family's need</span>
+          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>{fmtYrs(targetYears)} yrs</span>
+        </div>
+        <div style={{ height: 10, background: 'var(--cream2)' }}>
+          <div style={{ height: '100%', width: `${axisMax > 0 ? (targetYears / axisMax) * 100 : 0}%`, background: 'var(--ink2)' }} />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink3)', fontFamily: 'DM Mono, monospace', paddingTop: 2, borderTop: '1px solid var(--line2)' }}>
+        {ticks.map((t, i) => <span key={i}>{fmtYrs(t)}</span>)}
+      </div>
+    </div>
+  )
+}
+
 function OverviewPage({ name, profile, onContinue }: { name: string; profile: PersonProtectionProfile; onContinue: () => void }) {
   return (
     <div>
@@ -303,6 +344,8 @@ function OverviewPage({ name, profile, onContinue }: { name: string; profile: Pe
         <div style={{ width: 1, background: 'var(--line2)', margin: '0 32px' }} />
         <StatBlock label="Critical illness" icon={HeartPulse} breakdown={profile.ci} />
       </div>
+
+      <FamilyRunwayChart name={name} runway={profile.runway} />
 
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 22 }}>
         Protection framework
