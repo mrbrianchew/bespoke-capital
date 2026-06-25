@@ -25,6 +25,19 @@ export interface PersonCIBreakdown {
   runwayYears: number
 }
 
+export interface LifePolicyLineItem {
+  id: string
+  companyName: string
+  productName: string
+  isUSD: boolean
+  fxRate: number
+  deathSA: number
+  tpdSA: number
+  ciSA: number
+  eciSA: number
+  coverAge: string
+}
+
 export interface ProtectionFrameworkStatus {
   medicalCovered: boolean
   accidentCovered: boolean
@@ -34,6 +47,7 @@ export interface PersonProtectionProfile {
   dtpd: PersonProtectionBreakdown
   ci: PersonCIBreakdown
   framework: ProtectionFrameworkStatus
+  lifePolicies: LifePolicyLineItem[]
 }
 
 export interface ProtectionSnapshot {
@@ -216,6 +230,28 @@ function hasActiveCategoryCoverage(policies: any[], who: 'client' | 'spouse', ca
   return policies.some((pol: any) => ACTIVE_STATUSES.includes(pol.status) && pol.person === who && pol.categoryCode === categoryCode)
 }
 
+// Mirrors getMultipliedBenefit() on the Risk Management page — base sum x multiplier,
+// no sumAssured fallback — so the figures shown here always match what's on that page.
+function buildLifePolicies(policies: any[], who: 'client' | 'spouse'): LifePolicyLineItem[] {
+  return policies
+    .filter((pol: any) => ACTIVE_STATUSES.includes(pol.status) && pol.person === who && pol.categoryCode === 'life')
+    .map((pol: any) => {
+      const mult = pol.multiplier || 1
+      return {
+        id: pol.id,
+        companyName: pol.companyName || '',
+        productName: pol.productName || '',
+        isUSD: !!pol.isUSD,
+        fxRate: pol.fxRate || 1.35,
+        deathSA: (pol.baseDeath || 0) * mult,
+        tpdSA: (pol.baseTPD || 0) * mult,
+        ciSA: (pol.baseAdvCI || 0) * mult,
+        eciSA: (pol.baseEarlyCI || 0) * mult,
+        coverAge: pol.coverageMaturity || '',
+      }
+    })
+}
+
 export function buildProtectionSnapshot(input: {
   ff: Record<string, any>
   protection: Record<string, any>
@@ -343,6 +379,7 @@ export function buildProtectionSnapshot(input: {
       dtpd: buildDTPD(who),
       ci: buildCI(who),
       framework: buildFramework(who),
+      lifePolicies: buildLifePolicies(policies, who),
     }
   }
 
