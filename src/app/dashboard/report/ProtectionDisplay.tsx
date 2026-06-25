@@ -83,11 +83,11 @@ function StoryRow({ icon, label, value, accent }: StoryItem) {
 function LadderRow({ icon, label, covered, statusText, last }: { icon: LucideIcon; label: string; covered: boolean; statusText: string; last?: boolean }) {
   const Icon = icon
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: last ? 0 : 26, position: 'relative' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: last ? 0 : 24, position: 'relative' }}>
       <div style={{
         width: 38, height: 38, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: covered ? 'var(--emerald)' : '#fff',
-        border: covered ? 'none' : '1.5px solid var(--rouge)',
+        background: covered ? 'var(--emerald)' : 'var(--rouge-l)',
+        border: covered ? 'none' : '1px solid var(--rouge)',
       }}>
         <Icon size={17} color={covered ? '#fff' : 'var(--rouge)'} aria-hidden="true" />
       </div>
@@ -113,7 +113,7 @@ function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', left: 19, top: 19, bottom: 19, width: 1, background: 'var(--line)' }} />
+      <div style={{ position: 'absolute', left: 19, top: 19, bottom: 19, width: 1, background: 'var(--line2)' }} />
       <LadderRow
         icon={Stethoscope}
         label="Medical & health protection"
@@ -143,29 +143,36 @@ function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
   )
 }
 
-function StatBlock({ label, breakdown }: { label: string; breakdown: CoreBreakdown }) {
+function StatBlock({ label, icon, breakdown }: { label: string; icon: LucideIcon; breakdown: CoreBreakdown }) {
+  const Icon = icon
   const hasNeed = breakdown.maxCapitalRequired > 0
   const isShortfall = breakdown.status === 'shortfall'
+  const statusColor = !hasNeed ? 'var(--ink3)' : isShortfall ? 'var(--rouge)' : 'var(--emerald)'
 
   return (
-    <div style={{ minWidth: 180 }}>
-      <div style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
-        {label}
+    <div style={{ flex: 1, minWidth: 180 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+        <Icon size={14} color={statusColor} aria-hidden="true" />
+        <span style={{ fontSize: 11, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)' }}>
+          {label}
+        </span>
       </div>
       {!hasNeed ? (
         <>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 30, color: 'var(--ink3)' }}>—</div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink3)' }}>not yet assessed</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 36, lineHeight: 1, color: 'var(--ink3)' }}>—</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink3)', marginTop: 4 }}>not yet assessed</div>
         </>
       ) : isShortfall ? (
         <>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 30, color: 'var(--rouge)' }}>{fmtCompact(breakdown.shortfall)}</div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink2)' }}>capital shortfall</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 36, lineHeight: 1, color: 'var(--rouge)' }}>{fmtCompact(breakdown.shortfall)}</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink2)', marginTop: 4 }}>capital shortfall</div>
+          <div style={{ width: 28, height: 3, background: 'var(--rouge)', marginTop: 12 }} />
         </>
       ) : (
         <>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 30, color: 'var(--emerald)' }}>Covered</div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink2)' }}>fully in place</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 36, lineHeight: 1, color: 'var(--emerald)' }}>Covered</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink2)', marginTop: 4 }}>fully in place</div>
+          <div style={{ width: 28, height: 3, background: 'var(--emerald)', marginTop: 12 }} />
         </>
       )}
     </div>
@@ -220,16 +227,17 @@ function OverviewPage({ name, profile, onContinue }: { name: string; profile: Pe
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 14 }}>
         Protection overview
       </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 24, color: 'var(--ink)', marginBottom: 30 }}>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 26, lineHeight: 1.45, color: 'var(--ink)', maxWidth: 460, marginBottom: 36 }}>
         Here's where {name}'s protection stands today.
       </div>
 
-      <div style={{ display: 'flex', gap: 40, flexWrap: 'wrap', marginBottom: 44 }}>
-        <StatBlock label="Death & TPD" breakdown={profile.dtpd} />
-        <StatBlock label="Critical illness" breakdown={profile.ci} />
+      <div style={{ display: 'flex', marginBottom: 48 }}>
+        <StatBlock label="Death & TPD" icon={Shield} breakdown={profile.dtpd} />
+        <div style={{ width: 1, background: 'var(--line2)', margin: '0 32px' }} />
+        <StatBlock label="Critical illness" icon={HeartPulse} breakdown={profile.ci} />
       </div>
 
-      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 22 }}>
         Protection framework
       </div>
       <ProtectionLadder profile={profile} />
