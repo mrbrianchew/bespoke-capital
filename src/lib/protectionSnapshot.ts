@@ -43,11 +43,18 @@ export interface ProtectionFrameworkStatus {
   accidentCovered: boolean
 }
 
+export interface FamilyRunway {
+  fundedYears: number
+  targetYears: number
+  status: 'covered' | 'shortfall'
+}
+
 export interface PersonProtectionProfile {
   dtpd: PersonProtectionBreakdown
   ci: PersonCIBreakdown
   framework: ProtectionFrameworkStatus
   lifePolicies: LifePolicyLineItem[]
+  runway: FamilyRunway
 }
 
 export interface ProtectionSnapshot {
@@ -298,12 +305,16 @@ export function buildProtectionSnapshot(input: {
   const clientCoverPct = !isCouple ? 1 : (p.expenseCoverPctClient ?? defaultClientPct) / 100
   const spouseCoverPct = (p.expenseCoverPctSpouse ?? defaultSpousePct) / 100
 
-  function buildDTPD(who: 'client' | 'spouse'): PersonProtectionBreakdown {
+  function getFdBase(who: 'client' | 'spouse'): number {
     const annExp = who === 'client' ? annExpClient : annExpSpouse
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
-    const fdBase = (p[who === 'client' ? 'fdModeClient' : 'fdModeSpouse'] ?? 'combined') === 'own'
+    return (p[who === 'client' ? 'fdModeClient' : 'fdModeSpouse'] ?? 'combined') === 'own'
       ? annExp
       : annExpTotal * coverPct
+  }
+
+  function buildDTPD(who: 'client' | 'spouse'): PersonProtectionBreakdown {
+    const fdBase = getFdBase(who)
 
     const familyDependency = fv(inflation, coverageTerm, fdBase)
     const mortgageDebtClearance = calcMortgageForPerson(ff, p, who, isCouple)
@@ -323,6 +334,46 @@ export function buildProtectionSnapshot(input: {
       existingCoverage: Math.round(existingCoverage),
       shortfall: Math.round(shortfall),
       status: shortfall > 0 ? 'shortfall' : 'covered',
+    }
+  }
+
+  // Family Financial Runway — how long the existing death benefit payout alone
+  // (no other assets) would sustain the family's current lifestyle, with that
+  // need inflating each year, versus the years actually needed (coverageTerm —
+  // same "until youngest child graduates" horizon used above). No investment
+  // growth is assumed on the payout itself, only inflation on the withdrawal —
+  // deliberately conservative, same spirit as the Emergency Cash Runway figure
+  // on the Wealth Summary tab.
+  function buildRunway(who: 'client' | 'spouse'): FamilyRunway {
+    const fdBase = getFdBase(who)
+    const existingCoverage = calcExistingLifeCover(policies, who)
+    const targetYears = coverageTerm
+
+    let fundedYears: number
+    if (fdBase <= 0) {
+      fundedYears = existingCoverage > 0 ? targetYears : 0
+    } else if (existingCoverage <= 0) {
+      fundedYears = 0
+    } else {
+      let remaining = existingCoverage
+      const maxIterations = Math.max(targetYears * 3, 100)
+      let depletedAt = maxIterations
+      for (let year = 0; year < maxIterations; year++) {
+        const needThisYear = fdBase * Math.pow(1 + inflation, year)
+        if (remaining >= needThisYear) {
+          remaining -= needThisYear
+        } else {
+          depletedAt = year + remaining / needThisYear
+          break
+        }
+      }
+      fundedYears = depletedAt
+    }
+
+    return {
+      fundedYears: Math.round(fundedYears * 10) / 10,
+      targetYears,
+      status: fundedYears >= targetYears ? 'covered' : 'shortfall',
     }
   }
 
@@ -380,6 +431,7 @@ export function buildProtectionSnapshot(input: {
       ci: buildCI(who),
       framework: buildFramework(who),
       lifePolicies: buildLifePolicies(policies, who),
+      runway: buildRunway(who),
     }
   }
 
