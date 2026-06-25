@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
-import { buildProtectionDTPDSnapshot, ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
+import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
 import { buildExecutiveWealthSummarySnapshot, ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 
@@ -15,7 +15,7 @@ export default function ReportPage() {
   const [error, setError] = useState('')
 
   const [snapshot, setSnapshot] = useState<OverviewSnapshot | null>(null)
-  const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionDTPDSnapshot | null>(null)
+  const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionSnapshot | null>(null)
   const [executiveSummary, setExecutiveSummary] = useState<ExecutiveWealthSummarySnapshot | null>(null)
 
   const [password, setPassword] = useState('')
@@ -82,7 +82,7 @@ export default function ReportPage() {
     }
 
     try {
-      setProtectionSnapshot(buildProtectionDTPDSnapshot({
+      setProtectionSnapshot(buildProtectionSnapshot({
         ff: merged['financials'] || {},
         protection: merged['protection_needs']?.protection || {},
         policies,
