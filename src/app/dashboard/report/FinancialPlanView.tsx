@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
-import { ProtectionDTPDSnapshot } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot } from '@/lib/protectionSnapshot'
 import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import OverviewDisplay from './OverviewDisplay'
 import ProtectionDisplay from './ProtectionDisplay'
@@ -11,7 +11,7 @@ export interface PlanSnapshot {
   clientName: string
   spouseName?: string
   overview: OverviewSnapshot
-  protection: ProtectionDTPDSnapshot
+  protection: ProtectionSnapshot
   executiveSummary: ExecutiveWealthSummarySnapshot
 }
 
@@ -90,7 +90,7 @@ export default function FinancialPlanView({ plan }: { plan: PlanSnapshot }) {
       </div>
 
       <div className="px-5 md:px-11" style={{ paddingTop: 22, paddingBottom: 36 }}>
-        {active !== 'wealth-summary' && (
+        {active !== 'wealth-summary' && active !== 'protection' && (
           <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
             <PersonCard label="Primary Client" name={plan.clientName} age={plan.overview.client.age} color="var(--gold)" />
             {plan.overview.spouse && (
