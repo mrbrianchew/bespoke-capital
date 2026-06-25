@@ -1,7 +1,7 @@
 'use client'
 import { useState, ReactNode } from 'react'
 import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, LucideIcon } from 'lucide-react'
-import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
 
@@ -29,6 +29,30 @@ function joinWithAnd(parts: string[]): string {
   if (parts.length === 1) return parts[0]
   if (parts.length === 2) return parts[0] + ' and ' + parts[1]
   return parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1]
+}
+
+// Mirrors formatDate() on the Risk Management page so "Lifetime" / "Renewable" /
+// "Age 65" presets and ISO dates display the same way here as they do there.
+function formatCoverAge(raw: string): string {
+  if (!raw) return '—'
+  if (raw === 'Lifetime' || raw === 'Renewable' || raw.startsWith('Age ')) return raw
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const d = new Date(raw)
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  return raw
+}
+
+// Death and TPD (or CI and ECI) are frequently the same sum assured on a single
+// policy — collapse to one figure when they match, show both when they don't.
+function comboFmt(a: number, b: number): string {
+  const av = Math.round(a)
+  const bv = Math.round(b)
+  if (av <= 0 && bv <= 0) return '—'
+  if (av > 0 && bv > 0) {
+    return av === bv ? fmtCompact(av) : `${fmtCompact(av)} / ${fmtCompact(bv)}`
+  }
+  return fmtCompact(av > 0 ? av : bv)
 }
 
 interface StoryItem {
@@ -143,6 +167,49 @@ function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
   )
 }
 
+function LifeInsuranceTable({ policies }: { policies: LifePolicyLineItem[] }) {
+  if (policies.length === 0) return null
+  const cols = '1.6fr 1fr 1fr 0.8fr'
+
+  return (
+    <div style={{ marginTop: 48 }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16 }}>
+        Existing life insurance portfolio
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 12, paddingBottom: 10, borderBottom: '1px solid var(--line2)' }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Provider / policy</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Death / TPD</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>CI / ECI</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Cover age</div>
+      </div>
+      {policies.map(pol => {
+        const toSGD = (v: number) => (pol.isUSD ? v * pol.fxRate : v)
+        return (
+          <div key={pol.id} style={{ display: 'grid', gridTemplateColumns: cols, gap: 12, alignItems: 'center', padding: '14px 0', borderBottom: '1px solid var(--line2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--ink)' }}>
+              <span>{pol.companyName}{pol.productName ? ` · ${pol.productName}` : ''}</span>
+              {pol.isUSD && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--gold-tag)', background: 'var(--gold-l)', border: '1px solid var(--gold)', padding: '1px 5px', borderRadius: 3, letterSpacing: '0.05em' }}>
+                  USD
+                </span>
+              )}
+            </div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+              {comboFmt(toSGD(pol.deathSA), toSGD(pol.tpdSA))}
+            </div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+              {comboFmt(toSGD(pol.ciSA), toSGD(pol.eciSA))}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ink2)', textAlign: 'right' }}>
+              {formatCoverAge(pol.coverAge)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function StatBlock({ label, icon, breakdown }: { label: string; icon: LucideIcon; breakdown: CoreBreakdown }) {
   const Icon = icon
   const hasNeed = breakdown.maxCapitalRequired > 0
@@ -227,7 +294,7 @@ function OverviewPage({ name, profile, onContinue }: { name: string; profile: Pe
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 14 }}>
         Protection overview
       </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 26, lineHeight: 1.45, color: 'var(--ink)', maxWidth: 460, marginBottom: 36 }}>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 26, lineHeight: 1.45, color: 'var(--ink)', marginBottom: 36 }}>
         Here's where {name}'s protection stands today.
       </div>
 
@@ -241,6 +308,8 @@ function OverviewPage({ name, profile, onContinue }: { name: string; profile: Pe
         Protection framework
       </div>
       <ProtectionLadder profile={profile} />
+
+      <LifeInsuranceTable policies={profile.lifePolicies} />
 
       <ContinueLink label="See the Death & TPD breakdown" onClick={onContinue} />
     </div>
