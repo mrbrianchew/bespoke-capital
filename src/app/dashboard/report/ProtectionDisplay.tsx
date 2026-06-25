@@ -116,13 +116,6 @@ function LadderRow({ icon, label, covered, statusText, last }: { icon: LucideIco
 function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
   const { ci, dtpd, framework } = profile
 
-  let ciStatusText = 'Needs attention'
-  if (ci.status === 'covered') {
-    ciStatusText = 'Covered'
-  } else if (ci.existingCoverage > 0) {
-    ciStatusText = `Current cover provides about ${ci.runwayYears} year${ci.runwayYears === 1 ? '' : 's'} of runway`
-  }
-
   return (
     <div style={{ position: 'relative' }}>
       <div style={{ position: 'absolute', left: 19, top: 19, bottom: 19, width: 1, background: 'var(--line2)' }} />
@@ -136,7 +129,7 @@ function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
         icon={HeartPulse}
         label="Income protection — critical illness"
         covered={ci.status === 'covered'}
-        statusText={ciStatusText}
+        statusText={ci.status === 'covered' ? 'Covered' : 'Needs attention'}
       />
       <LadderRow
         icon={Shield}
