@@ -1069,12 +1069,26 @@ async function saveNeedsToDatabase() {
   const needs: any = {
     p1_dtpd_need: dtpdClient.net,
     p1_ci_need: ciClient.net,
+    p1_ci_gross: ciClient.gross,
+    p1_ci_assets: ciClient.assets,
+    p1_ci_fd: ciClient.fd,
+    p1_ci_mort: ciClient.mort,
+    p1_ci_edu: ciClient.edu,
+    p1_ci_medical_buffer: ciClient.medicalBuffer ?? 0,
+    p1_ci_recovery_buffer: ciClient.recoveryBuffer ?? 0,
     planType: p.planType ?? 'individual',
   }
 
   if (isCouple) {
     needs.p2_dtpd_need = dtpdSpouse.net
     needs.p2_ci_need = ciSpouse.net
+    needs.p2_ci_gross = ciSpouse.gross
+    needs.p2_ci_assets = ciSpouse.assets
+    needs.p2_ci_fd = ciSpouse.fd
+    needs.p2_ci_mort = ciSpouse.mort
+    needs.p2_ci_edu = ciSpouse.edu
+    needs.p2_ci_medical_buffer = ciSpouse.medicalBuffer ?? 0
+    needs.p2_ci_recovery_buffer = ciSpouse.recoveryBuffer ?? 0
   }
   
   const { data: existing } = await supabase
