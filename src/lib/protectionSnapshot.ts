@@ -11,9 +11,34 @@ export interface PersonProtectionBreakdown {
   status: 'covered' | 'shortfall'
 }
 
-export interface ProtectionDTPDSnapshot {
-  client: PersonProtectionBreakdown
-  spouse: PersonProtectionBreakdown | null
+export interface PersonCIBreakdown {
+  familyDependency: number
+  mortgageDebtClearance: number
+  tertiaryFunding: number
+  medicalBuffer: number
+  recoveryBuffer: number
+  maxCapitalRequired: number
+  assetMitigation: number
+  existingCoverage: number
+  shortfall: number
+  status: 'covered' | 'shortfall'
+  runwayYears: number
+}
+
+export interface ProtectionFrameworkStatus {
+  medicalCovered: boolean
+  accidentCovered: boolean
+}
+
+export interface PersonProtectionProfile {
+  dtpd: PersonProtectionBreakdown
+  ci: PersonCIBreakdown
+  framework: ProtectionFrameworkStatus
+}
+
+export interface ProtectionSnapshot {
+  client: PersonProtectionProfile
+  spouse: PersonProtectionProfile | null
 }
 
 // University cost defaults — mirrors UNI_COST_DEFAULTS fallback shape used on
@@ -164,7 +189,7 @@ function calcEducationForPerson(
 }
 
 function calcExistingLifeCover(policies: any[], who: 'client' | 'spouse'): number {
-  const activePols = policies.filter((pol: any) => ['In-Force', 'Premium Holiday', 'Paid-up'].includes(pol.status))
+  const activePols = policies.filter((pol: any) => ACTIVE_STATUSES.includes(pol.status))
   const toSGD = (val: number, pol: any) => (pol.isUSD ? val * (pol.fxRate || 1.35) : val)
   return activePols
     .filter((pol: any) => pol.person === who && pol.categoryCode === 'life')
@@ -174,13 +199,30 @@ function calcExistingLifeCover(policies: any[], who: 'client' | 'spouse'): numbe
     }, 0)
 }
 
-export function buildProtectionDTPDSnapshot(input: {
+const ACTIVE_STATUSES = ['In-Force', 'Premium Holiday', 'Paid-up']
+
+function calcExistingCICover(policies: any[], who: 'client' | 'spouse'): number {
+  const activePols = policies.filter((pol: any) => ACTIVE_STATUSES.includes(pol.status))
+  const toSGD = (val: number, pol: any) => (pol.isUSD ? val * (pol.fxRate || 1.35) : val)
+  return activePols
+    .filter((pol: any) => pol.person === who && pol.categoryCode === 'life')
+    .reduce((s: number, pol: any) => {
+      const mult = pol.multiplier || 1
+      return s + toSGD(Math.max(pol.baseAdvCI || 0, pol.baseEarlyCI || 0) * mult, pol)
+    }, 0)
+}
+
+function hasActiveCategoryCoverage(policies: any[], who: 'client' | 'spouse', categoryCode: string): boolean {
+  return policies.some((pol: any) => ACTIVE_STATUSES.includes(pol.status) && pol.person === who && pol.categoryCode === categoryCode)
+}
+
+export function buildProtectionSnapshot(input: {
   ff: Record<string, any>
   protection: Record<string, any>
   policies: any[]
   children: { id: string; dob?: string; gender?: string }[]
   isCouple: boolean
-}): ProtectionDTPDSnapshot {
+}): ProtectionSnapshot {
   const { ff, protection: p, policies, isCouple } = input
   const children = input.children.map(c => ({ id: c.id, gender: c.gender, age: c.dob ? ageYearOnly(c.dob) : 10 }))
 
@@ -220,7 +262,7 @@ export function buildProtectionDTPDSnapshot(input: {
   const clientCoverPct = !isCouple ? 1 : (p.expenseCoverPctClient ?? defaultClientPct) / 100
   const spouseCoverPct = (p.expenseCoverPctSpouse ?? defaultSpousePct) / 100
 
-  function buildPerson(who: 'client' | 'spouse'): PersonProtectionBreakdown {
+  function buildDTPD(who: 'client' | 'spouse'): PersonProtectionBreakdown {
     const annExp = who === 'client' ? annExpClient : annExpSpouse
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
     const fdBase = (p[who === 'client' ? 'fdModeClient' : 'fdModeSpouse'] ?? 'combined') === 'own'
@@ -245,6 +287,62 @@ export function buildProtectionDTPDSnapshot(input: {
       existingCoverage: Math.round(existingCoverage),
       shortfall: Math.round(shortfall),
       status: shortfall > 0 ? 'shortfall' : 'covered',
+    }
+  }
+
+  // CI breakdown reuses the components already computed and saved on the
+  // Strategic Objectives page (protection.p1_ci_fd / p1_ci_mort / etc.),
+  // under whichever calculation method (expenses / income / capital / custom)
+  // was chosen there — this snapshot does not re-derive that calculation, so
+  // the report always matches what's shown on Strategic Objectives.
+  //
+  // Known limitation: clients whose needs were last saved before this
+  // breakdown was added will only have the legacy net figure (p1_ci_need)
+  // persisted, not the granular components — the breakdown will show as
+  // zero until the advisor revisits and re-saves Strategic Objectives.
+  function buildCI(who: 'client' | 'spouse'): PersonCIBreakdown {
+    const annExp = who === 'client' ? annExpClient : annExpSpouse
+    const prefix = who === 'client' ? 'p1' : 'p2'
+
+    const familyDependency = Math.max(0, Math.round(p[`${prefix}_ci_fd`] || 0))
+    const mortgageDebtClearance = Math.max(0, Math.round(p[`${prefix}_ci_mort`] || 0))
+    const tertiaryFunding = Math.max(0, Math.round(p[`${prefix}_ci_edu`] || 0))
+    const medicalBuffer = Math.max(0, Math.round(p[`${prefix}_ci_medical_buffer`] || 0))
+    const recoveryBuffer = Math.max(0, Math.round(p[`${prefix}_ci_recovery_buffer`] || 0))
+    const maxCapitalRequired = Math.max(0, Math.round(p[`${prefix}_ci_gross`] || 0))
+    const assetMitigation = Math.max(0, Math.round(p[`${prefix}_ci_assets`] || 0))
+    const netOfAssets = Math.max(0, maxCapitalRequired - assetMitigation)
+    const existingCoverage = Math.round(calcExistingCICover(policies, who))
+    const shortfall = Math.max(0, netOfAssets - existingCoverage)
+    const runwayYears = annExp > 0 ? Math.round((existingCoverage / annExp) * 10) / 10 : 0
+
+    return {
+      familyDependency,
+      mortgageDebtClearance,
+      tertiaryFunding,
+      medicalBuffer,
+      recoveryBuffer,
+      maxCapitalRequired,
+      assetMitigation,
+      existingCoverage,
+      shortfall,
+      status: shortfall > 0 ? 'shortfall' : 'covered',
+      runwayYears,
+    }
+  }
+
+  function buildFramework(who: 'client' | 'spouse'): ProtectionFrameworkStatus {
+    return {
+      medicalCovered: hasActiveCategoryCoverage(policies, who, 'medical'),
+      accidentCovered: hasActiveCategoryCoverage(policies, who, 'general'),
+    }
+  }
+
+  function buildPerson(who: 'client' | 'spouse'): PersonProtectionProfile {
+    return {
+      dtpd: buildDTPD(who),
+      ci: buildCI(who),
+      framework: buildFramework(who),
     }
   }
 
