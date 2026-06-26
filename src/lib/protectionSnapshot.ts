@@ -38,9 +38,20 @@ export interface LifePolicyLineItem {
   coverAge: string
 }
 
+export type FrameworkRowKey = 'medical' | 'ci' | 'dtpd' | 'accident'
+export type FrameworkRowStatus = 'covered' | 'needs_attention'
+
 export interface ProtectionFrameworkStatus {
   medicalCovered: boolean
   accidentCovered: boolean
+  // Advisor-set overrides for what's *displayed* on the framework ladder —
+  // e.g. the system sees an active medical policy and would show "Covered",
+  // but the advisor knows it's a main plan with no rider and wants the row
+  // to read "Needs attention" instead. Purely cosmetic: doesn't change any
+  // of the underlying shortfall/coverage figures used elsewhere on the page.
+  // Set on the live report before saving; once a snapshot is saved this is
+  // frozen along with everything else.
+  overrides?: Partial<Record<FrameworkRowKey, FrameworkRowStatus>>
 }
 
 export interface FamilyRunway {
