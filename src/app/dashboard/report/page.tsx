@@ -72,7 +72,7 @@ export default function ReportPage() {
     const [{ data: client }, { data: family }, { data: ffRows }] = await Promise.all([
       supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
       supabase.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', id),
-      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio']),
+      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement']),
     ])
     if (!client) { setError('Client not found.'); setLoading(false); return }
     setClientName(client.name)
@@ -85,6 +85,19 @@ export default function ReportPage() {
     setSpouseName(spouse?.name || '')
     const children = (family || []).filter((f: any) => ['Son', 'Daughter', 'Child'].includes(f.relationship))
     const policies = merged['protection_portfolio']?.risk_management?.policies || []
+
+    // Retirement age and life expectancy live on a separate 'retirement' section,
+    // not on 'financials' — merge them into a protection-specific ff object the
+    // same way protection/page.tsx does, so the coverage timeline's retirement
+    // milestone and CI-floor calc have what they need without touching the
+    // financialsData object used elsewhere (buildOverviewSnapshot, etc).
+    const retData = (merged['retirement'] as any)?.ret || merged['retirement'] || {}
+    const financialsData = merged['financials'] || {}
+    const protectionFf = {
+      ...financialsData,
+      client: { ...(financialsData.client || {}), retirementAge: retData?.client?.retirementAge, lifeExpectancy: retData?.client?.lifeExpectancy },
+      spouse: { ...(financialsData.spouse || {}), retirementAge: retData?.spouse?.retirementAge, lifeExpectancy: retData?.spouse?.lifeExpectancy },
+    }
 
     const data = {
       client: { name: client.name, dob: client.dob || '' },
@@ -106,11 +119,13 @@ export default function ReportPage() {
 
     try {
       setProtectionSnapshot(buildProtectionSnapshot({
-        ff: merged['financials'] || {},
+        ff: protectionFf,
         protection: merged['protection_needs']?.protection || {},
         policies,
-        children: children.map((c: any) => ({ id: c.id, dob: c.dob, gender: c.gender })),
+        children: children.map((c: any) => ({ id: c.id, name: c.name, dob: c.dob, gender: c.gender })),
         isCouple,
+        clientDob: client.dob || '',
+        spouseDob: spouse?.dob || '',
       }))
     } catch (e: any) {
       setError('Protection snapshot build failed: ' + e.message)
