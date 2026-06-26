@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
-import { ProtectionSnapshot } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import OverviewDisplay from './OverviewDisplay'
 import ProtectionDisplay from './ProtectionDisplay'
@@ -43,7 +43,13 @@ function PersonCard({ label, name, age, color }: { label: string; name: string; 
   )
 }
 
-export default function FinancialPlanView({ plan }: { plan: PlanSnapshot }) {
+export default function FinancialPlanView({
+  plan, editable, onFrameworkOverrideChange,
+}: {
+  plan: PlanSnapshot
+  editable?: boolean
+  onFrameworkOverrideChange?: (who: 'client' | 'spouse', key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
+}) {
   const [active, setActive] = useState('overview')
   const generatedDate = new Date(plan.overview.generatedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -105,7 +111,13 @@ export default function FinancialPlanView({ plan }: { plan: PlanSnapshot }) {
         {active === 'overview' && <OverviewDisplay snapshot={plan.overview} />}
         {active === 'wealth-summary' && <ExecutiveWealthSummaryDisplay snapshot={plan.executiveSummary} />}
         {active === 'protection' && (
-          <ProtectionDisplay snapshot={plan.protection} clientName={plan.clientName} spouseName={plan.spouseName} />
+          <ProtectionDisplay
+            snapshot={plan.protection}
+            clientName={plan.clientName}
+            spouseName={plan.spouseName}
+            editable={editable}
+            onFrameworkOverrideChange={onFrameworkOverrideChange}
+          />
         )}
       </div>
     </div>
