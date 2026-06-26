@@ -590,7 +590,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
         <style>{`
           @media print { @page{size:A4 landscape;margin:1.2cm 1.5cm} *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important} .no-print{display:none!important} body{background:white!important} }
           .ps-table { display: table; width: 100%; }
-          .ps-cards { display: none; }
+          .ps-cards { display: none !important; }
           @media (max-width: 700px) {
             .ps-table { display: none !important; }
             .ps-cards { display: block !important; }
