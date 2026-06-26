@@ -774,7 +774,7 @@ function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonPro
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
         Death &amp; TPD: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
       </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', maxWidth: 560, marginBottom: 32 }}>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', marginBottom: 32 }}>
         {buildDTPDSubtitle(dtpd)}
       </div>
 
@@ -922,7 +922,7 @@ function CIBreakdownPage({ name, profile }: { name: string; profile: PersonProte
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
         Critical illness: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
       </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', maxWidth: 560, marginBottom: 32 }}>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', marginBottom: 32 }}>
         {buildCISubtitle(ci)}
       </div>
 
