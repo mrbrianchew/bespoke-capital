@@ -1,4 +1,4 @@
-import { fv, ageYearOnly, amortisedOutstanding } from './calc'
+import { ageYearOnly } from './calc'
 
 export interface PersonProtectionBreakdown {
   familyDependency: number
@@ -73,15 +73,6 @@ export interface ProtectionSnapshot {
   spouse: PersonProtectionProfile | null
 }
 
-// University cost defaults — mirrors UNI_COST_DEFAULTS fallback shape used on
-// the Objectives page. If a client has custom uni cost settings saved elsewhere
-// this won't pick them up; flagged as a known simplification.
-const UNI_COST_DEFAULTS: Record<string, { annual_tuition: number; annual_living: number; default_duration: number }> = {
-  sg_local: { annual_tuition: 12000, annual_living: 6000, default_duration: 4 },
-  sg_private: { annual_tuition: 25000, annual_living: 8000, default_duration: 3 },
-  overseas: { annual_tuition: 45000, annual_living: 20000, default_duration: 4 },
-}
-
 const DETAILED_EXPENSE_MAP: Record<string, string[]> = {
   financial: ['d_rental_expense', 'd_income_tax', 'd_regular_savings', 'd_insurance'],
   household: ['d_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household'],
@@ -124,99 +115,6 @@ function getSimpleCategoryTotal(ff: Record<string, any>, categories: Record<stri
   return Object.entries(categories).reduce((total, [cat, enabled]) => {
     if (!enabled) return total
     return total + (catMap[cat] ?? []).reduce((s, k) => s + ((ff[k] as number) ?? 0), 0)
-  }, 0)
-}
-
-function getAssetOffset(ff: Record<string, any>, prefix: 'client' | 'spouse', protection: Record<string, any>): number {
-  if (protection.assetOffsetEnabled === false) return 0
-  const items = protection.assetOffsetItems ?? {}
-  const liquidEnabled = items.liquid !== false
-  const cpfEnabled = items.cpf !== false
-  const propertyEnabled = items.property !== false
-  const ap = prefix === 'spouse' ? 'a2_' : 'a_'
-
-  const liquid = liquidEnabled
-    ? (ff[`${ap}savings`] ?? 0) + (ff[`${ap}fixed_deposit`] ?? 0) + (ff[`${ap}srs`] ?? 0) +
-      (ff[`${ap}shares`] ?? 0) + (ff[`${ap}etf`] ?? 0) + (ff[`${ap}unit_trust`] ?? 0) +
-      (ff[`${ap}bonds`] ?? 0) + (ff[`${ap}alternatives`] ?? 0)
-    : 0
-
-  const cpf = cpfEnabled
-    ? (ff[`${ap}cpf_oa`] ?? 0) + (ff[`${ap}cpf_sa`] ?? 0) + (ff[`${ap}cpf_ma`] ?? 0) + (ff[`${ap}cpf_ra`] ?? 0)
-    : 0
-
-  if (!propertyEnabled) return liquid + cpf
-
-  const properties = (ff.properties ?? []) as any[]
-  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
-  const propertyValue = properties.reduce((sum: number, prop: any) => {
-    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
-    if (mortgageIdx === -1) {
-      const ot = prop.ownershipType ?? ''
-      let pct = 1
-      if (ot === 'Spouse Only') pct = prefix === 'spouse' ? 1 : 0
-      else if (ot === 'Joint Tenancy') pct = 0.5
-      else if (ot === 'Tenancy-in-Common') {
-        const parts = (prop.ownershipSplit ?? '50/50').split('/')
-        pct = prefix === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
-      } else pct = prefix === 'client' ? 1 : 0
-      return sum + val * pct
-    }
-    const pcts = prefix === 'client' ? (protection.mortgageCoverPctsClient ?? []) : (protection.mortgageCoverPctsSpouse ?? [])
-    const pct = (pcts[mortgageIdx] ?? 100) / 100
-    return sum + val * pct
-  }, 0)
-
-  return liquid + cpf + propertyValue
-}
-
-function calcMortgageForPerson(ff: Record<string, any>, protection: Record<string, any>, who: 'client' | 'spouse', isCouple: boolean): number {
-  const properties = (ff.properties ?? []) as any[]
-  const mortgages = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
-
-  const mortgageTotal = mortgages.reduce((sum: number, prop: any, i: number) => {
-    const outstanding = prop.outstanding ?? amortisedOutstanding(prop)
-    const pcts = who === 'client' ? (protection.mortgageCoverPctsClient ?? []) : (protection.mortgageCoverPctsSpouse ?? [])
-    const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
-    return sum + outstanding * pct
-  }, 0)
-
-  const debtTotal = ((protection.nonMortgageDebts ?? []) as any[]).reduce((sum: number, d: any) => {
-    const owner = d.owner ?? 'client'
-    if (!isCouple) return sum + (d.amount ?? 0)
-    if (owner === 'joint') return sum + (d.amount ?? 0) * 0.5
-    if (owner === who) return sum + (d.amount ?? 0)
-    return sum
-  }, 0)
-
-  return mortgageTotal + debtTotal
-}
-
-function calcEducationForPerson(
-  protection: Record<string, any>,
-  children: { id: string; age: number; gender?: string }[],
-  who: 'client' | 'spouse',
-  isCouple: boolean,
-): number {
-  if (!protection.provideEducationFund) return 0
-  const eduKids = protection.educationChildren ?? []
-  const livingInflation = (protection.inflationRate ?? 3) / 100
-
-  return children.reduce((sum, child) => {
-    const ec = eduKids.find((e: any) => e.childId === child.id)
-    if (!ec) return sum
-    const defaultEntryAge = child.gender === 'Male' ? 21 : 19
-    const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
-    const yearsToUni = Math.max(0, uniEntryAge - child.age)
-    const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
-    const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
-    const baseLiving = ec.annualLiving ?? uniInfo.annual_living
-    const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
-    const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
-    const fvLiving = baseLiving * Math.pow(1 + livingInflation, yearsToUni) * dur
-    const pct = !isCouple ? 1 : (who === 'client' ? (ec.coverPctClient ?? 50) : (ec.coverPctSpouse ?? 50)) / 100
-    return sum + (fvTuition + fvLiving) * pct
   }, 0)
 }
 
@@ -324,26 +222,37 @@ export function buildProtectionSnapshot(input: {
       : annExpTotal * coverPct
   }
 
+  // DTPD breakdown reuses the components already computed and saved on the
+  // Strategic Objectives page (protection.p1_dtpd_fd / p1_dtpd_mort / etc.) —
+  // this snapshot does not re-derive family dependency, mortgage clearance, or
+  // education funding, so the report always matches what's shown on Strategic
+  // Objectives. Mirrors the same approach already used for buildCI below.
+  //
+  // Known limitation: clients whose needs were last saved before this
+  // breakdown was added will only have the legacy net figure (p1_dtpd_need)
+  // persisted, not the granular components — the breakdown will show as
+  // zero until the advisor revisits and re-saves the Death & TPD tab on
+  // Strategic Objectives.
   function buildDTPD(who: 'client' | 'spouse'): PersonProtectionBreakdown {
-    const fdBase = getFdBase(who)
+    const prefix = who === 'client' ? 'p1' : 'p2'
 
-    const familyDependency = fv(inflation, coverageTerm, fdBase)
-    const mortgageDebtClearance = calcMortgageForPerson(ff, p, who, isCouple)
-    const tertiaryFunding = calcEducationForPerson(p, children, who, isCouple)
-    const maxCapitalRequired = familyDependency + mortgageDebtClearance + tertiaryFunding
-    const assetMitigation = getAssetOffset(ff, who, p)
+    const familyDependency = Math.max(0, Math.round(p[`${prefix}_dtpd_fd`] || 0))
+    const mortgageDebtClearance = Math.max(0, Math.round(p[`${prefix}_dtpd_mort`] || 0))
+    const tertiaryFunding = Math.max(0, Math.round(p[`${prefix}_dtpd_edu`] || 0))
+    const maxCapitalRequired = Math.max(0, Math.round(p[`${prefix}_dtpd_gross`] || 0))
+    const assetMitigation = Math.max(0, Math.round(p[`${prefix}_dtpd_assets`] || 0))
     const netOfAssets = Math.max(0, maxCapitalRequired - assetMitigation)
-    const existingCoverage = calcExistingLifeCover(policies, who)
+    const existingCoverage = Math.round(calcExistingLifeCover(policies, who))
     const shortfall = Math.max(0, netOfAssets - existingCoverage)
 
     return {
-      familyDependency: Math.round(familyDependency),
-      mortgageDebtClearance: Math.round(mortgageDebtClearance),
-      tertiaryFunding: Math.round(tertiaryFunding),
-      maxCapitalRequired: Math.round(maxCapitalRequired),
-      assetMitigation: Math.round(assetMitigation),
-      existingCoverage: Math.round(existingCoverage),
-      shortfall: Math.round(shortfall),
+      familyDependency,
+      mortgageDebtClearance,
+      tertiaryFunding,
+      maxCapitalRequired,
+      assetMitigation,
+      existingCoverage,
+      shortfall,
       status: shortfall > 0 ? 'shortfall' : 'covered',
     }
   }
