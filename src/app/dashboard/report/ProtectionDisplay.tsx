@@ -1,5 +1,5 @@
 'use client'
-import { useState, MouseEvent } from 'react'
+import { useState, ReactNode, MouseEvent } from 'react'
 import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Building2, Palmtree, LucideIcon } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
 
@@ -17,6 +17,11 @@ function fmtCompact(n: number): string {
   if (n >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M'
   if (n >= 1000) return '$' + Math.round(n / 1000) + 'K'
   return fmt(n)
+}
+
+function fundedPct(have: number, need: number): number {
+  if (need <= 0) return 100
+  return Math.round((have / need) * 100)
 }
 
 function joinWithAnd(parts: string[]): string {
@@ -725,6 +730,36 @@ function ClosingCallout({ text, accentColor }: { text: string; accentColor: stri
   )
 }
 
+// Second-person, dynamic subtitle — replaces the old static caption with the
+// same kind of personalized sentence the original narrative headline used
+// (name + live have/need figures), just addressed directly to the client
+// ("you"/"your family") instead of using their name in the third person.
+function buildDTPDSubtitle(dtpd: PersonProtectionBreakdown): ReactNode {
+  const have = dtpd.assetMitigation + dtpd.existingCoverage
+  const hasNeed = dtpd.maxCapitalRequired > 0
+  const isShortfall = dtpd.status === 'shortfall'
+
+  if (!hasNeed) {
+    return <>No death &amp; TPD protection need has been identified for you yet.</>
+  }
+  if (isShortfall) {
+    const pct = fundedPct(have, dtpd.maxCapitalRequired)
+    return (
+      <>
+        If something were to happen to you today, your family would have{' '}
+        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — about{' '}
+        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need to clear debts and carry on without you.
+      </>
+    )
+  }
+  return (
+    <>
+      If something were to happen to you today, your family would have{' '}
+      <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — more than enough to clear debts and carry on without you.
+    </>
+  )
+}
+
 function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonProtectionProfile }) {
   const { dtpd, dtpdTimeline } = profile
   const closingLine = buildDTPDClosingLine(name, dtpd)
@@ -739,8 +774,8 @@ function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonPro
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
         Death &amp; TPD: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 26 }}>
-        Capital required to clear liabilities and sustain dependents
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', maxWidth: 560, marginBottom: 32 }}>
+        {buildDTPDSubtitle(dtpd)}
       </div>
 
       <NeedsHaveGrid dtpd={dtpd} />
@@ -846,6 +881,33 @@ function buildCIClosingLine(name: string, ci: PersonCIBreakdown): string {
   return `Unlike death, a critical illness leaves ${name} present but unable to provide. Closing this gap means the people around them can focus on recovery — not on making ends meet.`
 }
 
+// CI sibling of buildDTPDSubtitle above — same second-person, dynamic pattern.
+function buildCISubtitle(ci: PersonCIBreakdown): ReactNode {
+  const have = ci.assetMitigation + ci.existingCoverage
+  const hasNeed = ci.maxCapitalRequired > 0
+  const isShortfall = ci.status === 'shortfall'
+
+  if (!hasNeed) {
+    return <>No critical illness protection need has been identified for you yet.</>
+  }
+  if (isShortfall) {
+    const pct = fundedPct(have, ci.maxCapitalRequired)
+    return (
+      <>
+        If you were diagnosed with a critical illness today, your family would have{' '}
+        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — about{' '}
+        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need to replace lost income and cover the cost of recovery.
+      </>
+    )
+  }
+  return (
+    <>
+      If you were diagnosed with a critical illness today, your family would have{' '}
+      <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — more than enough to replace lost income and cover the cost of recovery.
+    </>
+  )
+}
+
 function CIBreakdownPage({ name, profile }: { name: string; profile: PersonProtectionProfile }) {
   const { ci, ciTimeline } = profile
   const closingLine = buildCIClosingLine(name, ci)
@@ -860,8 +922,8 @@ function CIBreakdownPage({ name, profile }: { name: string; profile: PersonProte
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
         Critical illness: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 26 }}>
-        Capital required to replace income and fund recovery
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', maxWidth: 560, marginBottom: 32 }}>
+        {buildCISubtitle(ci)}
       </div>
 
       <CINeedsHaveGrid ci={ci} />
