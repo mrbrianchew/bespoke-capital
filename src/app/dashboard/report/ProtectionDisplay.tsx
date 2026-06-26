@@ -1,7 +1,7 @@
 'use client'
 import { useState, ReactNode } from 'react'
 import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, LucideIcon } from 'lucide-react'
-import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
 
@@ -92,29 +92,75 @@ function StoryRow({ icon, label, value, accent }: StoryItem) {
   )
 }
 
-function LadderRow({ icon, label, covered, statusText, last }: { icon: LucideIcon; label: string; covered: boolean; statusText: string; last?: boolean }) {
+function LadderRow({
+  icon, label, covered, last, rowKey, editable, currentOverride, onOverrideChange,
+}: {
+  icon: LucideIcon
+  label: string
+  covered: boolean
+  last?: boolean
+  rowKey: FrameworkRowKey
+  editable?: boolean
+  currentOverride?: FrameworkRowStatus
+  onOverrideChange?: (key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
+}) {
   const Icon = icon
+  const effectiveCovered = currentOverride ? currentOverride === 'covered' : covered
+  const statusText = effectiveCovered ? 'Covered' : 'Needs attention'
+
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: last ? 0 : 24, position: 'relative' }}>
       <div style={{
         width: 38, height: 38, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: covered ? 'var(--emerald)' : 'var(--rouge-l)',
-        border: covered ? 'none' : '1px solid var(--rouge)',
+        background: effectiveCovered ? 'var(--emerald)' : 'var(--rouge-l)',
+        border: effectiveCovered ? 'none' : '1px solid var(--rouge)',
       }}>
-        <Icon size={17} color={covered ? '#fff' : 'var(--rouge)'} aria-hidden="true" />
+        <Icon size={17} color={effectiveCovered ? '#fff' : 'var(--rouge)'} aria-hidden="true" />
       </div>
-      <div style={{ paddingTop: 6 }}>
-        <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>{label}</div>
-        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: covered ? 'var(--ink2)' : 'var(--rouge)', marginTop: 2 }}>
-          {statusText}
-        </div>
+      <div style={{ paddingTop: 6, flex: 1 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', marginBottom: editable ? 5 : 0 }}>{label}</div>
+        {editable ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select
+              value={currentOverride ?? (covered ? 'covered' : 'needs_attention')}
+              onChange={e => {
+                const value = e.target.value as FrameworkRowStatus
+                const systemValue: FrameworkRowStatus = covered ? 'covered' : 'needs_attention'
+                onOverrideChange?.(rowKey, value === systemValue ? undefined : value)
+              }}
+              style={{
+                fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13,
+                color: effectiveCovered ? 'var(--ink2)' : 'var(--rouge)',
+                border: `1px solid ${effectiveCovered ? 'var(--line2)' : 'var(--rouge)'}`,
+                borderRadius: 4, padding: '3px 8px', background: '#fff', cursor: 'pointer',
+              }}
+            >
+              <option value="covered">Covered</option>
+              <option value="needs_attention">Needs attention</option>
+            </select>
+            <span style={{ fontSize: 10, color: currentOverride ? 'var(--gold-tag)' : 'var(--ink3)' }}>
+              {currentOverride ? 'manually set' : 'system default'}
+            </span>
+          </div>
+        ) : (
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: effectiveCovered ? 'var(--ink2)' : 'var(--rouge)', marginTop: 2 }}>
+            {statusText}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
+function ProtectionLadder({
+  profile, editable, onOverrideChange,
+}: {
+  profile: PersonProtectionProfile
+  editable?: boolean
+  onOverrideChange?: (key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
+}) {
   const { ci, dtpd, framework } = profile
+  const overrides = framework.overrides ?? {}
 
   return (
     <div style={{ position: 'relative' }}>
@@ -123,25 +169,37 @@ function ProtectionLadder({ profile }: { profile: PersonProtectionProfile }) {
         icon={Stethoscope}
         label="Medical & health protection"
         covered={framework.medicalCovered}
-        statusText={framework.medicalCovered ? 'Covered' : 'Needs attention'}
+        rowKey="medical"
+        editable={editable}
+        currentOverride={overrides.medical}
+        onOverrideChange={onOverrideChange}
       />
       <LadderRow
         icon={HeartPulse}
         label="Income protection — critical illness"
         covered={ci.status === 'covered'}
-        statusText={ci.status === 'covered' ? 'Covered' : 'Needs attention'}
+        rowKey="ci"
+        editable={editable}
+        currentOverride={overrides.ci}
+        onOverrideChange={onOverrideChange}
       />
       <LadderRow
         icon={Shield}
         label="Capital protection — death & TPD"
         covered={dtpd.status === 'covered'}
-        statusText={dtpd.status === 'covered' ? 'Covered' : 'Needs attention'}
+        rowKey="dtpd"
+        editable={editable}
+        currentOverride={overrides.dtpd}
+        onOverrideChange={onOverrideChange}
       />
       <LadderRow
         icon={Bandage}
         label="Personal accident"
         covered={framework.accidentCovered}
-        statusText={framework.accidentCovered ? 'Covered' : 'Needs attention'}
+        rowKey="accident"
+        editable={editable}
+        currentOverride={overrides.accident}
+        onOverrideChange={onOverrideChange}
         last
       />
     </div>
@@ -322,7 +380,15 @@ function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunwa
   )
 }
 
-function OverviewPage({ name, profile, onContinue }: { name: string; profile: PersonProtectionProfile; onContinue: () => void }) {
+function OverviewPage({
+  name, profile, onContinue, editable, onOverrideChange,
+}: {
+  name: string
+  profile: PersonProtectionProfile
+  onContinue: () => void
+  editable?: boolean
+  onOverrideChange?: (key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
+}) {
   return (
     <div>
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 14 }}>
@@ -343,7 +409,7 @@ function OverviewPage({ name, profile, onContinue }: { name: string; profile: Pe
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 22 }}>
         Protection framework
       </div>
-      <ProtectionLadder profile={profile} />
+      <ProtectionLadder profile={profile} editable={editable} onOverrideChange={onOverrideChange} />
 
       <LifeInsuranceTable policies={profile.lifePolicies} />
 
@@ -544,9 +610,26 @@ function ProtectionSection({ content }: { content: SectionContent }) {
   )
 }
 
-function PersonStory({ name, profile, page, onAdvance }: { name: string; profile: PersonProtectionProfile; page: Page; onAdvance: (p: Page) => void }) {
+function PersonStory({
+  name, profile, page, onAdvance, editable, onOverrideChange,
+}: {
+  name: string
+  profile: PersonProtectionProfile
+  page: Page
+  onAdvance: (p: Page) => void
+  editable?: boolean
+  onOverrideChange?: (key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
+}) {
   if (page === 'overview') {
-    return <OverviewPage name={name} profile={profile} onContinue={() => onAdvance('dtpd')} />
+    return (
+      <OverviewPage
+        name={name}
+        profile={profile}
+        onContinue={() => onAdvance('dtpd')}
+        editable={editable}
+        onOverrideChange={onOverrideChange}
+      />
+    )
   }
   if (page === 'dtpd') {
     return (
@@ -559,10 +642,15 @@ function PersonStory({ name, profile, page, onAdvance }: { name: string; profile
   return <ProtectionSection content={buildCIContent(name, profile.ci)} />
 }
 
-export default function ProtectionDisplay({ snapshot, clientName, spouseName }: {
+export default function ProtectionDisplay({ snapshot, clientName, spouseName, editable, onFrameworkOverrideChange }: {
   snapshot: ProtectionSnapshot
   clientName: string
   spouseName?: string
+  // When true (live report, before saving a snapshot), the framework ladder
+  // rows render as editable dropdowns instead of plain status text. Omitted
+  // (or false) on the frozen share-link view, where it's always read-only.
+  editable?: boolean
+  onFrameworkOverrideChange?: (who: 'client' | 'spouse', key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
 }) {
   const [active, setActive] = useState<'client' | 'spouse'>('client')
   const [page, setPage] = useState<Page>('overview')
@@ -605,8 +693,26 @@ export default function ProtectionDisplay({ snapshot, clientName, spouseName }: 
 
       <PageNav page={page} setPage={setPage} />
 
-      {active === 'client' && <PersonStory name={clientName} profile={snapshot.client} page={page} onAdvance={setPage} />}
-      {active === 'spouse' && snapshot.spouse && <PersonStory name={spouseLabel} profile={snapshot.spouse} page={page} onAdvance={setPage} />}
+      {active === 'client' && (
+        <PersonStory
+          name={clientName}
+          profile={snapshot.client}
+          page={page}
+          onAdvance={setPage}
+          editable={editable}
+          onOverrideChange={(key, value) => onFrameworkOverrideChange?.('client', key, value)}
+        />
+      )}
+      {active === 'spouse' && snapshot.spouse && (
+        <PersonStory
+          name={spouseLabel}
+          profile={snapshot.spouse}
+          page={page}
+          onAdvance={setPage}
+          editable={editable}
+          onOverrideChange={(key, value) => onFrameworkOverrideChange?.('spouse', key, value)}
+        />
+      )}
     </div>
   )
 }
