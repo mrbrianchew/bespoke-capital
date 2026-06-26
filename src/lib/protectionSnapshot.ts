@@ -6,6 +6,13 @@ export interface PersonProtectionBreakdown {
   tertiaryFunding: number
   maxCapitalRequired: number
   assetMitigation: number
+  // Cash (savings+CPF) vs property split of assetMitigation — raw saved
+  // values, not yet reconciled against assetMitigation. Both 0 for clients
+  // whose Strategic Objectives were saved before this split existed; the
+  // display layer anchors them against assetMitigation rather than trusting
+  // their sum, the same way Active/Lifetime coverage is handled.
+  assetMitigationCash: number
+  assetMitigationProperty: number
   existingCoverage: number
   shortfall: number
   status: 'covered' | 'shortfall'
@@ -467,6 +474,8 @@ export function buildProtectionSnapshot(input: {
     const tertiaryFunding = Math.max(0, Math.round(p[`${prefix}_dtpd_edu`] || 0))
     const maxCapitalRequired = Math.max(0, Math.round(p[`${prefix}_dtpd_gross`] || 0))
     const assetMitigation = Math.max(0, Math.round(p[`${prefix}_dtpd_assets`] || 0))
+    const assetMitigationCash = Math.max(0, Math.round(p[`${prefix}_dtpd_assets_cash`] || 0))
+    const assetMitigationProperty = Math.max(0, Math.round(p[`${prefix}_dtpd_assets_property`] || 0))
     const netOfAssets = Math.max(0, maxCapitalRequired - assetMitigation)
     const existingCoverage = Math.round(calcExistingLifeCover(policies, who))
     const shortfall = Math.max(0, netOfAssets - existingCoverage)
@@ -477,6 +486,8 @@ export function buildProtectionSnapshot(input: {
       tertiaryFunding,
       maxCapitalRequired,
       assetMitigation,
+      assetMitigationCash,
+      assetMitigationProperty,
       existingCoverage,
       shortfall,
       status: shortfall > 0 ? 'shortfall' : 'covered',
