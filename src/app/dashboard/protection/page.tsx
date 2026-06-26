@@ -2813,7 +2813,7 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
                         const overrideOpt = overrideLabel ? PAYMENT_STATUS_OPTS.find(o => o.label === overrideLabel) : null
                         const status = overrideOpt ? overrideOpt : autoStatus
                         const rowBg = i % 2 === 0 ? '#FFFFFF' : '#FAFAF9'
-                        const fmtPrem = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
+                        const fmtPrem = (n: number) => n > 0 ? `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
                         const isEditingThis = editingStatusId === p.id
                         const isHidden = !!hiddenPolicies[p.id]
 
