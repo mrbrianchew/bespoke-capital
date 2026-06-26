@@ -385,7 +385,12 @@ if (familyRows && familyRows.length > 0) {
     m.relationship?.toLowerCase() !== 'spouse'
   )
   if (kids.length > 0) {
-    setChildren(kids.map((k: any) => ({ name: k.name, age: k.age, id: k.id, gender: k.gender })))
+    setChildren(kids.map((k: any) => ({
+      name: k.name,
+      age: k.dob ? (new Date().getFullYear() - new Date(k.dob).getFullYear()) : Number(k.age || 0),
+      id: k.id,
+      gender: k.gender,
+    })))
   } else {
     const jsonKids = merged.children || []
     setChildren(Array.isArray(jsonKids) ? jsonKids : [])
@@ -699,6 +704,7 @@ async function handleGeneratePaymentShare() {
           rmData={rmData}
           updateRm={updateRm}
           inflation={inflation}
+          educationChildren={ff.protection?.educationChildren || []}
         />
       )}
 
