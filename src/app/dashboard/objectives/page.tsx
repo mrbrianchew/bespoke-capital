@@ -356,6 +356,66 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
   return liquid + cpf + propertyValue
 }
 
+// Same DTPD asset-offset calculation as getAssetOffset above, but split into
+// cash (liquid + CPF) vs property so the report can show them as separate
+// lines instead of one combined "Savings, CPF and property equity" figure.
+// Deliberately duplicated rather than refactoring getAssetOffset's return
+// type, since that function has three other call sites that don't need the
+// breakdown.
+function getAssetOffsetBreakdown(ff: FactFinding, prefix: 'client' | 'spouse', p?: ProtectionData): { cash: number; property: number } {
+  if (p?.assetOffsetEnabled === false) return { cash: 0, property: 0 }
+
+  const items = p?.assetOffsetItems ?? {}
+  const liquidEnabled = items.liquid !== false
+  const cpfEnabled = items.cpf !== false
+  const propertyEnabled = items.property !== false
+
+  const ap = prefix === 'spouse' ? 'a2_' : 'a_'
+
+  const liquid = liquidEnabled
+    ? (ff[`${ap}savings`] as number || 0) +
+      (ff[`${ap}fixed_deposit`] as number || 0) +
+      (ff[`${ap}srs`] as number || 0) +
+      (ff[`${ap}shares`] as number || 0) +
+      (ff[`${ap}etf`] as number || 0) +
+      (ff[`${ap}unit_trust`] as number || 0) +
+      (ff[`${ap}bonds`] as number || 0) +
+      (ff[`${ap}alternatives`] as number || 0)
+    : 0
+
+  const cpf = cpfEnabled
+    ? (ff[`${ap}cpf_oa`] as number || 0) +
+      (ff[`${ap}cpf_sa`] as number || 0) +
+      (ff[`${ap}cpf_ma`] as number || 0) +
+      (ff[`${ap}cpf_ra`] as number || 0)
+    : 0
+
+  if (!propertyEnabled) return { cash: liquid + cpf, property: 0 }
+
+  const properties = (ff.properties ?? []) as any[]
+  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
+  const propertyValue = properties.reduce((sum: number, prop: any) => {
+    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
+    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
+    if (mortgageIdx === -1) {
+      const ot = prop.ownershipType ?? ''
+      let pct = 1
+      if (ot === 'Spouse Only') pct = prefix === 'spouse' ? 1 : 0
+      else if (ot === 'Joint Tenancy') pct = 0.5
+      else if (ot === 'Tenancy-in-Common') {
+        const parts = (prop.ownershipSplit ?? '50/50').split('/')
+        pct = prefix === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
+      } else pct = prefix === 'client' ? 1 : 0
+      return sum + val * pct
+    }
+    const pcts = prefix === 'client' ? (p?.mortgageCoverPctsClient ?? []) : (p?.mortgageCoverPctsSpouse ?? [])
+    const pct = (pcts[mortgageIdx] ?? 100) / 100
+    return sum + val * pct
+  }, 0)
+
+  return { cash: liquid + cpf, property: propertyValue }
+}
+
 function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYears: number, startMmYyyy: string): number {
   if (!initialLoan || !tenureYears) return 0
   const parts = startMmYyyy.split('/')
@@ -980,7 +1040,7 @@ const coverageTerm = (() => {
   }
 
   // Full needs
-  function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; net: number; fd: number; mort: number; edu: number } {
+  function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; assetsCash: number; assetsProperty: number; net: number; fd: number; mort: number; edu: number } {
     const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
     const fdBase = fdMode === 'own'
@@ -991,7 +1051,8 @@ const coverageTerm = (() => {
     const edu = calcEducationForPerson(who)
     const gross = fd + mort + edu
     const assets = getAssetOffset(ff, who, 'dtpd', p)
-    return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu }
+    const assetBreakdown = getAssetOffsetBreakdown(ff, who, p)
+    return { gross, assets, assetsCash: assetBreakdown.cash, assetsProperty: assetBreakdown.property, net: Math.max(0, gross - assets), fd, mort, edu }
   }
 
   function calcCINeed(who: 'client' | 'spouse'): CalcResult {
@@ -1070,6 +1131,8 @@ async function saveNeedsToDatabase() {
     p1_dtpd_need: dtpdClient.net,
     p1_dtpd_gross: dtpdClient.gross,
     p1_dtpd_assets: dtpdClient.assets,
+    p1_dtpd_assets_cash: dtpdClient.assetsCash,
+    p1_dtpd_assets_property: dtpdClient.assetsProperty,
     p1_dtpd_fd: dtpdClient.fd,
     p1_dtpd_mort: dtpdClient.mort,
     p1_dtpd_edu: dtpdClient.edu,
@@ -1088,6 +1151,8 @@ async function saveNeedsToDatabase() {
     needs.p2_dtpd_need = dtpdSpouse.net
     needs.p2_dtpd_gross = dtpdSpouse.gross
     needs.p2_dtpd_assets = dtpdSpouse.assets
+    needs.p2_dtpd_assets_cash = dtpdSpouse.assetsCash
+    needs.p2_dtpd_assets_property = dtpdSpouse.assetsProperty
     needs.p2_dtpd_fd = dtpdSpouse.fd
     needs.p2_dtpd_mort = dtpdSpouse.mort
     needs.p2_dtpd_edu = dtpdSpouse.edu
