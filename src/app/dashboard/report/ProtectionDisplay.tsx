@@ -1,6 +1,6 @@
 'use client'
 import { useState, ReactNode, MouseEvent } from 'react'
-import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Infinity as InfinityIcon, Building2, LucideIcon } from 'lucide-react'
+import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Infinity as InfinityIcon, Building2, Palmtree, LucideIcon } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
@@ -514,6 +514,12 @@ function milestoneColor(type: CoverageMilestone['type']): string {
   return 'var(--ink2)'
 }
 
+function milestoneIcon(type: CoverageMilestone['type']): LucideIcon {
+  if (type === 'education') return GraduationCap
+  if (type === 'mortgage') return Key
+  return Palmtree
+}
+
 function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; timeline: CoverageTimeline; currentAge: number }) {
   const [hovered, setHovered] = useState<{ age: number; need: number; have: number; x: number; yNeed: number; yHave: number } | null>(null)
   const [hoveredMilestone, setHoveredMilestone] = useState<number | null>(null)
@@ -624,14 +630,18 @@ function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; t
           const mx = xP(m.age)
           if (mx < PL || mx > PL + iW) return null
           const color = milestoneColor(m.type)
+          const Icon = milestoneIcon(m.type)
           const isHovered = hoveredMilestone === i
+          const iconSize = isHovered ? 18 : 15
           return (
             <g key={`ms-${i}`}>
               <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={color} strokeWidth="0.75" strokeDasharray="2,4" opacity={isHovered ? 0.6 : 0.35} />
-              <circle cx={mx} cy={PT - 8} r={isHovered ? 3.5 : 2.5} fill={color} opacity={isHovered ? 0.95 : 0.7} />
-              {/* Larger invisible target makes the dot easy to hover without needing pixel-perfect aim */}
+              <g transform={`translate(${mx - iconSize / 2}, ${PT - 8 - iconSize / 2})`} opacity={isHovered ? 1 : 0.8}>
+                <Icon size={iconSize} color={color} strokeWidth={2} />
+              </g>
+              {/* Larger invisible target makes the icon easy to hover without needing pixel-perfect aim */}
               <circle
-                cx={mx} cy={PT - 8} r="9" fill="transparent"
+                cx={mx} cy={PT - 8} r="11" fill="transparent"
                 onMouseEnter={() => setHoveredMilestone(i)}
                 onMouseLeave={() => setHoveredMilestone(null)}
                 style={{ cursor: 'pointer' }}
