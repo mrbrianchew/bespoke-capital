@@ -770,7 +770,7 @@ function buildDTPDClosingLine(name: string, dtpd: PersonProtectionBreakdown): st
 function ClosingCallout({ text, accentColor }: { text: string; accentColor: string }) {
   if (!text) return null
   return (
-    <div style={{ paddingLeft: 16, borderLeft: `2px solid ${accentColor}`, maxWidth: 560 }}>
+    <div style={{ paddingLeft: 16, borderLeft: `2px solid ${accentColor}` }}>
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 16, color: 'var(--ink2)', lineHeight: 1.6 }}>
         {text}
       </div>
