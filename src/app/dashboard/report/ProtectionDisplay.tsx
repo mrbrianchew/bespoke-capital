@@ -308,7 +308,7 @@ function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunwa
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>
         Family financial runway
       </div>
-      <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, maxWidth: 480, marginBottom: 28 }}>
+      <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, marginBottom: 28 }}>
         How long the existing death benefit would sustain {name}'s family at their current lifestyle, assuming inflation on that need.
       </div>
 
