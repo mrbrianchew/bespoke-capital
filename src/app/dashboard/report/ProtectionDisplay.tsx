@@ -1,5 +1,5 @@
 'use client'
-import { useState, ReactNode, MouseEvent } from 'react'
+import { useState, MouseEvent } from 'react'
 import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Building2, Palmtree, LucideIcon } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
 
@@ -17,11 +17,6 @@ function fmtCompact(n: number): string {
   if (n >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M'
   if (n >= 1000) return '$' + Math.round(n / 1000) + 'K'
   return fmt(n)
-}
-
-function fundedPct(have: number, need: number): number {
-  if (need <= 0) return 100
-  return Math.round((have / need) * 100)
 }
 
 function joinWithAnd(parts: string[]): string {
@@ -43,53 +38,12 @@ function formatCoverAge(raw: string): string {
   return raw
 }
 
-interface StoryItem {
-  icon: LucideIcon
-  label: string
-  value: number
-  accent?: string
-}
-
 // The fields shared by both breakdown shapes — enough for the overview
 // page's headline stats, which don't need the protection-type-specific extras.
 interface CoreBreakdown {
   maxCapitalRequired: number
   shortfall: number
   status: 'covered' | 'shortfall'
-}
-
-// Pre-built content for one narrative section (Death/TPD or Critical Illness).
-// Keeping the copy-generation separate from layout lets both protection types
-// share one rendering component below despite having different framing.
-interface SectionContent {
-  eyebrow: string
-  headline: ReactNode
-  hasNeed: boolean
-  pct: number
-  have: number
-  need: number
-  progressColor: string
-  gapLine: ReactNode
-  isShortfall: boolean
-  protects: StoryItem[]
-  inPlace: StoryItem[]
-  closingLine: string
-  accentColor: string
-}
-
-function StoryRow({ icon, label, value, accent }: StoryItem) {
-  const Icon = icon
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', borderBottom: '1px solid var(--line)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Icon size={16} color={accent || 'var(--ink3)'} aria-hidden="true" />
-        <span style={{ fontSize: 14, color: 'var(--ink2)' }}>{label}</span>
-      </div>
-      <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: 'var(--ink)', whiteSpace: 'nowrap', marginLeft: 16 }}>
-        {fmtCompact(value)}
-      </span>
-    </div>
-  )
 }
 
 function LadderRow({
@@ -420,7 +374,7 @@ function OverviewPage({
 
 // ─── Death & TPD breakdown (card-based redesign) ────────────────────────────
 // Replaces the old narrative buildDTPDContent()/ProtectionSection combo for
-// this one tab — the CI tab below is untouched and still uses that approach.
+// this tab. The CI tab below was rebuilt the same way — see CIBreakdownPage.
 
 function NeedsHaveRow({ icon, label, value, accent }: { icon: LucideIcon; label: string; value: number; accent?: string }) {
   const Icon = icon
@@ -713,9 +667,9 @@ function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; t
   )
 }
 
-function CoverageAnalysisBar({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
-  const have = dtpd.assetMitigation + dtpd.existingCoverage
-  const need = dtpd.maxCapitalRequired
+function CoverageAnalysisBar({ breakdown }: { breakdown: { assetMitigation: number; existingCoverage: number; maxCapitalRequired: number; shortfall: number } }) {
+  const have = breakdown.assetMitigation + breakdown.existingCoverage
+  const need = breakdown.maxCapitalRequired
   const havePct = need > 0 ? Math.min(100, (have / need) * 100) : 100
 
   return (
@@ -725,7 +679,7 @@ function CoverageAnalysisBar({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink2)', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
         <span>Total protection in place — {fmt(have)}</span>
-        <span>{dtpd.shortfall > 0 ? `Shortfall — ${fmt(dtpd.shortfall)}` : 'Fully funded'}</span>
+        <span>{breakdown.shortfall > 0 ? `Shortfall — ${fmt(breakdown.shortfall)}` : 'Fully funded'}</span>
       </div>
       <div style={{ display: 'flex', height: 34, borderRadius: 6, overflow: 'hidden' }}>
         <div style={{
@@ -734,12 +688,12 @@ function CoverageAnalysisBar({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
         }}>
           {fmt(have)}
         </div>
-        {dtpd.shortfall > 0 && (
+        {breakdown.shortfall > 0 && (
           <div style={{
             width: `${100 - havePct}%`, background: 'var(--rouge)', display: 'flex', alignItems: 'center',
             justifyContent: 'flex-end', paddingRight: 12, fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden',
           }}>
-            {fmt(dtpd.shortfall)}
+            {fmt(breakdown.shortfall)}
           </div>
         )}
       </div>
@@ -803,137 +757,130 @@ function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonPro
         </div>
       )}
 
-      <CoverageAnalysisBar dtpd={dtpd} />
+      <CoverageAnalysisBar breakdown={dtpd} />
 
       <ClosingCallout text={closingLine} accentColor={accentColor} />
     </div>
   )
 }
 
-function buildCIContent(name: string, ci: PersonCIBreakdown): SectionContent {
-  const have = ci.assetMitigation + ci.existingCoverage
-  const isShortfall = ci.status === 'shortfall'
-  const hasNeed = ci.maxCapitalRequired > 0
-  const pct = fundedPct(have, ci.maxCapitalRequired)
+// ─── Critical illness breakdown (card-based redesign, mirrors D/TPD above) ──
+// CI's "have" side needs only one asset row (no cash/property split) since
+// getAssetOffset(ff, who, 'ci', p) on Strategic Objectives is liquid-only —
+// no CPF or property component to split out the way D/TPD's assetMitigation
+// did. It also needs only one coverage row (existingCoverage) rather than an
+// Active/Lifetime split — that categorization was tried for D/TPD and removed
+// because it doesn't hold up against multiplier step-downs and term expiries;
+// the coverage-timeline chart is the correct way to show coverage changing
+// over time, not a point-in-time split.
 
-  const protects: StoryItem[] = []
-  protects.push({ icon: HeartPulse, label: 'Their income during recovery — replacing earnings while they cannot work', value: ci.familyDependency })
-  if (ci.mortgageDebtClearance > 0) {
-    protects.push({ icon: Key, label: 'Mortgage and debt payments — covered through the recovery period', value: ci.mortgageDebtClearance })
-  }
-  if (ci.tertiaryFunding > 0) {
-    protects.push({ icon: GraduationCap, label: "Their children's education — protected even if income stops", value: ci.tertiaryFunding })
-  }
-  if (ci.medicalBuffer > 0) {
-    protects.push({ icon: Stethoscope, label: 'Medical and alternative treatment costs', value: ci.medicalBuffer })
-  }
-  if (ci.recoveryBuffer > 0) {
-    protects.push({ icon: HeartPulse, label: 'A cushion for the wider cost of recovery', value: ci.recoveryBuffer })
-  }
-
-  const inPlace: StoryItem[] = []
-  if (ci.assetMitigation > 0) {
-    inPlace.push({ icon: Wallet, label: 'Savings, CPF and property equity', value: ci.assetMitigation, accent: 'var(--emerald)' })
-  }
-  inPlace.push({ icon: ShieldCheck, label: 'Existing critical illness coverage', value: ci.existingCoverage, accent: 'var(--gold)' })
-
-  let headline: ReactNode
-  let progressColor = 'var(--gold)'
-  let gapLine: ReactNode = null
-  let closingLine = ''
-
-  if (!hasNeed) {
-    headline = <>No critical illness protection need has been identified for {name} yet.</>
-  } else if (isShortfall) {
-    headline = (
-      <>
-        If {name} were diagnosed with a critical illness today, their family would have{' '}
-        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — about{' '}
-        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need to replace lost income and cover the cost of recovery.
-      </>
-    )
-    progressColor = 'var(--gold)'
-    gapLine = <>A gap of {fmtCompact(ci.shortfall)} remains.</>
-    closingLine = `Unlike death, a critical illness leaves ${name} present but unable to provide. Closing this gap means the people around them can focus on recovery — not on making ends meet.`
-  } else {
-    headline = (
-      <>
-        If {name} were diagnosed with a critical illness today, their family would have{' '}
-        <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — more than enough to replace lost
-        income and cover the cost of recovery.
-      </>
-    )
-    progressColor = 'var(--emerald)'
-    const surplus = have - ci.maxCapitalRequired
-    gapLine = surplus > 0 ? <>{fmtCompact(surplus)} more than they would need.</> : <>Exactly what they would need, in place today.</>
-    closingLine = `${name}'s family already has enough in place to weather a critical illness without financial disruption.`
-  }
-
-  return {
-    eyebrow: 'Income protection — critical illness',
-    headline, hasNeed, pct, have, need: ci.maxCapitalRequired, progressColor, gapLine, isShortfall,
-    protects, inPlace, closingLine, accentColor: isShortfall ? 'var(--gold)' : 'var(--emerald)',
-  }
+function CINeedsCard({ ci }: { ci: PersonCIBreakdown }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
+        Protection objectives (needs)
+      </div>
+      <NeedsHaveRow icon={HeartPulse} label="Income during recovery — replacing earnings while unable to work" value={ci.familyDependency} />
+      {ci.mortgageDebtClearance > 0 && (
+        <NeedsHaveRow icon={Key} label="Mortgage and debts cleared through the recovery period" value={ci.mortgageDebtClearance} />
+      )}
+      {ci.tertiaryFunding > 0 && (
+        <NeedsHaveRow icon={GraduationCap} label="Children's education — protected even if income stops" value={ci.tertiaryFunding} />
+      )}
+      {ci.medicalBuffer > 0 && (
+        <NeedsHaveRow icon={Stethoscope} label="Medical and alternative treatment costs" value={ci.medicalBuffer} />
+      )}
+      {ci.recoveryBuffer > 0 && (
+        <NeedsHaveRow icon={Bandage} label="A cushion for the wider cost of recovery" value={ci.recoveryBuffer} />
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', fontSize: 14, fontWeight: 600 }}>
+        <span style={{ color: 'var(--ink)' }}>Max capital required</span>
+        <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(ci.maxCapitalRequired)}</span>
+      </div>
+    </div>
+  )
 }
 
-function ProtectionSection({ content }: { content: SectionContent }) {
-  const { eyebrow, headline, hasNeed, pct, have, need, progressColor, gapLine, isShortfall, protects, inPlace, closingLine, accentColor } = content
+function CIHaveCard({ ci }: { ci: PersonCIBreakdown }) {
+  const total = ci.assetMitigation + ci.existingCoverage
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
+        Existing infrastructure (have)
+      </div>
+      <NeedsHaveRow icon={Wallet} label="Savings &amp; liquid assets" value={ci.assetMitigation} accent="var(--emerald)" />
+      <NeedsHaveRow icon={ShieldCheck} label="Existing critical illness coverage" value={ci.existingCoverage} accent="var(--gold)" />
+      <div style={{ marginTop: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontSize: 14, fontWeight: 600 }}>
+          <span style={{ color: 'var(--ink)' }}>Total</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(total)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, fontSize: 14, fontWeight: 600 }}>
+          <span style={{ color: 'var(--ink)' }}>Status</span>
+          <span style={{ color: ci.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)' }}>
+            {ci.status === 'shortfall' ? 'Shortfall' : 'Covered'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CINeedsHaveGrid({ ci }: { ci: PersonCIBreakdown }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
+      <CINeedsCard ci={ci} />
+      <CIHaveCard ci={ci} />
+    </div>
+  )
+}
+
+// Same closing-line copy the old narrative version used — only the
+// surrounding layout changed, not the voice.
+function buildCIClosingLine(name: string, ci: PersonCIBreakdown): string {
+  if (ci.maxCapitalRequired <= 0) return ''
+  if (ci.status === 'covered') {
+    return `${name}'s family already has enough in place to weather a critical illness without financial disruption.`
+  }
+  return `Unlike death, a critical illness leaves ${name} present but unable to provide. Closing this gap means the people around them can focus on recovery — not on making ends meet.`
+}
+
+function CIBreakdownPage({ name, profile }: { name: string; profile: PersonProtectionProfile }) {
+  const { ci, ciTimeline } = profile
+  const closingLine = buildCIClosingLine(name, ci)
+  const accentColor = ci.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)'
+  const currentAge = ciTimeline.points.length > 0 ? ciTimeline.points[0].age : null
 
   return (
     <div>
-      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 14 }}>
-        {eyebrow}
+      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>
+        Income protection — critical illness
       </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', maxWidth: 560, marginBottom: 26 }}>
-        {headline}
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
+        Critical illness: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
       </div>
-
-      {hasNeed && (
-        <>
-          <div style={{ maxWidth: 520, marginBottom: 6 }}>
-            <div style={{ height: 6, background: 'var(--cream3)', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: progressColor, borderRadius: 4 }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-              <span style={{ fontSize: 12, color: 'var(--ink2)' }}>{fmtCompact(have)} in place</span>
-              <span style={{ fontSize: 12, color: 'var(--ink3)' }}>{fmtCompact(need)} needed</span>
-            </div>
-          </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 14, color: isShortfall ? 'var(--rouge)' : 'var(--emerald)', marginBottom: 34 }}>
-            {gapLine}
-          </div>
-        </>
-      )}
-
-      {protects.length > 0 && (
-        <>
-          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 2 }}>
-            What this protects
-          </div>
-          <div>
-            {protects.map((row, i) => (
-              <StoryRow key={i} icon={row.icon} label={row.label} value={row.value} />
-            ))}
-          </div>
-        </>
-      )}
-
-      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', margin: '28px 0 2px' }}>
-        Already in place
-      </div>
-      <div>
-        {inPlace.map((row, i) => (
-          <StoryRow key={i} icon={row.icon} label={row.label} value={row.value} accent={row.accent} />
-        ))}
+      <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 26 }}>
+        Capital required to replace income and fund recovery
       </div>
 
-      {closingLine && (
-        <div style={{ marginTop: 32, paddingLeft: 16, borderLeft: `2px solid ${accentColor}`, maxWidth: 520 }}>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 16, color: 'var(--ink2)', lineHeight: 1.6 }}>
-            {closingLine}
+      <CINeedsHaveGrid ci={ci} />
+
+      {currentAge !== null && (
+        <div style={{ marginBottom: 36 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+            Coverage timeline
           </div>
+          <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 14 }}>
+            How the capital need and existing portfolio evolve as {name} ages.
+          </div>
+          <CoverageTimelineChart name={name} timeline={ciTimeline} currentAge={currentAge} />
         </div>
       )}
+
+      <CoverageAnalysisBar breakdown={ci} />
+
+      <ClosingCallout text={closingLine} accentColor={accentColor} />
     </div>
   )
 }
@@ -967,7 +914,7 @@ function PersonStory({
       </div>
     )
   }
-  return <ProtectionSection content={buildCIContent(name, profile.ci)} />
+  return <CIBreakdownPage name={name} profile={profile} />
 }
 
 export default function ProtectionDisplay({ snapshot, clientName, spouseName, editable, onFrameworkOverrideChange }: {
