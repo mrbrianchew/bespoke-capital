@@ -98,6 +98,8 @@ export interface PersonProtectionProfile {
   // Empty points/milestones when the person's DOB isn't on file yet — the age
   // axis has nothing to anchor to. Existing callers don't need to change.
   dtpdTimeline: CoverageTimeline
+  // CI sibling of dtpdTimeline — same empty-when-no-DOB behavior.
+  ciTimeline: CoverageTimeline
 }
 
 export interface ProtectionSnapshot {
@@ -332,6 +334,20 @@ export function buildProtectionSnapshot(input: {
       }, 0)
   }
 
+  // CI "have" at a given age — mirrors getCIHaveAtAge() on the live page.
+  function getCIHaveAtAge(age: number, who: 'client' | 'spouse', currentAge: number): number {
+    return policies
+      .filter((pol: any) => ACTIVE_STATUSES.includes(pol.status) && pol.person === who && pol.categoryCode === 'life')
+      .reduce((sum: number, pol: any) => {
+        if (!policyActiveAtAge(pol, age, currentAge)) return sum
+        const mult = effectiveMultiplierAtAge(pol, age)
+        const toSGD = (v: number) => (pol.isUSD ? v * (pol.fxRate || 1.35) : v)
+        const advCI = toSGD((pol.baseAdvCI || 0) * mult)
+        const earlyCI = toSGD((pol.baseEarlyCI || 0) * mult)
+        return sum + Math.max(advCI, earlyCI)
+      }, 0)
+  }
+
   // Floor — mirrors getFloor() on the live page: higher of $300K or basic
   // household+personal expenses inflated across the last ciYears of life.
   function getFloor(who: 'client' | 'spouse', currentAge: number): number {
@@ -434,6 +450,71 @@ export function buildProtectionSnapshot(input: {
     for (let age = currentAge; age <= 100; age++) {
       const need = Math.max(floor, rawNeedAtAge(age) * scale)
       const have = getDTPDHaveAtAge(age, who, currentAge)
+      points.push({ age, need: Math.round(need), have: Math.round(have) })
+    }
+
+    const milestones: CoverageMilestone[] = []
+    uniMeta.forEach(u => {
+      if (u.parentAgeAtUni > currentAge && u.parentAgeAtUni < 100) {
+        milestones.push({ age: Math.round(u.parentAgeAtUni), label: u.name, type: 'education' })
+      }
+    })
+    const mortEndAge = getMortEndAge(currentAge)
+    if (mortEndAge && mortEndAge > currentAge && mortEndAge < 100) {
+      milestones.push({ age: mortEndAge, label: 'Mortgage paid', type: 'mortgage' })
+    }
+    const retireAge = Math.round(Number(who === 'client' ? ff.client?.retirementAge : ff.spouse?.retirementAge) || (who === 'client' ? 65 : 62))
+    if (retireAge > currentAge && retireAge < 100) {
+      milestones.push({ age: retireAge, label: 'Retirement', type: 'retirement' })
+    }
+
+    return { points, milestones }
+  }
+
+  // CI sibling of buildDTPDTimeline() above — same porting approach, mirroring
+  // getCINeedAtAge()/getCIHaveAtAge() on the live Risk Management page, anchored
+  // to the net CI figure buildCI() already computed so the curve stays
+  // consistent with the saved Strategic Objectives value. The CI "need" curve
+  // uses a rolling ciYears-window income-replacement annuity instead of D/TPD's
+  // full-coverage-term annuity — same difference the live chart's
+  // getCINeedAtAge() has from getDTPDNeedAtAge() — and the raw (unscaled) value
+  // is compared against the floor before scaling, matching the live page's
+  // `rawCI <= personFloor ? personFloor : Math.max(personFloor, rawCI * ciScale)`
+  // rather than D/TPD's simpler `Math.max(floor, raw * scale)`.
+  function buildCITimeline(who: 'client' | 'spouse', currentAgeOrNull: number | null, netOfAssetsAtCurrent: number): CoverageTimeline {
+    if (currentAgeOrNull === null) return { points: [], milestones: [] }
+    const currentAge: number = currentAgeOrNull
+
+    const annExp = who === 'client' ? annExpClient : annExpSpouse
+    const ciWindow = Number(p.ciYears) || 5
+    const uniMeta = uniMilestonesForAge(currentAge)
+
+    function rawNeedAtAge(age: number): number {
+      const yLeft = Math.max(0, (currentAge + coverageTerm) - age)
+      const fdYears = Math.min(ciWindow, yLeft)
+      const ageFD = fvAnnuity(annExp, inflation, fdYears)
+      const ageMort = mortBalanceAtAge(age, currentAge, ff.properties || [])
+      let eduRemaining = 0
+      if (children.length > 0) {
+        eduRemaining = children.reduce((s: number, c) => {
+          const meta = uniMeta.find(u => u.childId === c.id)
+          if (!meta) return s
+          if (age < meta.parentAgeAtUni) return s + (perChildFund[c.id] || 0)
+          return s
+        }, 0)
+      }
+      return ageFD + ageMort + eduRemaining
+    }
+
+    const floor = getFloor(who, currentAge)
+    const rawAtCurrent = rawNeedAtAge(currentAge)
+    const scale = rawAtCurrent > 0 ? netOfAssetsAtCurrent / rawAtCurrent : 1
+
+    const points: CoveragePoint[] = []
+    for (let age = currentAge; age <= 100; age++) {
+      const raw = rawNeedAtAge(age)
+      const need = raw <= floor ? floor : Math.max(floor, raw * scale)
+      const have = getCIHaveAtAge(age, who, currentAge)
       points.push({ age, need: Math.round(need), have: Math.round(have) })
     }
 
@@ -584,15 +665,18 @@ export function buildProtectionSnapshot(input: {
 
   function buildPerson(who: 'client' | 'spouse'): PersonProtectionProfile {
     const dtpd = buildDTPD(who)
+    const ci = buildCI(who)
     const currentAge = who === 'client' ? clientAge : spouseAge
-    const netOfAssets = Math.max(0, dtpd.maxCapitalRequired - dtpd.assetMitigation)
+    const netOfAssetsDTPD = Math.max(0, dtpd.maxCapitalRequired - dtpd.assetMitigation)
+    const netOfAssetsCI = Math.max(0, ci.maxCapitalRequired - ci.assetMitigation)
     return {
       dtpd,
-      ci: buildCI(who),
+      ci,
       framework: buildFramework(who),
       lifePolicies: buildLifePolicies(policies, who),
       runway: buildRunway(who),
-      dtpdTimeline: buildDTPDTimeline(who, currentAge, netOfAssets),
+      dtpdTimeline: buildDTPDTimeline(who, currentAge, netOfAssetsDTPD),
+      ciTimeline: buildCITimeline(who, currentAge, netOfAssetsCI),
     }
   }
 
