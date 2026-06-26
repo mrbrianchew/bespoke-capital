@@ -1,6 +1,6 @@
 'use client'
 import { useState, ReactNode, MouseEvent } from 'react'
-import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Infinity as InfinityIcon, Building2, Palmtree, LucideIcon } from 'lucide-react'
+import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Building2, Palmtree, LucideIcon } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
@@ -456,7 +456,7 @@ function NeedsCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
   )
 }
 
-function HaveCard({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lifePolicies: LifePolicyLineItem[] }) {
+function HaveCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
   // Both splits below are reconciled-by-construction against figures the
   // shortfall math already trusts (assetMitigation, existingCoverage) rather
   // than trusting the sum of the granular fields directly — clients whose
@@ -465,12 +465,6 @@ function HaveCard({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lif
   const propertyRaw = dtpd.assetMitigationProperty
   const propertyEquity = Math.min(propertyRaw, dtpd.assetMitigation)
   const cashSavings = Math.max(0, dtpd.assetMitigation - propertyEquity)
-
-  const lifetimeRaw = lifePolicies
-    .filter(pol => pol.coverAge === 'Lifetime')
-    .reduce((s, pol) => s + (pol.isUSD ? pol.deathSA * pol.fxRate : pol.deathSA), 0)
-  const lifetimeCoverage = Math.min(Math.round(lifetimeRaw), dtpd.existingCoverage)
-  const activeCoverage = Math.max(0, dtpd.existingCoverage - lifetimeCoverage)
 
   const total = dtpd.assetMitigation + dtpd.existingCoverage
 
@@ -481,8 +475,7 @@ function HaveCard({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lif
       </div>
       <NeedsHaveRow icon={Wallet} label="Savings &amp; CPF" value={cashSavings} accent="var(--emerald)" />
       <NeedsHaveRow icon={Building2} label="Property equity" value={propertyEquity} accent="var(--emerald)" />
-      <NeedsHaveRow icon={ShieldCheck} label="Active coverage (term)" value={activeCoverage} accent="var(--gold)" />
-      <NeedsHaveRow icon={InfinityIcon} label="Lifetime coverage" value={lifetimeCoverage} accent="var(--gold)" />
+      <NeedsHaveRow icon={ShieldCheck} label="Existing insurance coverage" value={dtpd.existingCoverage} accent="var(--gold)" />
       <div style={{ marginTop: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontSize: 14, fontWeight: 600 }}>
           <span style={{ color: 'var(--ink)' }}>Total</span>
@@ -499,11 +492,11 @@ function HaveCard({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lif
   )
 }
 
-function NeedsHaveGrid({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lifePolicies: LifePolicyLineItem[] }) {
+function NeedsHaveGrid({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
       <NeedsCard dtpd={dtpd} />
-      <HaveCard dtpd={dtpd} lifePolicies={lifePolicies} />
+      <HaveCard dtpd={dtpd} />
     </div>
   )
 }
@@ -796,7 +789,7 @@ function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonPro
         Capital required to clear liabilities and sustain dependents
       </div>
 
-      <NeedsHaveGrid dtpd={dtpd} lifePolicies={profile.lifePolicies} />
+      <NeedsHaveGrid dtpd={dtpd} />
 
       {currentAge !== null && (
         <div style={{ marginBottom: 36 }}>
