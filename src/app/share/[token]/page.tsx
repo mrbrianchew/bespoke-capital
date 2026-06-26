@@ -572,7 +572,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       }
       return getStatus(p)
     }
-    const fmtP = (n: number) => n > 0 ? `$${Math.round(n).toLocaleString()}` : '—'
+    const fmtP = (n: number) => n > 0 ? `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
     // Group by the resolved person key (client/spouse/child_<id>), falling back to the
     // frozen life-assured text only for legacy policies that predate the person key.
     // This is what keeps one person's policies together even if their name was
