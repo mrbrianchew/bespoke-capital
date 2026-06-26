@@ -1,6 +1,6 @@
 'use client'
 import { useState, ReactNode, MouseEvent } from 'react'
-import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Infinity as InfinityIcon, LucideIcon } from 'lucide-react'
+import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Infinity as InfinityIcon, Building2, LucideIcon } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
@@ -457,39 +457,43 @@ function NeedsCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
 }
 
 function HaveCard({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lifePolicies: LifePolicyLineItem[] }) {
-  // Lifetime coverage is a breakout of existingCoverage, not an addition to
-  // it — Active = existingCoverage minus Lifetime, so the two rows always
-  // reconcile exactly to the figure the shortfall math already uses,
-  // regardless of any rounding difference between this sum and that figure.
+  // Both splits below are reconciled-by-construction against figures the
+  // shortfall math already trusts (assetMitigation, existingCoverage) rather
+  // than trusting the sum of the granular fields directly — clients whose
+  // Strategic Objectives predate a given split will just show 0 on one side
+  // until they're re-saved, instead of a number that doesn't add up.
+  const propertyRaw = dtpd.assetMitigationProperty
+  const propertyEquity = Math.min(propertyRaw, dtpd.assetMitigation)
+  const cashSavings = Math.max(0, dtpd.assetMitigation - propertyEquity)
+
   const lifetimeRaw = lifePolicies
     .filter(pol => pol.coverAge === 'Lifetime')
     .reduce((s, pol) => s + (pol.isUSD ? pol.deathSA * pol.fxRate : pol.deathSA), 0)
   const lifetimeCoverage = Math.min(Math.round(lifetimeRaw), dtpd.existingCoverage)
   const activeCoverage = Math.max(0, dtpd.existingCoverage - lifetimeCoverage)
-  const nothingInPlace = dtpd.assetMitigation <= 0 && dtpd.existingCoverage <= 0
+
+  const total = dtpd.assetMitigation + dtpd.existingCoverage
 
   return (
     <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
         Existing infrastructure (have)
       </div>
-      {dtpd.assetMitigation > 0 && (
-        <NeedsHaveRow icon={Wallet} label="Savings, CPF and property equity" value={dtpd.assetMitigation} accent="var(--emerald)" />
-      )}
-      {activeCoverage > 0 && (
-        <NeedsHaveRow icon={ShieldCheck} label="Active coverage (term)" value={activeCoverage} accent="var(--gold)" />
-      )}
-      {lifetimeCoverage > 0 && (
-        <NeedsHaveRow icon={InfinityIcon} label="Lifetime coverage" value={lifetimeCoverage} accent="var(--gold)" />
-      )}
-      {nothingInPlace && (
-        <div style={{ fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic', padding: '10px 0' }}>Nothing in place yet.</div>
-      )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', fontSize: 14, fontWeight: 600 }}>
-        <span style={{ color: 'var(--ink)' }}>Status</span>
-        <span style={{ color: dtpd.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)' }}>
-          {dtpd.status === 'shortfall' ? 'Shortfall' : 'Covered'}
-        </span>
+      <NeedsHaveRow icon={Wallet} label="Savings &amp; CPF" value={cashSavings} accent="var(--emerald)" />
+      <NeedsHaveRow icon={Building2} label="Property equity" value={propertyEquity} accent="var(--emerald)" />
+      <NeedsHaveRow icon={ShieldCheck} label="Active coverage (term)" value={activeCoverage} accent="var(--gold)" />
+      <NeedsHaveRow icon={InfinityIcon} label="Lifetime coverage" value={lifetimeCoverage} accent="var(--gold)" />
+      <div style={{ marginTop: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontSize: 14, fontWeight: 600 }}>
+          <span style={{ color: 'var(--ink)' }}>Total</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(total)}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, fontSize: 14, fontWeight: 600 }}>
+          <span style={{ color: 'var(--ink)' }}>Status</span>
+          <span style={{ color: dtpd.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)' }}>
+            {dtpd.status === 'shortfall' ? 'Shortfall' : 'Covered'}
+          </span>
+        </div>
       </div>
     </div>
   )
@@ -512,6 +516,7 @@ function milestoneColor(type: CoverageMilestone['type']): string {
 
 function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; timeline: CoverageTimeline; currentAge: number }) {
   const [hovered, setHovered] = useState<{ age: number; need: number; have: number; x: number; yNeed: number; yHave: number } | null>(null)
+  const [hoveredMilestone, setHoveredMilestone] = useState<number | null>(null)
   const { points, milestones } = timeline
   if (points.length === 0) return null
 
@@ -619,12 +624,18 @@ function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; t
           const mx = xP(m.age)
           if (mx < PL || mx > PL + iW) return null
           const color = milestoneColor(m.type)
+          const isHovered = hoveredMilestone === i
           return (
             <g key={`ms-${i}`}>
-              <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={color} strokeWidth="0.75" strokeDasharray="2,4" opacity="0.35" />
-              <circle cx={mx} cy={PT - 8} r="2.5" fill={color} opacity="0.7" />
-              <text x={mx} y={PT - 26} fontSize="8.5" fill={color} textAnchor="middle" fontWeight={500}>{m.label}</text>
-              <text x={mx} y={PT - 15} fontSize="7.5" fill="var(--ink3)" textAnchor="middle">age {m.age}</text>
+              <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={color} strokeWidth="0.75" strokeDasharray="2,4" opacity={isHovered ? 0.6 : 0.35} />
+              <circle cx={mx} cy={PT - 8} r={isHovered ? 3.5 : 2.5} fill={color} opacity={isHovered ? 0.95 : 0.7} />
+              {/* Larger invisible target makes the dot easy to hover without needing pixel-perfect aim */}
+              <circle
+                cx={mx} cy={PT - 8} r="9" fill="transparent"
+                onMouseEnter={() => setHoveredMilestone(i)}
+                onMouseLeave={() => setHoveredMilestone(null)}
+                style={{ cursor: 'pointer' }}
+              />
             </g>
           )
         })}
@@ -644,7 +655,7 @@ function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; t
         )}
       </svg>
 
-      {hovered && (
+      {hovered && hoveredMilestone === null && (
         <div style={{
           position: 'absolute',
           left: `${Math.min(Math.max(((hovered.x - PL) / iW) * 100, 10), 90)}%`,
@@ -678,6 +689,23 @@ function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; t
           </div>
         </div>
       )}
+
+      {hoveredMilestone !== null && milestones[hoveredMilestone] && (() => {
+        const m = milestones[hoveredMilestone]
+        const mx = xP(m.age)
+        return (
+          <div style={{
+            position: 'absolute',
+            left: `${Math.min(Math.max(((mx - PL) / iW) * 100, 6), 94)}%`,
+            top: 16, transform: 'translateX(-50%)',
+            background: 'var(--charcoal)', color: '#F5F0E8', padding: '8px 14px', borderRadius: 8,
+            fontSize: 12, pointerEvents: 'none', zIndex: 10, whiteSpace: 'nowrap',
+          }}>
+            <span style={{ fontWeight: 500 }}>{m.label}</span>
+            <span style={{ color: 'rgba(245,240,232,0.55)', marginLeft: 8 }}>age {m.age}</span>
+          </div>
+        )
+      })()}
     </div>
   )
 }
