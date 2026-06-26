@@ -1,7 +1,7 @@
 'use client'
-import { useState, ReactNode } from 'react'
-import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, LucideIcon } from 'lucide-react'
-import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
+import { useState, ReactNode, MouseEvent } from 'react'
+import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Infinity as InfinityIcon, LucideIcon } from 'lucide-react'
+import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
 
@@ -418,68 +418,365 @@ function OverviewPage({
   )
 }
 
-function buildDTPDContent(name: string, dtpd: PersonProtectionBreakdown): SectionContent {
+// ─── Death & TPD breakdown (card-based redesign) ────────────────────────────
+// Replaces the old narrative buildDTPDContent()/ProtectionSection combo for
+// this one tab — the CI tab below is untouched and still uses that approach.
+
+function NeedsHaveRow({ icon, label, value, accent }: { icon: LucideIcon; label: string; value: number; accent?: string }) {
+  const Icon = icon
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--cream3)' }}>
+      <Icon size={15} color={accent || 'var(--ink3)'} aria-hidden="true" />
+      <span style={{ fontSize: 13, color: 'var(--ink2)', flex: 1 }}>{label}</span>
+      <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 16, color: 'var(--ink)', whiteSpace: 'nowrap', marginLeft: 12 }}>
+        {fmtCompact(value)}
+      </span>
+    </div>
+  )
+}
+
+function NeedsCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
+        Protection objectives (needs)
+      </div>
+      <NeedsHaveRow icon={Coins} label="Their day-to-day life — keeping the household running" value={dtpd.familyDependency} />
+      {dtpd.mortgageDebtClearance > 0 && (
+        <NeedsHaveRow icon={Home} label="The roof over their heads — mortgage and debts cleared" value={dtpd.mortgageDebtClearance} />
+      )}
+      {dtpd.tertiaryFunding > 0 && (
+        <NeedsHaveRow icon={GraduationCap} label="Their children's future — university funded" value={dtpd.tertiaryFunding} />
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', fontSize: 14, fontWeight: 600 }}>
+        <span style={{ color: 'var(--ink)' }}>Max capital required</span>
+        <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(dtpd.maxCapitalRequired)}</span>
+      </div>
+    </div>
+  )
+}
+
+function HaveCard({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lifePolicies: LifePolicyLineItem[] }) {
+  // Lifetime coverage is a breakout of existingCoverage, not an addition to
+  // it — Active = existingCoverage minus Lifetime, so the two rows always
+  // reconcile exactly to the figure the shortfall math already uses,
+  // regardless of any rounding difference between this sum and that figure.
+  const lifetimeRaw = lifePolicies
+    .filter(pol => pol.coverAge === 'Lifetime')
+    .reduce((s, pol) => s + (pol.isUSD ? pol.deathSA * pol.fxRate : pol.deathSA), 0)
+  const lifetimeCoverage = Math.min(Math.round(lifetimeRaw), dtpd.existingCoverage)
+  const activeCoverage = Math.max(0, dtpd.existingCoverage - lifetimeCoverage)
+  const nothingInPlace = dtpd.assetMitigation <= 0 && dtpd.existingCoverage <= 0
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
+        Existing infrastructure (have)
+      </div>
+      {dtpd.assetMitigation > 0 && (
+        <NeedsHaveRow icon={Wallet} label="Savings, CPF and property equity" value={dtpd.assetMitigation} accent="var(--emerald)" />
+      )}
+      {activeCoverage > 0 && (
+        <NeedsHaveRow icon={ShieldCheck} label="Active coverage (term)" value={activeCoverage} accent="var(--gold)" />
+      )}
+      {lifetimeCoverage > 0 && (
+        <NeedsHaveRow icon={InfinityIcon} label="Lifetime coverage" value={lifetimeCoverage} accent="var(--gold)" />
+      )}
+      {nothingInPlace && (
+        <div style={{ fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic', padding: '10px 0' }}>Nothing in place yet.</div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', fontSize: 14, fontWeight: 600 }}>
+        <span style={{ color: 'var(--ink)' }}>Status</span>
+        <span style={{ color: dtpd.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)' }}>
+          {dtpd.status === 'shortfall' ? 'Shortfall' : 'Covered'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function NeedsHaveGrid({ dtpd, lifePolicies }: { dtpd: PersonProtectionBreakdown; lifePolicies: LifePolicyLineItem[] }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
+      <NeedsCard dtpd={dtpd} />
+      <HaveCard dtpd={dtpd} lifePolicies={lifePolicies} />
+    </div>
+  )
+}
+
+function milestoneColor(type: CoverageMilestone['type']): string {
+  if (type === 'education') return 'var(--emerald)'
+  if (type === 'mortgage') return 'var(--gold-tag)'
+  return 'var(--ink2)'
+}
+
+function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; timeline: CoverageTimeline; currentAge: number }) {
+  const [hovered, setHovered] = useState<{ age: number; need: number; have: number; x: number; yNeed: number; yHave: number } | null>(null)
+  const { points, milestones } = timeline
+  if (points.length === 0) return null
+
+  const W = 900, H = 300, PL = 60, PR = 30, PT = 56, PB = 40
+  const iW = W - PL - PR, iH = H - PT - PB
+  const minA = points[0].age
+  const maxA = points[points.length - 1].age
+  const aRange = (maxA - minA) || 1
+  const maxV = Math.max(...points.map(d => Math.max(d.need, d.have)), 100000)
+
+  const xP = (age: number) => PL + ((age - minA) / aRange) * iW
+  const yP = (v: number) => PT + iH - Math.min(1, v / maxV) * iH
+  const fmtY = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${Math.round(n / 1000)}K` : `$${Math.round(n)}`)
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+
+  const needPath = points.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xP(d.age).toFixed(1)} ${yP(d.need).toFixed(1)}`).join(' ')
+
+  const shortfallSegs: string[] = []
+  let segStart = -1
+  for (let i = 0; i < points.length; i++) {
+    const isShort = points[i].need > points[i].have
+    if (isShort && segStart === -1) {
+      segStart = i
+    } else if (!isShort && segStart !== -1) {
+      const seg = points.slice(segStart, i)
+      const top = seg.map(d => `${xP(d.age).toFixed(1)},${yP(d.need).toFixed(1)}`)
+      const bot = [...seg].reverse().map(d => `${xP(d.age).toFixed(1)},${yP(d.have).toFixed(1)}`)
+      shortfallSegs.push(`M ${top.join(' L ')} L ${bot.join(' L ')} Z`)
+      segStart = -1
+    }
+  }
+  if (segStart !== -1) {
+    const seg = points.slice(segStart)
+    const top = seg.map(d => `${xP(d.age).toFixed(1)},${yP(d.need).toFixed(1)}`)
+    const bot = [...seg].reverse().map(d => `${xP(d.age).toFixed(1)},${yP(d.have).toFixed(1)}`)
+    shortfallSegs.push(`M ${top.join(' L ')} L ${bot.join(' L ')} Z`)
+  }
+
+  const barW = Math.max(2, (iW / points.length) * 0.7)
+
+  function handleMouseMove(e: MouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    if (mx < PL || mx > PL + iW) { setHovered(null); return }
+    const rel = (mx - PL) / iW
+    const targetAge = minA + rel * aRange
+    const closest = points.reduce((prev, curr) => (Math.abs(curr.age - targetAge) < Math.abs(prev.age - targetAge) ? curr : prev))
+    setHovered({ age: closest.age, need: closest.need, have: closest.have, x: xP(closest.age), yNeed: yP(closest.need), yHave: yP(closest.have) })
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)' }}>
+          {name} · Age {currentAge} to 100
+        </div>
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 14, height: 2, background: 'var(--gold)' }} />
+            <span style={{ fontSize: 10, color: 'var(--ink3)' }}>Capital needed</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 11, height: 7, background: 'var(--gold)', opacity: 0.32, borderRadius: 2 }} />
+            <span style={{ fontSize: 10, color: 'var(--ink3)' }}>Existing portfolio</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 11, height: 7, background: 'var(--rouge)', opacity: 0.5 }} />
+            <span style={{ fontSize: 10, color: 'var(--ink3)' }}>Shortfall</span>
+          </div>
+        </div>
+      </div>
+
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        role="img"
+        aria-label={`Coverage needed versus existing portfolio for ${name}, age ${currentAge} to 100`}
+        style={{ display: 'block', overflow: 'visible' }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHovered(null)}
+      >
+        {ticks.map(f => {
+          const y = PT + iH - f * iH
+          return (
+            <g key={f}>
+              <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke="var(--cream3)" strokeWidth="1" />
+              {f > 0 && <text x={PL - 8} y={y + 3.5} fontSize="9" fill="var(--ink3)" textAnchor="end">{fmtY(maxV * f)}</text>}
+            </g>
+          )
+        })}
+
+        {shortfallSegs.map((d, i) => <path key={`sf-${i}`} d={d} fill="var(--rouge-l)" stroke="none" />)}
+
+        {points.map(d => {
+          if (d.have <= 0) return null
+          const hy = yP(d.have)
+          return (
+            <rect key={`bar-${d.age}`} x={xP(d.age) - barW / 2} y={hy} width={barW} height={Math.max(1, PT + iH - hy)} fill="var(--gold)" opacity="0.32" rx="1" />
+          )
+        })}
+
+        <path d={needPath} stroke="var(--gold)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+        {milestones.map((m, i) => {
+          const mx = xP(m.age)
+          if (mx < PL || mx > PL + iW) return null
+          const color = milestoneColor(m.type)
+          return (
+            <g key={`ms-${i}`}>
+              <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={color} strokeWidth="0.75" strokeDasharray="2,4" opacity="0.35" />
+              <circle cx={mx} cy={PT - 8} r="2.5" fill={color} opacity="0.7" />
+              <text x={mx} y={PT - 26} fontSize="8.5" fill={color} textAnchor="middle" fontWeight={500}>{m.label}</text>
+              <text x={mx} y={PT - 15} fontSize="7.5" fill="var(--ink3)" textAnchor="middle">age {m.age}</text>
+            </g>
+          )
+        })}
+
+        <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="var(--line2)" strokeWidth="1" />
+
+        {points.filter(d => d.age % 5 === 0 || d.age === currentAge || d.age === 100).map(d => (
+          <text key={d.age} x={xP(d.age)} y={PT + iH + 16} fontSize="9" fill="var(--ink3)" textAnchor="middle">{d.age}</text>
+        ))}
+
+        {hovered && (
+          <>
+            <line x1={hovered.x} y1={PT} x2={hovered.x} y2={PT + iH} stroke="var(--ink)" strokeWidth="0.5" strokeDasharray="2,4" opacity="0.2" />
+            <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill="var(--gold)" stroke="#fff" strokeWidth="2" />
+            {hovered.have > 0 && <circle cx={hovered.x} cy={hovered.yHave} r="3" fill="var(--gold)" stroke="#fff" strokeWidth="1.5" opacity="0.6" />}
+          </>
+        )}
+      </svg>
+
+      {hovered && (
+        <div style={{
+          position: 'absolute',
+          left: `${Math.min(Math.max(((hovered.x - PL) / iW) * 100, 10), 90)}%`,
+          top: 16, transform: 'translateX(-50%)',
+          background: 'var(--charcoal)', color: '#F5F0E8', padding: '14px 18px', borderRadius: 10,
+          fontSize: 11, pointerEvents: 'none', zIndex: 10, whiteSpace: 'nowrap',
+        }}>
+          <div style={{ marginBottom: 10, color: 'var(--gold)', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            Age {hovered.age}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 28 }}>
+              <span style={{ color: 'rgba(245,240,232,0.55)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Capital needed</span>
+              <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 16 }}>{fmtCompact(hovered.need)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 28 }}>
+              <span style={{ color: 'rgba(245,240,232,0.55)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Existing portfolio</span>
+              <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 16, color: 'var(--gold)' }}>{fmtCompact(hovered.have)}</span>
+            </div>
+            <div style={{ paddingTop: 8, borderTop: '1px solid rgba(245,240,232,0.15)', display: 'flex', justifyContent: 'space-between', gap: 28 }}>
+              <span style={{ color: 'rgba(245,240,232,0.55)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                {hovered.need > hovered.have ? 'Shortfall' : 'Surplus'}
+              </span>
+              <span style={{
+                fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 16,
+                color: hovered.need > hovered.have ? 'var(--rouge)' : 'var(--emerald)',
+              }}>
+                {fmtCompact(Math.abs(hovered.need - hovered.have))}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CoverageAnalysisBar({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
   const have = dtpd.assetMitigation + dtpd.existingCoverage
-  const isShortfall = dtpd.status === 'shortfall'
-  const hasNeed = dtpd.maxCapitalRequired > 0
-  const pct = fundedPct(have, dtpd.maxCapitalRequired)
+  const need = dtpd.maxCapitalRequired
+  const havePct = need > 0 ? Math.min(100, (have / need) * 100) : 100
 
-  const protects: StoryItem[] = []
-  protects.push({ icon: Home, label: 'Their day-to-day life — keeping the household running', value: dtpd.familyDependency })
-  if (dtpd.mortgageDebtClearance > 0) {
-    protects.push({ icon: Key, label: 'The roof over their heads — mortgage and debts cleared', value: dtpd.mortgageDebtClearance })
-  }
-  if (dtpd.tertiaryFunding > 0) {
-    protects.push({ icon: GraduationCap, label: "Their children's future — university funded", value: dtpd.tertiaryFunding })
-  }
+  return (
+    <div style={{ marginTop: 8, marginBottom: 28 }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12 }}>
+        Coverage analysis
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink2)', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+        <span>Total protection in place — {fmt(have)}</span>
+        <span>{dtpd.shortfall > 0 ? `Shortfall — ${fmt(dtpd.shortfall)}` : 'Fully funded'}</span>
+      </div>
+      <div style={{ display: 'flex', height: 34, borderRadius: 6, overflow: 'hidden' }}>
+        <div style={{
+          width: `${havePct}%`, background: 'var(--charcoal)', display: 'flex', alignItems: 'center',
+          paddingLeft: 12, fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#F5F0E8', whiteSpace: 'nowrap', overflow: 'hidden',
+        }}>
+          {fmt(have)}
+        </div>
+        {dtpd.shortfall > 0 && (
+          <div style={{
+            width: `${100 - havePct}%`, background: 'var(--rouge)', display: 'flex', alignItems: 'center',
+            justifyContent: 'flex-end', paddingRight: 12, fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden',
+          }}>
+            {fmt(dtpd.shortfall)}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
-  const inPlace: StoryItem[] = []
-  if (dtpd.assetMitigation > 0) {
-    inPlace.push({ icon: Wallet, label: 'Savings, CPF and property equity', value: dtpd.assetMitigation, accent: 'var(--emerald)' })
+// Same closing-line copy the old narrative version used — only the
+// surrounding layout changed, not the voice.
+function buildDTPDClosingLine(name: string, dtpd: PersonProtectionBreakdown): string {
+  if (dtpd.maxCapitalRequired <= 0) return ''
+  if (dtpd.status === 'covered') {
+    return `${name}'s family already has full protection in place — with room to spare.`
   }
-  inPlace.push({ icon: ShieldCheck, label: 'Existing life insurance', value: dtpd.existingCoverage, accent: 'var(--gold)' })
-
   const closingParts: string[] = ['keep their lifestyle']
   if (dtpd.mortgageDebtClearance > 0) closingParts.push('stay in their home')
   if (dtpd.tertiaryFunding > 0) closingParts.push('see the children through school')
+  return `Closing this gap means ${name}'s family can ${joinWithAnd(closingParts)} — whatever happens. Without it, the people ${name} cares about most could face difficult choices at the hardest possible moment.`
+}
 
-  let headline: ReactNode
-  let progressColor = 'var(--gold)'
-  let gapLine: ReactNode = null
-  let closingLine = ''
+function ClosingCallout({ text, accentColor }: { text: string; accentColor: string }) {
+  if (!text) return null
+  return (
+    <div style={{ paddingLeft: 16, borderLeft: `2px solid ${accentColor}`, maxWidth: 560 }}>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 16, color: 'var(--ink2)', lineHeight: 1.6 }}>
+        {text}
+      </div>
+    </div>
+  )
+}
 
-  if (!hasNeed) {
-    headline = <>No capital protection need has been identified for {name} yet.</>
-  } else if (isShortfall) {
-    headline = (
-      <>
-        If something happened to {name} today, their family would have{' '}
-        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — about{' '}
-        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need to stay secure and keep life unchanged.
-      </>
-    )
-    progressColor = 'var(--gold)'
-    gapLine = <>A gap of {fmtCompact(dtpd.shortfall)} remains.</>
-    closingLine = `Closing this gap means ${name}'s family can ${joinWithAnd(closingParts)} — whatever happens. Without it, the people ${name} cares about most could face difficult choices at the hardest possible moment.`
-  } else {
-    headline = (
-      <>
-        If something happened to {name} today, their family would have{' '}
-        <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — more than enough to stay secure
-        and keep life unchanged.
-      </>
-    )
-    progressColor = 'var(--emerald)'
-    const surplus = have - dtpd.maxCapitalRequired
-    gapLine = surplus > 0 ? <>{fmtCompact(surplus)} more than they would need.</> : <>Exactly what they would need, in place today.</>
-    closingLine = `${name}'s family already has full protection in place — with room to spare.`
-  }
+function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonProtectionProfile }) {
+  const { dtpd, dtpdTimeline } = profile
+  const closingLine = buildDTPDClosingLine(name, dtpd)
+  const accentColor = dtpd.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)'
+  const currentAge = dtpdTimeline.points.length > 0 ? dtpdTimeline.points[0].age : null
 
-  return {
-    eyebrow: 'Capital protection — death & TPD',
-    headline, hasNeed, pct, have, need: dtpd.maxCapitalRequired, progressColor, gapLine, isShortfall,
-    protects, inPlace, closingLine, accentColor: isShortfall ? 'var(--gold)' : 'var(--emerald)',
-  }
+  return (
+    <div>
+      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>
+        Capital protection — death &amp; TPD
+      </div>
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
+        Death &amp; TPD: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 26 }}>
+        Capital required to clear liabilities and sustain dependents
+      </div>
+
+      <NeedsHaveGrid dtpd={dtpd} lifePolicies={profile.lifePolicies} />
+
+      {currentAge !== null && (
+        <div style={{ marginBottom: 36 }}>
+          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+            Coverage timeline
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 14 }}>
+            How the capital need and existing portfolio evolve as {name} ages.
+          </div>
+          <CoverageTimelineChart name={name} timeline={dtpdTimeline} currentAge={currentAge} />
+        </div>
+      )}
+
+      <CoverageAnalysisBar dtpd={dtpd} />
+
+      <ClosingCallout text={closingLine} accentColor={accentColor} />
+    </div>
+  )
 }
 
 function buildCIContent(name: string, ci: PersonCIBreakdown): SectionContent {
@@ -634,7 +931,7 @@ function PersonStory({
   if (page === 'dtpd') {
     return (
       <div>
-        <ProtectionSection content={buildDTPDContent(name, profile.dtpd)} />
+        <DTPDBreakdownPage name={name} profile={profile} />
         <ContinueLink label="See the critical illness breakdown" onClick={() => onAdvance('ci')} />
       </div>
     )
