@@ -477,10 +477,20 @@ export function buildProtectionSnapshot(input: {
   // consistent with the saved Strategic Objectives value. The CI "need" curve
   // uses a rolling ciYears-window income-replacement annuity instead of D/TPD's
   // full-coverage-term annuity — same difference the live chart's
-  // getCINeedAtAge() has from getDTPDNeedAtAge() — and the raw (unscaled) value
-  // is compared against the floor before scaling, matching the live page's
-  // `rawCI <= personFloor ? personFloor : Math.max(personFloor, rawCI * ciScale)`
-  // rather than D/TPD's simpler `Math.max(floor, raw * scale)`.
+  // getCINeedAtAge() has from getDTPDNeedAtAge().
+  //
+  // Deliberately NOT mirroring the live page's `rawCI <= personFloor ? personFloor
+  // : Math.max(personFloor, rawCI * ciScale)` here. That compares the *unscaled*
+  // raw value against the *absolute* floor before the scale factor is applied —
+  // dimensionally inconsistent, and confirmed (via a standalone test harness
+  // run against Au Chi Hoi's real children/mortgage/life-expectancy figures) to
+  // cause the curve to collapse straight to the floor the moment the first
+  // child's education milestone hits, silently swallowing every milestone
+  // after it whenever the scale factor drifts from 1 — which is most of the
+  // time, since the scale factor exists specifically to reconcile this formula
+  // with whatever was actually saved on Strategic Objectives. Using D/TPD's
+  // simpler, scale-first `Math.max(floor, raw * scale)` produces the correct
+  // multi-step curve instead.
   function buildCITimeline(who: 'client' | 'spouse', currentAgeOrNull: number | null, netOfAssetsAtCurrent: number): CoverageTimeline {
     if (currentAgeOrNull === null) return { points: [], milestones: [] }
     const currentAge: number = currentAgeOrNull
@@ -513,7 +523,7 @@ export function buildProtectionSnapshot(input: {
     const points: CoveragePoint[] = []
     for (let age = currentAge; age <= 100; age++) {
       const raw = rawNeedAtAge(age)
-      const need = raw <= floor ? floor : Math.max(floor, raw * scale)
+      const need = Math.max(floor, raw * scale)
       const have = getCIHaveAtAge(age, who, currentAge)
       points.push({ age, need: Math.round(need), have: Math.round(have) })
     }
