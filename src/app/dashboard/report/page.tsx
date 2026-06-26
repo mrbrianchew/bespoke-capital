@@ -2,9 +2,27 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
-import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
+import { buildProtectionSnapshot, ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 import { buildExecutiveWealthSummarySnapshot, ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
+
+type FrameworkOverrideMap = Partial<Record<FrameworkRowKey, FrameworkRowStatus>>
+
+// Merges advisor-set framework overrides on top of a freshly-built protection
+// snapshot — applied right before render and right before save, so overrides
+// survive snapshot rebuilds (which happen on every relevant data change) and
+// get baked permanently into whatever gets saved.
+function applyFrameworkOverrides(
+  snapshot: ProtectionSnapshot,
+  overrides: { client: FrameworkOverrideMap; spouse: FrameworkOverrideMap },
+): ProtectionSnapshot {
+  return {
+    client: { ...snapshot.client, framework: { ...snapshot.client.framework, overrides: overrides.client } },
+    spouse: snapshot.spouse
+      ? { ...snapshot.spouse, framework: { ...snapshot.spouse.framework, overrides: overrides.spouse } }
+      : null,
+  }
+}
 
 export default function ReportPage() {
   const supabase = createClient()
@@ -17,6 +35,11 @@ export default function ReportPage() {
   const [snapshot, setSnapshot] = useState<OverviewSnapshot | null>(null)
   const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionSnapshot | null>(null)
   const [executiveSummary, setExecutiveSummary] = useState<ExecutiveWealthSummarySnapshot | null>(null)
+  const [frameworkOverrides, setFrameworkOverrides] = useState<{ client: FrameworkOverrideMap; spouse: FrameworkOverrideMap }>({ client: {}, spouse: {} })
+
+  function handleFrameworkOverrideChange(who: 'client' | 'spouse', key: FrameworkRowKey, value: FrameworkRowStatus | undefined) {
+    setFrameworkOverrides(prev => ({ ...prev, [who]: { ...prev[who], [key]: value } }))
+  }
 
   const [password, setPassword] = useState('')
   const [passwordHint, setPasswordHint] = useState('')
@@ -133,7 +156,7 @@ export default function ReportPage() {
         clientName,
         spouseName: spouseName || undefined,
         overview: { ...snapshot, directives: directives.filter(d => d.title.trim() || d.body.trim()) },
-        protection: protectionSnapshot,
+        protection: applyFrameworkOverrides(protectionSnapshot, frameworkOverrides),
         executiveSummary,
       }
     : null
@@ -181,7 +204,7 @@ export default function ReportPage() {
 
         {!loading && !error && plan && (
           <>
-            <FinancialPlanView plan={plan} />
+            <FinancialPlanView plan={plan} editable onFrameworkOverrideChange={handleFrameworkOverrideChange} />
 
             <details style={{ marginTop: 16 }}>
               <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw plan data</summary>
