@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { buildProtectionSnapshot, ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 import { buildExecutiveWealthSummarySnapshot, ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
+import { buildCapitalFundSnapshot, CapitalFundSnapshot } from '@/lib/capitalFundSnapshot'
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 
 type FrameworkOverrideMap = Partial<Record<FrameworkRowKey, FrameworkRowStatus>>
@@ -35,6 +36,7 @@ export default function ReportPage() {
   const [snapshot, setSnapshot] = useState<OverviewSnapshot | null>(null)
   const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionSnapshot | null>(null)
   const [executiveSummary, setExecutiveSummary] = useState<ExecutiveWealthSummarySnapshot | null>(null)
+  const [capitalFundSnapshot, setCapitalFundSnapshot] = useState<CapitalFundSnapshot | null>(null)
   const [frameworkOverrides, setFrameworkOverrides] = useState<{ client: FrameworkOverrideMap; spouse: FrameworkOverrideMap }>({ client: {}, spouse: {} })
 
   function handleFrameworkOverrideChange(who: 'client' | 'spouse', key: FrameworkRowKey, value: FrameworkRowStatus | undefined) {
@@ -72,7 +74,7 @@ export default function ReportPage() {
     const [{ data: client }, { data: family }, { data: ffRows }] = await Promise.all([
       supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
       supabase.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', id),
-      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement']),
+      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement', 'accumulation', 'education', 'capital_mandate']),
     ])
     if (!client) { setError('Client not found.'); setLoading(false); return }
     setClientName(client.name)
@@ -131,6 +133,20 @@ export default function ReportPage() {
       setError('Protection snapshot build failed: ' + e.message)
     }
 
+    try {
+      setCapitalFundSnapshot(buildCapitalFundSnapshot({
+        client: { name: client.name, dob: client.dob || '' },
+        familyMembers: (family || []).map((f: any) => ({ id: f.id, name: f.name, relationship: f.relationship, dob: f.dob })),
+        fin: merged['financials'] || {},
+        retData: merged['retirement'] || {},
+        accData: merged['accumulation'] || {},
+        eduData: merged['education'] || {},
+        cmData: merged['capital_mandate'] || {},
+      }))
+    } catch (e: any) {
+      setError('Capital Fund snapshot build failed: ' + e.message)
+    }
+
     setLoading(false)
   }
 
@@ -166,13 +182,14 @@ export default function ReportPage() {
     }
   }
 
-  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot && executiveSummary)
+  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot && executiveSummary && capitalFundSnapshot)
     ? {
         clientName,
         spouseName: spouseName || undefined,
         overview: { ...snapshot, directives: directives.filter(d => d.title.trim() || d.body.trim()) },
         protection: applyFrameworkOverrides(protectionSnapshot, frameworkOverrides),
         executiveSummary,
+        capitalFund: capitalFundSnapshot,
       }
     : null
 
