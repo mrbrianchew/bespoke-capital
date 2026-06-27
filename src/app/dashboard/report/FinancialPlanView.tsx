@@ -3,9 +3,11 @@ import { useState } from 'react'
 import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
+import { CapitalFundSnapshot } from '@/lib/capitalFundSnapshot'
 import OverviewDisplay from './OverviewDisplay'
 import ProtectionDisplay from './ProtectionDisplay'
 import ExecutiveWealthSummaryDisplay from './ExecutiveWealthSummaryDisplay'
+import CapitalFundDisplay from './CapitalFundDisplay'
 
 export interface PlanSnapshot {
   clientName: string
@@ -13,13 +15,14 @@ export interface PlanSnapshot {
   overview: OverviewSnapshot
   protection: ProtectionSnapshot
   executiveSummary: ExecutiveWealthSummarySnapshot
+  capitalFund: CapitalFundSnapshot
 }
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'wealth-summary', label: 'Wealth Summary' },
   { id: 'protection', label: 'Protection' },
-  { id: 'capital', label: 'Capital Fund', comingSoon: true },
+  { id: 'capital', label: 'Capital Fund' },
   { id: 'recommendations', label: 'Recommendations', comingSoon: true },
 ]
 
@@ -118,6 +121,9 @@ export default function FinancialPlanView({
             editable={editable}
             onFrameworkOverrideChange={onFrameworkOverrideChange}
           />
+        )}
+        {active === 'capital' && (
+          <CapitalFundDisplay snapshot={plan.capitalFund} clientName={plan.clientName} spouseName={plan.spouseName} />
         )}
       </div>
     </div>
