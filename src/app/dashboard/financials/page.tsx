@@ -431,8 +431,14 @@ function CustomRows({ items, onChange, placeholder, isCouple }: { items: CustomA
   const n = (v: string) => v === '' ? 0 : parseFloat(v) || 0
   return (
     <div>
-      {items.map((item, i) => (
+      {items.map((item, i) => {
+        const combined = (item.amount || 0) + (item.amount2 || 0)
+        return (
         <div key={i} className="flex gap-2 py-1.5 items-center" style={{ borderBottom: '1px solid var(--line)' }}>
+          <button onClick={() => onChange(items.filter((_, j) => j !== i))} className="w-7 h-7 flex items-center justify-center text-sm flex-shrink-0"
+            style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--rouge)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink3)')}>×</button>
           <input type="text" value={item.label} placeholder={placeholder || 'Custom item'}
             onChange={e => { const u = [...items]; u[i] = { ...u[i], label: e.target.value }; onChange(u) }}
             className="text-xs outline-none"
@@ -445,43 +451,34 @@ function CustomRows({ items, onChange, placeholder, isCouple }: { items: CustomA
             style={{ minWidth: 0, border: 'none', borderBottom: '1px dashed var(--line)', background: 'transparent', color: 'var(--ink2)', padding: '6px 2px' }}
             onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--gold)')}
             onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--line)')} />
-          {isCouple ? (
-            <>
-              <div className="relative" style={{ width: 244, flexShrink: 0 }}>
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-                <input type="number" value={item.amount || ''} placeholder="0"
-                  onChange={e => { const u = [...items]; u[i] = { ...u[i], amount: n(e.target.value) }; onChange(u) }}
-                  className="w-full text-xs outline-none py-1.5 text-right pr-2"
-                  style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
-                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-              </div>
-              <div className="flex items-center justify-center" style={{ width: 90, flexShrink: 0 }}>
-                <button onClick={() => onChange(items.filter((_, j) => j !== i))} className="w-7 h-7 flex items-center justify-center text-sm"
-                  style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--rouge)')}
-                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink3)')}>×</button>
-              </div>
-            </>
-          ) : (
+          <div className="relative" style={{ width: 118, flexShrink: 0 }}>
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
+            <input type="number" value={item.amount || ''} placeholder="0"
+              onChange={e => { const u = [...items]; u[i] = { ...u[i], amount: n(e.target.value) }; onChange(u) }}
+              className="w-full text-xs outline-none py-1.5 text-right pr-2"
+              style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
+              onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+              onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+          </div>
+          {isCouple && (
             <>
               <div className="relative" style={{ width: 118, flexShrink: 0 }}>
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
-                <input type="number" value={item.amount || ''} placeholder="0"
-                  onChange={e => { const u = [...items]; u[i] = { ...u[i], amount: n(e.target.value) }; onChange(u) }}
+                <input type="number" value={item.amount2 || ''} placeholder="0"
+                  onChange={e => { const u = [...items]; u[i] = { ...u[i], amount2: n(e.target.value) }; onChange(u) }}
                   className="w-full text-xs outline-none py-1.5 text-right pr-2"
-                  style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}
-                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+                  style={{ paddingLeft: 18, border: '1px solid var(--line)', background: 'var(--cream)', color: '#4A7C9E' }}
+                  onFocus={e => (e.currentTarget.style.borderColor = '#4A7C9E')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
               </div>
-              <button onClick={() => onChange(items.filter((_, j) => j !== i))} className="w-7 h-7 flex items-center justify-center text-sm flex-shrink-0"
-                style={{ color: 'var(--ink3)', border: '1px solid var(--line)', background: 'white' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--rouge)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink3)')}>×</button>
+              <div className="text-xs text-right font-medium" style={{ width: 90, flexShrink: 0, color: combined > 0 ? 'var(--ink)' : 'var(--ink3)' }}>
+                {combined > 0 ? fmt(combined) : '—'}
+              </div>
             </>
           )}
         </div>
-      ))}
+        )
+      })}
       <button onClick={() => onChange([...items, { label: '', amount: 0 }])} className="mt-2 text-xs px-3 py-1.5"
         style={{ color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.3)', background: 'var(--gold-l)' }}>+ Add Row</button>
     </div>
