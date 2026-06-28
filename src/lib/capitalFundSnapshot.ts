@@ -51,6 +51,15 @@ export interface CapitalFundSnapshot {
   inflationRate: number
   yearsToRetirement: number
 
+  // Couple-aware retirement display — each person's OWN chosen retirement
+  // age from the Retirement tab (ret.client.retirementAge / ret.spouse.retirementAge),
+  // not an age-gap extrapolation. spouseAge/spouseRetirementAge/spouseYearsToRetirement
+  // are 0 when isCouple is false.
+  isCouple: boolean
+  spouseAge: number
+  spouseRetirementAge: number
+  spouseYearsToRetirement: number
+
   heroAnnualIncomeTarget: number
 
   chart: {
@@ -111,6 +120,28 @@ function formatStartDate(p: any): string {
   return '—'
 }
 
+// Largest-remainder (Hare-Niemeyer) integer percentage distribution. Rounding
+// each share independently (Math.round(v/total*100)) can drift off 100 by a
+// point or two once there are 5+ categories — that's what was happening here
+// (allocations summing to 101%). This guarantees the returned integers always
+// sum to exactly 100 (or all 0 when total is 0), without misrepresenting any
+// single category's relative size.
+function distributePercentages(values: number[]): number[] {
+  const total = values.reduce((s, v) => s + v, 0)
+  if (total <= 0) return values.map(() => 0)
+  const raw = values.map(v => (v / total) * 100)
+  const floors = raw.map(r => Math.floor(r))
+  const remainder = 100 - floors.reduce((s, f) => s + f, 0)
+  const order = raw
+    .map((r, i) => ({ i, frac: r - floors[i] }))
+    .sort((a, b) => b.frac - a.frac)
+  const result = [...floors]
+  for (let k = 0; k < remainder; k++) {
+    result[order[k % order.length].i] += 1
+  }
+  return result
+}
+
 // ─── BUILDER ─────────────────────────────────────────────────────────────────
 
 export function buildCapitalFundSnapshot(input: {
@@ -126,13 +157,21 @@ export function buildCapitalFundSnapshot(input: {
 
   const clientAge = ageYearOnly(client.dob)
   const isCouple = familyMembers.some(f => f.relationship === 'Spouse')
+  const spouseMember = familyMembers.find(f => f.relationship === 'Spouse') || null
+  const spouseAge = spouseMember?.dob ? ageYearOnly(spouseMember.dob) : 0
   const children = familyMembers.filter(f => ['Son', 'Daughter', 'Child'].includes(f.relationship))
 
   // ── Retirement assumptions (mirrors investments/page.tsx load()) ─────────
   const retNested = retData?.ret || retData || {}
   const retClientData = retNested?.client || {}
+  const retSpouseData = retNested?.spouse || {}
   const retExpSel = retNested?.expenseSelections || {}
   const retirementAge = retClientData?.retirementAge || retData?.retirementAge || 65
+  // Spouse's own chosen retirement age — falls back to the client's age only
+  // when the spouse hasn't set one independently (matches RetirementSection's
+  // own default of 65 for an unconfigured person).
+  const spouseRetirementAge = isCouple ? (retSpouseData?.retirementAge || retirementAge) : 0
+  const spouseYearsToRetirement = isCouple ? Math.max(0, spouseRetirementAge - spouseAge) : 0
   const inflationRate = retNested?.inflationRate ?? retNested?.assumptions?.inflation ?? retData?.inflation ?? 3
   const desiredMonthlyIncome = isCouple
     ? (retExpSel?.combinedDesiredMonthly || retClientData?.desiredMonthlyIncome || 0)
@@ -271,11 +310,11 @@ export function buildCapitalFundSnapshot(input: {
   // ── Asset allocation + available cashflow — reuse Overview's existing,
   // already-consistent calc rather than re-deriving asset categorisation. ──
   const overview = buildOverviewSnapshot({ client, familyMembers, fin })
-  const totalAssetsForPct = overview.assetBreakdown.reduce((s, a) => s + a.value, 0)
-  const assetAllocation = overview.assetBreakdown.map(a => ({
+  const allocationPcts = distributePercentages(overview.assetBreakdown.map(a => a.value))
+  const assetAllocation = overview.assetBreakdown.map((a, i) => ({
     label: a.label,
     value: a.value,
-    pct: totalAssetsForPct > 0 ? Math.round((a.value / totalAssetsForPct) * 100) : 0,
+    pct: allocationPcts[i] ?? 0,
   }))
   const illiquidPct = assetAllocation
     .filter(a => a.label === 'Real Estate Portfolio' || a.label === 'CPF Statutory Balances')
@@ -321,6 +360,11 @@ export function buildCapitalFundSnapshot(input: {
     expectedReturn,
     inflationRate,
     yearsToRetirement,
+
+    isCouple,
+    spouseAge,
+    spouseRetirementAge,
+    spouseYearsToRetirement,
 
     heroAnnualIncomeTarget: Math.round(heroAnnualIncomeTarget),
 
