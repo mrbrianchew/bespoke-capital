@@ -37,6 +37,7 @@ export function projectFwd(currentVal: number, monthlyContrib: number, ratePerce
 export function calcIRR(cashflows: number[]): number | null {
   if (!cashflows || cashflows.length < 2) return null
   let r = 0.01
+  let converged = false
   for (let iter = 0; iter < 300; iter++) {
     let f = 0, df = 0
     for (let t = 0; t < cashflows.length; t++) {
@@ -47,11 +48,22 @@ export function calcIRR(cashflows: number[]): number | null {
     if (Math.abs(df) < 1e-14) break
     const rNew = r - f / df
     if (isNaN(rNew) || !isFinite(rNew)) break
-    if (Math.abs(rNew - r) < 1e-10) { r = rNew; break }
+    if (Math.abs(rNew - r) < 1e-10) { r = rNew; converged = true; break }
     r = Math.max(-0.999, Math.min(rNew, 50))
   }
-  if (r > -0.999 && r < 50 && !isNaN(r) && isFinite(r)) return (Math.pow(1 + r, 12) - 1) * 100
-  return null
+  // Running out of iterations without the step-size check ever tripping
+  // (e.g. oscillating against the clamp) used to fall through to the bounds
+  // check below and get accepted anyway — that's how a non-converged,
+  // clamped r produced a "valid-looking" but nonsensical IRR. Require
+  // genuine convergence first.
+  if (!converged || r <= -0.999 || r >= 50 || isNaN(r) || !isFinite(r)) return null
+  // Belt-and-suspenders: confirm the converged rate actually zeroes the NPV,
+  // relative to the scale of the cash flows involved.
+  let finalF = 0
+  for (let t = 0; t < cashflows.length; t++) finalF += cashflows[t] / Math.pow(1 + r, t)
+  const scale = cashflows.reduce((s, c) => s + Math.abs(c), 0) || 1
+  if (Math.abs(finalF) / scale > 1e-6) return null
+  return (Math.pow(1 + r, 12) - 1) * 100
 }
 export function fmt(n: number): string {
   if (!n || isNaN(n)) return '$0'
