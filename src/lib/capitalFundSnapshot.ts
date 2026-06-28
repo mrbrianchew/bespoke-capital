@@ -1,4 +1,4 @@
-import { ageYearOnly, fv, calcIRR } from './calc'
+import { ageYearOnly, fv } from './calc'
 import { buildOverviewSnapshot } from './financialPlanSnapshot'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -290,30 +290,15 @@ export function buildCapitalFundSnapshot(input: {
     isRegular: p.mode !== 'Lump Sum',
   }))
 
-  // Asset Growth Rate is only computed for Regular-contribution vehicles —
-  // we have monthlyContribution + currentValue + startYear for those, enough
-  // for a defensible IRR estimate. Lump Sum vehicles only carry currentValue
-  // (no record of the original amount invested), so there's no honest way to
-  // compute a return for them here; they're excluded rather than guessed at.
-  const vehicleIRRs = portfolio
-    .filter((p: any) => p.mode !== 'Lump Sum' && (p.monthlyContribution || p.currentValue))
-    .map((p: any) => {
-      const now = new Date()
-      let startYr = p.startYear || thisYear
-      let startMo = 1
-      if (p.startMonth) {
-        const [yr, mo] = String(p.startMonth).split('-').map(Number)
-        if (yr && mo) { startYr = yr; startMo = mo }
-      }
-      const monthsActive = Math.max(1, (now.getFullYear() - startYr) * 12 + (now.getMonth() + 1 - startMo) + 1)
-      const flows: number[] = []
-      for (let i = 0; i < monthsActive; i++) flows.push(-(p.monthlyContribution || 0))
-      flows.push(p.currentValue || 0)
-      return calcIRR(flows)
-    })
-    .filter((r): r is number => r != null && isFinite(r))
-  const assetGrowthRatePct = vehicleIRRs.length > 0
-    ? Math.round((vehicleIRRs.reduce((s, r) => s + r, 0) / vehicleIRRs.length) * 10) / 10
+  // Asset Growth Rate reads the Capital Mandate tool's own persisted
+  // portfolioXIRR — a proper value-weighted, cash-flow-based XIRR across the
+  // whole portfolio — rather than computing a per-vehicle average here.
+  // An unweighted average of independent per-vehicle IRRs gives a tiny,
+  // short-tenure, volatile vehicle the same weight as a large, long-running
+  // one, which produces a number that doesn't reflect the actual blended
+  // portfolio performance at all.
+  const assetGrowthRatePct: number | null = typeof cmData?.portfolioXIRR === 'number' && isFinite(cmData.portfolioXIRR)
+    ? Math.round(cmData.portfolioXIRR * 10) / 10
     : null
 
   // ── Capacity audit ────────────────────────────────────────────────────────
