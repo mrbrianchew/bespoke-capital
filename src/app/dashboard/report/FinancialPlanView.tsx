@@ -23,7 +23,7 @@ const TABS = [
   { id: 'wealth-summary', label: 'Wealth Summary' },
   { id: 'protection', label: 'Protection' },
   { id: 'capital', label: 'Capital Fund' },
-  { id: 'recommendations', label: 'Recommendations', comingSoon: true },
+  { id: 'action-plan', label: 'Action Plan', comingSoon: true },
 ]
 
 function initials(name: string): string {
