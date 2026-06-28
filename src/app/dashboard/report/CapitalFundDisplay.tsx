@@ -613,23 +613,40 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
           </div>
         </div>
         {(() => {
-          const vals = [s.capacityAudit.currentInvestmentAnnual, s.capacityAudit.availableCashflowAnnual, s.capacityAudit.requiredAnnual]
-          const maxBar = Math.max(1, ...vals)
-          const bars = [
-            { label: 'Current', val: s.capacityAudit.currentInvestmentAnnual, grad: 'linear-gradient(180deg, #5A574F, var(--ink2))' },
-            { label: 'Available', val: s.capacityAudit.availableCashflowAnnual, grad: 'linear-gradient(180deg, #3A7259, var(--emerald))' },
-            { label: 'Required', val: s.capacityAudit.requiredAnnual, grad: 'linear-gradient(180deg, #C9A876, var(--gold))' },
-          ]
+          // Current + Available stack into one "Capacity" bar, set directly
+          // against "Required" — the gap between what's actually deployable
+          // and what's needed reads in one glance instead of needing the
+          // viewer to mentally add two separate bars together.
+          const currentVal = s.capacityAudit.currentInvestmentAnnual
+          const availableVal = s.capacityAudit.availableCashflowAnnual
+          const requiredVal = s.capacityAudit.requiredAnnual
+          const totalCapacity = currentVal + availableVal
+          const maxBar = Math.max(1, totalCapacity, requiredVal)
+          const capacityHeightPct = Math.max(4, (totalCapacity / maxBar) * 100)
+          const requiredHeightPct = Math.max(4, (requiredVal / maxBar) * 100)
           return (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, height: 170 }}>
-              {bars.map(b => (
-                <div key={b.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                  <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${Math.max(4, (b.val / maxBar) * 100)}%`, background: b.grad }}>
-                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(b.val)}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{b.label}</div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 28, height: 170 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                <div style={{ width: '100%', height: `${capacityHeightPct}%`, display: 'flex', flexDirection: 'column', borderRadius: '8px 8px 3px 3px', overflow: 'hidden', background: 'var(--cream3)' }}>
+                  {availableVal > 0 && (
+                    <div style={{ flex: availableVal, minHeight: 0, background: 'linear-gradient(180deg, #3A7259, var(--emerald))', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 8 }}>
+                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(availableVal)}</span>
+                    </div>
+                  )}
+                  {currentVal > 0 && (
+                    <div style={{ flex: currentVal, minHeight: 0, background: 'linear-gradient(180deg, #5A574F, var(--ink2))', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 8 }}>
+                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(currentVal)}</span>
+                    </div>
+                  )}
                 </div>
-              ))}
+                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Capacity</div>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${requiredHeightPct}%`, background: 'linear-gradient(180deg, #C9A876, var(--gold))' }}>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(requiredVal)}</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Required</div>
+              </div>
             </div>
           )
         })()}
