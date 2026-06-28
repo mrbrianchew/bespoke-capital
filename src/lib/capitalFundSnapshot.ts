@@ -298,8 +298,14 @@ export function buildCapitalFundSnapshot(input: {
   const vehicleIRRs = portfolio
     .filter((p: any) => p.mode !== 'Lump Sum' && (p.monthlyContribution || p.currentValue))
     .map((p: any) => {
-      const startYr = p.startYear || thisYear
-      const monthsActive = Math.max(1, (thisYear - startYr) * 12 + new Date().getMonth() + 1)
+      const now = new Date()
+      let startYr = p.startYear || thisYear
+      let startMo = 1
+      if (p.startMonth) {
+        const [yr, mo] = String(p.startMonth).split('-').map(Number)
+        if (yr && mo) { startYr = yr; startMo = mo }
+      }
+      const monthsActive = Math.max(1, (now.getFullYear() - startYr) * 12 + (now.getMonth() + 1 - startMo) + 1)
       const flows: number[] = []
       for (let i = 0; i < monthsActive; i++) flows.push(-(p.monthlyContribution || 0))
       flows.push(p.currentValue || 0)
