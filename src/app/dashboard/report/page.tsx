@@ -224,7 +224,7 @@ export default function ReportPage() {
     <div className="flex flex-col min-h-full">
       <div style={{ background: 'var(--charcoal)', padding: '0 48px' }}>
         <div className="py-8">
-          <div className="font-serif text-3xl font-light" style={{ color: '#F0EDE8' }}>Report &amp; PDF</div>
+          <div className="font-serif text-3xl font-light" style={{ color: '#F0EDE8' }}>Financial Report</div>
           <div style={{ color: 'rgba(240,237,232,0.5)', fontSize: 13, marginTop: 4 }}>
             {clientName ? `Test harness — ${clientName}` : 'Test harness'}
           </div>
