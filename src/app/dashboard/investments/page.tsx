@@ -1327,11 +1327,18 @@ export default function CapitalMandatePage() {
   const lumpSumFractionRef = useRef(lumpSumFraction)
   useEffect(() => {
     lumpSumFractionRef.current = lumpSumFraction
+    // Guard against the stale-closure-on-mount bug: this effect always runs
+    // once on mount (lumpSumFraction transitions from "unset" to its default).
+    // If we schedule the save before the async load() has populated
+    // portfolio/settings/notes, the 800ms timer fires with empty defaults
+    // and silently overwrites real saved data. Only schedule once loading
+    // has finished, so the closure holds the real, loaded values.
+    if (loading) return
     if (lumpSumFractionTimer.current) clearTimeout(lumpSumFractionTimer.current)
     lumpSumFractionTimer.current = setTimeout(() => {
       saveData(portfolio, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)
     }, 800)
-  }, [lumpSumFraction])
+  }, [lumpSumFraction, loading])
 
   const matchesPerson = useCallback((_owner: 'client' | 'spouse' | 'joint'): boolean => true, [])
 
