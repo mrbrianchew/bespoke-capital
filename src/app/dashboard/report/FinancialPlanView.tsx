@@ -99,7 +99,7 @@ export default function FinancialPlanView({
       </div>
 
       <div className="px-5 md:px-11" style={{ paddingTop: 22, paddingBottom: 36 }}>
-        {active !== 'wealth-summary' && active !== 'protection' && (
+        {active !== 'wealth-summary' && active !== 'protection' && active !== 'capital' && (
           <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
             <PersonCard label="Primary Client" name={plan.clientName} age={plan.overview.client.age} color="var(--gold)" />
             {plan.overview.spouse && (
