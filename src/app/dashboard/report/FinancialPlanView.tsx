@@ -47,13 +47,18 @@ function PersonCard({ label, name, age, color }: { label: string; name: string; 
 }
 
 export default function FinancialPlanView({
-  plan, editable, onFrameworkOverrideChange,
+  plan, editable, onFrameworkOverrideChange, onActiveTabChange,
 }: {
   plan: PlanSnapshot
   editable?: boolean
   onFrameworkOverrideChange?: (who: 'client' | 'spouse', key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
+  onActiveTabChange?: (tabId: string) => void
 }) {
   const [active, setActive] = useState('overview')
+  function selectTab(id: string) {
+    setActive(id)
+    onActiveTabChange?.(id)
+  }
   const generatedDate = new Date(plan.overview.generatedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })
 
   return (
@@ -81,7 +86,7 @@ export default function FinancialPlanView({
           {TABS.map(t => (
             <button
               key={t.id}
-              onClick={() => !t.comingSoon && setActive(t.id)}
+              onClick={() => !t.comingSoon && selectTab(t.id)}
               disabled={t.comingSoon}
               style={{
                 background: t.comingSoon ? 'none' : active === t.id ? '#F5F0E8' : 'rgba(240,237,232,0.08)',
