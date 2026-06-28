@@ -1016,13 +1016,19 @@ function OwnerBadge({ owner, clientName, spouseName }: { owner: 'client' | 'spou
   return <span style={{ fontFamily: 'Inter', fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color, background: bg, padding: '2px 8px', borderRadius: 4 }}>{label}</span>
 }
 
-function XIRRBadge({ rate }: { rate: number | null }) {
-  if (rate === null) return null
+function AnnualizedReturnBadge({ rate }: { rate: number | null }) {
+  if (rate === null) {
+    return (
+      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: 'var(--cream2)', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>
+        Annualized Return —
+      </span>
+    )
+  }
   const color = rate >= 6 ? '#4A9E8A' : rate >= 3 ? '#A8834A' : '#E08080'
   const bg = rate >= 6 ? 'rgba(74,158,138,0.1)' : rate >= 3 ? 'rgba(168,131,74,0.1)' : 'rgba(224,128,128,0.1)'
   return (
     <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: bg, color, whiteSpace: 'nowrap' }}>
-      XIRR {rate > 0 ? '+' : ''}{rate.toFixed(1)}%
+      Annualized Return {rate > 0 ? '+' : ''}{rate.toFixed(1)}%
     </span>
   )
 }
@@ -2711,7 +2717,8 @@ export default function CapitalMandatePage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {filteredPortfolio.map(p => {
-                  const xr = xirrMap[p.id]
+                  const showsAnnualizedReturn = p.vehicleType === 'investment' || p.vehicleType === 'other' || p.vehicleType === 'srs' || p.vehicleType === 'endowment'
+                  const annualizedReturnPct = p.annualizedReturn != null ? p.annualizedReturn * 100 : null
                   return (
                     <div key={p.id} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
                       <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: vehicleTypeColors[p.vehicleType || 'investment'], flexShrink: 0 }} />
@@ -2721,7 +2728,7 @@ export default function CapitalMandatePage() {
                           <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{p.name}</span>
                           <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '2px 6px', borderRadius: 4 }}>{p.vehicleType?.replace('_', ' ')}</span>
                           {planMode === 'couple' && <OwnerBadge owner={p.owner} clientName={clientName} spouseName={spouseName} />}
-                          {xr !== null && <XIRRBadge rate={xr} />}
+                          {showsAnnualizedReturn && <AnnualizedReturnBadge rate={annualizedReturnPct} />}
                         </div>
                         <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
                           {p.vehicleType === 'cpf_life' && `${p.cpfScheme} · S$${(p.cpfMonthlyPayout || 0).toLocaleString('en-SG')}/mo from age ${p.cpfPayoutStartAge}`}
