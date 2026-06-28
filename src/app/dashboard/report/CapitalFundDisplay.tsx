@@ -18,6 +18,12 @@ function fmtAge(displayAge: number, isCouple: boolean, clientAge: number, spouse
   const spouseDisplayAge = spouseAge + (displayAge - clientAge)
   return `Age ${displayAge} / ${spouseDisplayAge}`
 }
+// Couple-aware "XX/YY" pairing for each person's own retirement age (or years
+// to retirement) — unlike fmtAge above, this does NOT extrapolate the spouse's
+// value from the age gap; it shows each person's independently-set figure.
+function fmtAgePair(clientVal: number, spouseVal: number, isCouple: boolean): string {
+  return isCouple ? `${clientVal}/${spouseVal}` : `${clientVal}`
+}
 function fmtCompact(n: number): string {
   if (!n || isNaN(n)) return '$0'
   if (n >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M'
@@ -393,13 +399,18 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
 }) {
   const s = snapshot
   const objectiveLabels = s.objectives.map(o => o.id === 'retirement' ? 'the independence you\'re building toward' : o.label.replace(/'s Education$/, "'s education"))
-  const donutColors = ['var(--charcoal)', 'var(--gold)', '#C9A876', 'var(--ink3)', 'var(--emerald)']
+  const assetAllocationTotal = s.assetAllocation.reduce((acc, a) => acc + a.value, 0)
+  // 7 distinct colors — one per possible asset category (Cash, CPF, Investment,
+  // Managed, Real Estate, Business, Personal Use). Previously only 5 colors
+  // existed, so the 6th category silently reused the 1st's color (Business
+  // Ventures rendered identically to Cash Reserves whenever both were on file).
+  const donutColors = ['var(--charcoal)', 'var(--gold)', '#C9A876', 'var(--ink3)', 'var(--emerald)', 'var(--rouge)', '#8C7A65']
 
   return (
     <div>
       <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 14 }}>Strategic Wealth Accumulation</div>
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 25, lineHeight: 1.5, color: 'var(--ink)', width: '100%', marginBottom: 30 }}>
-        {s.objectives.length} commitment{s.objectives.length === 1 ? '' : 's'}, one number that has to work: {joinWithAnd(objectiveLabels)} — all by {s.retirementAge}.
+        {s.objectives.length} commitment{s.objectives.length === 1 ? '' : 's'}, one number that has to work: {joinWithAnd(objectiveLabels)} — all by {fmtAgePair(s.retirementAge, s.spouseRetirementAge, s.isCouple)}.
       </div>
 
       {/* Hero income target */}
@@ -411,7 +422,7 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
             <span style={{ fontSize: 16, color: 'var(--ink3)', fontStyle: 'italic', fontFamily: 'Cormorant Garamond, serif' }}>/ annum</span>
           </div>
           <div style={{ fontSize: 13, color: 'var(--ink2)', maxWidth: 480, lineHeight: 1.55 }}>
-            The income this capital needs to produce at {s.retirementAge} — {s.yearsToRetirement} years from where you're standing today — so retirement is a choice, not a constraint.
+            The income this capital needs to produce at {fmtAgePair(s.retirementAge, s.spouseRetirementAge, s.isCouple)} — {fmtAgePair(s.yearsToRetirement, s.spouseYearsToRetirement, s.isCouple)} years from where you're standing today — so retirement is a choice, not a constraint.
           </div>
         </div>
       </div>
@@ -443,7 +454,7 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       {/* Stat trio */}
       <div style={{ display: 'flex', margin: '28px 0 48px' }}>
         {[
-          { label: 'Retirement Age', val: String(s.retirementAge) },
+          { label: 'Retirement Age', val: fmtAgePair(s.retirementAge, s.spouseRetirementAge, s.isCouple) },
           { label: 'Expected Returns', val: `${s.expectedReturn.toFixed(1)}%` },
           { label: 'Inflation Rate', val: `${s.inflationRate.toFixed(1)}%` },
         ].map((st, i) => (
@@ -503,7 +514,13 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
             <>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
                 <div style={{ position: 'relative' }}>
-                  <Donut slices={s.assetAllocation.map((a, i) => ({ label: a.label, pct: a.pct, color: donutColors[i % donutColors.length] }))} />
+                  <Donut slices={s.assetAllocation.map((a, i) => ({
+                    label: a.label,
+                    // Raw value/total fraction, not the rounded display pct — keeps
+                    // slice arc lengths exact regardless of label rounding.
+                    pct: assetAllocationTotal > 0 ? (a.value / assetAllocationTotal) * 100 : 0,
+                    color: donutColors[i % donutColors.length],
+                  }))} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', pointerEvents: 'none' }}>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 26, color: 'var(--ink)' }}>{s.illiquidPct}%</div>
                     <div style={{ fontSize: 9.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', marginTop: 2, maxWidth: 70, lineHeight: 1.3 }}>illiquid<br />(property + CPF)</div>
