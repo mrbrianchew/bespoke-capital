@@ -600,52 +600,54 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36, alignItems: 'center', marginBottom: 32 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500, marginBottom: 2 }}>Total Requirement <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 400, marginLeft: 6 }}>{fmt(s.capacityAudit.totalRequiredAnnual)}</span></div>
+            <div style={{ fontSize: 12, color: 'var(--ink3)' }}>What it'd take annually, starting from zero</div>
+          </div>
+          <div>
             <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500, marginBottom: 2 }}>Current Investment <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 400, marginLeft: 6 }}>{fmt(s.capacityAudit.currentInvestmentAnnual)}</span></div>
             <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Actual capital currently working</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500, marginBottom: 2 }}>Shortfall <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 400, marginLeft: 6 }}>{fmt(s.capacityAudit.requiredAnnual)}</span></div>
+            <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Additional amount needed beyond what's invested today</div>
           </div>
           <div>
             <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500, marginBottom: 2 }}>Available Cashflow <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 400, marginLeft: 6 }}>{fmt(s.capacityAudit.availableCashflowAnnual)}</span></div>
             <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Potential annual surplus capacity</div>
           </div>
-          <div>
-            <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500, marginBottom: 2 }}>Required Amount <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 400, marginLeft: 6 }}>{fmt(s.capacityAudit.requiredAnnual)}</span></div>
-            <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Target to reach your milestones</div>
-          </div>
         </div>
         {(() => {
-          // Current + Available stack into one "Capacity" bar, set directly
-          // against "Required" — the gap between what's actually deployable
-          // and what's needed reads in one glance instead of needing the
-          // viewer to mentally add two separate bars together.
+          // Total Requirement = Current Investment (already happening) +
+          // Shortfall (what's still missing) — shown as a literal
+          // subtraction so the relationship between the three numbers
+          // doesn't need separate explaining. Available isn't a fourth bar
+          // here — it's compared directly against the Shortfall below,
+          // since that's the only number it can actually offset.
+          const totalVal = s.capacityAudit.totalRequiredAnnual
           const currentVal = s.capacityAudit.currentInvestmentAnnual
-          const availableVal = s.capacityAudit.availableCashflowAnnual
-          const requiredVal = s.capacityAudit.requiredAnnual
-          const totalCapacity = currentVal + availableVal
-          const maxBar = Math.max(1, totalCapacity, requiredVal)
-          const capacityHeightPct = Math.max(4, (totalCapacity / maxBar) * 100)
-          const requiredHeightPct = Math.max(4, (requiredVal / maxBar) * 100)
+          const shortfallVal = s.capacityAudit.requiredAnnual
+          const maxBar = Math.max(1, totalVal, currentVal, shortfallVal)
           return (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 28, height: 170 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, height: 170 }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <div style={{ width: '100%', height: `${capacityHeightPct}%`, display: 'flex', flexDirection: 'column', borderRadius: '8px 8px 3px 3px', overflow: 'hidden', background: 'var(--cream3)' }}>
-                  {availableVal > 0 && (
-                    <div style={{ flex: availableVal, minHeight: 0, background: 'linear-gradient(180deg, #3A7259, var(--emerald))', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 8 }}>
-                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(availableVal)}</span>
-                    </div>
-                  )}
-                  {currentVal > 0 && (
-                    <div style={{ flex: currentVal, minHeight: 0, background: 'linear-gradient(180deg, #5A574F, var(--ink2))', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 8 }}>
-                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(currentVal)}</span>
-                    </div>
-                  )}
+                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${Math.max(4, (totalVal / maxBar) * 100)}%`, background: 'linear-gradient(180deg, #C9A876, var(--gold))' }}>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(totalVal)}</span>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Capacity</div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Total requirement</div>
               </div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, color: 'var(--ink3)', paddingBottom: 32 }}>−</div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${requiredHeightPct}%`, background: 'linear-gradient(180deg, #C9A876, var(--gold))' }}>
-                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(requiredVal)}</span>
+                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${Math.max(4, (currentVal / maxBar) * 100)}%`, background: 'linear-gradient(180deg, #5A574F, var(--ink2))' }}>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(currentVal)}</span>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Required</div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Current investment</div>
+              </div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, color: 'var(--ink3)', paddingBottom: 32 }}>=</div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${Math.max(4, (shortfallVal / maxBar) * 100)}%`, background: 'linear-gradient(180deg, #E08080, var(--rouge))' }}>
+                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(shortfallVal)}</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Shortfall</div>
               </div>
             </div>
           )
@@ -653,22 +655,30 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       </div>
 
       {/* Advisory insight */}
-      <div style={{ display: 'flex', background: 'var(--charcoal)', borderRadius: 12, overflow: 'hidden', marginBottom: 44 }}>
-        <div style={{ flex: 1.5, padding: '26px 30px' }}>
-          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#C9A876', marginBottom: 10 }}>Advisory Insight</div>
-          <div style={{ fontSize: 14, lineHeight: 1.65, color: 'rgba(240,237,232,0.85)' }}>
-            Less than half of what could be invested each year — <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{s.capacityAudit.investedShareOfCapacityPct}%</b> — actually is. The other <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(s.capacityAudit.availableCashflowAnnual)}</b> is sitting in cash: available, but not yet working toward the <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(s.heroAnnualIncomeTarget)}</b> a year you're aiming for.
+      {(() => {
+        const identifiableCapacity = s.capacityAudit.currentInvestmentAnnual + s.capacityAudit.availableCashflowAnnual
+        const coversShortfall = s.capacityAudit.capacityBeyondMandate >= 0
+        return (
+          <div style={{ display: 'flex', background: 'var(--charcoal)', borderRadius: 12, overflow: 'hidden', marginBottom: 44 }}>
+            <div style={{ flex: 1.5, padding: '26px 30px' }}>
+              <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#C9A876', marginBottom: 10 }}>Advisory Insight</div>
+              <div style={{ fontSize: 14, lineHeight: 1.65, color: 'rgba(240,237,232,0.85)' }}>
+                Of the <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(identifiableCapacity)}</b> you could be investing each year, only <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{s.capacityAudit.investedShareOfCapacityPct}%</b> — <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(s.capacityAudit.currentInvestmentAnnual)}</b> — actually is. Redirecting the other <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(s.capacityAudit.availableCashflowAnnual)}</b> would {coversShortfall ? 'fully close' : 'close part of'} the <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(s.capacityAudit.requiredAnnual)}</b> shortfall{coversShortfall
+                  ? <>, with <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(s.capacityAudit.capacityBeyondMandate)}</b> a year to spare.</>
+                  : <>, but <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(Math.abs(s.capacityAudit.capacityBeyondMandate))}</b> a year would still be missing to reach <b style={{ color: '#F0EDE6', fontWeight: 600 }}>{fmt(s.heroAnnualIncomeTarget)}</b> at retirement.</>}
+              </div>
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderLeft: '1px solid rgba(240,237,232,0.1)', padding: 20 }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 30, color: coversShortfall ? '#80C4A0' : '#E08080' }}>
+                {coversShortfall ? '+' : '−'}{fmt(Math.abs(s.capacityAudit.capacityBeyondMandate))}
+              </div>
+              <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(240,237,232,0.55)', marginTop: 4, textAlign: 'center' }}>
+                {coversShortfall ? 'Capacity beyond what\'s required' : 'Still short, even fully redirected'}
+              </div>
+            </div>
           </div>
-        </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', borderLeft: '1px solid rgba(240,237,232,0.1)', padding: 20 }}>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 30, color: s.capacityAudit.capacityBeyondMandate >= 0 ? '#80C4A0' : '#E08080' }}>
-            {s.capacityAudit.capacityBeyondMandate >= 0 ? '+' : '−'}{fmt(Math.abs(s.capacityAudit.capacityBeyondMandate))}
-          </div>
-          <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(240,237,232,0.55)', marginTop: 4, textAlign: 'center' }}>
-            {s.capacityAudit.capacityBeyondMandate >= 0 ? 'Capacity beyond the mandate' : 'Capacity short of the mandate'}
-          </div>
-        </div>
-      </div>
+        )
+      })()}
 
       {/* Strategic optimization */}
       <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>Strategic Optimization</div>
