@@ -82,6 +82,7 @@ export interface CapitalFundSnapshot {
     currentInvestmentAnnual: number
     availableCashflowAnnual: number
     requiredAnnual: number
+    totalRequiredAnnual: number
     investedShareOfCapacityPct: number
     capacityBeyondMandate: number
   }
@@ -351,8 +352,24 @@ export function buildCapitalFundSnapshot(input: {
   // a second time. ──
   const shortfall = Math.max(0, cmData?.retirementShortfall || 0)
   const shortfallSolution = cmData?.shortfallSolution || null
+  // requiredAnnual is the ADDITIONAL annual contribution needed ON TOP OF
+  // currentInvestmentAnnual to close the corpus gap — it's a shortfall, not
+  // a gross target (confirmed against investments/page.tsx: the solver's
+  // `gap` is requiredCorpusAtRet minus the projection, and that projection
+  // already includes the current portfolio's contributions growing forward).
   const requiredAnnual = shortfallSolution ? Math.round((shortfallSolution.pureMonthly || 0) * 12) : 0
-  const capacityBeyondMandate = identifiableCapacity - requiredAnnual
+  // The gross total — what you'd need to be investing annually from a
+  // standing start to fully close the gap — is current + the additional
+  // amount above. This is definitional (requiredAnnual is "the additional
+  // bit"), not a re-derivation of the underlying corpus math.
+  const totalRequiredAnnual = currentInvestmentAnnual + requiredAnnual
+  // capacityBeyondMandate compares available (UNINVESTED) cash against the
+  // shortfall — not identifiableCapacity (current+available) against it.
+  // requiredAnnual already nets out currentInvestmentAnnual, so comparing it
+  // against current+available double-counts current investment and
+  // overstates how covered the shortfall is. Available cash is the only
+  // capacity that's actually free to redirect toward closing it.
+  const capacityBeyondMandate = availableCashflowAnnual - requiredAnnual
 
   return {
     currentAge: clientAge,
@@ -384,6 +401,7 @@ export function buildCapitalFundSnapshot(input: {
       currentInvestmentAnnual,
       availableCashflowAnnual,
       requiredAnnual,
+      totalRequiredAnnual,
       investedShareOfCapacityPct: identifiableCapacity > 0 ? Math.round((currentInvestmentAnnual / identifiableCapacity) * 100) : 0,
       capacityBeyondMandate,
     },
