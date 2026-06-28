@@ -1,11 +1,22 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { GraduationCap, Palmtree, Coins } from 'lucide-react'
-import { CapitalFundSnapshot, CapitalFundChartPoint } from '@/lib/capitalFundSnapshot'
+import { Chart, registerables } from 'chart.js'
+import { CapitalFundSnapshot, CapitalFundChartPoint, CapitalFundFullSeries } from '@/lib/capitalFundSnapshot'
+
+Chart.register(...registerables)
 
 function fmt(n: number): string {
   if (!n || isNaN(n)) return '$0'
   return '$' + Math.round(n).toLocaleString('en-SG')
+}
+function fmtMo(n: number): string {
+  return '$' + Math.round(n).toLocaleString('en-SG') + '/mo'
+}
+function fmtAge(displayAge: number, isCouple: boolean, clientAge: number, spouseAge: number): string {
+  if (!isCouple) return `Age ${displayAge}`
+  const spouseDisplayAge = spouseAge + (displayAge - clientAge)
+  return `Age ${displayAge} / ${spouseDisplayAge}`
 }
 function fmtCompact(n: number): string {
   if (!n || isNaN(n)) return '$0'
@@ -129,6 +140,233 @@ function CapitalChart({ target, projection, currentAge, retirementAge }: {
   )
 }
 
+function CapitalChartFull({ series, inflationRate }: { series: CapitalFundFullSeries; inflationRate: number }) {
+  const chartRef = useRef<HTMLCanvasElement>(null)
+  const chartInstance = useRef<any>(null)
+
+  useEffect(() => {
+    if (!chartRef.current) return
+    const existing = Chart.getChart(chartRef.current)
+    if (existing) existing.destroy()
+    if (chartInstance.current) {
+      chartInstance.current.destroy()
+      chartInstance.current = null
+    }
+
+    const timer = setTimeout(() => {
+      if (!chartRef.current) return
+      const canvasCtx = chartRef.current.getContext('2d')
+      if (!canvasCtx) return
+
+      const { ages, requiredLine, projectedLine, legacyLine, milestones, retireIdx, retirementAge, finalDeathAge, goldAnnualBase, planMode, clientAge, spouseAge } = series
+      const isCouple = planMode === 'couple'
+      const earliestRetAge = retirementAge
+
+      const corpusAtAge: Record<number, number> = {}
+      ages.forEach((a, i) => { corpusAtAge[a] = requiredLine[i] })
+
+      const milestonesByAge: Record<number, { label: string; amount: number }[]> = {}
+      milestones.forEach(m => {
+        if (!milestonesByAge[m.age]) milestonesByAge[m.age] = []
+        milestonesByAge[m.age].push({ label: m.label, amount: m.amount })
+      })
+
+      // Draws a circle + label at each non-retirement goal's funding age
+      const milestonePlugin = {
+        id: 'milestones',
+        afterDatasetsDraw(chart: any) {
+          const xAxis = chart.scales.x
+          const yAxis = chart.scales.y
+          if (!xAxis || !yAxis) return
+          const ctx = chart.ctx
+          Object.entries(milestonesByAge).forEach(([ageStr, msArr]) => {
+            const age = parseInt(ageStr)
+            const idx = ages.indexOf(age)
+            if (idx < 0) return
+            const x = xAxis.getPixelForValue(idx)
+            const corpusVal = corpusAtAge[age] ?? 0
+            const dotY = yAxis.getPixelForValue(corpusVal)
+            ctx.save()
+            ctx.beginPath()
+            ctx.setLineDash([4, 4])
+            ctx.moveTo(x, yAxis.top)
+            ctx.lineTo(x, yAxis.bottom)
+            ctx.strokeStyle = 'rgba(94,138,106,0.2)'
+            ctx.lineWidth = 1
+            ctx.stroke()
+            ctx.setLineDash([])
+            ctx.beginPath()
+            ctx.arc(x, dotY, 6, 0, Math.PI * 2)
+            ctx.fillStyle = '#5E8A6A'
+            ctx.fill()
+            ctx.strokeStyle = 'white'
+            ctx.lineWidth = 2
+            ctx.stroke()
+            ctx.restore()
+          })
+        },
+      }
+
+      const retireLinePlugin = {
+        id: 'retireLine',
+        afterDraw(chart: any) {
+          if (retireIdx < 0) return
+          const xAxis = chart.scales.x
+          const yAxis = chart.scales.y
+          if (!xAxis || !yAxis) return
+          const x = xAxis.getPixelForValue(retireIdx)
+          const ctx = chart.ctx
+          const retirementMeta = chart.getDatasetMeta(0)
+          const retirePoint = retirementMeta?.data?.[retireIdx]
+          const lineY = retirePoint ? retirePoint.y : yAxis.top + 60
+          ctx.save()
+          ctx.beginPath()
+          ctx.setLineDash([4, 4])
+          ctx.moveTo(x, yAxis.top)
+          ctx.lineTo(x, lineY)
+          ctx.strokeStyle = 'rgba(168,131,74,0.3)'
+          ctx.lineWidth = 1
+          ctx.stroke()
+          ctx.setLineDash([])
+          ctx.beginPath()
+          ctx.arc(x, lineY, 6, 0, Math.PI * 2)
+          ctx.fillStyle = '#A8834A'
+          ctx.fill()
+          ctx.strokeStyle = 'white'
+          ctx.lineWidth = 2
+          ctx.stroke()
+          ctx.restore()
+        },
+      }
+
+      const datasets: any[] = [
+        {
+          label: 'Capital Required',
+          data: requiredLine,
+          borderColor: '#A8834A',
+          backgroundColor: (context: any) => {
+            const chart = context.chart
+            const { ctx: c, chartArea } = chart
+            if (!chartArea) return 'rgba(168,131,74,0.05)'
+            const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+            gradient.addColorStop(0, 'rgba(168,131,74,0.12)')
+            gradient.addColorStop(1, 'rgba(168,131,74,0.01)')
+            return gradient
+          },
+          borderWidth: 2.5, tension: 0.35, pointRadius: 0, pointHoverRadius: 6,
+          pointHoverBackgroundColor: '#A8834A', pointHoverBorderColor: 'white', pointHoverBorderWidth: 2,
+          fill: true,
+        },
+      ]
+      if (projectedLine.some(v => v > 0)) {
+        datasets.push({
+          label: 'Projected Portfolio',
+          data: projectedLine,
+          borderColor: '#4A9E8A', backgroundColor: 'rgba(74,158,138,0.04)',
+          borderWidth: 2, tension: 0.35, pointRadius: 0, pointHoverRadius: 6,
+          pointHoverBackgroundColor: '#4A9E8A', pointHoverBorderColor: 'white', pointHoverBorderWidth: 2,
+          fill: false,
+        })
+      }
+      if (legacyLine) {
+        datasets.push({
+          label: 'Legacy Floor',
+          data: legacyLine,
+          borderColor: 'rgba(196,164,100,0.5)', backgroundColor: 'rgba(196,164,100,0.03)',
+          borderDash: [3, 3], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 4,
+          fill: false, tension: 0, spanGaps: false,
+        })
+      }
+
+      try {
+        chartInstance.current = new Chart(canvasCtx, {
+          type: 'line',
+          plugins: [retireLinePlugin, milestonePlugin],
+          data: { labels: ages.map(a => fmtAge(a, isCouple, clientAge, spouseAge)), datasets },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            layout: { padding: { bottom: 0 } },
+            plugins: {
+              legend: { labels: { color: '#9A9690', font: { size: 11 }, boxWidth: 20, filter: (item: any) => item.text !== 'null' } },
+              tooltip: {
+                backgroundColor: 'rgba(26,24,22,0.95)', titleColor: 'rgba(196,164,100,0.9)', bodyColor: 'rgba(240,237,232,0.85)',
+                padding: 14, titleFont: { size: 12, weight: 'bold' }, bodyFont: { size: 11 },
+                callbacks: {
+                  title: (ctxs: any[]) => {
+                    if (!ctxs.length) return ''
+                    const idx = ctxs[0].dataIndex
+                    const a = ages[idx]
+                    const phase = a < earliestRetAge ? 'Accumulation' : a === earliestRetAge ? 'Retirement Begins' : 'Retirement'
+                    return `${fmtAge(a, isCouple, clientAge, spouseAge)}  ·  ${phase}`
+                  },
+                  label: (ctx: any) => {
+                    if (ctx.parsed.y === null || ctx.parsed.y === undefined || ctx.parsed.y < 0) return ''
+                    return `  ${ctx.dataset.label}:  ${fmt(ctx.parsed.y)}`
+                  },
+                  afterBody: (ctxs: any[]) => {
+                    if (!ctxs.length) return []
+                    const idx = ctxs[0].dataIndex
+                    const a = ages[idx]
+                    const lines: string[] = []
+                    if (milestonesByAge[a]?.length) {
+                      milestonesByAge[a].forEach(ms => {
+                        lines.push('')
+                        lines.push(`  🎯  ${ms.label}`)
+                        lines.push(`       Corpus released: −${fmt(ms.amount)}`)
+                      })
+                    }
+                    if (a === earliestRetAge && corpusAtAge[earliestRetAge]) {
+                      lines.push('')
+                      lines.push(`  🏖  Portfolio target at retirement: ${fmt(corpusAtAge[earliestRetAge])}`)
+                    }
+                    if (a >= earliestRetAge && goldAnnualBase > 0) {
+                      const annualAtAge = goldAnnualBase * Math.pow(1 + inflationRate / 100, a - earliestRetAge)
+                      lines.push('')
+                      lines.push(`  💸  Retirement income: ${fmtMo(annualAtAge / 12)} (${fmt(annualAtAge)}/yr)`)
+                    }
+                    return lines
+                  },
+                  footer: (ctxs: any[]) => {
+                    if (!ctxs.length) return []
+                    const idx = ctxs[0].dataIndex
+                    const a = ages[idx]
+                    if (a >= earliestRetAge && a < finalDeathAge) {
+                      const yrsLeft = finalDeathAge - a
+                      return [`  ${yrsLeft} yrs to life expectancy (${fmtAge(finalDeathAge, isCouple, clientAge, spouseAge)})`]
+                    }
+                    return []
+                  },
+                },
+              },
+            },
+            scales: {
+              x: { ticks: { color: '#9A9690', font: { size: 9 }, maxTicksLimit: 14 }, grid: { display: false } },
+              y: {
+                ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
+                grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
+                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.15,
+              },
+            },
+          },
+        })
+      } catch (error) {
+        console.error('Chart creation failed:', error)
+      }
+    }, 50)
+
+    return () => {
+      clearTimeout(timer)
+      if (chartInstance.current) {
+        chartInstance.current.destroy()
+        chartInstance.current = null
+      }
+    }
+  }, [series, inflationRate])
+
+  return <div style={{ height: 320, position: 'relative' }}><canvas ref={chartRef} /></div>
+}
+
 function Donut({ slices }: { slices: { label: string; pct: number; color: string }[] }) {
   const dr = 70, dc = 2 * Math.PI * dr
   let off = 0
@@ -160,8 +398,8 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
   return (
     <div>
       <div style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 14 }}>Strategic Wealth Accumulation</div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 25, lineHeight: 1.5, color: 'var(--ink)', maxWidth: 640, marginBottom: 30 }}>
-        One capital framework, {s.objectives.length} commitment{s.objectives.length === 1 ? '' : 's'}: {joinWithAnd(objectiveLabels)} at {s.retirementAge}.
+      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 25, lineHeight: 1.5, color: 'var(--ink)', width: '100%', marginBottom: 30 }}>
+        {s.objectives.length} commitment{s.objectives.length === 1 ? '' : 's'}, one number that has to work: {joinWithAnd(objectiveLabels)} — all by {s.retirementAge}.
       </div>
 
       {/* Hero income target */}
@@ -179,14 +417,28 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       </div>
 
       {/* Chart */}
-      <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>
-        Capital Fund Framework · Age {s.currentAge} to {s.retirementAge}
-      </div>
-      <div style={{ display: 'flex', gap: 18, justifyContent: 'flex-end', marginBottom: 8 }}>
-        <span style={{ fontSize: 10.5, color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 2, background: '#4A8A86', display: 'inline-block' }} />Projection</span>
-        <span style={{ fontSize: 10.5, color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 2, background: 'var(--gold)', display: 'inline-block' }} />Target</span>
-      </div>
-      <CapitalChart target={s.chart.target} projection={s.chart.projection} currentAge={s.currentAge} retirementAge={s.retirementAge} />
+      {s.fullChartSeries ? (
+        <>
+          <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>
+            Capital Fund Framework · Age {s.currentAge} to {s.fullChartSeries.finalDeathAge}
+          </div>
+          <CapitalChartFull series={s.fullChartSeries} inflationRate={s.inflationRate} />
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>
+            Capital Fund Framework · Age {s.currentAge} to {s.retirementAge}
+          </div>
+          <div style={{ display: 'flex', gap: 18, justifyContent: 'flex-end', marginBottom: 8 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 2, background: '#4A8A86', display: 'inline-block' }} />Projection</span>
+            <span style={{ fontSize: 10.5, color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 2, background: 'var(--gold)', display: 'inline-block' }} />Target</span>
+          </div>
+          <CapitalChart target={s.chart.target} projection={s.chart.projection} currentAge={s.currentAge} retirementAge={s.retirementAge} />
+          <div style={{ fontSize: 11.5, color: 'var(--ink3)', fontStyle: 'italic', marginTop: 10 }}>
+            Full lifecycle chart pending — re-save this client's Capital Mandate to populate it.
+          </div>
+        </>
+      )}
 
       {/* Stat trio */}
       <div style={{ display: 'flex', margin: '28px 0 48px' }}>
@@ -203,30 +455,37 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       </div>
 
       {/* Two column: objectives + donut */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 48, marginBottom: 40 }}>
-        <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 48, marginBottom: 40, alignItems: 'stretch' }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>Funding Timeline Objectives</div>
-          {s.objectives.length === 0 && (
-            <div style={{ fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>No funding objectives on file yet — add goals in Strategic Objectives or the Capital Mandate tool.</div>
-          )}
-          {s.objectives.map((o, i) => {
-            const Icon = objectiveIcon(o.id)
-            return (
-              <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', padding: '18px 0', borderBottom: i < s.objectives.length - 1 ? '1px solid var(--cream3)' : 'none', paddingTop: i === 0 ? 0 : 18 }}>
-                <div style={{ display: 'flex', gap: 14, maxWidth: 320 }}>
-                  <div style={{ width: 3, borderRadius: 2, flexShrink: 0, alignSelf: 'stretch', background: o.accentColor === 'gold' ? 'var(--gold)' : 'var(--emerald)' }} />
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <Icon size={14} color={o.accentColor === 'gold' ? 'var(--gold-tag,#8A6C3A)' : 'var(--emerald)'} />
-                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, color: 'var(--ink)', lineHeight: 1.4 }}>{o.label}</div>
+          <div style={{ flex: 1 }}>
+            {s.objectives.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>No funding objectives on file yet — add goals in Strategic Objectives or the Capital Mandate tool.</div>
+            )}
+            {s.objectives.map((o, i) => {
+              const Icon = objectiveIcon(o.id)
+              return (
+                <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', padding: '18px 0', borderBottom: i < s.objectives.length - 1 ? '1px solid var(--cream3)' : 'none', paddingTop: i === 0 ? 0 : 18 }}>
+                  <div style={{ display: 'flex', gap: 14, maxWidth: 320 }}>
+                    <div style={{ width: 3, borderRadius: 2, flexShrink: 0, alignSelf: 'stretch', background: o.accentColor === 'gold' ? 'var(--gold)' : 'var(--emerald)' }} />
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <Icon size={14} color={o.accentColor === 'gold' ? 'var(--gold-tag,#8A6C3A)' : 'var(--emerald)'} />
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, color: 'var(--ink)', lineHeight: 1.4 }}>{o.label}</div>
+                      </div>
+                      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink3)', lineHeight: 1.5 }}>{o.purpose}</div>
                     </div>
-                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink3)', lineHeight: 1.5 }}>{o.purpose}</div>
                   </div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'var(--ink)', whiteSpace: 'nowrap', paddingTop: 1 }}>{fmt(o.amount)}</div>
                 </div>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'var(--ink)', whiteSpace: 'nowrap', paddingTop: 1 }}>{fmt(o.amount)}</div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
+          {s.objectives.length > 0 && (
+            <div style={{ fontSize: 11.5, color: 'var(--ink3)', fontStyle: 'italic', marginTop: 'auto', paddingTop: 16, borderTop: '1px solid var(--cream3)' }}>
+              {s.objectives.length} objective{s.objectives.length === 1 ? '' : 's'} on file — add more in Strategic Objectives or the Capital Mandate tool.
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -235,25 +494,27 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
             <div style={{ fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic', alignSelf: 'flex-start' }}>No assets on file yet.</div>
           ) : (
             <>
-              <div style={{ position: 'relative' }}>
-                <Donut slices={s.assetAllocation.map((a, i) => ({ label: a.label, pct: a.pct, color: donutColors[i % donutColors.length] }))} />
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', pointerEvents: 'none' }}>
-                  <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 26, color: 'var(--ink)' }}>{s.illiquidPct}%</div>
-                  <div style={{ fontSize: 9.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', marginTop: 2, maxWidth: 70, lineHeight: 1.3 }}>illiquid<br />(property + CPF)</div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                <div style={{ position: 'relative' }}>
+                  <Donut slices={s.assetAllocation.map((a, i) => ({ label: a.label, pct: a.pct, color: donutColors[i % donutColors.length] }))} />
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', pointerEvents: 'none' }}>
+                    <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 26, color: 'var(--ink)' }}>{s.illiquidPct}%</div>
+                    <div style={{ fontSize: 9.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink3)', marginTop: 2, maxWidth: 70, lineHeight: 1.3 }}>illiquid<br />(property + CPF)</div>
+                  </div>
+                </div>
+                <div style={{ width: '100%', marginTop: 18, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  {s.assetAllocation.map((a, i) => (
+                    <div key={a.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--ink2)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <div style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: donutColors[i % donutColors.length] }} />
+                        {a.label}
+                      </div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{a.pct}%</div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div style={{ width: '100%', marginTop: 18, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                {s.assetAllocation.map((a, i) => (
-                  <div key={a.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--ink2)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                      <div style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: donutColors[i % donutColors.length] }} />
-                      {a.label}
-                    </div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{a.pct}%</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6, marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--cream3)' }}>
+              <div style={{ width: '100%', fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6, marginTop: 'auto', paddingTop: 16, borderTop: '1px solid var(--cream3)' }}>
                 <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{s.illiquidPct}%</b> of what's been built — real estate and CPF — can't be spent next year if it were ever needed. Worth knowing as we plan what's actually available for these objectives.
               </div>
             </>
