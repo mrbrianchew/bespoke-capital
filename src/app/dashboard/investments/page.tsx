@@ -1074,6 +1074,12 @@ export default function CapitalMandatePage() {
   const chartInstance = useRef<any>(null)
   const breakdownShortfallRef = useRef<number>(0)
   const shortfallSolutionRef = useRef<{ pureMonthly: number; pureLump: number; lumpSumFraction: number } | null>(null)
+  const chartSeriesRef = useRef<{
+    ages: number[]; requiredLine: number[]; projectedLine: number[]; legacyLine: (number | null)[] | null
+    milestones: { age: number; label: string; amount: number }[]
+    retireIdx: number; retirementAge: number; finalDeathAge: number
+    goldAnnualBase: number; guaranteedMonthlyRetirement: number; planMode: PlanMode; clientAge: number; spouseAge: number
+  } | null>(null)
 
   const earliestRetirementAge = useMemo(() => {
     if (planMode === 'couple') {
@@ -1248,6 +1254,7 @@ export default function CapitalMandatePage() {
       portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
       retirementShortfall: effectiveShortfall,
       shortfallSolution: shortfallSolutionRef.current || undefined,
+      chartSeries: chartSeriesRef.current || undefined,
     }
     const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate')
     if (rows && rows.length > 0) {
@@ -1770,23 +1777,141 @@ export default function CapitalMandatePage() {
   }, [retirementBreakdown, projectedAtRetirement])
 
   // Also set synchronously so it's available on same-render saves
-  if (retirementBreakdown && projectedAtRetirement) {
-    const _gap = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
-    breakdownShortfallRef.current = _gap
-    if (_gap > 0) {
+  {
+    const solveFor = (gap: number) => {
+      if (gap <= 0) return null
       const _r = settings.expectedReturn / 100
       const _rm = _r / 12
       const _n = Math.max(1, retirementAge - clientAge) * 12
       const _af = _rm > 0 ? ((Math.pow(1 + _rm, _n) - 1) / _rm) * (1 + _rm) : _n
-      shortfallSolutionRef.current = {
-        pureMonthly: _af > 0 ? _gap / _af : 0,
-        pureLump: _gap / Math.pow(1 + _r, Math.max(1, retirementAge - clientAge)),
+      return {
+        pureMonthly: _af > 0 ? gap / _af : 0,
+        pureLump: gap / Math.pow(1 + _r, Math.max(1, retirementAge - clientAge)),
         lumpSumFraction,
       }
+    }
+    if (retirementBreakdown && projectedAtRetirement) {
+      const _gap = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
+      breakdownShortfallRef.current = _gap
+      shortfallSolutionRef.current = solveFor(_gap)
     } else {
-      shortfallSolutionRef.current = null
+      // retirementBreakdown couldn't be computed (no desired income, no
+      // current expenses, no derivable withdrawal) — fall back to the
+      // simpler corpusShortfall gap so shortfallSolution doesn't silently
+      // stay null while retirementShortfall (which already falls back to
+      // corpusShortfall in saveData) reports a real gap. Without this,
+      // the report's Required Amount could read $0 even with a real
+      // shortfall on file.
+      shortfallSolutionRef.current = solveFor(Math.max(0, corpusShortfall))
     }
   }
+
+  // ── Full lifecycle chart series (accumulation + drawdown) — pure data,
+  // independent of the canvas, so it can be persisted and the report can
+  // render an identical chart without re-deriving this engine a second time.
+  const fullLifecycleSeries = useMemo(() => {
+    const lifeEnd = Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge), clientAge + 35, 85)
+    const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
+    const inflationRate = retirementInflation / 100
+    const legacyAmt = settings.legacyAmount || 0
+    const spouseDeathInClientYears = spouseLifeExpectancy + (clientAge - spouseAge)
+    const finalDeathAge = planMode === 'couple'
+      ? Math.max(lifeExpectancy, spouseDeathInClientYears)
+      : lifeExpectancy
+
+    const retGoal = filteredGoals.find(g => g.source === 'retirement') || null
+    const nonRetGoals = filteredGoals
+      .filter(g => g.source !== 'retirement')
+      .sort((a, b) => a.targetAge - b.targetAge)
+
+    const earliestRetAge = earliestRetirementAge
+    const retireIdx = ages.indexOf(earliestRetAge)
+
+    const milestonesByAge: Record<number, { label: string; amount: number }[]> = {}
+    const requiredLine: number[] = []
+    const corpusAtAge: Record<number, number> = {}
+    let corpus = 0
+    let runningMonthly = filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0)
+    const goalQueue = nonRetGoals.map(g => ({ ...g }))
+
+    const rr = postRetirementReturn / 100
+    const gg = inflationRate
+    const retYears = Math.max(1, finalDeathAge - earliestRetAge)
+    const retirementCorpus = legacyAmt > 0
+      ? (retGoal?.targetCorpus || 0) + legacyAmt / Math.pow(1 + rr, retYears)
+      : (retGoal?.targetCorpus || 0)
+    const goldAnnualBase = (() => {
+      const deployable = Math.max(0, retirementCorpus - legacyAmt / Math.pow(1 + rr, retYears))
+      if (Math.abs(rr - gg) < 0.0001) return deployable / retYears
+      const ratio = (1 + gg) / (1 + rr)
+      const sumPV = ratio === 1 ? retYears : (1 - Math.pow(ratio, retYears)) / (1 - ratio)
+      return deployable / sumPV
+    })()
+
+    const rmPre = (settings.expectedReturn / 100) / 12
+
+    for (let i = 0; i < ages.length; i++) {
+      const a = ages[i]
+      if (a === earliestRetAge) {
+        const retirementCorpusReset = legacyAmt > 0
+          ? (retGoal?.targetCorpus || 0) + legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
+          : (retGoal?.targetCorpus || 0)
+        corpus = retirementCorpusReset
+      }
+      const recordedCorpus = a === finalDeathAge ? legacyAmt : Math.max(0, corpus)
+      requiredLine.push(recordedCorpus)
+      corpusAtAge[a] = recordedCorpus
+
+      while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
+        const g = goalQueue.shift()!
+        corpus = Math.max(0, corpus - g.targetCorpus)
+        runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
+        if (!milestonesByAge[a]) milestonesByAge[a] = []
+        milestonesByAge[a].push({ label: g.label, amount: g.targetCorpus })
+      }
+
+      if (a < earliestRetAge) {
+        for (let m = 0; m < 12; m++) {
+          corpus = (corpus + runningMonthly) * (1 + rmPre)
+        }
+      } else {
+        const yearsIntoRet = a - earliestRetAge
+        const annualWithdrawal = goldAnnualBase * Math.pow(1 + gg, yearsIntoRet)
+        corpus = (corpus - annualWithdrawal) * (1 + rr)
+      }
+    }
+
+    const legacyLine: (number | null)[] | null = legacyAmt > 0
+      ? ages.map(a => a >= earliestRetAge ? legacyAmt : null)
+      : null
+
+    return { ages, requiredLine, corpusAtAge, milestonesByAge, legacyLine, retireIdx, finalDeathAge, earliestRetAge, goldAnnualBase }
+  }, [filteredGoals, settings.expectedReturn, settings.legacyAmount, postRetirementReturn, retirementInflation,
+      clientAge, spouseAge, lifeExpectancy, spouseLifeExpectancy, planMode, earliestRetirementAge])
+
+  // Keep the persistable chart series ref in sync — same pattern as
+  // breakdownShortfallRef/shortfallSolutionRef above, so saveData() always
+  // has the latest computed series without re-deriving it itself.
+  useEffect(() => {
+    const fl = fullLifecycleSeries
+    const milestones = Object.entries(fl.milestonesByAge).flatMap(([ageStr, arr]) =>
+      arr.map(m => ({ age: parseInt(ageStr), label: m.label, amount: Math.round(m.amount) })))
+    chartSeriesRef.current = {
+      ages: fl.ages,
+      requiredLine: fl.requiredLine.map(v => Math.round(v)),
+      projectedLine: projectedPortfolioData.projectedLine.map(v => Math.round(v)),
+      legacyLine: fl.legacyLine,
+      milestones,
+      retireIdx: fl.retireIdx,
+      retirementAge: fl.earliestRetAge,
+      finalDeathAge: fl.finalDeathAge,
+      goldAnnualBase: Math.round(fl.goldAnnualBase),
+      guaranteedMonthlyRetirement: Math.round(guaranteedMonthlyRetirement),
+      planMode,
+      clientAge,
+      spouseAge,
+    }
+  }, [fullLifecycleSeries, projectedPortfolioData, guaranteedMonthlyRetirement, planMode, clientAge, spouseAge])
 
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1805,127 +1930,10 @@ export default function CapitalMandatePage() {
       const canvasCtx = chartRef.current.getContext('2d')
       if (!canvasCtx) return
 
-      const lifeEnd = Math.max(lifeExpectancy, spouseLifeExpectancy + (clientAge - spouseAge), clientAge + 35, 85)
-      const ages = Array.from({ length: lifeEnd - clientAge + 1 }, (_, i) => clientAge + i)
-
-      const preRetRate = settings.expectedReturn / 100
-      const postRetRate = postRetirementReturn / 100
-      const inflationRate = retirementInflation / 100
-      const rmPre = preRetRate / 12
-      const rmPost = postRetRate / 12
-      const legacyAmt = settings.legacyAmount || 0
-
-      // ── Guaranteed monthly income from portfolio vehicles ─────────────
-      function guaranteedMonthlyAt(age: number): number {
-        return filteredPortfolio.reduce((sum, p) => {
-          if (p.vehicleType === 'cpf_life' && age >= (p.cpfPayoutStartAge || 65)) return sum + (p.cpfMonthlyPayout || 0)
-          if (p.vehicleType === 'annuity' && age >= (p.annuityStartAge || 65)) return sum + (p.annuityMonthlyIncome || 0)
-          if (p.vehicleType === 'rental' && age <= (p.rentalStopAge || 75)) return sum + (p.rentalMonthlyNet || 0)
-          return sum
-        }, 0)
-      }
-
-      // ── Survivor timing (couple mode) ──────────────────────────────────
-      // Convert spouse life expectancy to client-age timeline.
-      // e.g. client age 46, spouse age 44, spouse LE 83 → client is 48 when spouse dies.
-      const spouseDeathInClientYears = spouseLifeExpectancy + (clientAge - spouseAge)
-      // First death age (client-age timeline): when the first person dies, income need halves.
-      const firstDeathAge = planMode === 'couple'
-        ? Math.min(lifeExpectancy, spouseDeathInClientYears)
-        : lifeExpectancy + 1  // individual: never halves (set beyond range)
-      // Final death age: simulation end
-      const finalDeathAge = planMode === 'couple'
-        ? Math.max(lifeExpectancy, spouseDeathInClientYears)
-        : lifeExpectancy
-
-      // ── Sort non-retirement goals by targetAge ascending ───────────────
-      const retGoal = filteredGoals.find(g => g.source === 'retirement') || null
-      const nonRetGoals = filteredGoals
-        .filter(g => g.source !== 'retirement')
-        .sort((a, b) => a.targetAge - b.targetAge)
-
-      const earliestRetAge = earliestRetirementAge
-      const retireIdx = ages.indexOf(earliestRetAge)
-
-      // Milestone metadata for tooltip annotations (array to handle multiple goals at same age)
-      const milestonesByAge: Record<number, { label: string; amount: number }[]> = {}
-
-// ── REQUIRED INVESTMENTS LINE ─────────────────────────────────────
-      // Accumulation: invest sum of all goal monthlies, compound monthly at preRetRate.
-      // At each non-retirement goal's targetAge: drop corpus by that goal's corpus,
-      //   remove its monthly from the running total, record as milestone.
-      // At retirementAge: corpus peaks. Then deplete linearly (inflation-adjusted)
-      //   to exactly $0 (or legacyAmt) at lifeExpectancy.
-
-      const requiredLine: number[] = []
-      const corpusAtAge: Record<number, number> = {}  // for tooltip lookup
-      let corpus = 0
-      let runningMonthly = filteredGoals.reduce((s, g) => s + g.monthlyRequired, 0)
-      const goalQueue = nonRetGoals.map(g => ({ ...g })).sort((a, b) => a.targetAge - b.targetAge)
-
-      // Pre-compute goldAnnualBase once — base annual withdrawal at retirement in future dollars
-      const rr = postRetirementReturn / 100
-      const gg = inflationRate
-      const retYears = Math.max(1, finalDeathAge - earliestRetAge)
-      const retirementCorpus = legacyAmt > 0
-        ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + rr, retYears)
-        : (retGoalForSummary?.targetCorpus || 0)
-      const goldAnnualBase = (() => {
-        const deployable = Math.max(0, retirementCorpus - legacyAmt / Math.pow(1 + rr, retYears))
-        if (Math.abs(rr - gg) < 0.0001) return deployable / retYears
-        const ratio = (1 + gg) / (1 + rr)
-        const sumPV = ratio === 1 ? retYears : (1 - Math.pow(ratio, retYears)) / (1 - ratio)
-        return deployable / sumPV
-      })()
-
-      // First pass: accumulation only — record corpus at each age
-      for (let i = 0; i < ages.length; i++) {
-        const a = ages[i]
-        // At retirement age, reset corpus to clean legacy-adjusted value before recording
-        if (a === earliestRetAge) {
-          const retirementCorpusReset = legacyAmt > 0
-            ? (retGoalForSummary?.targetCorpus || 0) + legacyAmt / Math.pow(1 + postRetirementReturn / 100, Math.max(1, finalDeathAge - earliestRetAge))
-            : (retGoalForSummary?.targetCorpus || 0)
-          corpus = retirementCorpusReset
-        }
-        const recordedCorpus = a === finalDeathAge ? legacyAmt : Math.max(0, corpus)
-        requiredLine.push(recordedCorpus)
-        corpusAtAge[a] = recordedCorpus
-
-        // Process any goals maturing this year — record milestone regardless of phase
-        while (goalQueue.length > 0 && goalQueue[0].targetAge <= a) {
-          const g = goalQueue.shift()!
-          corpus = Math.max(0, corpus - g.targetCorpus)
-          runningMonthly = Math.max(0, runningMonthly - g.monthlyRequired)
-          if (!milestonesByAge[a]) milestonesByAge[a] = []
-          milestonesByAge[a].push({ label: g.label, amount: g.targetCorpus })
-        }
-
-        if (a < earliestRetAge) {
-          // Then grow with monthly contributions (annuity-due: contribute then compound)
-          for (let m = 0; m < 12; m++) {
-            corpus = (corpus + runningMonthly) * (1 + rmPre)
-          }
-        } else {
-          // ── Retirement drawdown ──────────────────────────────────────
-          const yearsIntoRet = a - earliestRetAge
-          const annualWithdrawal = goldAnnualBase * Math.pow(1 + gg, yearsIntoRet)
-
-          corpus = (corpus - annualWithdrawal) * (1 + rr)
-        }
-      }
-
-      // ── PROJECTED PORTFOLIO LINE ──────────────────────────────────────
-      // Accumulates all investable vehicles pre-retirement, then depletes post-retirement
-      // offsetting withdrawals with guaranteed income streams.
-
+      // Pure series math now lives in fullLifecycleSeries (a useMemo above) —
+      // this effect only turns it into a Chart.js render.
+      const { ages, requiredLine, corpusAtAge, milestonesByAge, legacyLine, retireIdx, finalDeathAge, earliestRetAge, goldAnnualBase } = fullLifecycleSeries
       const { projectedLine } = projectedPortfolioData
-
-      const currentYear = new Date().getFullYear()
-
-      const legacyLine: (number | null)[] | null = legacyAmt > 0
-        ? ages.map(a => a >= earliestRetAge ? legacyAmt : null)
-        : null
 
       // ── Milestone dot plugin ───────────────────────────────────────────
       // Draws a circle + label at each non-retirement goal's targetAge on the line
@@ -2174,7 +2182,7 @@ export default function CapitalMandatePage() {
       }
     }
   }, [
-    loading, projectedPortfolioData, filteredGoals, settings,
+    loading, projectedPortfolioData, fullLifecycleSeries, filteredGoals, settings,
     clientAge, spouseAge, retirementAge, spouseRetirementAge, lifeExpectancy, spouseLifeExpectancy,
     effectiveRetirementIncome, postRetirementReturn, retirementInflation, planMode,
     earliestRetirementAge,
