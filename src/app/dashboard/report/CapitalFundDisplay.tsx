@@ -482,6 +482,13 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
             })}
           </div>
           {s.objectives.length > 0 && (
+            <div style={{ background: 'var(--gold-l,#F5EFE3)', borderLeft: '3px solid var(--gold)', borderRadius: 10, padding: '20px 24px', marginTop: 24 }}>
+              <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold-tag,#8A6C3A)', marginBottom: 8 }}>Total Capital Fund Required</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 32, color: 'var(--gold-tag,#8A6C3A)', marginBottom: 6 }}>{fmt(s.totalCapitalRequired)}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>The sum of every objective above</div>
+            </div>
+          )}
+          {s.objectives.length > 0 && (
             <div style={{ fontSize: 11.5, color: 'var(--ink3)', fontStyle: 'italic', marginTop: 'auto', paddingTop: 16, borderTop: '1px solid var(--cream3)' }}>
               {s.objectives.length} objective{s.objectives.length === 1 ? '' : 's'} on file — add more in Strategic Objectives or the Capital Mandate tool.
             </div>
@@ -520,15 +527,6 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
             </>
           )}
         </div>
-      </div>
-
-      {/* Total required */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--gold-l,#F5EFE3)', borderLeft: '3px solid var(--gold)', borderRadius: 10, padding: '24px 28px', marginBottom: 8 }}>
-        <div>
-          <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold-tag,#8A6C3A)', marginBottom: 8 }}>Total Capital Fund Required</div>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 34, color: 'var(--gold-tag,#8A6C3A)' }}>{fmt(s.totalCapitalRequired)}</div>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic', maxWidth: 220, textAlign: 'right' }}>The sum of every objective above</div>
       </div>
 
       {/* Sub-page divider */}
