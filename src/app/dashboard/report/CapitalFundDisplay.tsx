@@ -596,7 +596,7 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
 
       {/* Capacity audit */}
       <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>Liquidity Deployment &amp; Capacity Audit</div>
-      <div style={{ fontSize: 14, color: 'var(--ink2)', maxWidth: 380, lineHeight: 1.6, marginBottom: 22 }}>Evaluating your investment deployment against your current funding commitments.</div>
+      <div style={{ fontSize: 15, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 22 }}>Evaluating your investment deployment against your current funding commitments.</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36, alignItems: 'center', marginBottom: 32 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div>
@@ -623,31 +623,56 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
           // doesn't need separate explaining. Available isn't a fourth bar
           // here — it's compared directly against the Shortfall below,
           // since that's the only number it can actually offset.
+          //
+          // Bar area and label area get their own fixed-height boxes
+          // (barAreaHeight / labelAreaHeight) instead of packing bar+label
+          // together inside one shared box anchored to the bottom. Packed
+          // together, a label that wraps to two lines (e.g. "Total
+          // requirement") eats into the shared box from the bottom and
+          // pushes that bar's bottom edge up relative to a bar whose label
+          // stays on one line (e.g. "Shortfall") — exactly the misalignment
+          // this caused. Separate fixed boxes make every bar's bottom land
+          // at the same y regardless of how its label wraps.
+          const barAreaHeight = 130
+          const labelAreaHeight = 40
           const totalVal = s.capacityAudit.totalRequiredAnnual
           const currentVal = s.capacityAudit.currentInvestmentAnnual
           const shortfallVal = s.capacityAudit.requiredAnnual
           const maxBar = Math.max(1, totalVal, currentVal, shortfallVal)
+          const totalPx = Math.max(4, Math.round((totalVal / maxBar) * barAreaHeight))
+          const currentPx = Math.max(4, Math.round((currentVal / maxBar) * barAreaHeight))
+          const shortfallPx = Math.max(4, Math.round((shortfallVal / maxBar) * barAreaHeight))
           return (
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, height: 170 }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${Math.max(4, (totalVal / maxBar) * 100)}%`, background: 'linear-gradient(180deg, #C9A876, var(--gold))' }}>
-                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(totalVal)}</span>
+            <div style={{ display: 'flex', gap: 14 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: '100%', height: barAreaHeight, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: totalPx, background: 'linear-gradient(180deg, #C9A876, var(--gold))' }}>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(totalVal)}</span>
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Total requirement</div>
+                <div style={{ height: labelAreaHeight, paddingTop: 10, fontSize: 11, color: 'var(--ink3)', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center' }}>Total requirement</div>
               </div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, color: 'var(--ink3)', paddingBottom: 32 }}>−</div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${Math.max(4, (currentVal / maxBar) * 100)}%`, background: 'linear-gradient(180deg, #5A574F, var(--ink2))' }}>
-                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(currentVal)}</span>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Current investment</div>
+              <div style={{ height: barAreaHeight, display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, color: 'var(--ink3)' }}>−</span>
               </div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, color: 'var(--ink3)', paddingBottom: 32 }}>=</div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: `${Math.max(4, (shortfallVal / maxBar) * 100)}%`, background: 'linear-gradient(180deg, #E08080, var(--rouge))' }}>
-                  <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(shortfallVal)}</span>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: '100%', height: barAreaHeight, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: currentPx, background: 'linear-gradient(180deg, #5A574F, var(--ink2))' }}>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(currentVal)}</span>
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Shortfall</div>
+                <div style={{ height: labelAreaHeight, paddingTop: 10, fontSize: 11, color: 'var(--ink3)', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center' }}>Current investment</div>
+              </div>
+              <div style={{ height: barAreaHeight, display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, color: 'var(--ink3)' }}>=</span>
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: '100%', height: barAreaHeight, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  <div style={{ width: '100%', borderRadius: '8px 8px 3px 3px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10, height: shortfallPx, background: 'linear-gradient(180deg, #E08080, var(--rouge))' }}>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff' }}>{fmt(shortfallVal)}</span>
+                  </div>
+                </div>
+                <div style={{ height: labelAreaHeight, paddingTop: 10, fontSize: 11, color: 'var(--ink3)', letterSpacing: '0.04em', textTransform: 'uppercase', textAlign: 'center' }}>Shortfall</div>
               </div>
             </div>
           )
@@ -688,7 +713,7 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
         </div>
       ) : (
         <>
-          <div style={{ fontSize: 14, color: 'var(--ink2)', maxWidth: 480, lineHeight: 1.6, marginBottom: 24 }}>To close the gap, two capital injection strategies are available — individually or blended.</div>
+          <div style={{ fontSize: 15, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 24 }}>To close the gap, two capital injection strategies are available — individually or blended.</div>
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Goals &amp; Objectives Shortfall</div>
             <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 30, color: 'var(--ink)' }}>{fmt(s.shortfall)}</div>
