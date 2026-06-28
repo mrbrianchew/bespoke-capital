@@ -97,6 +97,11 @@ interface FactFinding {
   a_residential?: number; a_vehicles?: number; a_club?: number
   a2_residential?: number; a2_vehicles?: number; a2_club?: number
   a_cash_custom?: CustomAssetItem[]; a_invested_custom?: CustomAssetItem[]; a_personal_custom?: CustomAssetItem[]
+  a_savings_note?: string; a_fixed_deposit_note?: string
+  a_cpf_oa_note?: string; a_cpf_sa_note?: string; a_cpf_ma_note?: string; a_cpf_ra_note?: string
+  a_srs_note?: string; a_shares_note?: string; a_etf_note?: string; a_unit_trust_note?: string
+  a_bonds_note?: string; a_alternatives_note?: string; a_business_note?: string
+  a_vehicles_note?: string; a_club_note?: string
   l_credit_card?: number; l_business_loan?: number; l_renovation_st?: number
   l2_credit_card?: number; l2_business_loan?: number; l2_renovation_st?: number
   l_mortgage_residing?: number; l_mortgage_investment?: number; l_car_loan?: number
@@ -430,10 +435,16 @@ function CustomRows({ items, onChange, placeholder, isCouple }: { items: CustomA
         <div key={i} className="flex gap-2 py-1.5 items-center" style={{ borderBottom: '1px solid var(--line)' }}>
           <input type="text" value={item.label} placeholder={placeholder || 'Custom item'}
             onChange={e => { const u = [...items]; u[i] = { ...u[i], label: e.target.value }; onChange(u) }}
-            className="flex-1 px-2 py-1.5 text-xs outline-none"
-            style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+            className="text-xs outline-none"
+            style={{ width: 220, flexShrink: 0, border: '1px solid var(--line)', background: 'white', color: 'var(--ink)', padding: '6px 8px' }}
             onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
             onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+          <input type="text" value={item.notes || ''} placeholder="Add a note"
+            onChange={e => { const u = [...items]; u[i] = { ...u[i], notes: e.target.value }; onChange(u) }}
+            className="flex-1 text-xs outline-none italic"
+            style={{ minWidth: 0, border: 'none', borderBottom: '1px dashed var(--line)', background: 'transparent', color: 'var(--ink2)', padding: '6px 2px' }}
+            onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--gold)')}
+            onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--line)')} />
           <div className="relative" style={{ width: 120 }}>
             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
             <input type="number" value={item.amount || ''} placeholder="0"
@@ -893,15 +904,22 @@ const addProperty = () => {
   )
 }
 
-function AssetRow({ label, value, value2, onChange, onChange2, isCouple }: {
+function AssetRow({ label, value, value2, onChange, onChange2, isCouple, note, onNoteChange }: {
   label: string; value: number | undefined; value2?: number | undefined
   onChange: (v: string) => void; onChange2?: (v: string) => void
-  isCouple?: boolean
+  isCouple?: boolean; note?: string; onNoteChange?: (v: string) => void
 }) {
   const combined = (value || 0) + (value2 || 0)
   return (
     <div className="flex items-center py-2 text-xs gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
-      <div className="flex-1" style={{ color: 'var(--ink2)' }}>{label}</div>
+      <div style={{ width: 220, flexShrink: 0, color: 'var(--ink2)' }}>{label}</div>
+      {onNoteChange && (
+        <input type="text" value={note || ''} onChange={e => onNoteChange(e.target.value)} placeholder="Add a note"
+          className="flex-1 text-xs outline-none italic"
+          style={{ minWidth: 0, border: 'none', borderBottom: '1px dashed var(--line)', background: 'transparent', color: 'var(--ink2)', padding: '4px 2px' }}
+          onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--gold)')}
+          onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--line)')} />
+      )}
       <div className="relative" style={{ width: 118 }}>
         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
         <input type="number" value={value || ''} onChange={e => onChange(e.target.value)} placeholder="0"
@@ -1423,7 +1441,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
   const ltTotal = (ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom+(isCouple?((ff.l2_car_loan||0)+(ff.l2_study_loan||0)+(ff.l2_personal_loan||0)+(ff.l2_renovation_lt||0)):0)
   const totalLiab = stTotal + ltTotal + mortgageLiabTotal; const netWorth = totalAssets - totalLiab
   const RISK_COLORS: Record<string, string> = { Conservative: 'var(--emerald)', Moderate: '#C4A464', Balanced: '#4A7C9E', Growth: '#7A6AAA', Aggressive: 'var(--rouge)' }
-  const assetRow = (label: string, key: keyof FactFinding, key2?: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} value2={key2 ? ff[key2] as number : undefined} onChange2={key2 ? v => upd(key2, n(v)) : undefined} isCouple={isCouple} />
+  const assetRow = (label: string, key: keyof FactFinding, key2?: keyof FactFinding, noteKey?: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} value2={key2 ? ff[key2] as number : undefined} onChange2={key2 ? v => upd(key2, n(v)) : undefined} isCouple={isCouple} note={noteKey ? ff[noteKey] as string : undefined} onNoteChange={noteKey ? v => upd(noteKey, v) : undefined} />
   const clientName = client.name; const spouseName = spouse?.name || 'Spouse'
 
   return (
@@ -1813,27 +1831,27 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
               <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
-                {assetRow('Savings / Current Account(s)', 'a_savings', 'a2_savings')}
-                {assetRow('Fixed Deposit(s)', 'a_fixed_deposit', 'a2_fixed_deposit')}
+                {assetRow('Savings / Current Account(s)', 'a_savings', 'a2_savings', 'a_savings_note')}
+                {assetRow('Fixed Deposit(s)', 'a_fixed_deposit', 'a2_fixed_deposit', 'a_fixed_deposit_note')}
                 <CustomRows items={ff.a_cash_custom || []} onChange={v => upd('a_cash_custom', v)} placeholder="e.g. Singapore Savings Bonds" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="INVESTED ASSET(S)" color="#4A7C9E" total={investedTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
-                {assetRow('CPF Ordinary Account (OA)', 'a_cpf_oa', 'a2_cpf_oa')}
-                {assetRow('CPF Special Account (SA)', 'a_cpf_sa', 'a2_cpf_sa')}
-                {assetRow('CPF Medisave Account (MA)', 'a_cpf_ma', 'a2_cpf_ma')}
-                {assetRow('CPF Retirement Account (RA)', 'a_cpf_ra', 'a2_cpf_ra')}
-                {assetRow('SRS', 'a_srs', 'a2_srs')}
-                {assetRow('Shares', 'a_shares', 'a2_shares')}
-                {assetRow('ETF(s)', 'a_etf', 'a2_etf')}
-                {assetRow('Unit Trust(s)', 'a_unit_trust', 'a2_unit_trust')}
-                {assetRow('Bonds / Treasury Bills', 'a_bonds', 'a2_bonds')}
-                {assetRow('Alternative Investments (Hedge Funds, Gold, etc.)', 'a_alternatives', 'a2_alternatives')}
-                {assetRow('Business Venture(s)', 'a_business', 'a2_business')}
+                {assetRow('CPF Ordinary Account (OA)', 'a_cpf_oa', 'a2_cpf_oa', 'a_cpf_oa_note')}
+                {assetRow('CPF Special Account (SA)', 'a_cpf_sa', 'a2_cpf_sa', 'a_cpf_sa_note')}
+                {assetRow('CPF Medisave Account (MA)', 'a_cpf_ma', 'a2_cpf_ma', 'a_cpf_ma_note')}
+                {assetRow('CPF Retirement Account (RA)', 'a_cpf_ra', 'a2_cpf_ra', 'a_cpf_ra_note')}
+                {assetRow('SRS', 'a_srs', 'a2_srs', 'a_srs_note')}
+                {assetRow('Shares', 'a_shares', 'a2_shares', 'a_shares_note')}
+                {assetRow('ETF(s)', 'a_etf', 'a2_etf', 'a_etf_note')}
+                {assetRow('Unit Trust(s)', 'a_unit_trust', 'a2_unit_trust', 'a_unit_trust_note')}
+                {assetRow('Bonds / Treasury Bills', 'a_bonds', 'a2_bonds', 'a_bonds_note')}
+                {assetRow('Alternative Investments (Hedge Funds, Gold, etc.)', 'a_alternatives', 'a2_alternatives', 'a_alternatives_note')}
+                {assetRow('Business Venture(s)', 'a_business', 'a2_business', 'a_business_note')}
                 <CustomRows items={ff.a_invested_custom || []} onChange={v => upd('a_invested_custom', v)} placeholder="e.g. Crypto, Wine Collection" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
-                {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles', 'a2_vehicles')}
-                {assetRow('Club Membership', 'a_club', 'a2_club')}
+                {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles', 'a2_vehicles', 'a_vehicles_note')}
+                {assetRow('Club Membership', 'a_club', 'a2_club', 'a_club_note')}
                 <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" isCouple={isCouple} />
               </AssetBlock>
               {/* Properties summary — read-only pull from Properties tab */}
