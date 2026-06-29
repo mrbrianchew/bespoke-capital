@@ -330,8 +330,8 @@ export default function ReportPage() {
                 <textarea
                   value={passwordHint}
                   onChange={e => setPasswordHint(e.target.value)}
-                  rows={3}
-                  style={{ width: '100%', maxWidth: 280, padding: '8px 10px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'Inter,sans-serif', lineHeight: 1.6, display: 'block' }}
+                  rows={5}
+                  style={{ width: '100%', maxWidth: 280, padding: '8px 10px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 12, outline: 'none', resize: 'vertical', overflow: 'hidden', boxSizing: 'border-box', fontFamily: 'Inter,sans-serif', lineHeight: 1.6, display: 'block' }}
                 />
               </div>
               <button
