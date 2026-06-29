@@ -315,20 +315,25 @@ export default function ReportPage() {
               <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
                 Generate &amp; save this as a real plan
               </div>
-              <input
-                type="password"
-                placeholder="Set a password for this link"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                style={{ display: 'block', marginBottom: 8, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
-              />
-              <input
-                type="text"
-                placeholder="Password hint (optional)"
-                value={passwordHint}
-                onChange={e => setPasswordHint(e.target.value)}
-                style={{ display: 'block', marginBottom: 12, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 6, width: 280 }}
-              />
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Password</div>
+                <input
+                  type="text"
+                  placeholder="e.g. 567A1980"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  style={{ width: '100%', maxWidth: 280, padding: '8px 10px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'DM Mono,monospace', display: 'block' }}
+                />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 8 }}>Password Hint (shown to client)</div>
+                <textarea
+                  value={passwordHint}
+                  onChange={e => setPasswordHint(e.target.value)}
+                  rows={3}
+                  style={{ width: '100%', maxWidth: 280, padding: '8px 10px', border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'Inter,sans-serif', lineHeight: 1.6, display: 'block' }}
+                />
+              </div>
               <button
                 onClick={() => handleGenerateAndSave(plan)}
                 disabled={saving || !password.trim()}
