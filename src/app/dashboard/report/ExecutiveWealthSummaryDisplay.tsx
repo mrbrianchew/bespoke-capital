@@ -189,7 +189,7 @@ export default function ExecutiveWealthSummaryDisplay({ snapshot }: { snapshot: 
             Emergency Cash Runway
           </div>
           <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 6, lineHeight: 1.4 }}>
-            {fmt(snapshot.liquidCash)} in cash &amp; fixed deposits covers this many months of essential household expenses (excludes Savings &amp; Investments, which would simply pause in an emergency).
+            {fmt(snapshot.liquidCash)} in cash &amp; fixed deposits covers this many months of essential household expenses (excludes Lifestyle &amp; Miscellaneous, which would simply pause in an emergency).
           </div>
         </div>
         <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 32, color: 'var(--ink)', flexShrink: 0 }}>
