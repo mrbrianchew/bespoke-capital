@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Chart, registerables } from 'chart.js'
+import MonthInput from '@/components/MonthInput'
 Chart.register(...registerables)
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -216,12 +217,12 @@ function CashflowModal({ vehicle, onSave, onClose }: {
               <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                 {needsEndDate ? 'From' : 'Month'}
               </div>
-              <input type="month" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, width: 130 }} />
+              <MonthInput value={date} onChange={setDate} style={{ ...inp, width: 130 }} />
             </div>
             {needsEndDate && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>To</div>
-                <input type="month" value={endDate} onChange={e => setEndDate(e.target.value)} min={date || undefined} style={{ ...inp, width: 130 }} />
+                <MonthInput value={endDate} onChange={setEndDate} min={date || undefined} style={{ ...inp, width: 130 }} />
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -795,7 +796,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div>
                       <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Start Month / Year</div>
-                      <input type="month" style={inp} value={startMonth} onChange={e => setStartMonth(e.target.value)} max={currentYearMonth} />
+                      <MonthInput value={startMonth} onChange={setStartMonth} max={currentYearMonth} style={inp} />
                     </div>
                     <div>
                       <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Value (S$)</div>
@@ -805,7 +806,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div>
                       <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Value as of Month</div>
-                      <input type="month" style={inp} value={valueAsOfMonth} onChange={e => setValueAsOfMonth(e.target.value)} max={currentYearMonth} />
+                      <MonthInput value={valueAsOfMonth} onChange={setValueAsOfMonth} max={currentYearMonth} style={inp} />
                       <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>When was this value last updated?</div>
                     </div>
                   </div>
@@ -817,7 +818,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                       </div>
                       <div>
                         <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>End Month / Year</div>
-                        <input type="month" style={inp} value={endMonth} onChange={e => setEndMonth(e.target.value)} min={startMonth || undefined} />
+                        <MonthInput value={endMonth} onChange={setEndMonth} min={startMonth || undefined} style={inp} />
                         <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 4 }}>After this date, portfolio compounds at expected return only</div>
                       </div>
                     </div>
@@ -861,12 +862,12 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{cfNeedsEndDate ? 'From' : 'Month'}</div>
-                  <input type="month" value={cfDate} onChange={e => setCfDate(e.target.value)} style={{ ...inpSm, width: 130 }} />
+                  <MonthInput value={cfDate} onChange={setCfDate} style={{ ...inpSm, width: 130 }} />
                 </div>
                 {cfNeedsEndDate && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>To</div>
-                    <input type="month" value={cfEndDate} onChange={e => setCfEndDate(e.target.value)} min={cfDate || undefined} style={{ ...inpSm, width: 130 }} />
+                    <MonthInput value={cfEndDate} onChange={setCfEndDate} min={cfDate || undefined} style={{ ...inpSm, width: 130 }} />
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
