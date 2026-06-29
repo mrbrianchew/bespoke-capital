@@ -1,4 +1,4 @@
-import { getCpfEmpRate, CPF_OW_CEILING, amortisedOutstanding, ageYearOnly } from './calc'
+import { amortisedOutstanding, ageYearOnly, calcAnnualTakeHome } from './calc'
 
 export interface OverviewSnapshot {
   client: { name: string; age: number }
@@ -127,15 +127,8 @@ export function buildOverviewSnapshot(input: {
 
   const annualInflow = (p1Gross * 12 + p1Bonus) + (isCouple ? (p2Gross * 12 + p2Bonus) : 0)
 
-  const p1EmpRate = getCpfEmpRate(clientAge, p1Cit, p1PrYear) / 100
-  const p1MonthlyCpf = Math.floor(Math.min(p1Gross, CPF_OW_CEILING) * p1EmpRate)
-  const p1BonusCpf = Math.floor(p1Bonus * p1EmpRate)
-  const p1TakeHome = (p1Gross - p1MonthlyCpf) * 12 + (p1Bonus - p1BonusCpf)
-
-  const p2EmpRate = isCouple ? getCpfEmpRate(spouseAge, p2Cit, p2PrYear) / 100 : 0
-  const p2MonthlyCpf = isCouple ? Math.floor(Math.min(p2Gross, CPF_OW_CEILING) * p2EmpRate) : 0
-  const p2BonusCpf = isCouple ? Math.floor(p2Bonus * p2EmpRate) : 0
-  const p2TakeHome = isCouple ? (p2Gross - p2MonthlyCpf) * 12 + (p2Bonus - p2BonusCpf) : 0
+  const p1TakeHome = calcAnnualTakeHome(p1Gross, p1Bonus, clientAge, p1Cit, p1PrYear, p1.employment_type)
+  const p2TakeHome = isCouple ? calcAnnualTakeHome(p2Gross, p2Bonus, spouseAge, p2Cit, p2PrYear, p2.employment_type) : 0
 
   const totalTakeHome = p1TakeHome + p2TakeHome
 
