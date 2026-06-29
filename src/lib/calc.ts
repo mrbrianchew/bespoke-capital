@@ -119,6 +119,60 @@ export function getCpfEmpRate(age: number, cit: string, prYear: string): number 
   const tiers = cit === 'PR' ? (prYear === '1' ? PR1_RATES : prYear === '2' ? PR2_RATES : SC_RATES) : SC_RATES
   return (tiers.find(t => age <= t.max_age) || tiers[tiers.length - 1]).employee
 }
+// ─── Self-Employed MediSave (SEP) ──────────────────────────────────────────
+// Self-employed persons have NO mandatory Employer/Employee CPF contribution
+// (there is no employer). They DO have a mandatory MediSave-only contribution
+// once annual Net Trade Income (NTI) exceeds $6,000.
+// Rates below are CPF Board's official "MediSave Contribution Rates for SEPs
+// (Non-Pensioners)" table, applicable 2026.
+// Source: cpf.gov.sg — Self-Employed MediSave Contribution Rates (PDF)
+export const SEP_EMPLOYMENT_TYPES = ['Self-Employed', 'Business Owner', 'Commission-Based']
+
+export function isSepEmploymentType(employmentType?: string): boolean {
+  return SEP_EMPLOYMENT_TYPES.includes(employmentType || '')
+}
+
+type SepMedisaveBand = {
+  maxAge: number       // "Below 35" / "35 to below 45" / "45 to below 50" / "50 and above"
+  lowRate: number      // rate applied to NTI $6,000–$12,000 band
+  highRate: number     // rate applied to NTI above $18,000
+  highCap: number      // annual MediSave $ cap once NTI is above $18,000
+  phaseBase: number    // $ contribution at NTI = $12,000 (start of phase-in band)
+  phaseSlope: number   // $ added per $1 of NTI above $12,000, up to $18,000
+}
+
+const SEP_MEDISAVE_BANDS: SepMedisaveBand[] = [
+  { maxAge: 34,  lowRate: 4.00, highRate: 8.00,  highCap: 7680,  phaseBase: 480, phaseSlope: 0.16 },
+  { maxAge: 44,  lowRate: 4.50, highRate: 9.00,  highCap: 8640,  phaseBase: 540, phaseSlope: 0.18 },
+  { maxAge: 49,  lowRate: 5.00, highRate: 10.00, highCap: 9600,  phaseBase: 600, phaseSlope: 0.20 },
+  { maxAge: 999, lowRate: 5.25, highRate: 10.50, highCap: 10080, phaseBase: 630, phaseSlope: 0.21 },
+]
+
+export interface SepMedisaveResult {
+  annualNti: number
+  rate: number          // effective % of NTI (for display only)
+  annualMedisave: number
+  applicable: boolean   // false when NTI <= $6,000 — no mandatory contribution that year
+}
+
+// annualNti: annual Net Trade Income (proxied in this app as gross_monthly*12 + gross_bonus
+// for Self-Employed / Business Owner / Commission-Based persons).
+export function calcSepMedisave(annualNti: number, age: number): SepMedisaveResult {
+  if (annualNti <= 6000) return { annualNti, rate: 0, annualMedisave: 0, applicable: false }
+  const band = SEP_MEDISAVE_BANDS.find(b => age <= b.maxAge) ?? SEP_MEDISAVE_BANDS[SEP_MEDISAVE_BANDS.length - 1]
+  let amount: number
+  if (annualNti <= 12000) {
+    amount = (annualNti * band.lowRate) / 100
+  } else if (annualNti <= 18000) {
+    amount = band.phaseBase + band.phaseSlope * (annualNti - 12000)
+  } else {
+    amount = Math.min((annualNti * band.highRate) / 100, band.highCap)
+  }
+  amount = Math.round(amount)
+  const rate = annualNti > 0 ? Math.round((amount / annualNti) * 1000) / 10 : 0
+  return { annualNti, rate, annualMedisave: amount, applicable: true }
+}
+
 export function amortisedOutstanding(prop: any): number {
   if (prop.outstanding > 0) return prop.outstanding
   const initialLoan = prop.initialLoanAmount ?? 0
