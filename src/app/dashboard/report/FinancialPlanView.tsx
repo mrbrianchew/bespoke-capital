@@ -4,10 +4,12 @@ import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import { CapitalFundSnapshot } from '@/lib/capitalFundSnapshot'
+import { ActionPlanSnapshot } from '@/lib/actionPlanSnapshot'
 import OverviewDisplay from './OverviewDisplay'
 import ProtectionDisplay from './ProtectionDisplay'
 import ExecutiveWealthSummaryDisplay from './ExecutiveWealthSummaryDisplay'
 import CapitalFundDisplay from './CapitalFundDisplay'
+import ActionPlanDisplay from './ActionPlanDisplay'
 
 export interface PlanSnapshot {
   clientName: string
@@ -16,6 +18,7 @@ export interface PlanSnapshot {
   protection: ProtectionSnapshot
   executiveSummary: ExecutiveWealthSummarySnapshot
   capitalFund: CapitalFundSnapshot
+  actionPlan: ActionPlanSnapshot
 }
 
 const TABS = [
@@ -23,7 +26,7 @@ const TABS = [
   { id: 'wealth-summary', label: 'Wealth Summary' },
   { id: 'protection', label: 'Protection' },
   { id: 'capital', label: 'Capital Fund' },
-  { id: 'action-plan', label: 'Action Plan', comingSoon: true },
+  { id: 'action-plan', label: 'Action Plan' },
 ]
 
 function initials(name: string): string {
@@ -86,25 +89,24 @@ export default function FinancialPlanView({
           {TABS.map(t => (
             <button
               key={t.id}
-              onClick={() => !t.comingSoon && selectTab(t.id)}
-              disabled={t.comingSoon}
+              onClick={() => selectTab(t.id)}
               style={{
-                background: t.comingSoon ? 'none' : active === t.id ? '#F5F0E8' : 'rgba(240,237,232,0.08)',
-                border: 'none', cursor: t.comingSoon ? 'default' : 'pointer', borderRadius: 999,
+                background: active === t.id ? '#F5F0E8' : 'rgba(240,237,232,0.08)',
+                border: 'none', cursor: 'pointer', borderRadius: 999,
                 padding: '8px 16px', fontSize: 12, letterSpacing: '0.02em', fontFamily: 'Inter, sans-serif',
-                color: t.comingSoon ? 'rgba(240,237,232,0.25)' : active === t.id ? 'var(--charcoal)' : 'rgba(240,237,232,0.65)',
+                color: active === t.id ? 'var(--charcoal)' : 'rgba(240,237,232,0.65)',
                 fontWeight: active === t.id ? 500 : 400,
                 whiteSpace: 'nowrap', flexShrink: 0,
               }}
             >
-              {t.label}{t.comingSoon ? ' (soon)' : ''}
+              {t.label}
             </button>
           ))}
         </div>
       </div>
 
       <div className="px-5 md:px-11" style={{ paddingTop: 22, paddingBottom: 36 }}>
-        {active !== 'wealth-summary' && active !== 'protection' && active !== 'capital' && (
+        {active !== 'wealth-summary' && active !== 'protection' && active !== 'capital' && active !== 'action-plan' && (
           <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
             <PersonCard label="Primary Client" name={plan.clientName} age={plan.overview.client.age} color="var(--gold)" />
             {plan.overview.spouse && (
@@ -129,6 +131,9 @@ export default function FinancialPlanView({
         )}
         {active === 'capital' && (
           <CapitalFundDisplay snapshot={plan.capitalFund} clientName={plan.clientName} spouseName={plan.spouseName} />
+        )}
+        {active === 'action-plan' && (
+          <ActionPlanDisplay snapshot={plan.actionPlan} clientName={plan.clientName} spouseName={plan.spouseName} />
         )}
       </div>
     </div>
