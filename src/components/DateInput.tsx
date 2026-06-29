@@ -164,6 +164,9 @@ export default function DateInput({
           value={text}
           placeholder={placeholder}
           disabled={disabled}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           onChange={(e) => handleTextChange(e.target.value)}
           onBlur={handleTextBlur}
           onFocus={() => setOpen(true)}
