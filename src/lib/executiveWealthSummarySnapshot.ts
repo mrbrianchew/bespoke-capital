@@ -1,4 +1,4 @@
-import { getCpfEmpRate, CPF_OW_CEILING, amortisedOutstanding, ageYearOnly, calcSepMedisave, isSepEmploymentType } from './calc'
+import { amortisedOutstanding, ageYearOnly, calcAnnualTakeHome } from './calc'
 
 export interface EWSLineItem {
   label: string
@@ -41,23 +41,6 @@ export interface ExecutiveWealthSummarySnapshot {
 // Guards against divide-by-zero when a profile has no income/assets yet entered.
 function safeDiv(a: number, b: number): number {
   return b > 0 ? a / b : 0
-}
-
-// Annual take-home pay, branching on employment type. Self-Employed / Business
-// Owner / Commission-Based have no mandatory Employer/Employee CPF contribution
-// (there is no employer) — only MediSave, based on age and annual Net Trade
-// Income (proxied as gross_monthly*12 + gross_bonus). Foreigners have neither.
-function annualTakeHomeFor(gross: number, bonus: number, age: number, citizenship: string, prYear: string, employmentType?: string): number {
-  const annualGross = gross * 12 + bonus
-  if (isSepEmploymentType(employmentType)) {
-    if (!['SC', 'PR'].includes(citizenship)) return annualGross
-    const sep = calcSepMedisave(annualGross, age)
-    return annualGross - sep.annualMedisave
-  }
-  const empRate = getCpfEmpRate(age, citizenship, prYear) / 100
-  const monthlyCpf = Math.floor(Math.min(gross, CPF_OW_CEILING) * empRate)
-  const bonusCpf = Math.floor(bonus * empRate)
-  return (gross - monthlyCpf) * 12 + (bonus - bonusCpf)
 }
 
 // Three-tier status bands, confirmed by Brian against standard Singapore CFP-practice
@@ -209,8 +192,8 @@ export function buildExecutiveWealthSummarySnapshot(input: {
   const p2Cit = isCouple ? (p2.citizenship ?? 'SC') : 'SC'
   const p2PrYear = isCouple ? (p2.pr_year ?? '3+') : '3+'
 
-  const p1TakeHome = annualTakeHomeFor(p1Gross, p1Bonus, clientAge, p1Cit, p1PrYear, p1.employment_type)
-  const p2TakeHome = isCouple ? annualTakeHomeFor(p2Gross, p2Bonus, spouseAge, p2Cit, p2PrYear, p2.employment_type) : 0
+  const p1TakeHome = calcAnnualTakeHome(p1Gross, p1Bonus, clientAge, p1Cit, p1PrYear, p1.employment_type)
+  const p2TakeHome = isCouple ? calcAnnualTakeHome(p2Gross, p2Bonus, spouseAge, p2Cit, p2PrYear, p2.employment_type) : 0
 
   const totalInflow = p1TakeHome + p2TakeHome
 
