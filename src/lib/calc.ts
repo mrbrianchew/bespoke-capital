@@ -173,6 +173,25 @@ export function calcSepMedisave(annualNti: number, age: number): SepMedisaveResu
   return { annualNti, rate, annualMedisave: amount, applicable: true }
 }
 
+// Annual take-home pay, branching on employment type. Self-Employed / Business
+// Owner / Commission-Based have no mandatory Employer/Employee CPF contribution
+// (there is no employer) — only MediSave, based on age and annual Net Trade
+// Income (proxied as gross_monthly*12 + gross_bonus). Foreigners have neither.
+// Shared by financialPlanSnapshot.ts, executiveWealthSummarySnapshot.ts, and
+// dashboard/page.tsx so this logic only ever lives in one place.
+export function calcAnnualTakeHome(gross: number, bonus: number, age: number, citizenship: string, prYear: string, employmentType?: string): number {
+  const annualGross = gross * 12 + bonus
+  if (isSepEmploymentType(employmentType)) {
+    if (!['SC', 'PR'].includes(citizenship)) return annualGross
+    const sep = calcSepMedisave(annualGross, age)
+    return annualGross - sep.annualMedisave
+  }
+  const empRate = getCpfEmpRate(age, citizenship, prYear) / 100
+  const monthlyCpf = Math.floor(Math.min(gross, CPF_OW_CEILING) * empRate)
+  const bonusCpf = Math.floor(bonus * empRate)
+  return (gross - monthlyCpf) * 12 + (bonus - bonusCpf)
+}
+
 export function amortisedOutstanding(prop: any): number {
   if (prop.outstanding > 0) return prop.outstanding
   const initialLoan = prop.initialLoanAmount ?? 0
