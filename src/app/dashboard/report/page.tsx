@@ -46,7 +46,7 @@ export default function ReportPage() {
   }
 
   const [password, setPassword] = useState('')
-  const [passwordHint, setPasswordHint] = useState('')
+  const [passwordHint, setPasswordHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
   const [saving, setSaving] = useState(false)
   const [savedLink, setSavedLink] = useState('')
   const [directives, setDirectives] = useState<{ title: string; body: string }[]>([])
