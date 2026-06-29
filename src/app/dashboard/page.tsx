@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { getCpfEmpRate, amortisedOutstanding, CPF_OW_CEILING } from '@/lib/calc'
+import { calcAnnualTakeHome, amortisedOutstanding } from '@/lib/calc'
 import DateInput from '@/components/DateInput'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -753,16 +753,9 @@ const p2Bonus  = isCouple ? ((fin.person2 as any)?.gross_bonus || 0) : 0
 const p2Cit    = isCouple ? ((fin.person2 as any)?.citizenship || 'SC') : 'SC'
 const p2PrYear = isCouple ? ((fin.person2 as any)?.pr_year || '3+') : '3+'
 
-// CPF rates (same tiers as financials page)
-const p1EmpRate = getCpfEmpRate(clientAge, p1Cit, p1PrYear) / 100
-const p1MonthlyCpf = Math.floor(Math.min(p1Gross, CPF_OW_CEILING) * p1EmpRate)
-const p1BonusCpf = Math.floor(p1Bonus * p1EmpRate)
-const p1TakeHome = (p1Gross - p1MonthlyCpf) * 12 + (p1Bonus - p1BonusCpf)
-
-const p2EmpRate = isCouple ? getCpfEmpRate(spouseAge, p2Cit, p2PrYear) / 100 : 0
-const p2MonthlyCpf = isCouple ? Math.floor(Math.min(p2Gross, CPF_OW_CEILING) * p2EmpRate) : 0
-const p2BonusCpf = isCouple ? Math.floor(p2Bonus * p2EmpRate) : 0
-const p2TakeHome = isCouple ? (p2Gross - p2MonthlyCpf) * 12 + (p2Bonus - p2BonusCpf) : 0
+// CPF / MediSave, branching on employment type (same logic as financials page)
+const p1TakeHome = calcAnnualTakeHome(p1Gross, p1Bonus, clientAge, p1Cit, p1PrYear, (fin.person1 as any)?.employment_type)
+const p2TakeHome = isCouple ? calcAnnualTakeHome(p2Gross, p2Bonus, spouseAge, p2Cit, p2PrYear, (fin.person2 as any)?.employment_type) : 0
 
 const totalIncome = p1TakeHome + p2TakeHome
 const totalExp    = annExpClient
