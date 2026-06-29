@@ -598,7 +598,7 @@ export default function WealthAccumulationSection({
               <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:22, fontWeight:600, color:'var(--ink)' }}>{fmtSGD(totalLiquid)}</div>
             </div>
             <div style={{ background:currentMonths>=3?'var(--emerald-l)':'var(--rouge-l)', borderRadius:10, border:`1px solid ${currentMonths>=3?'#d0e8da':'#e8d0d0'}`, padding:'14px 18px' }}>
-              <div style={{ fontFamily:'Inter', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--ink3)', marginBottom:4 }}>Current Coverage</div>
+              <div style={{ fontFamily:'Inter', fontSize:9, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--ink3)', marginBottom:4 }}>Emergency Cash</div>
               <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:22, fontWeight:600, color:currentMonths>=3?'var(--emerald)':'var(--rouge)' }}>{currentMonths.toFixed(1)} months</div>
               <div style={{ fontFamily:'Inter', fontSize:10, color:'var(--ink3)', marginTop:2 }}>{monthlyExpenses>0?`Based on ${fmtSGD(monthlyExpenses)}/mo`:'Set expenses in Financial Profile'}</div>
             </div>
@@ -610,8 +610,18 @@ export default function WealthAccumulationSection({
               <div style={{ fontFamily:'DM Mono, monospace', fontSize:13, fontWeight:500, color:'var(--ink)', background:'var(--cream2)', borderRadius:6, padding:'4px 12px' }}>{data.emergencyTargetMonths} months · {fmtSGD(targetLiquid)}</div>
             </div>
             <input type="range" min={0} max={24} step={1} value={data.emergencyTargetMonths} onChange={e=>upd({emergencyTargetMonths:parseInt(e.target.value)})} style={{ width:'100%', accentColor:'var(--emerald)', height:2, cursor:'pointer' }} />
-            <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
-              {[0,3,6,12,18,24].map(m=><span key={m} style={{ fontFamily:'Inter', fontSize:10, color:m===3||m===6?'var(--emerald)':'var(--ink3)' }}>{m}m</span>)}
+            <div style={{ position:'relative', height:14, marginTop:4 }}>
+              {[0,3,6,12,18,24].map(m=>{
+                const pct = (m/24)*100
+                return (
+                  <span key={m} style={{
+                    position:'absolute', left:`${pct}%`,
+                    transform: m===0 ? 'translateX(0)' : m===24 ? 'translateX(-100%)' : 'translateX(-50%)',
+                    fontFamily:'Inter', fontSize:10, whiteSpace:'nowrap',
+                    color:m===3||m===6?'var(--emerald)':'var(--ink3)',
+                  }}>{m}m</span>
+                )
+              })}
             </div>
           </div>
 
