@@ -848,6 +848,18 @@ if (clientData) {
   const annExpSpouse = getAnnualExpense('spouse')
   const annExpTotal = annExpClient + annExpSpouse
 
+  // Full, unfiltered household expense — for liquidity/emergency-fund purposes.
+  // annExpClient/annExpSpouse above are filtered by the Protection tab's expense-category
+  // toggles (intended for DTPD/family-dependency needs), not the real total monthly burn,
+  // so Accumulation must not inherit those toggles.
+  const ALL_EXPENSE_CATS = { financial: true, household: true, personal: true, children: true, lifestyle: true }
+  function getFullAnnualExpense(who: 'client' | 'spouse'): number {
+    if (isDetailed) return getDetailedTotal(ff, ALL_EXPENSE_CATS, {}, who)
+    return getSimpleTotal(ff, who)
+  }
+  const fullAnnExpClient = getFullAnnualExpense('client')
+  const fullAnnExpSpouse = getFullAnnualExpense('spouse')
+
   // Coverage term
   const childAges = children.map(c => c.age ?? getAge(c.date_of_birth))
   const youngestAge = childAges.length > 0 ? Math.min(...childAges) : null
@@ -1390,12 +1402,12 @@ useEffect(() => {
               clientFD={ff.a_fixed_deposit ?? 0}
               spouseSavings={ff.a2_savings ?? 0}
               spouseFD={ff.a2_fixed_deposit ?? 0}
-              monthlyExpenses={(annExpClient + (isCouple ? annExpSpouse : 0)) / 12}
+              monthlyExpenses={(fullAnnExpClient + (isCouple ? fullAnnExpSpouse : 0)) / 12}
              monthlySurplus={(() => {
   const p1Gross = (ff.person1 as any)?.gross_monthly || 0
   const p2Gross = isCouple ? ((ff.person2 as any)?.gross_monthly || 0) : 0
   const takeHome = (p1Gross + p2Gross) * 0.8
-  const monthlyExp = (annExpClient + (isCouple ? annExpSpouse : 0)) / 12
+  const monthlyExp = (fullAnnExpClient + (isCouple ? fullAnnExpSpouse : 0)) / 12
   return takeHome - monthlyExp
 })()}
                             annualSurplus={(() => {
