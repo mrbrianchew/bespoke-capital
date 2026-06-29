@@ -5,6 +5,7 @@ import { buildOverviewSnapshot, OverviewSnapshot } from '@/lib/financialPlanSnap
 import { buildProtectionSnapshot, ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 import { buildExecutiveWealthSummarySnapshot, ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import { buildCapitalFundSnapshot, CapitalFundSnapshot } from '@/lib/capitalFundSnapshot'
+import { buildActionPlanSnapshot, ActionPlanSnapshot } from '@/lib/actionPlanSnapshot'
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 
 type FrameworkOverrideMap = Partial<Record<FrameworkRowKey, FrameworkRowStatus>>
@@ -37,6 +38,7 @@ export default function ReportPage() {
   const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionSnapshot | null>(null)
   const [executiveSummary, setExecutiveSummary] = useState<ExecutiveWealthSummarySnapshot | null>(null)
   const [capitalFundSnapshot, setCapitalFundSnapshot] = useState<CapitalFundSnapshot | null>(null)
+  const [actionPlanSnapshot, setActionPlanSnapshot] = useState<ActionPlanSnapshot | null>(null)
   const [frameworkOverrides, setFrameworkOverrides] = useState<{ client: FrameworkOverrideMap; spouse: FrameworkOverrideMap }>({ client: {}, spouse: {} })
 
   function handleFrameworkOverrideChange(who: 'client' | 'spouse', key: FrameworkRowKey, value: FrameworkRowStatus | undefined) {
@@ -75,7 +77,7 @@ export default function ReportPage() {
     const [{ data: client }, { data: family }, { data: ffRows }] = await Promise.all([
       supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
       supabase.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', id),
-      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement', 'accumulation', 'education', 'capital_mandate']),
+      supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement', 'accumulation', 'education', 'capital_mandate', 'strategic_recommendations_v2']),
     ])
     if (!client) { setError('Client not found.'); setLoading(false); return }
     setClientName(client.name)
@@ -114,8 +116,10 @@ export default function ReportPage() {
       setError('Snapshot build failed: ' + e.message)
     }
 
+    let execSummaryResult: ReturnType<typeof buildExecutiveWealthSummarySnapshot> | null = null
     try {
-      setExecutiveSummary(buildExecutiveWealthSummarySnapshot(data))
+      execSummaryResult = buildExecutiveWealthSummarySnapshot(data)
+      setExecutiveSummary(execSummaryResult)
     } catch (e: any) {
       setError('Executive Wealth Summary snapshot build failed: ' + e.message)
     }
@@ -146,6 +150,20 @@ export default function ReportPage() {
       }))
     } catch (e: any) {
       setError('Capital Fund snapshot build failed: ' + e.message)
+    }
+
+    try {
+      setActionPlanSnapshot(buildActionPlanSnapshot({
+        client: { name: client.name, dob: client.dob || '' },
+        familyMembers: (family || []).map((f: any) => ({ id: f.id, name: f.name, relationship: f.relationship, dob: f.dob })),
+        recData: merged['strategic_recommendations_v2'] || {},
+        retData: merged['retirement'] || {},
+        eduData: merged['education'] || {},
+        cmData: merged['capital_mandate'] || {},
+        annualSurplus: execSummaryResult?.annualSurplus || 0,
+      }))
+    } catch (e: any) {
+      setError('Action Plan snapshot build failed: ' + e.message)
     }
 
     setLoading(false)
@@ -183,7 +201,7 @@ export default function ReportPage() {
     }
   }
 
-  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot && executiveSummary && capitalFundSnapshot)
+  const plan: PlanSnapshot | null = (snapshot && protectionSnapshot && executiveSummary && capitalFundSnapshot && actionPlanSnapshot)
     ? {
         clientName,
         spouseName: spouseName || undefined,
@@ -191,6 +209,7 @@ export default function ReportPage() {
         protection: applyFrameworkOverrides(protectionSnapshot, frameworkOverrides),
         executiveSummary,
         capitalFund: capitalFundSnapshot,
+        actionPlan: actionPlanSnapshot,
       }
     : null
 
