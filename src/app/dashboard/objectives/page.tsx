@@ -227,22 +227,6 @@ function getAge(dob?: string): number {
   return Math.max(0, new Date().getFullYear() - birth.getFullYear())
 }
 
-function getSimpleTotal(ff: FactFinding, prefix: 'client' | 'spouse'): number {
-  const p = prefix === 'spouse' ? 's2_' : 's_'
-  return (
-    (ff[`${p}income_tax`] as number || 0) +
-    (ff[`${p}insurance`] as number || 0) +
-    (ff[`${p}regular_savings`] as number || 0) +
-    (ff[`${p}housing`] as number || 0) +
-    (ff[`${p}utilities`] as number || 0) +
-    (ff[`${p}family_food`] as number || 0) +
-    (ff[`${p}transport`] as number || 0) +
-    (ff[`${p}children`] as number || 0) +
-    (ff[`${p}lifestyle`] as number || 0) +
-    (ff[`${p}others`] as number || 0)
-  )
-}
-
 function getDetailedCategoryTotal(ff: FactFinding, category: string, prefix: 'client' | 'spouse', subItems?: Record<string, boolean>): number {
   const sp = prefix === 'spouse' ? 'd2_' : 'd_'
   const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
@@ -293,6 +277,54 @@ function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, bool
   Object.entries(categories).forEach(([cat, enabled]) => {
     if (!enabled) return
     catMap[cat]?.forEach(k => { total += (ff[k] as number || 0) })
+  })
+  return total
+}
+
+// ── EMERGENCY CASH (Wealth Accumulation tab) ─────────────────────────────────
+// Deliberately separate from DETAILED_EXPENSE_MAP / getDetailedTotal / getSimpleCategoryTotal
+// above — those feed the Protection tab's DTPD/CI dependency-need calc and must not change
+// here. This mirrors the *actual* current Financial Profile field schema (financials/page.tsx)
+// and the Financial Report's Wealth Summary tab (executiveWealthSummarySnapshot.ts): essential
+// cash burn = ALL expense categories EXCLUDING Lifestyle & Miscellaneous, and excluding the
+// CPF-OA mortgage portion (paid from CPF, not cash — matches the cash-only logic used
+// elsewhere for surplus/outflow). Confirmed by Brian, June 2026.
+//
+// Replaces the old getSimpleTotal()/ALL_EXPENSE_CATS-based getFullAnnualExpense, which read
+// stale simple-mode field names (s_income_tax, s_insurance, s_housing, etc.) that no longer
+// exist in the Financial Profile schema — those fields were consolidated into s_financial /
+// s_household years ago — and whose detailed-mode 'financial' bucket was missing
+// d_vehicle_repay and d_personal_loan_repay. Both bugs are fixed here.
+const EMERGENCY_CASH_DETAILED_MAP: Record<string, { keys: string[]; customKey?: string }> = {
+  financial: { keys: ['d_vehicle_repay', 'd_personal_loan_repay', 'd_rental_expense', 'd_income_tax', 'd_insurance', 'd_regular_savings'], customKey: 'd_custom_financial' },
+  mortgage:  { keys: ['d_mortgage_cash'] }, // cash-only — d_mortgage_cpf intentionally excluded
+  household: { keys: ['d_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household'], customKey: 'd_custom_household' },
+  personal:  { keys: ['d_personal_food', 'd_transport', 'd_car_petrol', 'd_car_insurance'], customKey: 'd_custom_personal' },
+  children:  { keys: ['d_childcare', 'd_school_fees', 'd_school_transport', 'd_allowance_children', 'd_other_children'], customKey: 'd_custom_children' },
+  // Lifestyle & Miscellaneous intentionally excluded — that's the discretionary portion
+  // that would simply pause in an emergency.
+}
+
+function getEmergencyCashAnnualExpense(ff: FactFinding, isDetailed: boolean, who: 'client' | 'spouse'): number {
+  const isSpouse = who === 'spouse'
+  if (!isDetailed) {
+    const p = isSpouse ? 's2_' : 's_'
+    return (
+      (ff[`${p}financial`] as number ?? 0) +
+      (ff[`${p}mortgage`] as number ?? 0) +
+      (ff[`${p}household`] as number ?? 0) +
+      (ff[`${p}personal`] as number ?? 0) +
+      (ff[`${p}children`] as number ?? 0)
+    )
+  }
+  const sp = isSpouse ? 'd2_' : 'd_'
+  let total = 0
+  Object.values(EMERGENCY_CASH_DETAILED_MAP).forEach(({ keys, customKey }) => {
+    total += keys.reduce((s, k) => s + ((ff[k.replace('d_', sp)] as number) ?? 0), 0)
+    if (customKey) {
+      const items = (ff[customKey] as any[]) ?? []
+      total += items.reduce((s, i) => s + ((isSpouse ? i.amount2 : i.amount) ?? 0), 0)
+    }
   })
   return total
 }
@@ -848,14 +880,14 @@ if (clientData) {
   const annExpSpouse = getAnnualExpense('spouse')
   const annExpTotal = annExpClient + annExpSpouse
 
-  // Full, unfiltered household expense — for liquidity/emergency-fund purposes.
+  // Full essential cash expense — for liquidity/emergency-fund purposes only.
   // annExpClient/annExpSpouse above are filtered by the Protection tab's expense-category
   // toggles (intended for DTPD/family-dependency needs), not the real total monthly burn,
-  // so Accumulation must not inherit those toggles.
-  const ALL_EXPENSE_CATS = { financial: true, household: true, personal: true, children: true, lifestyle: true }
+  // so Emergency Cash must not inherit those toggles. Definition: ALL expenses EXCLUDING
+  // Lifestyle & Miscellaneous (and excluding CPF-OA mortgage, which is cash-free) — kept
+  // in sync with the Financial Report's Wealth Summary tab. See getEmergencyCashAnnualExpense.
   function getFullAnnualExpense(who: 'client' | 'spouse'): number {
-    if (isDetailed) return getDetailedTotal(ff, ALL_EXPENSE_CATS, {}, who)
-    return getSimpleTotal(ff, who)
+    return getEmergencyCashAnnualExpense(ff, isDetailed, who)
   }
   const fullAnnExpClient = getFullAnnualExpense('client')
   const fullAnnExpSpouse = getFullAnnualExpense('spouse')
