@@ -1,4 +1,4 @@
-import { getCpfEmpRate, CPF_OW_CEILING, amortisedOutstanding, ageYearOnly } from './calc'
+import { getCpfEmpRate, CPF_OW_CEILING, amortisedOutstanding, ageYearOnly, calcSepMedisave, isSepEmploymentType } from './calc'
 
 export interface EWSLineItem {
   label: string
@@ -41,6 +41,23 @@ export interface ExecutiveWealthSummarySnapshot {
 // Guards against divide-by-zero when a profile has no income/assets yet entered.
 function safeDiv(a: number, b: number): number {
   return b > 0 ? a / b : 0
+}
+
+// Annual take-home pay, branching on employment type. Self-Employed / Business
+// Owner / Commission-Based have no mandatory Employer/Employee CPF contribution
+// (there is no employer) — only MediSave, based on age and annual Net Trade
+// Income (proxied as gross_monthly*12 + gross_bonus). Foreigners have neither.
+function annualTakeHomeFor(gross: number, bonus: number, age: number, citizenship: string, prYear: string, employmentType?: string): number {
+  const annualGross = gross * 12 + bonus
+  if (isSepEmploymentType(employmentType)) {
+    if (!['SC', 'PR'].includes(citizenship)) return annualGross
+    const sep = calcSepMedisave(annualGross, age)
+    return annualGross - sep.annualMedisave
+  }
+  const empRate = getCpfEmpRate(age, citizenship, prYear) / 100
+  const monthlyCpf = Math.floor(Math.min(gross, CPF_OW_CEILING) * empRate)
+  const bonusCpf = Math.floor(bonus * empRate)
+  return (gross - monthlyCpf) * 12 + (bonus - bonusCpf)
 }
 
 // Three-tier status bands, confirmed by Brian against standard Singapore CFP-practice
@@ -192,15 +209,8 @@ export function buildExecutiveWealthSummarySnapshot(input: {
   const p2Cit = isCouple ? (p2.citizenship ?? 'SC') : 'SC'
   const p2PrYear = isCouple ? (p2.pr_year ?? '3+') : '3+'
 
-  const p1EmpRate = getCpfEmpRate(clientAge, p1Cit, p1PrYear) / 100
-  const p1MonthlyCpf = Math.floor(Math.min(p1Gross, CPF_OW_CEILING) * p1EmpRate)
-  const p1BonusCpf = Math.floor(p1Bonus * p1EmpRate)
-  const p1TakeHome = (p1Gross - p1MonthlyCpf) * 12 + (p1Bonus - p1BonusCpf)
-
-  const p2EmpRate = isCouple ? getCpfEmpRate(spouseAge, p2Cit, p2PrYear) / 100 : 0
-  const p2MonthlyCpf = isCouple ? Math.floor(Math.min(p2Gross, CPF_OW_CEILING) * p2EmpRate) : 0
-  const p2BonusCpf = isCouple ? Math.floor(p2Bonus * p2EmpRate) : 0
-  const p2TakeHome = isCouple ? (p2Gross - p2MonthlyCpf) * 12 + (p2Bonus - p2BonusCpf) : 0
+  const p1TakeHome = annualTakeHomeFor(p1Gross, p1Bonus, clientAge, p1Cit, p1PrYear, p1.employment_type)
+  const p2TakeHome = isCouple ? annualTakeHomeFor(p2Gross, p2Bonus, spouseAge, p2Cit, p2PrYear, p2.employment_type) : 0
 
   const totalInflow = p1TakeHome + p2TakeHome
 
