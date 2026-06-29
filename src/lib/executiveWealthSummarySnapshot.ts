@@ -276,10 +276,13 @@ export function buildExecutiveWealthSummarySnapshot(input: {
 
   // Emergency Cash Runway — liquid cash only (Cash & Fixed Deposits, matches the
   // "Cash & Liquid Equivalents" asset line), against essential monthly burn (all
-  // outflows EXCLUDING Savings & Investments, since that portion is discretionary
-  // and would simply stop being set aside during an emergency, not need to be funded).
+  // outflows EXCLUDING Lifestyle & Miscellaneous, since that portion is discretionary
+  // and would simply stop being spent during an emergency, not need to be funded).
+  // Per Brian's confirmation (June 2026): Savings & Investments and Insurance DO count
+  // as essential burn here — only Lifestyle is excluded. Kept in sync with the
+  // Wealth Accumulation tab's "Emergency Cash" widget (objectives/page.tsx).
   const liquidCash = cashReserves
-  const monthlyEssentialBurn = (totalOutflow - savingsExpense) / 12
+  const monthlyEssentialBurn = (totalOutflow - lifestyleExpense) / 12
   const runwayMonths = safeDiv(liquidCash, monthlyEssentialBurn)
 
   return {
