@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, Suspense, useRef } from 'react
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import DateInput from '@/components/DateInput'
+import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 
 interface OtherIncomeItem { label: string; amount: number }
 interface CustomAssetItem { label: string; amount: number; amount2?: number; notes?: string }
@@ -168,7 +169,23 @@ function getCpfTier(age: number, citizenship: string, prYear: string, config: Cp
   return tiers.find(t => age <= t.max_age) || tiers[tiers.length - 1]
 }
 
-function calcCpf(gross: number, bonus: number, age: number, citizenship: string, prYear: string, config: CpfConfig) {
+function calcCpf(gross: number, bonus: number, age: number, citizenship: string, prYear: string, config: CpfConfig, employmentType?: string) {
+  if (isSepEmploymentType(employmentType)) {
+    // Self-Employed / Business Owner / Commission-Based: no mandatory Employer or
+    // Employee CPF contribution exists (there is no employer). Only MediSave is
+    // mandatory, based on age and annual Net Trade Income (proxied here as
+    // gross_monthly*12 + gross_bonus). Foreigners have no CPF/MediSave obligation.
+    if (!['SC', 'PR'].includes(citizenship)) {
+      return { employee: 0, employer: 0, takeHome: gross, annualTakeHome: gross * 12 + bonus, owBase: 0, tier: null, oa: 0, sa: 0, ma: 0 }
+    }
+    const annualNti = gross * 12 + bonus
+    const sep = calcSepMedisave(annualNti, age)
+    const monthlyMA = Math.round(sep.annualMedisave / 12)
+    const takeHome = gross - monthlyMA
+    const annualTakeHome = annualNti - sep.annualMedisave
+    const tier: CpfTier = { max_age: 999, employee: 0, employer: 0, oa: 0, sa: 0, ma: 100 }
+    return { employee: 0, employer: 0, takeHome, annualTakeHome, owBase: 0, tier, oa: 0, sa: 0, ma: monthlyMA }
+  }
   const tier = getCpfTier(age, citizenship, prYear, config)
   if (!tier) return { employee: 0, employer: 0, takeHome: gross, annualTakeHome: gross * 12 + bonus, owBase: 0, tier: null, oa: 0, sa: 0, ma: 0 }
   const owBase = Math.min(gross, config.ow_ceiling)
@@ -354,7 +371,7 @@ function LiabilityDonut({ items }: { items: { label: string; val: number; color:
 function CpfCard({ p, age, config, label }: { p: PersonData; age: number; config: CpfConfig; label?: string }) {
   const cit = p.citizenship || 'SC'; const prY = p.pr_year || '3+'
   const gross = p.gross_monthly || 0; const bonus = p.gross_bonus || 0
-  const cpf = calcCpf(gross, bonus, age, cit, prY, config)
+  const cpf = calcCpf(gross, bonus, age, cit, prY, config, p.employment_type)
   const isCpf = ['SC', 'PR'].includes(cit)
   const anEmployee = cpf.employee * 12 + (isCpf && cpf.tier ? Math.floor(bonus * cpf.tier.employee / 100) : 0)
   const anEmployer = cpf.employer * 12 + (isCpf && cpf.tier ? Math.round(bonus * cpf.tier.employer / 100) : 0)
@@ -371,7 +388,7 @@ function CpfCard({ p, age, config, label }: { p: PersonData; age: number; config
         <div className="text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)' }}>{label ? label + ' — ' : ''}CPF Breakdown</div>
         <div className="text-xs px-2 py-1" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)' }}>Age {age}{prLabel} · {cpf.tier?.employee}% / {cpf.tier?.employer}%</div>
       </div>
-      {gross > config.ow_ceiling && (
+      {gross > config.ow_ceiling && !isSepEmploymentType(p.employment_type) && (
         <div className="text-xs px-3 py-2 mb-3" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>OW capped at {fmt(config.ow_ceiling)}</div>
       )}
       <div className="flex pb-2 text-xs" style={{ borderBottom: '2px solid var(--line2)', color: 'var(--ink3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -996,7 +1013,7 @@ function PersonIncomePanel({ p, onChange, age, config, label }: { p: PersonData;
   const gross = p.gross_monthly || 0; const bonus = p.gross_bonus || 0
   const otherIncomes = p.other_incomes || []
   const totalOther = otherIncomes.reduce((s, i) => s + (i.amount || 0), 0)
-  const cpf = calcCpf(gross, bonus, age, p.citizenship || 'SC', p.pr_year || '3+', config)
+  const cpf = calcCpf(gross, bonus, age, p.citizenship || 'SC', p.pr_year || '3+', config, p.employment_type)
   const isCpf = ['SC', 'PR'].includes(p.citizenship || 'SC')
   const moEmployee = cpf.employee
   const moTakeHome = cpf.takeHome
@@ -1321,8 +1338,8 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   const mode = ff.mode || 'single'; const isCouple = mode === 'couple'
   const p1 = ff.person1 || {}; const p2 = ff.person2 || {}
   const age1 = client.age || 35; const age2 = spouse?.age || 35
-  const cpf1 = calcCpf(p1.gross_monthly || 0, p1.gross_bonus || 0, age1, p1.citizenship || 'SC', p1.pr_year || '3+', cpfConfig)
-  const cpf2 = isCouple ? calcCpf(p2.gross_monthly || 0, p2.gross_bonus || 0, age2, p2.citizenship || 'SC', p2.pr_year || '3+', cpfConfig) : null
+  const cpf1 = calcCpf(p1.gross_monthly || 0, p1.gross_bonus || 0, age1, p1.citizenship || 'SC', p1.pr_year || '3+', cpfConfig, p1.employment_type)
+  const cpf2 = isCouple ? calcCpf(p2.gross_monthly || 0, p2.gross_bonus || 0, age2, p2.citizenship || 'SC', p2.pr_year || '3+', cpfConfig, p2.employment_type) : null
   const other1 = (p1.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0)
   const other2 = isCouple ? (p2.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0) : 0
   const mo1 = cpf1.takeHome + other1; const mo2 = cpf2 ? cpf2.takeHome + other2 : 0; const moTotal = mo1 + mo2
