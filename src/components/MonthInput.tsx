@@ -144,6 +144,9 @@ export default function MonthInput({
           value={text}
           placeholder={placeholder}
           disabled={disabled}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           onChange={(e) => handleTextChange(e.target.value)}
           onBlur={handleTextBlur}
           onFocus={() => setOpen(true)}
