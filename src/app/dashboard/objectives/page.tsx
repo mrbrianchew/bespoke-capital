@@ -1561,6 +1561,7 @@ useEffect(() => {
                 existingCIClient={existingCIClient} existingCISpouse={existingCISpouse}
                 lifeGapClient={lifeGapClient} lifeGapSpouse={lifeGapSpouse}
                 ciGapClient={ciGapClient} ciGapSpouse={ciGapSpouse}
+                assetOffsetEnabled={p.assetOffsetEnabled !== false}
               />
 
               {/* Existing cover inputs */}
@@ -3720,7 +3721,7 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
 
 // ─── SIDEBAR SUMMARY ─────────────────────────────────────────────────────────
 
-function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse, existingLifeClient, existingLifeSpouse, existingCIClient, existingCISpouse, lifeGapClient, lifeGapSpouse, ciGapClient, ciGapSpouse }: {
+function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpouse, ciClient, ciSpouse, existingLifeClient, existingLifeSpouse, existingCIClient, existingCISpouse, lifeGapClient, lifeGapSpouse, ciGapClient, ciGapSpouse, assetOffsetEnabled }: {
   isCouple: boolean; clientName: string; spouseName: string
   dtpdClient: CalcResult; dtpdSpouse: CalcResult
   ciClient: CalcResult; ciSpouse: CalcResult
@@ -3728,6 +3729,7 @@ function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpou
   existingCIClient: number; existingCISpouse: number
   lifeGapClient: number; lifeGapSpouse: number
   ciGapClient: number; ciGapSpouse: number
+  assetOffsetEnabled: boolean
 }) {
   function PersonBlock({ name, dtpd, ci, existLife, existCI, lifeGap, ciGap }: {
     name: string; dtpd: CalcResult; ci: CalcResult
@@ -3737,12 +3739,18 @@ function SidebarSummary({ isCouple, clientName, spouseName, dtpdClient, dtpdSpou
       <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px', marginBottom: 12 }}>
         <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', fontFamily: 'Inter', marginBottom: 10 }}>{name}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <SidebarRow label="D/TPD Need" value={dtpd.net} />
-          <SidebarRow label="CI Need" value={ci.net} />
+          <SidebarRow label="D/TPD Need" value={dtpd.gross} />
+          <SidebarRow label="CI Need" value={ci.gross} />
           <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
             <SidebarRow label="Existing D/TPD" value={existLife} color="#2D5A4E" />
             <SidebarRow label="Existing CI" value={existCI} color="#2D5A4E" />
           </div>
+          {assetOffsetEnabled && (
+            <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
+              <SidebarRow label="D/TPD Asset Offset" value={dtpd.assets} color="#2D5A4E" />
+              <SidebarRow label="CI Asset Offset" value={ci.assets} color="#2D5A4E" />
+            </div>
+          )}
           <div style={{ borderTop: '1px solid #E8E4DC', paddingTop: 8, marginTop: 2 }}>
             <SidebarRow label="D/TPD Gap" value={lifeGap} color={lifeGap > 0 ? '#C0392B' : '#2D5A4E'} />
             <SidebarRow label="CI Gap" value={ciGap} color={ciGap > 0 ? '#C0392B' : '#2D5A4E'} />
