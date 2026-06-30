@@ -2061,8 +2061,8 @@ const uniGrad = Math.max(0, gradAge - age)
       <SectionBlock title="Family Dependency Need" color="#2D5A4E">
         <NeedTable
           isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-          clientData={dtpdFDOnly(annExpClient, p.expenseCoverPctClient ?? defaultClientPct, p.inflationRate ?? 3, coverageTerm)}
-          spouseData={dtpdFDOnly(annExpSpouse, p.expenseCoverPctSpouse ?? defaultSpousePct, p.inflationRate ?? 3, coverageTerm)}
+          clientData={dtpdFDOnly(annExpClient, p.expenseCoverPctClient ?? defaultClientPct, p.inflationRate ?? 3, coverageTerm, p.fdModeClient ?? 'combined', annExpTotal)}
+          spouseData={dtpdFDOnly(annExpSpouse, p.expenseCoverPctSpouse ?? defaultSpousePct, p.inflationRate ?? 3, coverageTerm, p.fdModeSpouse ?? 'combined', annExpTotal)}
           label="D/TPD Family Dependency"
         />
       </SectionBlock>
@@ -2085,10 +2085,11 @@ const uniGrad = Math.max(0, gradAge - age)
   )
 }
 
-function dtpdFDOnly(annExp: number, coverPctRaw: number, inflationRaw: number, term: number): number {
+function dtpdFDOnly(annExp: number, coverPctRaw: number, inflationRaw: number, term: number, fdMode: 'own' | 'combined', annExpTotal: number): number {
   const rate = inflationRaw / 100
   const pct = coverPctRaw / 100
-  return fv(rate, term, annExp * pct)
+  const fdBase = fdMode === 'own' ? annExp : annExpTotal * pct
+  return fv(rate, term, fdBase)
 }
 
 // ─── MORTGAGE & DEBT TAB ─────────────────────────────────────────────────────
