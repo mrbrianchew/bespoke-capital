@@ -103,12 +103,18 @@ interface ProtectionData {
   nonMortgageDebts?: { id: string; debtType: string; label: string; amount: number; interestRate: number; tenureLeft: number; owner: 'client' | 'spouse' | 'joint' }[]
   provideEducationFund?: boolean
   educationFundPct?: number
-  educationChildren?: { childId: string; uniType?: string; courseDuration?: number; annualTuition?: number; annualLiving?: number; uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number }[]
+  educationChildren?: { childId: string; uniType?: string; courseDuration?: number; annualTuition?: number; annualLiving?: number; uniEntryAge?: number; coverPctClient?: number; coverPctSpouse?: number; ciIncluded?: boolean; ciCoverPctClient?: number; ciCoverPctSpouse?: number }[]
   ciStage?: 'early_late' | 'late_only'
   ciYears?: number
   ciMortgagePctClient?: number
   ciMortgagePctSpouse?: number
   includeEduInCI?: boolean
+  // Expenses-mode CI add-on toggles (separate from D/TPD's provideEducationFund and
+  // income-mode's ciIncludeMortgageInIncome/ciIncludeEduInIncome — isolated so toggling
+  // these off only affects the CI expenses-mode fund, not D/TPD or CI income-mode)
+  ciIncludeLivingExpenses?: boolean
+  ciIncludeMortgageCI?: boolean
+  ciIncludeEducationCI?: boolean
   existingLifeCoverClient?: number; existingLifeCoverSpouse?: number
   existingCICoverClient?: number; existingCICoverSpouse?: number
   disabilityIncomeClient?: number; disabilityIncomeSpouse?: number
@@ -1004,6 +1010,37 @@ const coverageTerm = (() => {
     }, 0)
   }
 
+  // CI-only education fund — deliberately isolated from calcEducationForPerson above.
+  // Uses its own per-child include flag (ciIncluded) and its own coverage %
+  // (ciCoverPctClient/ciCoverPctSpouse) so excluding a child or changing their %
+  // here never touches the D/TPD Education Fund figures.
+  function calcEducationForPersonCI(who: 'client' | 'spouse'): number {
+    if (!p.provideEducationFund) return 0
+    if (p.ciIncludeEducationCI === false) return 0
+    const eduKids = p.educationChildren ?? []
+    const livingInflation = inflation
+    return children.reduce((sum, child) => {
+      const ec = eduKids.find(e => e.childId === child.id)
+      if (!ec) return sum
+      if (ec.ciIncluded === false) return sum
+      const childAge = child.age ?? getAge(child.date_of_birth)
+      const defaultEntryAge = child.gender === 'Male' ? 21 : 19
+      const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+      if (childAge >= uniEntryAge) return sum
+      const yearsToUni = Math.max(0, uniEntryAge - childAge)
+      const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+      const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+      const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+      const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+      const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+      const fvLiving = baseLiving * Math.pow(1 + livingInflation, yearsToUni) * dur
+      const pct = !isCouple ? 1 : (who === 'client' ? (ec.ciCoverPctClient ?? 50) : (ec.ciCoverPctSpouse ?? 50)) / 100
+      return sum + (fvTuition + fvLiving) * pct
+    }, 0)
+  }
+
+  // Per-child CI education figure now lives locally in CriticalIllnessTab (where it's used).
+
   // CI calcs
   function calcCIFamilyDep(annExp: number, coverPct: number): number {
     return fv(inflation, p.ciYears ?? 5, annExp * coverPct)
@@ -1151,9 +1188,9 @@ const coverageTerm = (() => {
     const fdBase = fdMode === 'own'
       ? (who === 'client' ? annExpClient : annExpSpouse)
       : annExpTotal * coverPct
-    const fd = fv(inflation, ciYrs, fdBase)
-    const mort = calcCIMortgage(who)
-    const edu = p.provideEducationFund ? calcEducationForPerson(who, true) : 0
+    const fd = p.ciIncludeLivingExpenses === false ? 0 : fv(inflation, ciYrs, fdBase)
+    const mort = p.ciIncludeMortgageCI === false ? 0 : calcCIMortgage(who)
+    const edu = calcEducationForPersonCI(who)
     const medicalBuffer = p.ciIncludeMedicalBuffer
       ? (who === 'client' ? (p.ciMedicalBufferClient ?? 50000) : (p.ciMedicalBufferSpouse ?? 50000)) : 0
     const recoveryBuffer = p.ciIncludeRecoveryBuffer
@@ -1791,6 +1828,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             mortgages={mortgages}
             ciClient={ciClient} ciSpouse={ciSpouse}
             children={children}
+            inflation={inflation}
           />
         )}
         {wpTab === 5 && (
@@ -2677,13 +2715,38 @@ function CIAmountInput({ label, value, onChange, note }: { label: string; value:
   )
 }
 
-function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children }: {
+function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children, inflation }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
   mortgages: MortgageProperty[]
   ciClient: CalcResult; ciSpouse: CalcResult
   children: FamilyMember[]
+  inflation: number
 }) {
+  // Local, isolated copy of the per-child CI education calc — mirrors the one
+  // in WealthProtectionSection but kept separate so this tab's display math
+  // never depends on that component's internal closures.
+  function calcEducationForChildCI(child: { id: string; age?: number; date_of_birth?: string; gender?: string }): number {
+    const eduKids = p.educationChildren ?? []
+    const ec = eduKids.find(e => e.childId === child.id)
+    if (!ec) return 0
+    if (ec.ciIncluded === false) return 0
+    const childAge = child.age ?? getAge(child.date_of_birth)
+    const defaultEntryAge = child.gender === 'Male' ? 21 : 19
+    const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
+    if (childAge >= uniEntryAge) return 0
+    const yearsToUni = Math.max(0, uniEntryAge - childAge)
+    const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
+    const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
+    const baseLiving = ec.annualLiving ?? uniInfo.annual_living
+    const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
+    const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
+    const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
+    const clientPct = !isCouple ? 1 : (ec.ciCoverPctClient ?? 50) / 100
+    const spousePct = isCouple ? (ec.ciCoverPctSpouse ?? 50) / 100 : 0
+    return (fvTuition + fvLiving) * (clientPct + spousePct)
+  }
+
   const ciMode = p.ciCalcMode ?? 'expenses'
   const ciYears = p.ciYears ?? 5
   const clientGrossMonthly = (ff.person1 as any)?.gross_monthly ?? 0
@@ -2741,60 +2804,143 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
               CI fund to replace household expenses during recovery — drawn from Family Dependency settings. Toggle optional add-ons below.
             </p>
 
-            {/* Living Expenses — always on */}
-            <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #A8834A' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                <div style={{ width: 20, height: 20, borderRadius: 4, background: '#A8834A', border: '1.5px solid #A8834A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>
+            {/* Living Expenses — toggleable */}
+            {(() => {
+              const on = p.ciIncludeLivingExpenses !== false
+              return (
+                <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${on ? '#A8834A' : '#E8E4DC'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: on ? 12 : 0 }}>
+                    <div onClick={() => updateP({ ciIncludeLivingExpenses: !on })}
+                      style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: on ? '#A8834A' : 'transparent', border: `1.5px solid ${on ? '#A8834A' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {on && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    <div style={{ flex: 1 }} onClick={() => updateP({ ciIncludeLivingExpenses: !on })}>
+                      <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: on ? '#1C1A17' : '#aaa', cursor: 'pointer' }}>Living Expenses</div>
+                      <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Inflation-adjusted annual expenses over the recovery window</div>
+                    </div>
+                  </div>
+                  {on && (
+                    <>
+                      <CICoverageWindowSlider ciYears={ciYears} label="Recovery Window" description="Number of years expenses need to be covered" onUpdate={v => updateP({ ciYears: v })} />
+                      <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.fd} spouseVal={ciSpouse.fd} color="#A8834A" />
+                    </>
+                  )}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Living Expenses</div>
-                  <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Inflation-adjusted annual expenses over the recovery window</div>
-                </div>
-              </div>
-              <CICoverageWindowSlider ciYears={ciYears} label="Recovery Window" description="Number of years expenses need to be covered" onUpdate={v => updateP({ ciYears: v })} />
-              <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.fd} spouseVal={ciSpouse.fd} color="#A8834A" />
-            </div>
+              )
+            })()}
 
-            {/* Mortgage — shown if mortgages exist */}
-            {mortgages.length > 0 && (
-              <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #A8834A' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <div style={{ width: 20, height: 20, borderRadius: 4, background: '#A8834A', border: '1.5px solid #A8834A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>
+            {/* Mortgage — toggleable, shown if mortgages exist */}
+            {mortgages.length > 0 && (() => {
+              const on = p.ciIncludeMortgageCI !== false
+              return (
+                <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${on ? '#A8834A' : '#E8E4DC'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: on ? 12 : 0 }}>
+                    <div onClick={() => updateP({ ciIncludeMortgageCI: !on })}
+                      style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: on ? '#A8834A' : 'transparent', border: `1.5px solid ${on ? '#A8834A' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {on && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    <div style={{ flex: 1 }} onClick={() => updateP({ ciIncludeMortgageCI: !on })}>
+                      <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: on ? '#1C1A17' : '#aaa', cursor: 'pointer' }}>Mortgage Repayments</div>
+                      <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Monthly repayments × recovery window</div>
+                    </div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Mortgage Repayments</div>
-                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Monthly repayments × recovery window</div>
-                  </div>
+                  {on && (
+                    <>
+                      {isCouple ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 8 }}>
+                          <PersonSlider label={clientName} value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+                          <PersonSlider label={spouseName} value={p.ciMortgagePctSpouse ?? 100} onChange={v => updateP({ ciMortgagePctSpouse: v })} color="#A8834A" unit="%" />
+                        </div>
+                      ) : (
+                        <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
+                      )}
+                      <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.mort} spouseVal={ciSpouse.mort} color="#A8834A" />
+                    </>
+                  )}
                 </div>
-                {isCouple ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 8 }}>
-                    <PersonSlider label={clientName} value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
-                    <PersonSlider label={spouseName} value={p.ciMortgagePctSpouse ?? 100} onChange={v => updateP({ ciMortgagePctSpouse: v })} color="#A8834A" unit="%" />
-                  </div>
-                ) : (
-                  <PersonSlider label="Coverage %" value={p.ciMortgagePctClient ?? 100} onChange={v => updateP({ ciMortgagePctClient: v })} color="#A8834A" unit="%" />
-                )}
-                <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.mort} spouseVal={ciSpouse.mort} color="#A8834A" />
-              </div>
-            )}
+              )
+            })()}
 
-            {/* Education fund — shown if enabled */}
-            {p.provideEducationFund && children.length > 0 && (
-              <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: '3px solid #2D5A4E' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 20, height: 20, borderRadius: 4, background: '#2D5A4E', border: '1.5px solid #2D5A4E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>
+            {/* Education fund — toggleable, with per-child scroller (independent of D/TPD Education Fund tab) */}
+            {p.provideEducationFund && children.length > 0 && (() => {
+              const on = p.ciIncludeEducationCI !== false
+              const eduKids = p.educationChildren ?? []
+              function updateChildCI(childId: string, changes: { ciIncluded?: boolean; ciCoverPctClient?: number; ciCoverPctSpouse?: number }) {
+                const idx = eduKids.findIndex(e => e.childId === childId)
+                const arr = [...eduKids]
+                if (idx === -1) arr.push({ childId, ...changes })
+                else arr[idx] = { ...arr[idx], ...changes }
+                updateP({ educationChildren: arr })
+              }
+              const eligibleChildren = children.filter(c => {
+                const ec = eduKids.find(e => e.childId === c.id)
+                const childAge = c.age ?? getAge(c.date_of_birth)
+                const defaultEntryAge = c.gender === 'Male' ? 21 : 19
+                const uniEntryAge = ec?.uniEntryAge ?? defaultEntryAge
+                return childAge < uniEntryAge
+              })
+              return (
+                <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${on ? '#2D5A4E' : '#E8E4DC'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: on ? 14 : 0 }}>
+                    <div onClick={() => updateP({ ciIncludeEducationCI: !on })}
+                      style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: on ? '#2D5A4E' : 'transparent', border: `1.5px solid ${on ? '#2D5A4E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {on && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                    </div>
+                    <div style={{ flex: 1 }} onClick={() => updateP({ ciIncludeEducationCI: !on })}>
+                      <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: on ? '#1C1A17' : '#aaa', cursor: 'pointer' }}>Education Fund</div>
+                      <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Children who have not yet reached university age — select per child below</div>
+                    </div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Education Fund</div>
-                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Children who have not yet reached university age</div>
-                  </div>
+                  {on && (
+                    eligibleChildren.length === 0 ? (
+                      <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>No children below university entry age.</p>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
+                          {eligibleChildren.map(c => {
+                            const ec = eduKids.find(e => e.childId === c.id)
+                            const included = ec?.ciIncluded !== false
+                            const age = c.age ?? getAge(c.date_of_birth)
+                            const amount = calcEducationForChildCI(c)
+                            return (
+                              <div key={c.id} style={{
+                                minWidth: 220, flexShrink: 0, background: '#fff', borderRadius: 6,
+                                border: `1.5px solid ${included ? '#2D5A4E' : '#E8E4DC'}`, padding: 14,
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                  <div onClick={() => updateChildCI(c.id, { ciIncluded: !included })}
+                                    style={{ width: 18, height: 18, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: included ? '#2D5A4E' : 'transparent', border: `1.5px solid ${included ? '#2D5A4E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {included && <span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span>}
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: included ? '#1C1A17' : '#aaa' }}>{c.name || c.relationship}</div>
+                                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter' }}>Age {age}</div>
+                                  </div>
+                                </div>
+                                {included && (
+                                  <>
+                                    {isCouple ? (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
+                                        <PersonSlider label={clientName} value={ec?.ciCoverPctClient ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                        <PersonSlider label={spouseName} value={ec?.ciCoverPctSpouse ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctSpouse: v })} color="#2D5A4E" unit="%" />
+                                      </div>
+                                    ) : (
+                                      <PersonSlider label="Coverage %" value={ec?.ciCoverPctClient ?? 100} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                    )}
+                                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E', textAlign: 'right', marginTop: 4 }}>{fmt(amount)}</div>
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.edu} spouseVal={ciSpouse.edu} color="#2D5A4E" />
+                      </>
+                    )
+                  )}
                 </div>
-                <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.edu} spouseVal={ciSpouse.edu} color="#2D5A4E" />
-              </div>
-            )}
+              )
+            })()}
 
             <CIMedicalBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
             <CIRecoveryBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
