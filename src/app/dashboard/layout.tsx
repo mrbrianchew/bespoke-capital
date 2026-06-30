@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import DateInput from '@/components/DateInput'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -206,12 +207,16 @@ function AddClientModal({ userId, onClose, onSaved }: { userId: string; onClose:
           <div className="font-serif text-xl">Add New Client</div>
         </div>
         <div className="px-6 py-5 space-y-4">
-          {[{ label: 'Full Name', type: 'text', val: name, set: setName, req: true, ph: 'e.g. Andy Au' }, { label: 'Date of Birth', type: 'date', val: dob, set: setDob, req: false, ph: '' }].map(f => (
+          {[{ label: 'Full Name', type: 'text', val: name, set: setName, req: true, ph: 'e.g. Andy Au' }].map(f => (
             <div key={f.label}>
               <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>{f.label}</label>
               <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)} required={f.req} placeholder={f.ph} className="w-full px-3 py-2.5 text-sm outline-none" style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--cream)' }} />
             </div>
           ))}
+          <div>
+            <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Date of Birth</label>
+            <DateInput value={dob} onChange={setDob} className="w-full px-3 py-2.5 text-sm outline-none" style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--cream)' }} />
+          </div>
           <div>
             <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Gender</label>
             <select value={gender} onChange={e => setGender(e.target.value)} className="w-full px-3 py-2.5 text-sm outline-none" style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--cream)' }}>
