@@ -892,11 +892,17 @@ function buildCISubtitle(ci: PersonCIBreakdown): ReactNode {
   }
   if (isShortfall) {
     const pct = fundedPct(have, ci.maxCapitalRequired)
+    // Years of the selected recovery window (Strategic Objectives > Critical
+    // Illness) that current funding would actually stretch across — same
+    // proportion as pct, scaled onto ci.ciYears instead of shown as a bare %.
+    const yearsCovered = Math.round((pct / 100) * ci.ciYears * 2) / 2
     return (
       <>
         If you were diagnosed with a critical illness today, your family would have{' '}
         <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — about{' '}
-        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need to replace lost income and cover the cost of recovery.
+        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need, or roughly{' '}
+        <span style={{ fontWeight: 600 }}>{yearsCovered} {yearsCovered === 1 ? 'year' : 'years'}</span> of the{' '}
+        <span style={{ fontWeight: 600 }}>{ci.ciYears}</span>-year recovery window you've planned for.
       </>
     )
   }
