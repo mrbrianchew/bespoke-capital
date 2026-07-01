@@ -508,13 +508,6 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
   const totalCV       = Object.values(cvValues).reduce((s, v) => s + v, 0)
   const policyTermYrs = parseInt(rec.policyTerm) || 20
 
-  // Core Protection (expenseMode) recs store cover in deathBenefit (or baseDeathBenefit × multiplier
-  // for WL/LWL), never in sumAssured — sumAssured only applies to the generic protection category.
-  const isWL = rec.coverageType === 'WL' || rec.coverageType === 'LWL'
-  const coverageAmount = expenseMode
-    ? (isWL ? Math.round((rec.baseDeathBenefit || 0) * (rec.coverageMultiplier || 1)) : (rec.deathBenefit || 0))
-    : rec.sumAssured
-
   // Expense replacement: per-policy old cost over remaining years, capped at new term
   const newTermYrs    = expenseMode ? newPremTermYears() : policyTermYrs
   const oldTotalCost  = expenseMode
@@ -603,22 +596,21 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
         ) : (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-              {metCard(
-                medicalMode ? 'New cash premium' : 'New annual premium',
-                fmt(displayNewPremium) + ' / yr',
-                medicalMode ? 'Cash portion only (excl. Medisave)' : (rec.premiumTerm ? `${rec.premiumTerm} payment term` : ''),
-                '#854F0B'
-              )}
-              {isReplacement
-                ? metCard(
-                    medicalMode ? 'Old cash premiums freed up' : 'Old premiums freed up',
-                    fmt(displayOldPremium) + ' / yr',
-                    `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`,
-                    '#1E4D35'
-                  )
-                : !medicalMode
-                  ? metCard('Coverage', fmt(coverageAmount), rec.coverageType || (expenseMode ? 'Death benefit' : 'Sum assured / benefit'), '#1E4D35')
-                  : null
+              <div style={!isReplacement ? { gridColumn: '1 / -1' } : undefined}>
+                {metCard(
+                  medicalMode ? 'New cash premium' : 'New annual premium',
+                  fmt(displayNewPremium) + ' / yr',
+                  medicalMode ? 'Cash portion only (excl. Medisave)' : (rec.premiumTerm ? `${rec.premiumTerm} payment term` : ''),
+                  '#854F0B'
+                )}
+              </div>
+              {isReplacement &&
+                metCard(
+                  medicalMode ? 'Old cash premiums freed up' : 'Old premiums freed up',
+                  fmt(displayOldPremium) + ' / yr',
+                  `${rec.replacedPolicies.length} polic${rec.replacedPolicies.length === 1 ? 'y' : 'ies'} cancelled`,
+                  '#1E4D35'
+                )
               }
             </div>
             {isReplacement && (
