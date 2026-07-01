@@ -1014,9 +1014,10 @@ const coverageTerm = (() => {
   // Uses its own per-child include flag (ciIncluded) and its own coverage %
   // (ciCoverPctClient/ciCoverPctSpouse) so excluding a child or changing their %
   // here never touches the D/TPD Education Fund figures.
+  // NOTE: outer on/off gate is applied at call site (expenses uses ciIncludeEducationCI,
+  // income uses ciIncludeEduInIncome) so this function handles only the per-child logic.
   function calcEducationForPersonCI(who: 'client' | 'spouse'): number {
     if (!p.provideEducationFund) return 0
-    if (p.ciIncludeEducationCI === false) return 0
     const eduKids = p.educationChildren ?? []
     const livingInflation = inflation
     return children.reduce((sum, child) => {
@@ -1170,7 +1171,7 @@ const coverageTerm = (() => {
       const incomeReplacement = annualIncome * ciYrs
 
       const mort = p.ciIncludeMortgageInIncome ? calcCIMortgage(who) : 0
-      const edu = (p.ciIncludeEduInIncome && p.provideEducationFund) ? calcEducationForPerson(who, true) : 0
+      const edu = (p.ciIncludeEduInIncome && p.provideEducationFund) ? calcEducationForPersonCI(who) : 0
 
       const medicalBuffer = p.ciIncludeMedicalBuffer
         ? (who === 'client' ? (p.ciMedicalBufferClient ?? 50000) : (p.ciMedicalBufferSpouse ?? 50000)) : 0
@@ -1190,7 +1191,7 @@ const coverageTerm = (() => {
       : annExpTotal * coverPct
     const fd = p.ciIncludeLivingExpenses === false ? 0 : fv(inflation, ciYrs, fdBase)
     const mort = p.ciIncludeMortgageCI === false ? 0 : calcCIMortgage(who)
-    const edu = calcEducationForPersonCI(who)
+    const edu = p.ciIncludeEducationCI !== false ? calcEducationForPersonCI(who) : 0
     const medicalBuffer = p.ciIncludeMedicalBuffer
       ? (who === 'client' ? (p.ciMedicalBufferClient ?? 50000) : (p.ciMedicalBufferSpouse ?? 50000)) : 0
     const recoveryBuffer = p.ciIncludeRecoveryBuffer
@@ -3038,32 +3039,85 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
             )}
 
             {/* Optional: Education */}
-            {children.length > 0 && (
-              <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${p.ciIncludeEduInIncome ? '#2D5A4E' : '#E8E4DC'}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div onClick={() => updateP({ ciIncludeEduInIncome: !p.ciIncludeEduInIncome })}
-                    style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: p.ciIncludeEduInIncome ? '#2D5A4E' : 'transparent', border: `1.5px solid ${p.ciIncludeEduInIncome ? '#2D5A4E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {p.ciIncludeEduInIncome && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: p.ciIncludeEduInIncome ? '#1C1A17' : '#aaa' }}>Education Fund</div>
-                    <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Children's education costs from Education Fund tab</div>
-                  </div>
-                  {p.ciIncludeEduInIncome && (
-                    <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 8, minWidth: isCouple ? 200 : 100 }}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{clientName}</div>
-                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(ciClient.edu)}</div>
-                      </div>
-                      {isCouple && <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{spouseName}</div>
-                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E' }}>{fmt(ciSpouse.edu)}</div>
-                      </div>}
+            {p.provideEducationFund && children.length > 0 && (() => {
+              const on = !!p.ciIncludeEduInIncome
+              const eduKids = p.educationChildren ?? []
+              function updateChildCI(childId: string, changes: { ciIncluded?: boolean; ciCoverPctClient?: number; ciCoverPctSpouse?: number }) {
+                const idx = eduKids.findIndex(e => e.childId === childId)
+                const arr = [...eduKids]
+                if (idx === -1) arr.push({ childId, ...changes })
+                else arr[idx] = { ...arr[idx], ...changes }
+                updateP({ educationChildren: arr })
+              }
+              const eligibleChildren = children.filter(c => {
+                const ec = eduKids.find(e => e.childId === c.id)
+                const childAge = c.age ?? getAge(c.date_of_birth)
+                const defaultEntryAge = c.gender === 'Male' ? 21 : 19
+                const uniEntryAge = ec?.uniEntryAge ?? defaultEntryAge
+                return childAge < uniEntryAge
+              })
+              return (
+                <div style={{ background: '#F5F0E8', borderRadius: 8, padding: '16px 20px', marginBottom: 12, borderLeft: `3px solid ${on ? '#2D5A4E' : '#E8E4DC'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: on ? 14 : 0 }}>
+                    <div onClick={() => updateP({ ciIncludeEduInIncome: !on })}
+                      style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: on ? '#2D5A4E' : 'transparent', border: `1.5px solid ${on ? '#2D5A4E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {on && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
                     </div>
+                    <div style={{ flex: 1 }} onClick={() => updateP({ ciIncludeEduInIncome: !on })}>
+                      <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: on ? '#1C1A17' : '#aaa', cursor: 'pointer' }}>Education Fund</div>
+                      <div style={{ fontSize: 11, color: '#aaa', fontFamily: 'Inter' }}>Children's education costs added on top of income replacement — select per child below</div>
+                    </div>
+                  </div>
+                  {on && (
+                    eligibleChildren.length === 0 ? (
+                      <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>No children below university entry age.</p>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
+                          {eligibleChildren.map(c => {
+                            const ec = eduKids.find(e => e.childId === c.id)
+                            const included = ec?.ciIncluded !== false
+                            const age = c.age ?? getAge(c.date_of_birth)
+                            const amount = calcEducationForChildCI(c)
+                            return (
+                              <div key={c.id} style={{
+                                minWidth: 220, flexShrink: 0, background: '#fff', borderRadius: 6,
+                                border: `1.5px solid ${included ? '#2D5A4E' : '#E8E4DC'}`, padding: 14,
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                  <div onClick={() => updateChildCI(c.id, { ciIncluded: !included })}
+                                    style={{ width: 18, height: 18, borderRadius: 4, cursor: 'pointer', flexShrink: 0, background: included ? '#2D5A4E' : 'transparent', border: `1.5px solid ${included ? '#2D5A4E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {included && <span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span>}
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 12, fontFamily: 'Inter', fontWeight: 600, color: included ? '#1C1A17' : '#aaa' }}>{c.name || c.relationship}</div>
+                                    <div style={{ fontSize: 10, color: '#aaa', fontFamily: 'Inter' }}>Age {age}</div>
+                                  </div>
+                                </div>
+                                {included && (
+                                  <>
+                                    {isCouple ? (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
+                                        <PersonSlider label={clientName} value={ec?.ciCoverPctClient ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                        <PersonSlider label={spouseName} value={ec?.ciCoverPctSpouse ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctSpouse: v })} color="#2D5A4E" unit="%" />
+                                      </div>
+                                    ) : (
+                                      <PersonSlider label="Coverage %" value={ec?.ciCoverPctClient ?? 100} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                    )}
+                                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E', textAlign: 'right', marginTop: 4 }}>{fmt(amount)}</div>
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.edu} spouseVal={ciSpouse.edu} color="#2D5A4E" />
+                      </>
+                    )
                   )}
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             <CIMedicalBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
             <CIRecoveryBufferCard p={p} updateP={updateP} isCouple={isCouple} clientName={clientName} spouseName={spouseName} />
