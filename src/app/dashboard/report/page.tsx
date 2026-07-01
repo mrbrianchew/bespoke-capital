@@ -31,6 +31,7 @@ export default function ReportPage() {
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('')
   const [spouseName, setSpouseName] = useState('')
+  const [hasChildren, setHasChildren] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -89,6 +90,7 @@ export default function ReportPage() {
     const spouse = (family || []).find((f: any) => f.relationship === 'Spouse')
     setSpouseName(spouse?.name || '')
     const children = (family || []).filter((f: any) => ['Son', 'Daughter', 'Child'].includes(f.relationship))
+    setHasChildren(children.length > 0)
     const policies = merged['protection_portfolio']?.risk_management?.policies || []
 
     // Retirement age and life expectancy live on a separate 'retirement' section,
@@ -245,7 +247,7 @@ export default function ReportPage() {
         <div className="py-8">
           <div className="font-serif text-3xl font-light" style={{ color: '#F0EDE8' }}>Financial Report</div>
           <div style={{ color: 'rgba(240,237,232,0.5)', fontSize: 13, marginTop: 4 }}>
-            {clientName ? `Test harness — ${clientName}` : 'Test harness'}
+            {clientName}{spouseName ? ` & ${spouseName}` : ''}{hasChildren ? ' and family' : ''}
           </div>
         </div>
       </div>
