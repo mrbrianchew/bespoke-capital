@@ -175,44 +175,48 @@ function LifeInsuranceTable({ policies }: { policies: LifePolicyLineItem[] }) {
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16 }}>
         Existing life insurance portfolio
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, paddingBottom: 10, borderBottom: '1px solid var(--line2)' }}>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Provider / policy</div>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Death</div>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>TPD</div>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>CI</div>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>ECI</div>
-        <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Cover age</div>
-      </div>
-      {policies.map(pol => {
-        const toSGD = (v: number) => (pol.isUSD ? v * pol.fxRate : v)
-        return (
-          <div key={pol.id} style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, alignItems: 'center', padding: '14px 0', borderBottom: '1px solid var(--line2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--ink)' }}>
-              <span>{pol.companyName}{pol.productName ? ` · ${pol.productName}` : ''}</span>
-              {pol.isUSD && (
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--gold-tag)', background: 'var(--gold-l)', border: '1px solid var(--gold)', padding: '1px 5px', borderRadius: 3, letterSpacing: '0.05em' }}>
-                  USD
-                </span>
-              )}
-            </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
-              {single(toSGD(pol.deathSA))}
-            </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
-              {single(toSGD(pol.tpdSA))}
-            </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
-              {single(toSGD(pol.ciSA))}
-            </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
-              {single(toSGD(pol.eciSA))}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--ink2)', textAlign: 'right' }}>
-              {formatCoverAge(pol.coverAge)}
-            </div>
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 640 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, paddingBottom: 10, borderBottom: '1px solid var(--line2)' }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)' }}>Provider / policy</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Death</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>TPD</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>CI</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>ECI</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink3)', textAlign: 'right' }}>Cover age</div>
           </div>
-        )
-      })}
+          {policies.map(pol => {
+            const toSGD = (v: number) => (pol.isUSD ? v * pol.fxRate : v)
+            return (
+              <div key={pol.id} style={{ display: 'grid', gridTemplateColumns: cols, gap: 10, alignItems: 'center', padding: '14px 0', borderBottom: '1px solid var(--line2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--ink)' }}>
+                  <span>{pol.companyName}{pol.productName ? ` · ${pol.productName}` : ''}</span>
+                  {pol.isUSD && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--gold-tag)', background: 'var(--gold-l)', border: '1px solid var(--gold)', padding: '1px 5px', borderRadius: 3, letterSpacing: '0.05em' }}>
+                      USD
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+                  {single(toSGD(pol.deathSA))}
+                </div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+                  {single(toSGD(pol.tpdSA))}
+                </div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+                  {single(toSGD(pol.ciSA))}
+                </div>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>
+                  {single(toSGD(pol.eciSA))}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--ink2)', textAlign: 'right' }}>
+                  {formatCoverAge(pol.coverAge)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -276,7 +280,7 @@ function PageNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) 
     { id: 'ci', label: 'Critical illness' },
   ]
   return (
-    <div style={{ display: 'flex', gap: 24, marginBottom: 36, borderBottom: '1px solid var(--line)' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 36, borderBottom: '1px solid var(--line)' }}>
       {items.map(item => (
         <button
           key={item.id}
@@ -357,9 +361,9 @@ function OverviewPage({
         Here's where {name}'s protection stands today.
       </div>
 
-      <div style={{ display: 'flex', marginBottom: 48 }}>
+      <div className="flex flex-wrap" style={{ gap: 24, marginBottom: 48 }}>
         <StatBlock label="Death & TPD" icon={Shield} breakdown={profile.dtpd} />
-        <div style={{ width: 1, background: 'var(--line2)', margin: '0 32px' }} />
+        <div className="hidden sm:block" style={{ width: 1, background: 'var(--line2)' }} />
         <StatBlock label="Critical illness" icon={HeartPulse} breakdown={profile.ci} />
       </div>
 
@@ -453,7 +457,7 @@ function HaveCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
 
 function NeedsHaveGrid({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
+    <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
       <NeedsCard dtpd={dtpd} />
       <HaveCard dtpd={dtpd} />
     </div>
@@ -864,7 +868,7 @@ function CIHaveCard({ ci }: { ci: PersonCIBreakdown }) {
 
 function CINeedsHaveGrid({ ci }: { ci: PersonCIBreakdown }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
+    <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
       <CINeedsCard ci={ci} />
       <CIHaveCard ci={ci} />
     </div>
