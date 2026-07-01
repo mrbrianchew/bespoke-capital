@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-type RecMode    = 'new' | 'replacement'
+type RecMode    = 'new' | 'replacement' | 'topup'
 type ContribFreq = 'Monthly' | 'Annual' | 'Quarterly'
 type ProjMethod  = 'illustration' | 'rate'
 type RankLabel   = 'Recommended' | 'Alternative 1' | 'Alternative 2'
@@ -114,6 +114,7 @@ interface AccRec {
   rateYears: number
   rateReturn: number
   replacedPolicies: ReplacedPolicy[]
+  topupOf: { policyId: string; policyName: string; previousAnnualAmount: number } | null
   benefits: string
   limitations: string
   allocatedGoalIds: string[]
@@ -278,19 +279,22 @@ function ChosenBadge() {
   )
 }
 
-function ModeToggle({ mode, onChange }: { mode: RecMode; onChange: (m: RecMode) => void }) {
+const MODE_LABELS: Record<RecMode, string> = { new: 'New addition', replacement: 'Replacement', topup: 'Top-up' }
+
+function ModeToggle({ mode, onChange, modes }: { mode: RecMode; onChange: (m: RecMode) => void; modes?: RecMode[] }) {
+  const options = modes || ['new', 'replacement']
   return (
     <div style={{
       display: 'flex', border: '1px solid var(--cream3)', borderRadius: 6,
       overflow: 'hidden', marginLeft: 'auto', flexShrink: 0,
     }}>
-      {(['new', 'replacement'] as RecMode[]).map(m => (
+      {options.map(m => (
         <button key={m} onClick={() => onChange(m)} style={{
           fontSize: 12, padding: '4px 12px', border: 'none', cursor: 'pointer', fontFamily: 'Inter',
           background: mode === m ? 'var(--cream2)' : 'transparent',
           color: mode === m ? 'var(--ink)' : 'var(--ink3)',
           fontWeight: mode === m ? 600 : 400,
-        }}>{m === 'new' ? 'New addition' : 'Replacement'}</button>
+        }}>{MODE_LABELS[m]}</button>
       ))}
     </div>
   )
@@ -2075,7 +2079,7 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
         <div style={{ background: 'var(--cream)', padding: '12px 16px', borderBottom: '1px solid var(--cream3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <RankBadge rank={rec.rank} />
           {rec.isChosen && <ChosenBadge />}
-          <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+          <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} modes={['new', 'replacement', 'topup']} />
           <div style={{ display: 'flex', border: '1px solid var(--cream3)', borderRadius: 6, overflow: 'hidden', marginLeft: 8 }}>
             {(['individual', 'joint'] as const).map(t => (
               <button key={t} onClick={() => upd('accountType', t)} style={{
@@ -2195,6 +2199,43 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
                   )
                 })}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Top-up */}
+        {rec.mode === 'topup' && (
+          <div style={{ padding: '0 16px 16px' }}>
+            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+              <div style={{ ...S.lbl, marginBottom: 10 }}>Topping up existing product</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: rec.topupOf ? 12 : 0 }}>
+                {existingPolicies.map(pol => {
+                  const selected = rec.topupOf?.policyId === pol.id
+                  return (
+                    <button key={pol.id} onClick={() => {
+                      if (selected) upd('topupOf', null)
+                      else upd('topupOf', { policyId: pol.id, policyName: pol.policyName || pol.companyName, previousAnnualAmount: pol.annualPremium || 0 })
+                    }} style={{
+                      fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'Inter',
+                      border: `1px solid ${selected ? '#2D5A4E' : 'var(--cream3)'}`,
+                      background: selected ? '#D1FAE5' : '#fff', color: selected ? '#1E4D35' : 'var(--ink2)',
+                    }}>
+                      {selected ? '✓ ' : ''}{pol.policyName || pol.companyName}
+                    </button>
+                  )
+                })}
+              </div>
+              {rec.topupOf && (
+                <div style={{ maxWidth: 220 }}>
+                  <label style={S.lbl}>Previous annual amount (S$)</label>
+                  <input
+                    type="number" style={S.inp}
+                    value={rec.topupOf.previousAnnualAmount || ''}
+                    onChange={e => upd('topupOf', { ...rec.topupOf!, previousAnnualAmount: Number(e.target.value) })}
+                    placeholder="0"
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2356,22 +2397,29 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
     }
   })
 
-  // Accumulation — regular contributions only (cash outflow)
+  // Accumulation — regular contributions only (cash outflow); top-ups net against
+  // the previous annual amount so the sidebar reflects only the incremental cash
   const accRecs = (data.accumulationByPerson[activePerson] || []).filter(r => r.isChosen)
   accRecs.forEach(r => {
     const freqMult = r.regularFreq === 'Monthly' ? 12 : r.regularFreq === 'Quarterly' ? 4 : 1
     const annualContrib = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
     if (annualContrib > 0 || r.hasLumpSum) {
       const label = r.company || r.planType || 'Accumulation plan'
-      rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib, mode: r.mode })
+      if (r.mode === 'topup' && r.topupOf) {
+        rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib - r.topupOf.previousAnnualAmount, mode: r.mode })
+      } else {
+        rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib, mode: r.mode })
+      }
     }
   })
 
-  const additions    = rows.filter(r => r.mode !== 'replacement')
+  const additions    = rows.filter(r => r.mode === 'new')
+  const topups       = rows.filter(r => r.mode === 'topup')
   const replacements = rows.filter(r => r.mode === 'replacement')
   const totalAdditions    = additions.reduce((s, r) => s + r.cashDelta, 0)
+  const totalTopups       = topups.reduce((s, r) => s + r.cashDelta, 0)
   const totalReplacements = replacements.reduce((s, r) => s + r.cashDelta, 0)
-  const netAnnualCash     = totalAdditions + totalReplacements
+  const netAnnualCash     = totalAdditions + totalTopups + totalReplacements
   const surplusAfter      = annualSurplus - netAnnualCash
   const chosenCount       = rows.length
 
@@ -2458,10 +2506,34 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
               </>
             )}
 
+            {/* Top-ups */}
+            {topups.length > 0 && (
+              <>
+                <div style={{ ...sectionLabelStyle, marginTop: additions.length > 0 ? 20 : 14 }}>Top-ups (net change)</div>
+                {topups.map((r, i) => (
+                  <div key={i} style={rowStyle}>
+                    <div>
+                      <div style={labelStyle}>{r.label}</div>
+                      <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>{r.section}</div>
+                    </div>
+                    <div style={valStyle(r.cashDelta)}>
+                      {r.cashDelta > 0 ? '+' : ''}{fmt(r.cashDelta)} / yr
+                    </div>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0 0', marginBottom: 4 }}>
+                  <div style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>Net top-up change</div>
+                  <div style={valStyle(totalTopups)}>
+                    {totalTopups > 0 ? '+' : ''}{fmt(totalTopups)} / yr
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* Replacements */}
             {replacements.length > 0 && (
               <>
-                <div style={{ ...sectionLabelStyle, marginTop: additions.length > 0 ? 20 : 14 }}>Replacements (net change)</div>
+                <div style={{ ...sectionLabelStyle, marginTop: (additions.length > 0 || topups.length > 0) ? 20 : 14 }}>Replacements (net change)</div>
                 {replacements.map((r, i) => (
                   <div key={i} style={rowStyle}>
                     <div>
@@ -2940,7 +3012,7 @@ export default function RecommendationsPage() {
       hasLumpSum: false, lumpSumAmount: 0, hasRegular: true,
       regularFreq: 'Monthly', regularAmount: 0, regularYears: 0,
       projMethod: 'illustration', illusTerm: 0, illusGuaranteed: 0, illusNonGuaranteed: 0,
-      rateYears: 0, rateReturn: 0, replacedPolicies: [], benefits: '', limitations: '',
+      rateYears: 0, rateReturn: 0, replacedPolicies: [], topupOf: null, benefits: '', limitations: '',
       allocatedGoalIds: [], accountType: 'individual', isChosen: false,
     }
     handleChange({ ...data, accumulationByPerson: { ...data.accumulationByPerson, [person]: [...ownRecs, rec] } })
