@@ -139,7 +139,7 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
       color: 'var(--emerald)',
       categoryLabel: 'Wealth Accumulation',
       productName: i.company || i.planType || 'Accumulation plan',
-      amount: i.annualContribution,
+      amount: i.mode === 'topup' ? (i.previousAnnualContribution + i.annualContribution) : i.annualContribution,
       tag: i.mode === 'topup'
         ? 'Top-up'
         : (i.allocatedGoalIds.length > 0
@@ -314,7 +314,8 @@ function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
                 <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{fmt(item.previousAnnualContribution)}</span>
                 <span style={{ fontSize: 11, color: 'var(--ink3)' }}>→</span>
               </div>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(item.annualContribution)}/yr</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(item.previousAnnualContribution + item.annualContribution)}/yr</div>
+              <div style={{ fontSize: 10, color: 'var(--emerald)', marginTop: 2 }}>+{fmt(item.annualContribution)}/yr top-up</div>
             </div>
           ) : (
             contributionLines.map((l, i) => (
