@@ -56,7 +56,7 @@ function PageNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) 
     { id: 'accumulation', label: 'Accumulation & goals' },
   ]
   return (
-    <div style={{ display: 'flex', gap: 24, marginBottom: 32, borderBottom: '1px solid var(--line)' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 32, borderBottom: '1px solid var(--line)' }}>
       {items.map(item => (
         <button
           key={item.id}
