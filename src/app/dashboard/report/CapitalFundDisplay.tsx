@@ -466,7 +466,7 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       </div>
 
       {/* Two column: objectives + donut */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 48, marginBottom: 40, alignItems: 'stretch' }}>
+      <div className="grid grid-cols-1 md:grid-cols-[1.15fr_1fr]" style={{ gap: 48, marginBottom: 40, alignItems: 'stretch' }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>Funding Timeline Objectives</div>
           <div style={{ flex: 1 }}>
@@ -554,13 +554,14 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       </div>
 
       {/* Investment vehicles + capital velocity */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 230px', gap: 32, marginBottom: 44 }}>
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_230px]" style={{ gap: 32, marginBottom: 44 }}>
         <div>
           <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>Current Investment Vehicles</div>
           {s.vehicles.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--ink3)', fontStyle: 'italic' }}>No vehicles on file yet — add them in the Capital Mandate tool.</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 480, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
                   {['Platform', 'Contribution', 'Current Value', 'Start Date'].map(h => (
@@ -579,6 +580,7 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
         <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '22px 24px' }}>
@@ -597,7 +599,7 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
       {/* Capacity audit */}
       <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 18 }}>Liquidity Deployment &amp; Capacity Audit</div>
       <div style={{ fontSize: 15, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 22 }}>Evaluating your investment deployment against your current funding commitments.</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36, alignItems: 'center', marginBottom: 32 }}>
+      <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 36, alignItems: 'center', marginBottom: 32 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div>
             <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500, marginBottom: 2 }}>Total Requirement <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 400, marginLeft: 6 }}>{fmt(s.capacityAudit.totalRequiredAnnual)}</span></div>
