@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Stethoscope, HeartPulse, ShieldCheck, Home, Palmtree, GraduationCap, Building2, LucideIcon } from 'lucide-react'
+import { Stethoscope, HeartPulse, ShieldCheck, Home, Palmtree, GraduationCap, Building2, TrendingUp, LucideIcon } from 'lucide-react'
 import {
   ActionPlanSnapshot,
   PersonActionPlan,
@@ -82,10 +82,16 @@ function CashflowImpactBanner({ impact }: { impact: ActionPlanCashflowImpact }) 
         Household cash flow impact
       </div>
       <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, padding: '16px 18px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 16 }}>
           <div>
             <div style={{ fontSize: 10, color: 'var(--ink3)', marginBottom: 4 }}>New premiums &amp; contributions</div>
             <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 20, color: 'var(--ink)' }}>{fmt(impact.totalAdditions)}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--ink3)', marginBottom: 4 }}>Net change from top-ups</div>
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 20, color: impact.totalTopupDelta <= 0 ? 'var(--emerald)' : 'var(--rouge)' }}>
+              {fmtSigned(impact.totalTopupDelta)}
+            </div>
           </div>
           <div>
             <div style={{ fontSize: 10, color: 'var(--ink3)', marginBottom: 4 }}>Net change from replacements</div>
@@ -125,6 +131,8 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
       productName: i.productName,
       amount: i.annualPremiumTotal,
       tag: i.mode === 'replacement' ? `Replacing ${i.replacedPolicies.length} polic${i.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New',
+      isTopup: false,
+      previousAmount: 0,
     })),
     ...person.accumulationItems.map(i => ({
       key: i.id,
@@ -132,9 +140,13 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
       categoryLabel: 'Wealth Accumulation',
       productName: i.company || i.planType || 'Accumulation plan',
       amount: i.annualContribution,
-      tag: i.allocatedGoalIds.length > 0
-        ? `Funds ${i.allocatedGoalIds.length} goal${i.allocatedGoalIds.length === 1 ? '' : 's'}`
-        : (i.mode === 'replacement' ? 'Replacing' : 'New'),
+      tag: i.mode === 'topup'
+        ? 'Top-up'
+        : (i.allocatedGoalIds.length > 0
+          ? `Funds ${i.allocatedGoalIds.length} goal${i.allocatedGoalIds.length === 1 ? '' : 's'}`
+          : (i.mode === 'replacement' ? 'Replacing' : 'New')),
+      isTopup: i.mode === 'topup',
+      previousAmount: i.previousAnnualContribution,
     })),
   ]
 
@@ -155,10 +167,25 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
                 <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.productName}</div>
               </div>
             </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(r.amount)}/yr</div>
-              <div style={{ fontSize: 10, color: 'var(--ink3)' }}>{r.tag}</div>
-            </div>
+            {r.isTopup ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--emerald)', background: 'var(--cream2)', padding: '3px 9px 3px 7px', borderRadius: 20 }}>
+                  <TrendingUp size={11} aria-hidden="true" />Top-up
+                </span>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 5 }}>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{fmt(r.previousAmount)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink3)' }}>→</span>
+                  </div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(r.amount)}/yr</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(r.amount)}/yr</div>
+                <div style={{ fontSize: 10, color: 'var(--ink3)' }}>{r.tag}</div>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -266,19 +293,34 @@ function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
   if (item.hasLumpSum && item.lumpSumAmount > 0) contributionLines.push(`${fmt(item.lumpSumAmount)} lump sum`)
   if (item.hasRegular && item.annualContribution > 0) contributionLines.push(`${fmt(item.annualContribution)}/yr regular`)
 
+  const modeLabel = item.mode === 'topup' ? 'Top-up' : (item.mode === 'replacement' ? 'Replacement' : 'New')
+
   return (
     <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: (item.benefits || item.limitations) ? 14 : 0 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', marginBottom: 2 }}>{item.company || item.planType || 'Accumulation plan'}</div>
           <div style={{ fontSize: 11, color: 'var(--ink3)' }}>
-            {[item.productType, item.planType].filter(Boolean).join(' · ') || (item.mode === 'replacement' ? 'Replacement' : 'New')}
+            {[item.productType, item.planType].filter(Boolean).join(' · ') || modeLabel}
           </div>
+          {item.mode === 'topup' && item.topupProductLabel && (
+            <div style={{ fontSize: 11, color: 'var(--emerald)', marginTop: 4 }}>Topping up {item.topupProductLabel}</div>
+          )}
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          {contributionLines.map((l, i) => (
-            <div key={i} style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{l}</div>
-          ))}
+          {item.mode === 'topup' && item.hasRegular && item.annualContribution > 0 ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 5 }}>
+                <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{fmt(item.previousAnnualContribution)}</span>
+                <span style={{ fontSize: 11, color: 'var(--ink3)' }}>→</span>
+              </div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(item.annualContribution)}/yr</div>
+            </div>
+          ) : (
+            contributionLines.map((l, i) => (
+              <div key={i} style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{l}</div>
+            ))
+          )}
         </div>
       </div>
       {item.benefits && (
