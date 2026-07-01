@@ -89,6 +89,7 @@ export interface CapitalFundSnapshot {
 
   shortfall: number
   strategy: {
+    pureMonthly: number
     pureMonthlyAnnual: number
     pureLumpSum: number
     lumpSumFraction: number
@@ -409,6 +410,7 @@ export function buildCapitalFundSnapshot(input: {
     shortfall: Math.round(shortfall),
     strategy: shortfallSolution
       ? {
+          pureMonthly: Math.round(shortfallSolution.pureMonthly || 0),
           pureMonthlyAnnual: Math.round((shortfallSolution.pureMonthly || 0) * 12),
           pureLumpSum: Math.round(shortfallSolution.pureLump || 0),
           lumpSumFraction: shortfallSolution.lumpSumFraction ?? 0,
