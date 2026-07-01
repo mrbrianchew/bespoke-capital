@@ -225,12 +225,11 @@ function calcProjectedValue(rec: AccRec): number {
 }
 
 function calcAnnualContrib(rec: AccRec): number {
-  const lumpAmort = rec.hasLumpSum && rec.regularYears > 0
-    ? (rec.lumpSumAmount || 0) / rec.regularYears
-    : rec.hasLumpSum ? (rec.lumpSumAmount || 0) : 0
+  // Cash flow impact should only reflect recurring outflow. A lump sum is a
+  // one-time investment, not an annual/monthly contribution — amortizing it
+  // here was overstating ongoing cash flow impact for lump-sum-only recs.
   const perYear = rec.regularFreq === 'Monthly' ? 12 : rec.regularFreq === 'Quarterly' ? 4 : 1
-  const reg = rec.hasRegular ? (rec.regularAmount || 0) * perYear : 0
-  return lumpAmort + reg
+  return rec.hasRegular ? (rec.regularAmount || 0) * perYear : 0
 }
 
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
