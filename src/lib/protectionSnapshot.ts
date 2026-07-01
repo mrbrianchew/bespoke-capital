@@ -30,6 +30,11 @@ export interface PersonCIBreakdown {
   shortfall: number
   status: 'covered' | 'shortfall'
   runwayYears: number
+  // Recovery window selected on Strategic Objectives > Critical Illness tab
+  // (protection.ciYears, same default fallback used to build maxCapitalRequired
+  // there) — carried through so the report can show "covers N of ciYears years"
+  // alongside the funded %, not just the % on its own.
+  ciYears: number
 }
 
 export interface LifePolicyLineItem {
@@ -650,6 +655,9 @@ export function buildProtectionSnapshot(input: {
     const existingCoverage = Math.round(calcExistingCICover(policies, who))
     const shortfall = Math.max(0, netOfAssets - existingCoverage)
     const runwayYears = annExp > 0 ? Math.round((existingCoverage / annExp) * 10) / 10 : 0
+    // Same recovery-window fallback used on Strategic Objectives > Critical Illness
+    // when maxCapitalRequired was originally calculated (see ciWindow above).
+    const ciYears = Number(p.ciYears) || 5
 
     return {
       familyDependency,
@@ -663,6 +671,7 @@ export function buildProtectionSnapshot(input: {
       shortfall,
       status: shortfall > 0 ? 'shortfall' : 'covered',
       runwayYears,
+      ciYears,
     }
   }
 
