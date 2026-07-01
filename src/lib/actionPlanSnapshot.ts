@@ -290,14 +290,27 @@ export function buildActionPlanSnapshot(input: {
   const generalByPerson = recData?.generalByPerson || {}
   const accumulationByPerson = recData?.accumulationByPerson || {}
 
-  function buildPerson(personKey: string, name: string): PersonActionPlan {
+  // Joint accumulation products (e.g. FPI Global Wealth Advance held jointly)
+  // are saved by the live tool under accumulationByPerson['joint'], a
+  // separate bucket from 'client'/'spouse' — mirrors recommendations/page.tsx's
+  // getEffectiveAccRecs, which merges personal + joint for display. Shown
+  // under both client and spouse action plans (it's one shared account, not
+  // two), but its cash contribution is added to the household total exactly
+  // once below — never per-person — to avoid double-counting.
+  const jointAccumulationItems = mapAccumulation(accumulationByPerson['joint'] || [])
+
+  function buildPerson(personKey: string, name: string, includeJoint: boolean): PersonActionPlan {
     const protectionItems: ProtectionActionItem[] = [
       ...mapMedical(medicalByPerson[personKey] || []),
       ...mapProt('ltc', 'Long Term Care Protection', ltcByPerson[personKey] || []),
       ...mapProt('core', 'Core Protection', expenseByPerson[personKey] || []),
       ...mapProt('general', 'General Insurance', generalByPerson[personKey] || []),
     ]
-    const accumulationItems = mapAccumulation(accumulationByPerson[personKey] || [])
+    const ownAccumulationItems = mapAccumulation(accumulationByPerson[personKey] || [])
+    // Display list includes joint items (for the Overview tab and goal
+    // funding); cash-impact totals below deliberately use ownAccumulationItems
+    // only, so the joint contribution isn't summed twice across client+spouse.
+    const accumulationItems = includeJoint ? [...ownAccumulationItems, ...jointAccumulationItems] : ownAccumulationItems
 
     const goalFunding: ActionPlanGoalFunding[] = goals
       .map(goal => {
@@ -313,11 +326,11 @@ export function buildActionPlanSnapshot(input: {
 
     const newAnnualCash =
       protectionItems.filter(i => i.mode === 'new').reduce((s, i) => s + i.annualPremiumCash, 0) +
-      accumulationItems.filter(i => i.mode === 'new').reduce((s, i) => s + i.annualContribution, 0)
+      ownAccumulationItems.filter(i => i.mode === 'new').reduce((s, i) => s + i.annualContribution, 0)
 
     const replacementNetDelta =
       protectionItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.cashImpactDelta, 0) +
-      accumulationItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.annualContribution, 0)
+      ownAccumulationItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.annualContribution, 0)
 
     return {
       personKey,
@@ -330,15 +343,23 @@ export function buildActionPlanSnapshot(input: {
     }
   }
 
-  const clientPlan = buildPerson('client', client.name)
-  const spousePlan = spouseMember ? buildPerson('spouse', spouseMember.name) : null
+  const clientPlan = buildPerson('client', client.name, true)
+  const spousePlan = spouseMember ? buildPerson('spouse', spouseMember.name, true) : null
   const childPlans = children
-    .map(c => buildPerson(`child_${c.id}`, c.name))
+    .map(c => buildPerson(`child_${c.id}`, c.name, false))
     .filter(p => p.protectionItems.length > 0 || p.accumulationItems.length > 0)
 
   const allPersons = [clientPlan, ...(spousePlan ? [spousePlan] : []), ...childPlans]
-  const totalAdditions = allPersons.reduce((s, p) => s + p.newAnnualCash, 0)
-  const totalReplacementDelta = allPersons.reduce((s, p) => s + p.replacementNetDelta, 0)
+
+  const jointNewAnnualCash = jointAccumulationItems
+    .filter(i => i.mode === 'new')
+    .reduce((s, i) => s + i.annualContribution, 0)
+  const jointReplacementNetDelta = jointAccumulationItems
+    .filter(i => i.mode === 'replacement')
+    .reduce((s, i) => s + i.annualContribution, 0)
+
+  const totalAdditions = allPersons.reduce((s, p) => s + p.newAnnualCash, 0) + jointNewAnnualCash
+  const totalReplacementDelta = allPersons.reduce((s, p) => s + p.replacementNetDelta, 0) + jointReplacementNetDelta
   const netAnnualCashImpact = totalAdditions + totalReplacementDelta
 
   return {
