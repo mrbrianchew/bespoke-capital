@@ -48,12 +48,12 @@ export interface AccumulationActionItem {
   lumpSumAmount: number
   hasRegular: boolean
   annualContribution: number
-  // Cash-flow-relevant delta for this item. For 'new' this equals
-  // annualContribution. For 'replacement' it ALSO equals annualContribution —
-  // deliberately not netted, matching the pre-existing behaviour documented
-  // below. For 'topup' it's annualContribution minus
-  // previousAnnualContribution, mirroring the live tool's CashflowSidebar
-  // netting so the report can never disagree with what the advisor saw.
+  // Cash-flow-relevant delta for this item. For 'new' and 'topup' this equals
+  // annualContribution — for a top-up, the advisor enters the ADDITIONAL
+  // amount being added on top of the existing premium (not a new total), so
+  // it's already the correct incremental cash-flow figure. For 'replacement'
+  // it ALSO equals annualContribution — deliberately not netted, matching the
+  // pre-existing behaviour documented below.
   cashImpactDelta: number
   benefits: string
   limitations: string
@@ -63,11 +63,12 @@ export interface AccumulationActionItem {
   // chosen 'replacement'-mode accumulation contribution as full new cash
   // outflow (unlike the protection categories, which do net replacements).
   // Kept as-is rather than "fixed" here so the report's cash-flow figures
-  // match what the advisor approved. 'topup' mode does NOT use this field —
-  // see previousAnnualContribution below.
+  // match what the advisor approved.
   replacedAnnualContribution: number
-  // Set only when mode === 'topup' — the existing product being topped up
-  // and its previous annual amount, frozen at save time.
+  // Set only when mode === 'topup' — the existing product being topped up and
+  // its previous annual amount, frozen at save time. Used for display only
+  // (old amount → old + annualContribution as the new total); NOT subtracted
+  // from cashImpactDelta since annualContribution is already the increment.
   topupProductLabel: string
   previousAnnualContribution: number
   allocatedGoalIds: string[]
@@ -260,7 +261,7 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
     const freqMult = r.regularFreq === 'Monthly' ? 12 : r.regularFreq === 'Quarterly' ? 4 : 1
     const annualContribution = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
     const previousAnnualContribution = r.mode === 'topup' ? Math.round(r.topupOf?.previousAnnualAmount || 0) : 0
-    const cashImpactDelta = r.mode === 'topup' ? (annualContribution - previousAnnualContribution) : annualContribution
+    const cashImpactDelta = annualContribution
     return {
       id: r.id,
       mode: r.mode,
