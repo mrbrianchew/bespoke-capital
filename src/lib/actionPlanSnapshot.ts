@@ -40,7 +40,7 @@ export interface ProtectionActionItem {
 
 export interface AccumulationActionItem {
   id: string
-  mode: 'new' | 'replacement'
+  mode: 'new' | 'replacement' | 'topup'
   company: string
   planType: string
   productType: string
@@ -48,15 +48,28 @@ export interface AccumulationActionItem {
   lumpSumAmount: number
   hasRegular: boolean
   annualContribution: number
+  // Cash-flow-relevant delta for this item. For 'new' this equals
+  // annualContribution. For 'replacement' it ALSO equals annualContribution —
+  // deliberately not netted, matching the pre-existing behaviour documented
+  // below. For 'topup' it's annualContribution minus
+  // previousAnnualContribution, mirroring the live tool's CashflowSidebar
+  // netting so the report can never disagree with what the advisor saw.
+  cashImpactDelta: number
   benefits: string
   limitations: string
   replacedPolicies: ActionPlanReplacedPolicy[]
-  // Shown for context only — NOT netted out of annualContribution. The live
-  // tool's CashflowSidebar treats every chosen accumulation contribution as
-  // full new cash outflow regardless of mode (unlike the protection
-  // categories, which do net replacements). Kept as-is rather than "fixed"
-  // here so the report's cash-flow figures match what the advisor approved.
+  // Shown for context only — NOT netted out of annualContribution/cashImpactDelta
+  // for the 'replacement' case. The live tool's CashflowSidebar treats every
+  // chosen 'replacement'-mode accumulation contribution as full new cash
+  // outflow (unlike the protection categories, which do net replacements).
+  // Kept as-is rather than "fixed" here so the report's cash-flow figures
+  // match what the advisor approved. 'topup' mode does NOT use this field —
+  // see previousAnnualContribution below.
   replacedAnnualContribution: number
+  // Set only when mode === 'topup' — the existing product being topped up
+  // and its previous annual amount, frozen at save time.
+  topupProductLabel: string
+  previousAnnualContribution: number
   allocatedGoalIds: string[]
 }
 
@@ -81,11 +94,13 @@ export interface PersonActionPlan {
   goalFunding: ActionPlanGoalFunding[]
   newAnnualCash: number
   replacementNetDelta: number
+  topupNetDelta: number
 }
 
 export interface ActionPlanCashflowImpact {
   totalAdditions: number
   totalReplacementDelta: number
+  totalTopupDelta: number
   netAnnualCashImpact: number
   currentAnnualSurplus: number
   surplusAfter: number
@@ -244,6 +259,8 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
   return (list || []).filter((r: any) => r.isChosen).map((r: any) => {
     const freqMult = r.regularFreq === 'Monthly' ? 12 : r.regularFreq === 'Quarterly' ? 4 : 1
     const annualContribution = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
+    const previousAnnualContribution = r.mode === 'topup' ? Math.round(r.topupOf?.previousAnnualAmount || 0) : 0
+    const cashImpactDelta = r.mode === 'topup' ? (annualContribution - previousAnnualContribution) : annualContribution
     return {
       id: r.id,
       mode: r.mode,
@@ -254,10 +271,13 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
       lumpSumAmount: Math.round(r.lumpSumAmount || 0),
       hasRegular: !!r.hasRegular,
       annualContribution: Math.round(annualContribution),
+      cashImpactDelta: Math.round(cashImpactDelta),
       benefits: r.benefits || '',
       limitations: r.limitations || '',
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
       replacedAnnualContribution: Math.round(replacedTotal(r.replacedPolicies)),
+      topupProductLabel: r.topupOf?.policyName || '',
+      previousAnnualContribution,
       allocatedGoalIds: r.allocatedGoalIds || [],
     }
   })
@@ -332,6 +352,9 @@ export function buildActionPlanSnapshot(input: {
       protectionItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.cashImpactDelta, 0) +
       ownAccumulationItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.annualContribution, 0)
 
+    const topupNetDelta =
+      ownAccumulationItems.filter(i => i.mode === 'topup').reduce((s, i) => s + i.cashImpactDelta, 0)
+
     return {
       personKey,
       name,
@@ -340,6 +363,7 @@ export function buildActionPlanSnapshot(input: {
       goalFunding,
       newAnnualCash: Math.round(newAnnualCash),
       replacementNetDelta: Math.round(replacementNetDelta),
+      topupNetDelta: Math.round(topupNetDelta),
     }
   }
 
@@ -357,10 +381,14 @@ export function buildActionPlanSnapshot(input: {
   const jointReplacementNetDelta = jointAccumulationItems
     .filter(i => i.mode === 'replacement')
     .reduce((s, i) => s + i.annualContribution, 0)
+  const jointTopupNetDelta = jointAccumulationItems
+    .filter(i => i.mode === 'topup')
+    .reduce((s, i) => s + i.cashImpactDelta, 0)
 
   const totalAdditions = allPersons.reduce((s, p) => s + p.newAnnualCash, 0) + jointNewAnnualCash
   const totalReplacementDelta = allPersons.reduce((s, p) => s + p.replacementNetDelta, 0) + jointReplacementNetDelta
-  const netAnnualCashImpact = totalAdditions + totalReplacementDelta
+  const totalTopupDelta = allPersons.reduce((s, p) => s + p.topupNetDelta, 0) + jointTopupNetDelta
+  const netAnnualCashImpact = totalAdditions + totalReplacementDelta + totalTopupDelta
 
   return {
     client: clientPlan,
@@ -369,6 +397,7 @@ export function buildActionPlanSnapshot(input: {
     cashflowImpact: {
       totalAdditions: Math.round(totalAdditions),
       totalReplacementDelta: Math.round(totalReplacementDelta),
+      totalTopupDelta: Math.round(totalTopupDelta),
       netAnnualCashImpact: Math.round(netAnnualCashImpact),
       currentAnnualSurplus: Math.round(annualSurplus),
       surplusAfter: Math.round(annualSurplus - netAnnualCashImpact),
