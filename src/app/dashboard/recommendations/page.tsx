@@ -2881,7 +2881,7 @@ export default function RecommendationsPage() {
     handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: next } })
   }
   function chooseMedical(person: string, id: string) {
-    handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: getMedical(person).map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) } })
+    handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: getMedical(person).map(r => r.id === id ? { ...r, isChosen: !r.isChosen } : r) } })
   }
 
   // ── Per-category prot helpers (ltc / expense / general) — per person ───────
@@ -2921,7 +2921,7 @@ export default function RecommendationsPage() {
   }
   function chooseProt(cat: ProtCategory, id: string) {
     const recs = getProtRecs(cat, activePerson)
-    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activePerson]: recs.map(r => ({ ...r, isChosen: r.id === id ? !r.isChosen : false })) } })
+    handleChange({ ...data, [catKey(cat)]: { ...data[catKey(cat)], [activePerson]: recs.map(r => r.id === id ? { ...r, isChosen: !r.isChosen } : r) } })
   }
 
   // ── Accumulation helpers ────────────────────────────────────────────────────
@@ -2979,7 +2979,7 @@ export default function RecommendationsPage() {
     const newByPerson = { ...data.accumulationByPerson }
     for (const person of Object.keys(newByPerson)) {
       if ((newByPerson[person] || []).some((x: AccRec) => x.id === id)) {
-        newByPerson[person] = (newByPerson[person] || []).map((r: AccRec) => ({ ...r, isChosen: r.id === id ? !r.isChosen : false }))
+        newByPerson[person] = (newByPerson[person] || []).map((r: AccRec) => r.id === id ? { ...r, isChosen: !r.isChosen } : r)
         break
       }
     }
