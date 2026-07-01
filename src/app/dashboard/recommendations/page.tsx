@@ -508,6 +508,13 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
   const totalCV       = Object.values(cvValues).reduce((s, v) => s + v, 0)
   const policyTermYrs = parseInt(rec.policyTerm) || 20
 
+  // Core Protection (expenseMode) recs store cover in deathBenefit (or baseDeathBenefit × multiplier
+  // for WL/LWL), never in sumAssured — sumAssured only applies to the generic protection category.
+  const isWL = rec.coverageType === 'WL' || rec.coverageType === 'LWL'
+  const coverageAmount = expenseMode
+    ? (isWL ? Math.round((rec.baseDeathBenefit || 0) * (rec.coverageMultiplier || 1)) : (rec.deathBenefit || 0))
+    : rec.sumAssured
+
   // Expense replacement: per-policy old cost over remaining years, capped at new term
   const newTermYrs    = expenseMode ? newPremTermYears() : policyTermYrs
   const oldTotalCost  = expenseMode
@@ -610,7 +617,7 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
                     '#1E4D35'
                   )
                 : !medicalMode
-                  ? metCard('Coverage', fmt(rec.sumAssured), rec.coverageType || 'Sum assured / benefit', '#1E4D35')
+                  ? metCard('Coverage', fmt(coverageAmount), rec.coverageType || (expenseMode ? 'Death benefit' : 'Sum assured / benefit'), '#1E4D35')
                   : null
               }
             </div>
