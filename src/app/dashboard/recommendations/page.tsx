@@ -2234,6 +2234,12 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
                     onChange={e => upd('topupOf', { ...rec.topupOf!, previousAnnualAmount: Number(e.target.value) })}
                     placeholder="0"
                   />
+                  <div style={{ marginTop: 10, fontSize: 12, fontFamily: 'Inter', color: 'var(--ink2)' }}>
+                    Contribution above is <strong>added on top</strong> of the previous amount — new total: {' '}
+                    <span style={{ fontFamily: 'DM Mono, monospace', color: '#1E4D35', fontWeight: 600 }}>
+                      {fmt(rec.topupOf.previousAnnualAmount + calcAnnualContrib(rec))}/yr
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -2397,19 +2403,17 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
     }
   })
 
-  // Accumulation — regular contributions only (cash outflow); top-ups net against
-  // the previous annual amount so the sidebar reflects only the incremental cash
+  // Accumulation — regular contributions only (cash outflow). For top-ups, the
+  // amount the advisor enters is the ADDITIONAL contribution being added on top
+  // of the existing premium (not a new total to net against) — so it's already
+  // the correct incremental cash-flow figure, same as a new addition.
   const accRecs = (data.accumulationByPerson[activePerson] || []).filter(r => r.isChosen)
   accRecs.forEach(r => {
     const freqMult = r.regularFreq === 'Monthly' ? 12 : r.regularFreq === 'Quarterly' ? 4 : 1
     const annualContrib = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
     if (annualContrib > 0 || r.hasLumpSum) {
       const label = r.company || r.planType || 'Accumulation plan'
-      if (r.mode === 'topup' && r.topupOf) {
-        rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib - r.topupOf.previousAnnualAmount, mode: r.mode })
-      } else {
-        rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib, mode: r.mode })
-      }
+      rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib, mode: r.mode })
     }
   })
 
