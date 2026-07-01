@@ -721,7 +721,8 @@ export default function CapitalFundDisplay({ snapshot, clientName, spouseName }:
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 8 }}>
             <div style={{ flex: 1, border: '1px solid var(--line2)', borderRadius: 12, padding: '26px 24px 22px', background: '#fff' }}>
               <div style={{ display: 'inline-block', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '5px 12px', borderRadius: 999, marginBottom: 18, fontWeight: 500, background: 'var(--gold-l,#F5EFE3)', color: 'var(--gold-tag,#8A6C3A)' }}>Option A · Regular Savings</div>
-              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 32, color: 'var(--ink)', marginBottom: 8 }}>{fmt(s.strategy.pureMonthlyAnnual)}</div>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 32, color: 'var(--ink)', marginBottom: 2 }}>{fmt(s.strategy.pureMonthly)}<span style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink3)' }}>/mo</span></div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink3)', marginBottom: 8 }}>{fmt(s.strategy.pureMonthlyAnnual)}/yr</div>
               <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink3)' }}>The quiet path — raise the monthly contribution, and let time do the rest.</div>
             </div>
             <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink3)', whiteSpace: 'nowrap', padding: '0 4px' }}>
