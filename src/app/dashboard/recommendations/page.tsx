@@ -814,16 +814,29 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
   const irr = calcIRR(totalInvested, projValue, rec.projMethod === 'illustration' ? rec.illusTerm : rec.rateYears)
   const surplusAfter   = (monthlyIncome - monthlyExpenses) - monthlyContrib
 
-  // Waterfall
-  const portfolioBase = view === 'existing' ? existingPortfolioValue : existingPortfolioValue + projValue
-  let remaining = portfolioBase
-  const goalResults = orderedGoals.map(g => {
-    const funded = Math.min(remaining, g.targetCorpus)
-    remaining = Math.max(0, remaining - g.targetCorpus)
-    const shortfall = Math.max(0, g.targetCorpus - funded)
-    const pct = g.targetCorpus > 0 ? Math.min(100, Math.round((funded / g.targetCorpus) * 100)) : 100
-    return { ...g, funded, shortfall, pct }
-  })
+  // Waterfall — run twice over the same goal order: once against the existing
+  // portfolio alone, once against existing + this product. The difference per
+  // goal (which can only be >= 0, since the pool only grows) is exactly how
+  // much of that goal's coverage this specific product is responsible for —
+  // used below to split the bar into an "existing" segment and a "this
+  // product" segment instead of one undifferentiated color.
+  function runWaterfall(pool: number) {
+    let remaining = pool
+    return orderedGoals.map(g => {
+      const funded = Math.min(remaining, g.targetCorpus)
+      remaining = Math.max(0, remaining - g.targetCorpus)
+      const shortfall = Math.max(0, g.targetCorpus - funded)
+      const pct = g.targetCorpus > 0 ? Math.min(100, Math.round((funded / g.targetCorpus) * 100)) : 100
+      return { ...g, funded, shortfall, pct }
+    })
+  }
+  const existingResults = runWaterfall(existingPortfolioValue)
+  const withResults = runWaterfall(existingPortfolioValue + projValue)
+  const goalResults = (view === 'with' ? withResults : existingResults).map((g, idx) => ({
+    ...g,
+    existingFunded: existingResults[idx].funded,
+    productFunded: view === 'with' ? Math.max(0, withResults[idx].funded - existingResults[idx].funded) : 0,
+  }))
 
   function onDragStart(idx: number) { setDragIdx(idx) }
   function onDragOver(e: React.DragEvent, idx: number) {
@@ -840,7 +853,6 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
   const statusBg    = (p: number) => p >= 100 ? '#D1FAE5' : p >= 60 ? '#FEF3C7' : '#FEE2E2'
   const statusColor = (p: number) => p >= 100 ? '#1E4D35' : p >= 60 ? '#854F0B' : '#9B1C1C'
   const statusLabel = (p: number) => p >= 100 ? 'Fully funded' : p >= 60 ? 'Partially funded' : 'Shortfall'
-  const barColor    = (p: number) => p >= 100 ? '#2D5A4E' : p >= 60 ? '#c8a96e' : '#9B1C1C'
 
   const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }
   const modal:   React.CSSProperties = { background: '#fff', borderRadius: 12, border: '1px solid var(--cream3)', width: 600, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '28px' }
@@ -918,6 +930,18 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
             <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 10 }}>
               Drag to reorder priority. Portfolio waterfall funds goals in order shown.
             </div>
+            {view === 'with' && (
+              <div style={{ display: 'flex', gap: 14, marginBottom: 12, fontFamily: 'Inter', fontSize: 11, color: 'var(--ink2)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: '#c9c4ba', display: 'inline-block' }} />
+                  Existing portfolio
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: '#2D5A4E', display: 'inline-block' }} />
+                  This product
+                </span>
+              </div>
+            )}
             {goalResults.map((g, idx) => (
               <div key={g.id} draggable
                 onDragStart={() => onDragStart(idx)}
@@ -940,13 +964,28 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
                     </span>
                   </div>
                   <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 6 }}>Target age {g.targetAge} · Need {fmt(g.targetCorpus)}</div>
-                  <div style={{ height: 6, background: 'var(--cream3)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
-                    <div style={{ width: `${g.pct}%`, height: '100%', background: barColor(g.pct), borderRadius: 3, transition: 'width 0.4s' }} />
+                  <div style={{ height: 6, background: 'var(--cream3)', borderRadius: 3, overflow: 'hidden', marginBottom: 4, display: 'flex' }}>
+                    <div style={{ width: `${g.targetCorpus > 0 ? Math.min(100, (g.existingFunded / g.targetCorpus) * 100) : 0}%`, height: '100%', background: '#c9c4ba', transition: 'width 0.4s' }} />
+                    {g.productFunded > 0 && (
+                      <div style={{ width: `${g.targetCorpus > 0 ? Math.min(100, (g.productFunded / g.targetCorpus) * 100) : 0}%`, height: '100%', background: '#2D5A4E', transition: 'width 0.4s' }} />
+                    )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Inter', fontSize: 11 }}>
                     <span style={{ color: statusColor(g.pct) }}>{fmt(g.funded)} covered</span>
                     {g.shortfall > 0 && <span style={{ color: '#9B1C1C' }}>{fmt(g.shortfall)} short</span>}
                   </div>
+                  {g.productFunded > 0 && (
+                    <div style={{ display: 'flex', gap: 12, marginTop: 3, fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: '#c9c4ba', display: 'inline-block' }} />
+                        Existing {fmt(g.existingFunded)}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#2D5A4E', fontWeight: 600 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: '#2D5A4E', display: 'inline-block' }} />
+                        This product +{fmt(g.productFunded)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ color: 'var(--ink3)', fontSize: 14, paddingTop: 6 }}>⠿</div>
               </div>
