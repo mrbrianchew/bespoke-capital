@@ -34,6 +34,12 @@ const PLAN_TYPES = [
   'CPF Top-up (MA)', 'SRS', 'Cash Savings', 'Other',
 ]
 
+// Cycled per chosen accumulation product in the Combined Goal Progress view —
+// existing portfolio always uses a fixed grey (var(--line2)), products are
+// assigned these in the order they appear so colors stay stable as long as
+// the advisor doesn't reorder/delete products.
+const PRODUCT_COLOR_PALETTE = ['#2D5A4E', '#A8834A', '#7A9CBF', '#9B7BAA', '#8A9A7E', '#C97B63']
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
 interface ReplacedPolicy {
@@ -946,6 +952,136 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
               </div>
             ))}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── COMBINED GOAL IMPACT MODAL ───────────────────────────────────────────────
+
+interface FundingSource { key: string; label: string; amount: number; color: string }
+
+// Waterfall across ALL chosen accumulation products together (not just one).
+// Sources drain in a fixed order — existing portfolio first, then products in
+// the order they're passed in — against goals in target-age order. Nothing is
+// earmarked to a goal, so this is an allocation convention, not a guarantee:
+// it shows one coherent way the money could stack up, consistent with how the
+// single-product "View impact" waterfall already works.
+function runCombinedWaterfall(sources: FundingSource[], sortedGoals: GoalItem[]) {
+  const remaining = sources.map(s => s.amount)
+  return sortedGoals.map(goal => {
+    let need = goal.targetCorpus
+    const contributions: { source: FundingSource; amount: number }[] = []
+    for (let i = 0; i < sources.length && need > 0.5; i++) {
+      if (remaining[i] <= 0) continue
+      const take = Math.min(remaining[i], need)
+      if (take > 0) {
+        contributions.push({ source: sources[i], amount: take })
+        remaining[i] -= take
+        need -= take
+      }
+    }
+    const funded = goal.targetCorpus - need
+    const shortfall = Math.max(0, need)
+    const pct = goal.targetCorpus > 0 ? Math.min(100, Math.round((funded / goal.targetCorpus) * 100)) : 100
+    return { goal, contributions, funded, shortfall, pct }
+  })
+}
+
+function CombinedGoalImpactModal({ data, goals, existingPortfolioValue, personTabs, onClose }: {
+  data: RecPageData
+  goals: GoalItem[]
+  existingPortfolioValue: number
+  personTabs: { key: string; label: string }[]
+  onClose: () => void
+}) {
+  const personLabel = (key: string) => key === 'joint' ? 'Joint' : (personTabs.find(t => t.key === key)?.label || key)
+
+  const chosenProducts = Object.keys(data.accumulationByPerson || {}).flatMap(personKey =>
+    (data.accumulationByPerson[personKey] || [])
+      .filter(r => r.isChosen)
+      .map(r => ({ rec: r, personKey, label: `${r.company || r.planType || 'Accumulation plan'} (${personLabel(personKey)})`, projValue: calcProjectedValue(r) }))
+  )
+
+  const sources: FundingSource[] = [
+    { key: 'existing', label: 'Existing portfolio', amount: existingPortfolioValue, color: 'var(--line2, #D0CDC5)' },
+    ...chosenProducts.map((p, i) => ({ key: p.rec.id, label: p.label, amount: p.projValue, color: PRODUCT_COLOR_PALETTE[i % PRODUCT_COLOR_PALETTE.length] })),
+  ]
+
+  const sortedGoals = [...goals].sort((a, b) => a.targetAge - b.targetAge)
+  const results = runCombinedWaterfall(sources, sortedGoals)
+
+  const statusBg    = (p: number) => p >= 100 ? '#D1FAE5' : p >= 60 ? '#FEF3C7' : '#FEE2E2'
+  const statusColor = (p: number) => p >= 100 ? '#1E4D35' : p >= 60 ? '#854F0B' : '#9B1C1C'
+  const statusLabel = (p: number) => p >= 100 ? 'Fully funded' : p >= 60 ? 'Partially funded' : 'Shortfall'
+
+  const overlay: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+  const modal:   React.CSSProperties = { background: '#fff', borderRadius: 12, border: '1px solid var(--cream3)', width: 640, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '28px' }
+
+  return (
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={modal}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600, color: 'var(--ink)' }}>Combined Goal Progress</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--ink3)', lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', marginBottom: 20 }}>
+          All chosen Wealth Accumulation products, funded against goals in target-age order.
+        </div>
+
+        {sortedGoals.length === 0 ? (
+          <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No goals set up yet.</div>
+        ) : (
+          <>
+            {/* Legend */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', background: 'var(--cream)', border: '1px solid var(--cream3)', borderRadius: 8, padding: '12px 14px', marginBottom: 20 }}>
+              {sources.filter(s => s.amount > 0).map(s => (
+                <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'Inter', fontSize: 12, color: 'var(--ink2)' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                  {s.label}
+                </div>
+              ))}
+              {sources.filter(s => s.amount > 0).length === 0 && (
+                <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>No existing portfolio value or chosen products yet.</span>
+              )}
+            </div>
+
+            <div style={{ ...S.lbl, marginBottom: 10 }}>Goal progress</div>
+            {results.map(({ goal, contributions, funded, shortfall, pct }, idx) => (
+              <div key={goal.id} style={{ padding: '14px 0', borderBottom: idx < results.length - 1 ? '1px solid var(--cream3)' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0, background: statusBg(pct) }}>
+                    {goal.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <div style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{goal.label}</div>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, fontFamily: 'Inter', background: statusBg(pct), color: statusColor(pct) }}>
+                        {statusLabel(pct)}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 8 }}>Target age {goal.targetAge} · Need {fmt(goal.targetCorpus)}</div>
+                    <div style={{ height: 8, background: 'var(--cream3)', borderRadius: 4, overflow: 'hidden', display: 'flex', marginBottom: 6 }}>
+                      {contributions.map(c => (
+                        <div key={c.source.key} style={{ width: `${Math.min(100, (c.amount / goal.targetCorpus) * 100)}%`, height: '100%', background: c.source.color }} />
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontFamily: 'Inter', fontSize: 11, color: 'var(--ink2)' }}>
+                      {contributions.length === 0 ? (
+                        <span>S$0 covered</span>
+                      ) : contributions.map(c => (
+                        <span key={c.source.key}>{c.source.label} <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(c.amount)}</span></span>
+                      ))}
+                    </div>
+                    {shortfall > 0 && (
+                      <div style={{ fontFamily: 'Inter', fontSize: 11, color: '#9B1C1C', marginTop: 4 }}>{fmt(shortfall)} short</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -2776,6 +2912,7 @@ export default function RecommendationsPage() {
   // Goals for accumulation waterfall
   const [goals, setGoals]                         = useState<GoalItem[]>([])
   const [existingPortfolioValue, setExistingPortfolioValue] = useState(0)
+  const [showCombinedImpact, setShowCombinedImpact] = useState(false)
 
   useEffect(() => {
     const id = localStorage.getItem('selectedClientId')
@@ -3012,7 +3149,12 @@ export default function RecommendationsPage() {
       builtGoals.sort((a, b) => a.targetAge - b.targetAge)
       setGoals(builtGoals)
 
-      const portValue = cm?.retirementShortfall != null ? Math.max(0, (cm?.settings?.retirementCorpus || 0) - (cm?.retirementShortfall || 0)) : 0
+      // "Covered" = the same retirement corpus used for the goal itself,
+      // minus the shortfall Capital Mandate already computed — mirrors
+      // capitalFundSnapshot.ts's retirementCorpus/shortfall pattern. (Was
+      // previously reading cm?.settings?.retirementCorpus, a field Capital
+      // Mandate never saves, which silently always came back S$0.)
+      const portValue = cm?.retirementShortfall != null ? Math.max(0, retCorpus - (cm?.retirementShortfall || 0)) : 0
       setExistingPortfolioValue(portValue)
 
       // Load saved
@@ -3470,6 +3612,7 @@ export default function RecommendationsPage() {
           const visibleRecs = getAccVisible(activePerson)
           const canAddAcc = visibleRecs.length < 3
           const currentLabel = personTabs.find(t => t.key === activePerson)?.label || activePerson
+          const anyChosenAcc = Object.values(data.accumulationByPerson).some(list => (list || []).some(r => r.isChosen))
           return (
             <div style={{ marginBottom: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid #2D5A4E33' }}>
@@ -3478,13 +3621,22 @@ export default function RecommendationsPage() {
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', letterSpacing: '0.04em' }}>Wealth Accumulation</span>
                   <span style={{ fontSize: 10, color: 'var(--ink3)', borderLeft: '1px solid var(--cream3)', paddingLeft: 10 }}>Investments & savings</span>
                 </div>
-                <button onClick={() => addAccForPerson(activePerson)} disabled={!canAddAcc} style={{
-                  background: canAddAcc ? 'var(--charcoal)' : 'var(--cream3)', color: canAddAcc ? 'var(--cream)' : 'var(--ink3)',
-                  border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
-                  cursor: canAddAcc ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
-                }}>
-                  <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAddAcc ? 'Add option' : 'Max 3'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {anyChosenAcc && (
+                    <button onClick={() => setShowCombinedImpact(true)} style={{
+                      background: 'transparent', color: '#2D5A4E', border: '1px solid #2D5A4E',
+                      borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
+                      cursor: 'pointer', fontWeight: 600,
+                    }}>View combined impact</button>
+                  )}
+                  <button onClick={() => addAccForPerson(activePerson)} disabled={!canAddAcc} style={{
+                    background: canAddAcc ? 'var(--charcoal)' : 'var(--cream3)', color: canAddAcc ? 'var(--cream)' : 'var(--ink3)',
+                    border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
+                    cursor: canAddAcc ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
+                  }}>
+                    <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAddAcc ? 'Add option' : 'Max 3'}
+                  </button>
+                </div>
               </div>
               {visibleRecs.length === 0 ? (
                 <div style={{ padding: '20px 0 8px', fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic' }}>
@@ -3510,6 +3662,12 @@ export default function RecommendationsPage() {
                 <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginTop: 8, fontStyle: 'italic' }}>
                   ↑ Joint accounts are shared across all family members
                 </div>
+              )}
+              {showCombinedImpact && (
+                <CombinedGoalImpactModal
+                  data={data} goals={goals} existingPortfolioValue={existingPortfolioValue}
+                  personTabs={personTabs} onClose={() => setShowCombinedImpact(false)}
+                />
               )}
             </div>
           )
