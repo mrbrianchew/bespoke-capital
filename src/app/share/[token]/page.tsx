@@ -543,9 +543,10 @@ export default function SharePage({ params }: { params: { token: string } }) {
       }
       // Overdue (within or beyond grace period). Active/in-force policies are
       // treated as paid — "Reinstated" is manual-override-only, not auto-derived.
+      // Renewal date has passed, so the policy has rolled into the next cycle.
       if (['In-Force','Premium Holiday'].includes(p.status)) {
         const yr = renewal.getFullYear()
-        return { label: `Paid for ${yr - 1}/${String(yr).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
+        return { label: `Paid for ${yr}/${String(yr + 1).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
       }
       if (diffDays >= -30) return { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
       return { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
