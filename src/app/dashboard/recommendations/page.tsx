@@ -72,6 +72,7 @@ interface ProtRec {
   policyTerm: string
   benefits: string
   limitations: string
+  rationale: string
   replacedPolicies: ReplacedPolicy[]
   isChosen: boolean
   // Expense / Core Protection specific
@@ -117,8 +118,13 @@ interface AccRec {
   topupOf: { policyId: string; policyName: string; previousAnnualAmount: number } | null
   benefits: string
   limitations: string
+  rationale: string
   allocatedGoalIds: string[]
   accountType: 'individual' | 'joint'
+  // Contribution split for joint accounts — % of the contribution attributed
+  // to the client; spouse's share is (100 - this). Only meaningful when
+  // accountType === 'joint'. Defaults to 50 (even split).
+  jointSplitClientPct: number
   isChosen: boolean
 }
 
@@ -148,6 +154,7 @@ interface MedicalRec {
   // Text
   benefits: string
   limitations: string
+  rationale: string
   // Replacement
   replacedPolicies: ReplacedPolicy[]
   isChosen: boolean
@@ -233,6 +240,33 @@ function calcAnnualContrib(rec: AccRec): number {
   return rec.hasRegular ? (rec.regularAmount || 0) * perYear : 0
 }
 
+// Backfills fields added after older records were saved (rationale,
+// jointSplitClientPct) so existing clients' data doesn't break controlled
+// inputs or silently miscompute cash-flow splits. Safe to run on every load.
+function normalizeRecPageData(d: RecPageData): RecPageData {
+  const withRationale = <T extends { rationale?: string }>(r: T): T => ({ ...r, rationale: r.rationale || '' })
+  const normByPerson = <T extends { rationale?: string }>(byPerson: Record<string, T[]>): Record<string, T[]> => {
+    const out: Record<string, T[]> = {}
+    for (const key of Object.keys(byPerson || {})) out[key] = (byPerson[key] || []).map(withRationale)
+    return out
+  }
+  const accByPerson: Record<string, AccRec[]> = {}
+  for (const key of Object.keys(d.accumulationByPerson || {})) {
+    accByPerson[key] = (d.accumulationByPerson[key] || []).map(r => ({
+      ...r,
+      rationale: r.rationale || '',
+      jointSplitClientPct: r.jointSplitClientPct ?? 50,
+    }))
+  }
+  return {
+    medicalByPerson: normByPerson(d.medicalByPerson),
+    ltcByPerson: normByPerson(d.ltcByPerson),
+    expenseByPerson: normByPerson(d.expenseByPerson),
+    generalByPerson: normByPerson(d.generalByPerson),
+    accumulationByPerson: accByPerson,
+  }
+}
+
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
 
 const S = {
@@ -256,6 +290,42 @@ const S = {
 }
 
 // ─── SMALL UI PIECES ──────────────────────────────────────────────────────────
+
+function RationaleField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ background: '#FBF6EA', border: '1px solid var(--gold-tag, #E4D4AC)', borderRadius: 8, padding: 14 }}>
+      <label style={{ ...S.lbl, color: '#8A6A2F' }}>Purpose / Rationale</label>
+      <textarea
+        style={{ ...S.inp, background: '#fff', resize: 'vertical', minHeight: 56, fontFamily: 'Inter', lineHeight: 1.5 }}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Why is this recommended for the client?"
+      />
+    </div>
+  )
+}
+
+function JointSplitSlider({ clientPct, onChange, clientLabel, spouseLabel }: {
+  clientPct: number
+  onChange: (pct: number) => void
+  clientLabel: string
+  spouseLabel: string
+}) {
+  const pct = clientPct ?? 50
+  return (
+    <div style={{ background: '#fff', borderRadius: 6, padding: '10px 12px', border: '1px solid var(--cream3)', minWidth: 260 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink2)' }}>{clientLabel} <strong>{pct}%</strong></span>
+        <span style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink2)' }}>{spouseLabel} <strong>{100 - pct}%</strong></span>
+      </div>
+      <input
+        type="range" min={0} max={100} step={5} value={pct}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{ width: '100%', accentColor: '#2D5A4E', cursor: 'pointer' }}
+      />
+    </div>
+  )
+}
 
 function RankBadge({ rank }: { rank: RankLabel }) {
   const isRec = rank === 'Recommended'
@@ -965,6 +1035,10 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
           <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
         </div>
 
+        <div style={{ padding: '16px 16px 0' }}>
+          <RationaleField value={rec.rationale} onChange={v => upd('rationale', v)} />
+        </div>
+
         {/* Row 1: Coverage mode + Insurer + Product + Brief Coverage */}
         <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
           {/* Coverage mode */}
@@ -1307,6 +1381,10 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
           <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
         </div>
 
+        <div style={{ padding: '16px 16px 0' }}>
+          <RationaleField value={rec.rationale} onChange={v => upd('rationale', v)} />
+        </div>
+
         {/* Core fields — row 1: Coverage Type / Insurer / Product */}
         <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
           <div>
@@ -1523,6 +1601,10 @@ function GeneralCard({ rec, onChange, onDelete, onChoose, generalCompanies, mont
         <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
       </div>
 
+      <div style={{ padding: '16px 16px 0' }}>
+        <RationaleField value={rec.rationale} onChange={v => upd('rationale', v)} />
+      </div>
+
       <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
         {/* Row 1: Coverage Type → Insurer → Product Name */}
         <div>
@@ -1679,6 +1761,10 @@ function ExpenseCard({ rec, onChange, onDelete, onChoose,
             </span>
           )}
           <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
+        </div>
+
+        <div style={{ padding: '16px 16px 0' }}>
+          <RationaleField value={rec.rationale} onChange={v => upd('rationale', v)} />
         </div>
 
         <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
@@ -1945,6 +2031,10 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
           <ModeToggle mode={rec.mode} onChange={m => upd('mode', m)} />
         </div>
 
+        <div style={{ padding: '16px 16px 0' }}>
+          <RationaleField value={rec.rationale} onChange={v => upd('rationale', v)} />
+        </div>
+
         {/* Core fields */}
         <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 16px' }}>
           <div>
@@ -2057,12 +2147,13 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
 
 // ─── ACCUMULATION CARD ────────────────────────────────────────────────────────
 
-function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, existingPolicies, monthlyIncome, monthlyExpenses, accumulationCompanies }: {
+function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, existingPolicies, monthlyIncome, monthlyExpenses, accumulationCompanies, clientLabel, spouseLabel }: {
   rec: AccRec; onChange: (r: AccRec) => void; onDelete: () => void; onChoose: () => void
   goals: GoalItem[]; existingPortfolioValue: number
   existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
   monthlyIncome: number; monthlyExpenses: number
   accumulationCompanies: { id: number; name: string }[]
+  clientLabel: string; spouseLabel: string
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof AccRec>(k: K, v: AccRec[K]) { onChange({ ...rec, [k]: v }) }
@@ -2093,6 +2184,22 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
           {(rec.accountType === 'joint') && (
             <span style={{ fontSize: 11, color: '#2D5A4E', fontFamily: 'Inter', fontStyle: 'italic' }}>Visible to all</span>
           )}
+        </div>
+
+        {rec.accountType === 'joint' && (
+          <div style={{ padding: '16px 16px 0' }}>
+            <div style={{ ...S.lbl, marginBottom: 6 }}>Contribution split</div>
+            <JointSplitSlider
+              clientPct={rec.jointSplitClientPct ?? 50}
+              onChange={pct => upd('jointSplitClientPct', pct)}
+              clientLabel={clientLabel}
+              spouseLabel={spouseLabel}
+            />
+          </div>
+        )}
+
+        <div style={{ padding: '16px 16px 0' }}>
+          <RationaleField value={rec.rationale} onChange={v => upd('rationale', v)} />
         </div>
 
         {/* Core fields */}
@@ -2416,6 +2523,24 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
       rows.push({ label, section: 'Wealth Accumulation', cashDelta: annualContrib, mode: r.mode })
     }
   })
+
+  // Joint accumulation — attribute each person's share of the contribution
+  // using the advisor-set split (defaults to 50/50), same split used in the
+  // Financial Report snapshot.
+  if (activePerson === 'client' || activePerson === 'spouse') {
+    const jointAccRecs = (data.accumulationByPerson['joint'] || []).filter(r => r.isChosen)
+    jointAccRecs.forEach(r => {
+      const freqMult = r.regularFreq === 'Monthly' ? 12 : r.regularFreq === 'Quarterly' ? 4 : 1
+      const annualContrib = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
+      const clientPct = r.jointSplitClientPct ?? 50
+      const pct = activePerson === 'client' ? clientPct : (100 - clientPct)
+      const share = annualContrib * pct / 100
+      if (share > 0 || r.hasLumpSum) {
+        const label = `${r.company || r.planType || 'Accumulation plan'} (joint, ${pct}%)`
+        rows.push({ label, section: 'Wealth Accumulation', cashDelta: share, mode: r.mode })
+      }
+    })
+  }
 
   const additions    = rows.filter(r => r.mode === 'new')
   const topups       = rows.filter(r => r.mode === 'topup')
@@ -2893,13 +3018,13 @@ export default function RecommendationsPage() {
       // Load saved
       const saved = by['strategic_recommendations_v2']
       if (saved) {
-        setData({
+        setData(normalizeRecPageData({
           medicalByPerson:  saved.medicalByPerson  || (saved.medical  ? { client: saved.medical  } : {}),
           ltcByPerson:      saved.ltcByPerson      || (saved.ltc     ? { client: saved.ltc     } : {}),
           expenseByPerson:  saved.expenseByPerson  || (saved.expense ? { client: saved.expense } : {}),
           generalByPerson:  saved.generalByPerson  || (saved.general ? { client: saved.general } : {}),
           accumulationByPerson: saved.accumulationByPerson || (saved.accumulation ? { client: saved.accumulation } : {}),
-        })
+        }))
       } else {
         setData(EMPTY)
       }
@@ -2941,7 +3066,7 @@ export default function RecommendationsPage() {
       briefCoverage: '', briefCoverageOther: '',
       premiumMedisave: 0, premiumCash: 0, premiumTerm: 'Annual',
       rider: { insurer: '', productName: '', annualPremium: 0 },
-      benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
+      benefits: '', limitations: '', rationale: '', replacedPolicies: [], isChosen: false,
     }
     handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: [...recs, rec] } })
   }
@@ -2972,7 +3097,7 @@ export default function RecommendationsPage() {
     const rec: ProtRec = {
       id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
       productName: '', insurer: '', coverageType: '', sumAssured: 0, monthlyBenefit: 0, benefitPaymentPeriod: '', benefitTerm: '', premiumMedisave: 0, premiumCash: 0, annualPremium: 0,
-      premiumTerm: '', policyTerm: '', benefits: '', limitations: '', replacedPolicies: [], isChosen: false,
+      premiumTerm: '', policyTerm: '', benefits: '', limitations: '', rationale: '', replacedPolicies: [], isChosen: false,
       baseDeathBenefit: 0, baseTpdBenefit: 0, baseAdvCiBenefit: 0, baseEarlyCiBenefit: 0,
       coverageMultiplier: 1, multiplierEnd: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0,
       interestRate: '', premiumWaiver: 'Nil', isUsdPolicy: false,
@@ -3016,8 +3141,8 @@ export default function RecommendationsPage() {
       hasLumpSum: false, lumpSumAmount: 0, hasRegular: true,
       regularFreq: 'Monthly', regularAmount: 0, regularYears: 0,
       projMethod: 'illustration', illusTerm: 0, illusGuaranteed: 0, illusNonGuaranteed: 0,
-      rateYears: 0, rateReturn: 0, replacedPolicies: [], topupOf: null, benefits: '', limitations: '',
-      allocatedGoalIds: [], accountType: 'individual', isChosen: false,
+      rateYears: 0, rateReturn: 0, replacedPolicies: [], topupOf: null, benefits: '', limitations: '', rationale: '',
+      allocatedGoalIds: [], accountType: 'individual', jointSplitClientPct: 50, isChosen: false,
     }
     handleChange({ ...data, accumulationByPerson: { ...data.accumulationByPerson, [person]: [...ownRecs, rec] } })
   }
@@ -3376,6 +3501,8 @@ export default function RecommendationsPage() {
                     existingPolicies={existingPolicies}
                     monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
                     accumulationCompanies={accumulationCompanies}
+                    clientLabel={personTabs.find(t => t.key === 'client')?.label || 'Client'}
+                    spouseLabel={personTabs.find(t => t.key === 'spouse')?.label || 'Spouse'}
                   />
                 ))
               )}
