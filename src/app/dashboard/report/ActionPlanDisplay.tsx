@@ -182,7 +182,7 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink3)', border: '1px solid var(--line)', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
                   {r.tag}
                 </span>
                 <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{fmt(r.amount)}/yr</div>
