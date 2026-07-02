@@ -1,4 +1,5 @@
 import { ageYearOnly } from './calc'
+import { PersonProtectionProfile } from './protectionSnapshot'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -8,6 +9,29 @@ export interface ActionPlanReplacedPolicy {
   policyName: string
   companyName: string
   annualPremium: number
+  // Benefit amounts carried on the replaced policy, only ever populated for
+  // Core Protection replacements (recommendations/page.tsx's Core replace-policy
+  // handler is the only one that captures these — Medical/LTC/General replaced
+  // policies are saved with these at 0). Used to net the old policy's cover out
+  // of the framework tape's "existing" segment so a replacement doesn't get
+  // counted twice — once under existing, once under recommended.
+  deathBenefit: number
+  tpdBenefit: number
+  ciBenefit: number
+  earlyCiBenefit: number
+}
+
+// One segment of the "measuring tape" shown under Core Protection — needs
+// split into existing (grey) / recommended (green) / remaining shortfall
+// (red). Widths are pre-clamped so the three always sum to exactly `needs`,
+// even if raw existing+recommended overshoots it.
+export interface ProtectionTape {
+  needs: number
+  existing: number
+  recommended: number
+  remaining: number
+  // Product names contributing to `recommended`, for the "via ..." caption.
+  viaProducts: string[]
 }
 
 export interface ProtectionActionItem {
@@ -106,6 +130,11 @@ export interface PersonActionPlan {
   newAnnualCash: number
   replacementNetDelta: number
   topupNetDelta: number
+  // Framework tapes for the Core Protection category — null when the person
+  // has no protection profile (children, who aren't covered by Strategic
+  // Objectives DTPD/CI) or when that pillar's maxCapitalRequired is 0.
+  dtpdTape: ProtectionTape | null
+  ciTape: ProtectionTape | null
 }
 
 export interface ActionPlanCashflowImpact {
@@ -143,6 +172,10 @@ function mapReplacedPolicies(list: any[]): ActionPlanReplacedPolicy[] {
     policyName: p.policyName || 'Existing policy',
     companyName: p.companyName || '',
     annualPremium: Math.round(p.annualPremium || 0),
+    deathBenefit: Math.round(p.deathBenefit || 0),
+    tpdBenefit: Math.round(p.tpdBenefit || 0),
+    ciBenefit: Math.round(p.advCiBenefit || 0),
+    earlyCiBenefit: Math.round(p.earlyCiBenefit || 0),
   }))
 }
 
@@ -305,6 +338,54 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
   })
 }
 
+// Builds one framework tape (DTPD or CI) for a person's Core Protection
+// items against that pillar's needs/existingCoverage from the protection
+// snapshot. `benefitOf` reads the relevant benefit off a chosen core item;
+// `replacedBenefitOf` reads the equivalent off a replaced policy so it can be
+// netted out of existingCoverage — existingCoverage is computed live off the
+// active policies table (see protectionSnapshot.ts) and has no idea a policy
+// is being replaced in this Action Plan, so without this netting a
+// replacement would double-count: once under existing, once under recommended.
+function buildTape(
+  coreItems: ProtectionActionItem[],
+  needs: number,
+  existingCoverage: number,
+  benefitOf: (item: ProtectionActionItem) => number,
+  replacedBenefitOf: (p: ActionPlanReplacedPolicy) => number,
+): ProtectionTape | null {
+  if (needs <= 0) return null
+
+  let recommended = 0
+  let replacedOut = 0
+  const viaProducts: string[] = []
+
+  coreItems.forEach(item => {
+    const benefit = benefitOf(item)
+    if (benefit > 0) {
+      recommended += benefit
+      viaProducts.push(item.productName)
+    }
+    if (item.mode === 'replacement') {
+      replacedOut += item.replacedPolicies.reduce((s, p) => s + replacedBenefitOf(p), 0)
+    }
+  })
+
+  if (recommended <= 0) return null // nothing in Core actually addresses this pillar
+
+  const adjustedExisting = Math.max(0, existingCoverage - replacedOut)
+  const displayExisting = Math.min(adjustedExisting, needs)
+  const displayRecommended = Math.min(recommended, needs - displayExisting)
+  const displayRemaining = Math.max(0, needs - displayExisting - displayRecommended)
+
+  return {
+    needs: Math.round(needs),
+    existing: Math.round(displayExisting),
+    recommended: Math.round(displayRecommended),
+    remaining: Math.round(displayRemaining),
+    viaProducts,
+  }
+}
+
 // ─── BUILDER ─────────────────────────────────────────────────────────────────
 
 export function buildActionPlanSnapshot(input: {
@@ -317,8 +398,13 @@ export function buildActionPlanSnapshot(input: {
   // Read directly from the already-built Wealth Summary snapshot
   // (annualSurplus) rather than re-derived from raw financials here.
   annualSurplus: number
+  // DTPD/CI needs figures come from the already-built Protection snapshot —
+  // frozen in here at save time like everything else, rather than
+  // re-derived. null/undefined for a person with no protection profile
+  // (e.g. no spouse on file) — that person's tapes will just be null.
+  protectionProfiles?: { client: PersonProtectionProfile | null; spouse: PersonProtectionProfile | null }
 }): ActionPlanSnapshot {
-  const { client, familyMembers, recData, retData, eduData, cmData, annualSurplus } = input
+  const { client, familyMembers, recData, retData, eduData, cmData, annualSurplus, protectionProfiles } = input
   const clientAge = ageYearOnly(client.dob)
 
   const spouseMember = familyMembers.find(f => f.relationship === 'Spouse') || null
@@ -389,6 +475,24 @@ export function buildActionPlanSnapshot(input: {
       ownAccumulationItems.filter(i => i.mode === 'topup').reduce((s, i) => s + i.cashImpactDelta, 0) +
       jointItemsForPerson.filter(i => i.mode === 'topup').reduce((s, i) => s + jointShare(i), 0)
 
+    // Tapes only ever draw from Core Protection items — Medical, LTC, and
+    // General have no dollar shortfall to measure against (medical/accident
+    // are covered/needs-attention booleans on the framework ladder; LTC has
+    // no framework pillar of its own).
+    const profile: PersonProtectionProfile | null =
+      personKey === 'client' ? (protectionProfiles?.client ?? null) :
+      personKey === 'spouse' ? (protectionProfiles?.spouse ?? null) :
+      null
+    const coreItems = protectionItems.filter(i => i.category === 'core')
+    const dtpdTape = profile
+      ? buildTape(coreItems, profile.dtpd.maxCapitalRequired, profile.dtpd.existingCoverage,
+          item => item.deathBenefit, p => p.deathBenefit)
+      : null
+    const ciTape = profile
+      ? buildTape(coreItems, profile.ci.maxCapitalRequired, profile.ci.existingCoverage,
+          item => item.ciBenefit + item.earlyCiBenefit, p => Math.max(p.ciBenefit, p.earlyCiBenefit))
+      : null
+
     return {
       personKey,
       name,
@@ -398,6 +502,8 @@ export function buildActionPlanSnapshot(input: {
       newAnnualCash: Math.round(newAnnualCash),
       replacementNetDelta: Math.round(replacementNetDelta),
       topupNetDelta: Math.round(topupNetDelta),
+      dtpdTape,
+      ciTape,
     }
   }
 
