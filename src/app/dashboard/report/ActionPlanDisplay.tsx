@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, ReactNode } from 'react'
 import { Stethoscope, HeartPulse, ShieldCheck, Home, Palmtree, GraduationCap, Building2, TrendingUp, LucideIcon } from 'lucide-react'
 import {
   ActionPlanSnapshot,
@@ -9,6 +9,7 @@ import {
   AccumulationActionItem,
   ActionPlanGoalFunding,
   ActionPlanCashflowImpact,
+  ProtectionTape,
 } from '@/lib/actionPlanSnapshot'
 
 type Page = 'overview' | 'protection' | 'accumulation'
@@ -122,75 +123,172 @@ function EmptyNote({ text }: { text: string }) {
   )
 }
 
-function OverviewPage({ person }: { person: PersonActionPlan }) {
-  const rows = [
-    ...person.protectionItems.map(i => ({
-      key: i.id,
-      color: CATEGORY_META[i.category].color,
-      categoryLabel: i.categoryLabel,
-      productName: i.productName,
-      amount: i.annualPremiumTotal,
-      tag: i.mode === 'replacement' ? `Replacing ${i.replacedPolicies.length} polic${i.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New',
-      isTopup: false,
-      previousAmount: 0,
-    })),
-    ...person.accumulationItems.map(i => ({
-      key: i.id,
-      color: 'var(--emerald)',
-      categoryLabel: 'Wealth Accumulation',
-      productName: i.company || i.planType || 'Accumulation plan',
-      amount: i.mode === 'topup' ? (i.previousAnnualContribution + i.annualContribution) : i.annualContribution,
-      tag: i.mode === 'topup'
-        ? 'Top-up'
-        : (i.allocatedGoalIds.length > 0
-          ? `Funds ${i.allocatedGoalIds.length} goal${i.allocatedGoalIds.length === 1 ? '' : 's'}`
-          : (i.mode === 'replacement' ? 'Replacing' : 'New')),
-      isTopup: i.mode === 'topup',
-      previousAmount: i.previousAnnualContribution,
-    })),
-  ]
+// Fixed display order for the Overview tab's category sections — Medical,
+// then LTC, then Core Protection (where the measuring tape lives), then
+// General. Deliberately not CATEGORY_META's own key order re-derived, so a
+// future reshuffle of that object can't silently reorder this.
+const OVERVIEW_CATEGORY_ORDER: ProtectionActionCategory[] = ['medical', 'ltc', 'core', 'general']
 
-  if (rows.length === 0) return <EmptyNote text={`No actions recorded yet for ${person.name}.`} />
+interface OverviewRow {
+  key: string
+  color: string
+  productName: string
+  amount: number
+  tag: string
+  isTopup: boolean
+  previousAmount: number
+}
+
+function protectionToRow(i: ProtectionActionItem): OverviewRow {
+  return {
+    key: i.id,
+    color: CATEGORY_META[i.category].color,
+    productName: i.productName,
+    amount: i.annualPremiumTotal,
+    tag: i.mode === 'replacement' ? `Replacing ${i.replacedPolicies.length} polic${i.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New',
+    isTopup: false,
+    previousAmount: 0,
+  }
+}
+
+function accumulationToRow(i: AccumulationActionItem): OverviewRow {
+  return {
+    key: i.id,
+    color: 'var(--emerald)',
+    productName: i.company || i.planType || 'Accumulation plan',
+    amount: i.mode === 'topup' ? (i.previousAnnualContribution + i.annualContribution) : i.annualContribution,
+    tag: i.mode === 'topup'
+      ? 'Top-up'
+      : (i.allocatedGoalIds.length > 0
+        ? `Funds ${i.allocatedGoalIds.length} goal${i.allocatedGoalIds.length === 1 ? '' : 's'}`
+        : (i.mode === 'replacement' ? 'Replacing' : 'New')),
+    isTopup: i.mode === 'topup',
+    previousAmount: i.previousAnnualContribution,
+  }
+}
+
+function OverviewProductRow({ row }: { row: OverviewRow }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: row.color, flexShrink: 0 }} />
+        <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.productName}</div>
+      </div>
+      {row.isTopup ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--emerald)', background: 'var(--cream2)', padding: '3px 9px 3px 7px', borderRadius: 20 }}>
+            <TrendingUp size={11} aria-hidden="true" />Top-up
+          </span>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 5 }}>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{fmt(row.previousAmount)}</span>
+              <span style={{ fontSize: 11, color: 'var(--ink3)' }}>→</span>
+            </div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(row.amount)}/yr</div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+            {row.tag}
+          </span>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{fmt(row.amount)}/yr</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// The "measuring tape" — needs split into existing (grey) / recommended
+// (green) / remaining shortfall (red). Segment widths come pre-clamped from
+// buildTape() so they always sum to `tape.needs`.
+function MeasuringTape({ label, tape }: { label: string; tape: ProtectionTape }) {
+  const existingPct = (tape.existing / tape.needs) * 100
+  const recommendedPct = (tape.recommended / tape.needs) * 100
+  const remainingPct = (tape.remaining / tape.needs) * 100
+  const isClosed = tape.remaining === 0
+
+  return (
+    <div style={{ padding: '16px 0 18px', borderBottom: '1px solid var(--cream3)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+        <span style={{ fontSize: 12.5, color: 'var(--ink2)' }}>{label}</span>
+        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink3)' }}>
+          needs <b style={{ color: 'var(--ink)', fontWeight: 600, fontStyle: 'normal' }}>{fmt(tape.needs)}</b>
+        </span>
+      </div>
+      <div style={{ borderTop: '1px dashed var(--line2)', borderBottom: '1px dashed var(--line2)', padding: '5px 0' }}>
+        <div style={{ display: 'flex', height: 11, borderRadius: 6, overflow: 'hidden' }}>
+          {existingPct > 0 && <div style={{ width: `${existingPct}%`, background: 'var(--ink3)' }} />}
+          {recommendedPct > 0 && <div style={{ width: `${recommendedPct}%`, background: 'var(--emerald)' }} />}
+          {remainingPct > 0 && <div style={{ width: `${remainingPct}%`, background: 'var(--rouge)' }} />}
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 10.5 }}>
+        <div>
+          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--ink3)', display: 'inline-block' }} />Existing
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>{fmt(tape.existing)}</div>
+        </div>
+        <div>
+          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--emerald)', display: 'inline-block' }} />Recommended
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>+{fmt(tape.recommended)}</div>
+        </div>
+        <div>
+          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--rouge)', opacity: isClosed ? 0.25 : 1, display: 'inline-block' }} />Remaining shortfall
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: isClosed ? 'var(--emerald)' : 'var(--rouge)', paddingLeft: 13 }}>
+            {isClosed ? `${fmt(0)} — closed` : fmt(tape.remaining)}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, fontStyle: 'italic', fontFamily: 'Cormorant Garamond, serif', color: 'var(--ink3)', marginTop: 12 }}>
+        via {tape.viaProducts.join(', ')}
+      </div>
+    </div>
+  )
+}
+
+function CategorySection({ label, color, children }: { label: string; color: string; children: ReactNode }) {
+  return (
+    <div style={{ marginTop: 36 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+        <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink)', fontWeight: 600 }}>{label}</span>
+        <span style={{ flex: 1, height: 1, background: 'var(--line2)' }} />
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function OverviewPage({ person }: { person: PersonActionPlan }) {
+  const hasAnyProtection = person.protectionItems.length > 0
+  const hasAny = hasAnyProtection || person.accumulationItems.length > 0
+
+  if (!hasAny) return <EmptyNote text={`No actions recorded yet for ${person.name}.`} />
 
   return (
     <div>
-      <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 16 }}>
-        Recommended actions — {person.name}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {rows.map(r => (
-          <div key={r.key} style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 10, padding: '13px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0 }} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: r.color, marginBottom: 2 }}>{r.categoryLabel}</div>
-                <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.productName}</div>
-              </div>
-            </div>
-            {r.isTopup ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--emerald)', background: 'var(--cream2)', padding: '3px 9px 3px 7px', borderRadius: 20 }}>
-                  <TrendingUp size={11} aria-hidden="true" />Top-up
-                </span>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 5 }}>
-                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{fmt(r.previousAmount)}</span>
-                    <span style={{ fontSize: 11, color: 'var(--ink3)' }}>→</span>
-                  </div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(r.amount)}/yr</div>
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                  {r.tag}
-                </span>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{fmt(r.amount)}/yr</div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {OVERVIEW_CATEGORY_ORDER.map(cat => {
+        const items = person.protectionItems.filter(i => i.category === cat)
+        if (items.length === 0) return null
+        return (
+          <CategorySection key={cat} label={items[0].categoryLabel} color={CATEGORY_META[cat].color}>
+            {items.map(item => <OverviewProductRow key={item.id} row={protectionToRow(item)} />)}
+            {cat === 'core' && person.dtpdTape && <MeasuringTape label="Capital protection — Death & TPD" tape={person.dtpdTape} />}
+            {cat === 'core' && person.ciTape && <MeasuringTape label="Income protection — Critical Illness" tape={person.ciTape} />}
+          </CategorySection>
+        )
+      })}
+      {person.accumulationItems.length > 0 && (
+        <CategorySection label="Wealth Accumulation" color="var(--emerald)">
+          {person.accumulationItems.map(item => <OverviewProductRow key={item.id} row={accumulationToRow(item)} />)}
+        </CategorySection>
+      )}
     </div>
   )
 }
