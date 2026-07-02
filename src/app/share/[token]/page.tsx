@@ -114,6 +114,18 @@ function PasswordGate({ hint, onUnlock, wrongPw }: { hint: string; onUnlock: (pw
   )
 }
 
+const cardWrap: React.CSSProperties = { background:'white', border:'0.5px solid #E0DDD6', borderRadius:10, padding:'14px 16px', marginBottom:10 }
+const cardLabel: React.CSSProperties = { fontSize:9, letterSpacing:'0.08em', textTransform:'uppercase', color:'#AAA', marginBottom:1 }
+const cardValue: React.CSSProperties = { fontSize:12, color:'#1C1A17', fontFamily:'DM Mono,monospace' }
+
+function CardDates({ p }: { p: Policy }) {
+  return (
+    <div style={{fontSize:10,color:'#888',lineHeight:1.7,marginTop:10,paddingTop:10,borderTop:'0.5px solid #ECEAE4'}}>
+      <div>Start: {formatDate(p.inceptionDate)} &nbsp;·&nbsp; Prem: {formatDate(p.premiumMaturity)} &nbsp;·&nbsp; Cov: {formatDate(p.coverageMaturity)}</div>
+    </div>
+  )
+}
+
 function ROPolicyTable({ policies, cat }: { policies: Policy[]; cat: string }) {
   const isEssential = ['medical','ltc','general'].includes(cat)
   const isLife = cat === 'life'
@@ -121,131 +133,207 @@ function ROPolicyTable({ policies, cat }: { policies: Policy[]; cat: string }) {
   if (isEssential) {
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
     return (
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-        <thead>
-          <tr style={{background:'#FAFAF8',borderBottom:'1px solid #E0DDD6'}}>
-            <th style={th}>Insurer · Product</th>
-            <th style={th}>Brief Description</th>
-            {hasMedisave && <th style={{...th,width:80}}>Prem (MS)</th>}
-            <th style={{...th,width:80}}>Prem (Cash)</th>
-            <th style={{...th,width:60}}>Freq.</th>
-            <th style={{...th,width:160}}>Dates</th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies.map((p,i)=>(
-            <tr key={p.id} style={{background:i%2===0?'white':'#FAFAF8',borderBottom:'0.5px solid #ECEAE4'}}>
-              <td style={td}>
-                <div style={{fontWeight:500}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
-                {p.policyNo&&<div style={{fontSize:10,color:'#888',fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
-                {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'#888'}}>
-                  {p.policyholder&&`PH: ${p.policyholder}`}
-                  {p.lifeAssured&&p.lifeAssured!==p.policyholder&&` · LA: ${p.lifeAssured}`}
-                </div>}
-              </td>
-              <td style={{...td,color:'#555'}}>{p.briefDescription||'—'}</td>
-              {hasMedisave&&<td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(p.premiumMedisave)}</td>}
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(p.premiumCash)}</td>
-              <td style={{...td,color:'#888'}}>{p.frequency||'—'}</td>
-              <td style={td}>
-                <div style={{fontSize:10,color:'#888',lineHeight:1.7}}>
-                  <div>Start: {formatDate(p.inceptionDate)}</div>
-                  <div>Prem: {formatDate(p.premiumMaturity)}</div>
-                  <div>Cov: {formatDate(p.coverageMaturity)}</div>
-                </div>
-              </td>
-            </tr>
+      <>
+        <div className="pf-table">
+          <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,minWidth:560}}>
+            <thead>
+              <tr style={{background:'#FAFAF8',borderBottom:'1px solid #E0DDD6'}}>
+                <th style={th}>Insurer · Product</th>
+                <th style={th}>Brief Description</th>
+                {hasMedisave && <th style={{...th,width:80}}>Prem (MS)</th>}
+                <th style={{...th,width:80}}>Prem (Cash)</th>
+                <th style={{...th,width:60}}>Freq.</th>
+                <th style={{...th,width:160}}>Dates</th>
+              </tr>
+            </thead>
+            <tbody>
+              {policies.map((p,i)=>(
+                <tr key={p.id} style={{background:i%2===0?'white':'#FAFAF8',borderBottom:'0.5px solid #ECEAE4'}}>
+                  <td style={td}>
+                    <div style={{fontWeight:500}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
+                    {p.policyNo&&<div style={{fontSize:10,color:'#888',fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+                    {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'#888'}}>
+                      {p.policyholder&&`PH: ${p.policyholder}`}
+                      {p.lifeAssured&&p.lifeAssured!==p.policyholder&&` · LA: ${p.lifeAssured}`}
+                    </div>}
+                  </td>
+                  <td style={{...td,color:'#555'}}>{p.briefDescription||'—'}</td>
+                  {hasMedisave&&<td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(p.premiumMedisave)}</td>}
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(p.premiumCash)}</td>
+                  <td style={{...td,color:'#888'}}>{p.frequency||'—'}</td>
+                  <td style={td}>
+                    <div style={{fontSize:10,color:'#888',lineHeight:1.7}}>
+                      <div>Start: {formatDate(p.inceptionDate)}</div>
+                      <div>Prem: {formatDate(p.premiumMaturity)}</div>
+                      <div>Cov: {formatDate(p.coverageMaturity)}</div>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </div>
+        <div className="pf-cards">
+          {policies.map(p=>(
+            <div key={p.id} style={cardWrap}>
+              <div style={{fontWeight:600,fontSize:13,color:'#1C1A17'}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
+              {p.policyNo&&<div style={{fontSize:10,color:'#999',fontFamily:'DM Mono,monospace',marginTop:2}}>{p.policyNo}</div>}
+              {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:11,color:'#888',marginTop:4}}>
+                {p.policyholder&&`PH: ${p.policyholder}`}
+                {p.lifeAssured&&p.lifeAssured!==p.policyholder&&` · LA: ${p.lifeAssured}`}
+              </div>}
+              {p.briefDescription&&<div style={{fontSize:11,color:'#555',marginTop:6}}>{p.briefDescription}</div>}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',marginTop:10}}>
+                {hasMedisave && <div><div style={cardLabel}>Prem (MS)</div><div style={cardValue}>{fmt(p.premiumMedisave)}</div></div>}
+                <div><div style={cardLabel}>Prem (Cash)</div><div style={cardValue}>{fmt(p.premiumCash)}</div></div>
+                <div><div style={cardLabel}>Frequency</div><div style={{fontSize:12,color:'#555'}}>{p.frequency||'—'}</div></div>
+              </div>
+              <CardDates p={p}/>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+      </>
     )
   }
 
   if (isLife) {
     return (
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-        <thead>
-          <tr style={{background:'#FAFAF8',borderBottom:'1px solid #E0DDD6'}}>
-            <th style={th}>Insurer · Product</th>
-            <th style={{...th,width:90}}>Death</th>
-            <th style={{...th,width:90}}>TPD</th>
-            <th style={{...th,width:90}}>Adv. CI</th>
-            <th style={{...th,width:90}}>Early CI</th>
-            <th style={{...th,width:90}}>Premium</th>
-            <th style={{...th,width:60}}>Freq.</th>
-            <th style={{...th,width:160}}>Dates</th>
-          </tr>
-        </thead>
-        <tbody>
-          {policies.map((p,i)=>(
-            <tr key={p.id} style={{background:i%2===0?'white':'#FAFAF8',borderBottom:'0.5px solid #ECEAE4'}}>
-              <td style={td}>
-                <div style={{fontWeight:500}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
-                {p.policyNo&&<div style={{fontSize:10,color:'#888',fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
-                {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'#888'}}>
-                  {p.policyholder&&`PH: ${p.policyholder}`}
-                  {p.lifeAssured&&p.lifeAssured!==p.policyholder&&` · LA: ${p.lifeAssured}`}
-                </div>}
-                {p.multiplier>1&&<div style={{fontSize:10,color:'#A8834A'}}>{p.multiplier}× to age {p.multiplierEnd}</div>}
-              </td>
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseDeath'),p))}</td>
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseTPD'),p))}</td>
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseAdvCI'),p))}</td>
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseEarlyCI'),p))}</td>
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>
-                {fmt(p.premiumCash)}
-                {p.premiumMedisave>0&&<div style={{fontSize:10,color:'#888'}}>+{fmt(p.premiumMedisave)} MS</div>}
-              </td>
-              <td style={{...td,color:'#888'}}>{p.frequency||'—'}</td>
-              <td style={td}>
-                <div style={{fontSize:10,color:'#888',lineHeight:1.7}}>
-                  <div>Start: {formatDate(p.inceptionDate)}</div>
-                  <div>Prem: {formatDate(p.premiumMaturity)}</div>
-                  <div>Cov: {formatDate(p.coverageMaturity)}</div>
-                </div>
-              </td>
-            </tr>
+      <>
+        <div className="pf-table">
+          <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,minWidth:560}}>
+            <thead>
+              <tr style={{background:'#FAFAF8',borderBottom:'1px solid #E0DDD6'}}>
+                <th style={th}>Insurer · Product</th>
+                <th style={{...th,width:90}}>Death</th>
+                <th style={{...th,width:90}}>TPD</th>
+                <th style={{...th,width:90}}>Adv. CI</th>
+                <th style={{...th,width:90}}>Early CI</th>
+                <th style={{...th,width:90}}>Premium</th>
+                <th style={{...th,width:60}}>Freq.</th>
+                <th style={{...th,width:160}}>Dates</th>
+              </tr>
+            </thead>
+            <tbody>
+              {policies.map((p,i)=>(
+                <tr key={p.id} style={{background:i%2===0?'white':'#FAFAF8',borderBottom:'0.5px solid #ECEAE4'}}>
+                  <td style={td}>
+                    <div style={{fontWeight:500}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
+                    {p.policyNo&&<div style={{fontSize:10,color:'#888',fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+                    {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:10,color:'#888'}}>
+                      {p.policyholder&&`PH: ${p.policyholder}`}
+                      {p.lifeAssured&&p.lifeAssured!==p.policyholder&&` · LA: ${p.lifeAssured}`}
+                    </div>}
+                    {p.multiplier>1&&<div style={{fontSize:10,color:'#A8834A'}}>{p.multiplier}× to age {p.multiplierEnd}</div>}
+                  </td>
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseDeath'),p))}</td>
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseTPD'),p))}</td>
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseAdvCI'),p))}</td>
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(toSGD(getMultiplied(p,'baseEarlyCI'),p))}</td>
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>
+                    {fmt(p.premiumCash)}
+                    {p.premiumMedisave>0&&<div style={{fontSize:10,color:'#888'}}>+{fmt(p.premiumMedisave)} MS</div>}
+                  </td>
+                  <td style={{...td,color:'#888'}}>{p.frequency||'—'}</td>
+                  <td style={td}>
+                    <div style={{fontSize:10,color:'#888',lineHeight:1.7}}>
+                      <div>Start: {formatDate(p.inceptionDate)}</div>
+                      <div>Prem: {formatDate(p.premiumMaturity)}</div>
+                      <div>Cov: {formatDate(p.coverageMaturity)}</div>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </div>
+        <div className="pf-cards">
+          {policies.map(p=>(
+            <div key={p.id} style={cardWrap}>
+              <div style={{fontWeight:600,fontSize:13,color:'#1C1A17'}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
+              {p.policyNo&&<div style={{fontSize:10,color:'#999',fontFamily:'DM Mono,monospace',marginTop:2}}>{p.policyNo}</div>}
+              {(p.policyholder||p.lifeAssured)&&<div style={{fontSize:11,color:'#888',marginTop:4}}>
+                {p.policyholder&&`PH: ${p.policyholder}`}
+                {p.lifeAssured&&p.lifeAssured!==p.policyholder&&` · LA: ${p.lifeAssured}`}
+              </div>}
+              {p.multiplier>1&&<div style={{fontSize:11,color:'#A8834A',marginTop:4}}>{p.multiplier}× to age {p.multiplierEnd}</div>}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',marginTop:10}}>
+                <div><div style={cardLabel}>Death</div><div style={cardValue}>{fmt(toSGD(getMultiplied(p,'baseDeath'),p))}</div></div>
+                <div><div style={cardLabel}>TPD</div><div style={cardValue}>{fmt(toSGD(getMultiplied(p,'baseTPD'),p))}</div></div>
+                <div><div style={cardLabel}>Adv. CI</div><div style={cardValue}>{fmt(toSGD(getMultiplied(p,'baseAdvCI'),p))}</div></div>
+                <div><div style={cardLabel}>Early CI</div><div style={cardValue}>{fmt(toSGD(getMultiplied(p,'baseEarlyCI'),p))}</div></div>
+                <div><div style={cardLabel}>Premium</div><div style={cardValue}>{fmt(p.premiumCash)}{p.premiumMedisave>0&&<span style={{color:'#888'}}> +{fmt(p.premiumMedisave)} MS</span>}</div></div>
+                <div><div style={cardLabel}>Frequency</div><div style={{fontSize:12,color:'#555'}}>{p.frequency||'—'}</div></div>
+              </div>
+              <CardDates p={p}/>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+      </>
     )
   }
 
   return (
-    <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-      <thead>
-        <tr style={{background:'#FAFAF8',borderBottom:'1px solid #E0DDD6'}}>
-          <th style={th}>Insurer · Product</th>
-          <th style={{...th,width:110}}>Death Benefit</th>
-          <th style={{...th,width:90}}>Premium</th>
-          <th style={{...th,width:60}}>Freq.</th>
-          <th style={{...th,width:160}}>Dates</th>
-        </tr>
-      </thead>
-      <tbody>
-        {policies.map((p,i)=>{
-          const mainBen = p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
-          return(
-            <tr key={p.id} style={{background:i%2===0?'white':'#FAFAF8',borderBottom:'0.5px solid #ECEAE4'}}>
-              <td style={td}>
-                <div style={{fontWeight:500}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
-                {p.policyNo&&<div style={{fontSize:10,color:'#888',fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
-              </td>
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(mainBen)}</td>
-              <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(p.premiumCash)}</td>
-              <td style={{...td,color:'#888'}}>{p.frequency||'—'}</td>
-              <td style={td}>
-                <div style={{fontSize:10,color:'#888',lineHeight:1.7}}>
-                  <div>Start: {formatDate(p.inceptionDate)}</div>
-                  <div>Prem: {formatDate(p.premiumMaturity)}</div>
-                  <div>Cov: {formatDate(p.coverageMaturity)}</div>
-                </div>
-              </td>
+    <>
+      <div className="pf-table">
+        <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,minWidth:560}}>
+          <thead>
+            <tr style={{background:'#FAFAF8',borderBottom:'1px solid #E0DDD6'}}>
+              <th style={th}>Insurer · Product</th>
+              <th style={{...th,width:110}}>Death Benefit</th>
+              <th style={{...th,width:90}}>Premium</th>
+              <th style={{...th,width:60}}>Freq.</th>
+              <th style={{...th,width:160}}>Dates</th>
             </tr>
+          </thead>
+          <tbody>
+            {policies.map((p,i)=>{
+              const mainBen = p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
+              return(
+                <tr key={p.id} style={{background:i%2===0?'white':'#FAFAF8',borderBottom:'0.5px solid #ECEAE4'}}>
+                  <td style={td}>
+                    <div style={{fontWeight:500}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
+                    {p.policyNo&&<div style={{fontSize:10,color:'#888',fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+                  </td>
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(mainBen)}</td>
+                  <td style={{...td,fontFamily:'DM Mono,monospace'}}>{fmt(p.premiumCash)}</td>
+                  <td style={{...td,color:'#888'}}>{p.frequency||'—'}</td>
+                  <td style={td}>
+                    <div style={{fontSize:10,color:'#888',lineHeight:1.7}}>
+                      <div>Start: {formatDate(p.inceptionDate)}</div>
+                      <div>Prem: {formatDate(p.premiumMaturity)}</div>
+                      <div>Cov: {formatDate(p.coverageMaturity)}</div>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      <div className="pf-cards">
+        {policies.map(p=>{
+          const mainBen = p.baseDeath||p.baseAdvCI||p.monthlyBenefit||p.sumAssured
+          return (
+            <div key={p.id} style={cardWrap}>
+              <div style={{fontWeight:600,fontSize:13,color:'#1C1A17'}}>{p.companyName}{p.productName?` · ${p.productName}`:''}</div>
+              {p.policyNo&&<div style={{fontSize:10,color:'#999',fontFamily:'DM Mono,monospace',marginTop:2}}>{p.policyNo}</div>}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',marginTop:10}}>
+                <div><div style={cardLabel}>Death Benefit</div><div style={cardValue}>{fmt(mainBen)}</div></div>
+                <div><div style={cardLabel}>Premium</div><div style={cardValue}>{fmt(p.premiumCash)}</div></div>
+                <div><div style={cardLabel}>Frequency</div><div style={{fontSize:12,color:'#555'}}>{p.frequency||'—'}</div></div>
+              </div>
+              <CardDates p={p}/>
+            </div>
           )
         })}
-      </tbody>
-    </table>
+      </div>
+    </>
   )
 }
 
@@ -754,10 +842,10 @@ export default function SharePage({ params }: { params: { token: string } }) {
     const catPrem = catPols.reduce((s,p)=>s+annualPrem(p),0)
     return (
       <div style={{marginBottom:28}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,paddingBottom:8,borderBottom:`0.5px solid ${cat.accent}44`}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,paddingBottom:8,borderBottom:`0.5px solid ${cat.accent}44`,flexWrap:'wrap'}}>
           <div style={{width:3,height:16,background:cat.accent,flexShrink:0}}/>
           <span style={{fontSize:11,fontWeight:600,color:cat.accent,letterSpacing:'0.06em'}}>{cat.label.toUpperCase()}</span>
-          <span style={{fontSize:10,color:'#888',borderLeft:'0.5px solid #E0DDD6',paddingLeft:10}}>{cat.hint}</span>
+          <span className="pf-cat-hint" style={{fontSize:10,color:'#888',borderLeft:'0.5px solid #E0DDD6',paddingLeft:10}}>{cat.hint}</span>
           {catPrem>0&&<span style={{marginLeft:'auto',fontSize:10,color:'#888',fontFamily:'DM Mono,monospace'}}>{fmt(catPrem)}/yr</span>}
         </div>
         {catPols.length===0
@@ -770,7 +858,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   }
 
   return (
-    <div style={{background:'#F5F3EE',minHeight:'100vh',fontFamily:'Inter,sans-serif',overflowX:'auto'}}>
+    <div style={{background:'#F5F3EE',minHeight:'100vh',fontFamily:'Inter,sans-serif'}}>
      <style>{`
   @media print {
     @page {
@@ -792,21 +880,37 @@ export default function SharePage({ params }: { params: { token: string } }) {
       background: white !important;
     }
   }
+  .pf-table { display: table; width: 100%; }
+  .pf-cards { display: none !important; }
+  .pf-kpi-grid { grid-template-columns: repeat(5,1fr); }
+  .pf-main-grid { grid-template-columns: 1fr 320px; }
+  @media (max-width: 800px) {
+    .pf-table { display: none !important; }
+    .pf-cards { display: block !important; }
+    .pf-nav-title { display: none !important; }
+    .pf-hero { padding: 16px 20px !important; flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
+    .pf-hero-prem { text-align: left !important; }
+    .pf-body { padding: 20px 16px !important; }
+    .pf-kpi-grid { grid-template-columns: repeat(2,1fr) !important; }
+    .pf-main-grid { grid-template-columns: 1fr !important; }
+    .pf-footer { padding: 16px 20px !important; flex-direction: column !important; gap: 4px !important; align-items: flex-start !important; }
+    .pf-cat-hint { display: none !important; }
+  }
 `}</style>
 
       {/* Sticky nav */}
-     <div className="no-print" style={{position:'sticky',top:0,zIndex:100,background:'#1C1A17',padding:'10px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',minWidth:1100}}>
-        <div style={{display:'flex',alignItems:'center',gap:16}}>
-          <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)'}}>Bespoke Capital</div>
-          <div style={{width:1,height:14,background:'rgba(255,255,255,0.15)'}}/>
-          <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,fontWeight:300,color:'#F0EDE8'}}>
+     <div className="no-print" style={{position:'sticky',top:0,zIndex:100,background:'#1C1A17',padding:'10px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,minWidth:0}}>
+          <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',flexShrink:0}}>Bespoke Capital</div>
+          <div className="pf-nav-title" style={{width:1,height:14,background:'rgba(255,255,255,0.15)',flexShrink:0}}/>
+          <div className="pf-nav-title" style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,fontWeight:300,color:'#F0EDE8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
             Portfolio Summary {year} — {clientName}
           </div>
         </div>
         <button onClick={handleDownloadPDF} style={{
-          padding:'8px 20px',background:'#A8834A',color:'white',border:'none',
+          padding:'8px 16px',background:'#A8834A',color:'white',border:'none',
           cursor:'pointer',fontSize:11,letterSpacing:'0.1em',textTransform:'uppercase',
-          fontFamily:'Inter,sans-serif',fontWeight:500,
+          fontFamily:'Inter,sans-serif',fontWeight:500,flexShrink:0,
         }}>
           Download PDF
         </button>
@@ -814,19 +918,19 @@ export default function SharePage({ params }: { params: { token: string } }) {
 
       {/* PAGE 1 */}
       <div ref={page1Ref}>
-        <div style={hero('')}>
+        <div className="pf-hero" style={hero('')}>
           <div>
             <div style={{fontSize:10,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:6}}>Bespoke Capital · Wealth Protection</div>
             <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:300,color:'#F0EDE8'}}>Portfolio Summary {year} — {clientName}</div>
             <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginTop:4}}>Prepared by Chew Zhiquan Brian</div>
           </div>
-          <div style={{textAlign:'right'}}>
+          <div className="pf-hero-prem" style={{textAlign:'right'}}>
             <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginBottom:2}}>Total Annual Premium</div>
             <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#C4A464'}}>{fmt(totalPrem)}</div>
           </div>
         </div>
-        <div style={{...pageBody,paddingTop:24}}>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:24}}>
+        <div className="pf-body" style={{...pageBody,paddingTop:24}}>
+          <div className="pf-kpi-grid" style={{display:'grid',gap:12,marginBottom:24}}>
             {[
               {label:'Death Benefit',value:totDeath},
               {label:'TPD Benefit',value:totTPD},
@@ -841,7 +945,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
               </div>
             ))}
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:16}}>
+          <div className="pf-main-grid" style={{display:'grid',gap:16}}>
             <CoverageTimeline policies={lifePols} personAge={clientAge} personName={clientName}/>
             <PremiumSchedule policies={policies}/>
           </div>
@@ -857,14 +961,14 @@ export default function SharePage({ params }: { params: { token: string } }) {
           if (catPols.length === 0) return null
           return (
             <div key={cat.code} className="print-break-before">
-              <div style={hero('')}>
+              <div className="pf-hero" style={hero('')}>
                 <div>
                   <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
                   <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>{cat.label} · {clientName}</div>
                 </div>
                 <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>Prepared by Chew Zhiquan Brian</div>
               </div>
-              <div style={pageBody}>
+              <div className="pf-body" style={pageBody}>
                 <CatSection cat={cat}/>
               </div>
             </div>
@@ -872,7 +976,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
         })}
 
       {/* Footer */}
-      <div style={{minWidth:1100,background:'#1C1A17',padding:'20px 40px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <div className="pf-footer" style={{background:'#1C1A17',padding:'20px 40px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>
           This document is confidential and prepared solely for {clientName}. © {year} Bespoke Capital.
         </div>
