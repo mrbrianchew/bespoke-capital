@@ -10,6 +10,7 @@ import {
   ActionPlanGoalFunding,
   ActionPlanCashflowImpact,
   ProtectionTape,
+  AccumulationTape,
 } from '@/lib/actionPlanSnapshot'
 
 type Page = 'overview' | 'protection' | 'accumulation'
@@ -134,6 +135,7 @@ interface OverviewRow {
   color: string
   productName: string
   amount: number
+  amountSuffix: string
   tag: string
   isTopup: boolean
   previousAmount: number
@@ -145,6 +147,7 @@ function protectionToRow(i: ProtectionActionItem): OverviewRow {
     color: CATEGORY_META[i.category].color,
     productName: i.productName,
     amount: i.annualPremiumTotal,
+    amountSuffix: '/yr',
     tag: i.mode === 'replacement' ? `Replacing ${i.replacedPolicies.length} polic${i.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New',
     isTopup: false,
     previousAmount: 0,
@@ -152,16 +155,25 @@ function protectionToRow(i: ProtectionActionItem): OverviewRow {
 }
 
 function accumulationToRow(i: AccumulationActionItem): OverviewRow {
+  // Lump-sum-only products (hasLumpSum, no regular contribution) have
+  // annualContribution === 0 by definition — showing that as "$0/yr" reads
+  // like there's no commitment at all. Show the lump sum itself instead,
+  // with no "/yr" suffix since it's a one-time amount, not an annual figure.
+  const isLumpSumOnly = i.hasLumpSum && !i.hasRegular
+  const amount = i.mode === 'topup'
+    ? (i.previousAnnualContribution + i.annualContribution)
+    : (isLumpSumOnly ? i.lumpSumAmount : i.annualContribution)
   return {
     key: i.id,
     color: 'var(--emerald)',
     productName: i.company || i.planType || 'Accumulation plan',
-    amount: i.mode === 'topup' ? (i.previousAnnualContribution + i.annualContribution) : i.annualContribution,
+    amount,
+    amountSuffix: (isLumpSumOnly && i.mode !== 'topup') ? '' : '/yr',
     tag: i.mode === 'topup'
       ? 'Top-up'
       : (i.allocatedGoalIds.length > 0
         ? `Funds ${i.allocatedGoalIds.length} goal${i.allocatedGoalIds.length === 1 ? '' : 's'}`
-        : (i.mode === 'replacement' ? 'Replacing' : 'New')),
+        : (i.mode === 'replacement' ? 'Replacing' : (isLumpSumOnly ? 'New — lump sum' : 'New'))),
     isTopup: i.mode === 'topup',
     previousAmount: i.previousAnnualContribution,
   }
@@ -184,7 +196,7 @@ function OverviewProductRow({ row }: { row: OverviewRow }) {
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{fmt(row.previousAmount)}</span>
               <span style={{ fontSize: 11, color: 'var(--ink3)' }}>→</span>
             </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(row.amount)}/yr</div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(row.amount)}{row.amountSuffix}</div>
           </div>
         </div>
       ) : (
@@ -192,17 +204,18 @@ function OverviewProductRow({ row }: { row: OverviewRow }) {
           <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
             {row.tag}
           </span>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{fmt(row.amount)}/yr</div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{fmt(row.amount)}{row.amountSuffix}</div>
         </div>
       )}
     </div>
   )
 }
 
-// The "measuring tape" — needs split into existing (grey) / recommended
-// (green) / remaining shortfall (red). Segment widths come pre-clamped from
-// buildTape() so they always sum to `tape.needs`.
+// The "measuring tape" — needs split into asset mitigation (gold) / existing
+// (grey) / recommended (green) / remaining shortfall (red). Segment widths
+// come pre-clamped from buildTape() so they always sum to `tape.needs`.
 function MeasuringTape({ label, tape }: { label: string; tape: ProtectionTape }) {
+  const assetPct = (tape.assetMitigation / tape.needs) * 100
   const existingPct = (tape.existing / tape.needs) * 100
   const recommendedPct = (tape.recommended / tape.needs) * 100
   const remainingPct = (tape.remaining / tape.needs) * 100
@@ -218,12 +231,19 @@ function MeasuringTape({ label, tape }: { label: string; tape: ProtectionTape })
       </div>
       <div style={{ borderTop: '1px dashed var(--line2)', borderBottom: '1px dashed var(--line2)', padding: '5px 0' }}>
         <div style={{ display: 'flex', height: 11, borderRadius: 6, overflow: 'hidden' }}>
+          {assetPct > 0 && <div style={{ width: `${assetPct}%`, background: 'var(--gold)' }} />}
           {existingPct > 0 && <div style={{ width: `${existingPct}%`, background: 'var(--ink3)' }} />}
           {recommendedPct > 0 && <div style={{ width: `${recommendedPct}%`, background: 'var(--emerald)' }} />}
           {remainingPct > 0 && <div style={{ width: `${remainingPct}%`, background: 'var(--rouge)' }} />}
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 10.5 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 10.5, flexWrap: 'wrap', rowGap: 10 }}>
+        <div>
+          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--gold)', display: 'inline-block' }} />Asset mitigation
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>{fmt(tape.assetMitigation)}</div>
+        </div>
         <div>
           <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--ink3)', display: 'inline-block' }} />Existing
@@ -247,6 +267,60 @@ function MeasuringTape({ label, tape }: { label: string; tape: ProtectionTape })
       </div>
       <div style={{ fontSize: 13, fontStyle: 'italic', fontFamily: 'Cormorant Garamond, serif', color: 'var(--ink3)', marginTop: 12 }}>
         via {tape.viaProducts.join(', ')}
+      </div>
+    </div>
+  )
+}
+
+// Wealth Accumulation's tape — needs split into achieved (grey, projected
+// from what's already in motion) / recommended (green, future-valued
+// contribution from chosen products) / remaining shortfall (red). No gold
+// segment — asset mitigation doesn't apply to a savings goal.
+function AccumulationTapeView({ label, tape }: { label: string; tape: AccumulationTape }) {
+  const achievedPct = (tape.achieved / tape.needs) * 100
+  const recommendedPct = (tape.recommended / tape.needs) * 100
+  const remainingPct = (tape.remaining / tape.needs) * 100
+  const isClosed = tape.remaining === 0
+
+  return (
+    <div style={{ padding: '16px 0 18px', borderBottom: '1px solid var(--cream3)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+        <span style={{ fontSize: 12.5, color: 'var(--ink2)' }}>{label}</span>
+        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 13, color: 'var(--ink3)' }}>
+          needs <b style={{ color: 'var(--ink)', fontWeight: 600, fontStyle: 'normal' }}>{fmt(tape.needs)}</b>
+        </span>
+      </div>
+      <div style={{ borderTop: '1px dashed var(--line2)', borderBottom: '1px dashed var(--line2)', padding: '5px 0' }}>
+        <div style={{ display: 'flex', height: 11, borderRadius: 6, overflow: 'hidden' }}>
+          {achievedPct > 0 && <div style={{ width: `${achievedPct}%`, background: 'var(--ink3)' }} />}
+          {recommendedPct > 0 && <div style={{ width: `${recommendedPct}%`, background: 'var(--emerald)' }} />}
+          {remainingPct > 0 && <div style={{ width: `${remainingPct}%`, background: 'var(--rouge)' }} />}
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 10.5 }}>
+        <div>
+          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--ink3)', display: 'inline-block' }} />Already on track
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>{fmt(tape.achieved)}</div>
+        </div>
+        <div>
+          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--emerald)', display: 'inline-block' }} />Recommended
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>+{fmt(tape.recommended)}</div>
+        </div>
+        <div>
+          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--rouge)', opacity: isClosed ? 0.25 : 1, display: 'inline-block' }} />Remaining shortfall
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: isClosed ? 'var(--emerald)' : 'var(--rouge)', paddingLeft: 13 }}>
+            {isClosed ? `${fmt(0)} — closed` : fmt(tape.remaining)}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, fontStyle: 'italic', fontFamily: 'Cormorant Garamond, serif', color: 'var(--ink3)', marginTop: 12 }}>
+        via {tape.viaProducts.join(', ')} — projected at retirement/goal target age, not a guaranteed figure
       </div>
     </div>
   )
@@ -287,6 +361,9 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
       {person.accumulationItems.length > 0 && (
         <CategorySection label="Wealth Accumulation" color="var(--emerald)">
           {person.accumulationItems.map(item => <OverviewProductRow key={item.id} row={accumulationToRow(item)} />)}
+          {person.goalFunding.filter(gf => gf.tape).map(gf => (
+            <AccumulationTapeView key={gf.goal.id} label={`${gf.goal.label} · target age ${gf.goal.targetAge}`} tape={gf.tape as AccumulationTape} />
+          ))}
         </CategorySection>
       )}
     </div>
