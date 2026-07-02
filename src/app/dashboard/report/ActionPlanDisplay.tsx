@@ -196,7 +196,7 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
 function ProtectionItemCard({ item }: { item: ProtectionActionItem }) {
   const stats = statsFor(item)
   const hasMidSection = stats.length > 0
-  const hasLowerSection = !!item.benefits || !!item.limitations
+  const hasLowerSection = !!item.rationale || !!item.benefits || !!item.limitations
   const hasReplacement = item.mode === 'replacement' && item.replacedPolicies.length > 0
 
   return (
@@ -234,6 +234,12 @@ function ProtectionItemCard({ item }: { item: ProtectionActionItem }) {
         </div>
       )}
 
+      {item.rationale && (
+        <div style={{ marginBottom: (item.benefits || item.limitations) ? 12 : (hasReplacement ? 14 : 0), background: 'var(--cream)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 4 }}>Purpose / Rationale</div>
+          <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5 }}>{item.rationale}</div>
+        </div>
+      )}
       {item.benefits && (
         <div style={{ marginBottom: item.limitations ? 8 : (hasReplacement ? 14 : 0) }}>
           <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Benefits</div>
@@ -297,7 +303,7 @@ function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
 
   return (
     <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: (item.benefits || item.limitations) ? 14 : 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: (item.rationale || item.benefits || item.limitations) ? 14 : 0 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', marginBottom: 2 }}>{item.company || item.planType || 'Accumulation plan'}</div>
           <div style={{ fontSize: 11, color: 'var(--ink3)' }}>
@@ -305,6 +311,11 @@ function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
           </div>
           {item.mode === 'topup' && item.topupProductLabel && (
             <div style={{ fontSize: 11, color: 'var(--emerald)', marginTop: 4 }}>Topping up {item.topupProductLabel}</div>
+          )}
+          {item.accountType === 'joint' && (
+            <div style={{ fontSize: 11, color: 'var(--gold)', marginTop: 4 }}>
+              Joint account — split {item.jointSplitClientPct}% / {100 - item.jointSplitClientPct}%
+            </div>
           )}
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -324,6 +335,12 @@ function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
           )}
         </div>
       </div>
+      {item.rationale && (
+        <div style={{ marginBottom: (item.benefits || item.limitations) ? 12 : 0, background: 'var(--cream)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 4 }}>Purpose / Rationale</div>
+          <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5 }}>{item.rationale}</div>
+        </div>
+      )}
       {item.benefits && (
         <div style={{ marginBottom: item.limitations ? 8 : 0 }}>
           <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Benefits</div>
