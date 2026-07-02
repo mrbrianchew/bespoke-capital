@@ -1,4 +1,4 @@
-import { ageYearOnly } from './calc'
+import { ageYearOnly, fv } from './calc'
 import { PersonProtectionProfile } from './protectionSnapshot'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -22,11 +22,12 @@ export interface ActionPlanReplacedPolicy {
 }
 
 // One segment of the "measuring tape" shown under Core Protection — needs
-// split into existing (grey) / recommended (green) / remaining shortfall
-// (red). Widths are pre-clamped so the three always sum to exactly `needs`,
-// even if raw existing+recommended overshoots it.
+// split into asset mitigation (gold) / existing (grey) / recommended (green)
+// / remaining shortfall (red). Widths are pre-clamped so the four always sum
+// to exactly `needs`, even if the raw figures overshoot it.
 export interface ProtectionTape {
   needs: number
+  assetMitigation: number
   existing: number
   recommended: number
   remaining: number
@@ -112,13 +113,37 @@ export interface ActionPlanGoal {
   id: string
   label: string
   targetAge: number
+  // Gross target — before netting out achieved. For Retirement this is the
+  // corpus figure Strategic Objectives already saves as gross (retirementGap
+  // is the net figure, saved alongside it). For custom Wealth goals there's
+  // no netting concept in the data model at all — the advisor enters this
+  // directly, so `achieved` is always 0. Education is NOT included here yet
+  // — see the note on buildGoals below.
   targetCorpus: number
+  // Projected value of savings/investments already in motion toward this
+  // goal, by targetAge — 0 where the underlying tool doesn't track that
+  // (custom goals).
+  achieved: number
+}
+
+// The Wealth Accumulation equivalent of ProtectionTape — needs split into
+// achieved (grey, projected from what's already in motion) / recommended
+// (green, future-valued contribution from chosen accumulation products) /
+// remaining shortfall (red). No asset-mitigation-style gold segment here;
+// that concept doesn't apply to accumulation goals.
+export interface AccumulationTape {
+  needs: number
+  achieved: number
+  recommended: number
+  remaining: number
+  viaProducts: string[]
 }
 
 export interface ActionPlanGoalFunding {
   goal: ActionPlanGoal
   fundedBy: { productLabel: string; annualContribution: number }[]
   totalAnnualContribution: number
+  tape: AccumulationTape | null
 }
 
 export interface PersonActionPlan {
@@ -185,6 +210,17 @@ function mapReplacedPolicies(list: any[]): ActionPlanReplacedPolicy[] {
 // rebuilt from a different (even if more "correct") derivation without
 // breaking the funding tie-in. Reads corpusNeeded / child.corpus directly,
 // same as the live tool — no independent recalculation.
+//
+// KNOWN GAP (pre-existing, not introduced here): education goals read
+// `c.corpus` off each child, but EducationChild never actually persists a
+// `corpus` field (see EducationSection.tsx's EducationChild interface) —
+// recommendations/page.tsx's own loadAll() has the identical read at line
+// ~3202. In practice this means `(c.corpus || 0) > 0` is always false, so
+// education goals never appear in either the live goal picker or here.
+// Left as-is deliberately — fixing it only in this report file wouldn't
+// change anything for real clients, since no accumulation product could
+// ever have been allocated to an education goal id that was never offered
+// as an option in recommendations/page.tsx's picker in the first place.
 function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, cmData: Record<string, any>, clientAge: number): ActionPlanGoal[] {
   const ret = retData || {}
   const edu = eduData?.edu || eduData || {}
@@ -194,7 +230,14 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
   const retCorpus = ret?.corpusNeeded || 0
   const retAge = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
   if (retCorpus > 0) {
-    goals.push({ id: 'retirement', label: 'Retirement', targetAge: retAge, targetCorpus: Math.round(retCorpus) })
+    // retirementGap is the net figure (corpus - existing savings future-valued
+    // to retirement age), saved alongside corpusNeeded by RetirementSection's
+    // onCalculated — see scheduleRetSave in objectives/page.tsx. Clients whose
+    // Retirement tab predates that field will have retirementGap undefined;
+    // achieved falls back to 0 rather than guessing.
+    const gap = typeof ret.retirementGap === 'number' ? ret.retirementGap : retCorpus
+    const achieved = Math.max(0, Math.round(retCorpus - gap))
+    goals.push({ id: 'retirement', label: 'Retirement', targetAge: retAge, targetCorpus: Math.round(retCorpus), achieved })
   }
 
   ;(edu?.children || []).forEach((c: any) => {
@@ -204,6 +247,7 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
         label: `${c.name}'s Education`,
         targetAge: clientAge + (c.yearsAway || 18),
         targetCorpus: Math.round(c.corpus),
+        achieved: 0,
       })
     }
   })
@@ -215,11 +259,66 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
         label: g.label || 'Wealth Goal',
         targetAge: g.targetAge || 0,
         targetCorpus: Math.round(g.targetCorpus),
+        // Custom goals have no "existing progress" concept anywhere in the
+        // data model — the advisor enters targetCorpus directly with no
+        // netting step, unlike Retirement or (in principle) Education.
+        achieved: 0,
       })
     }
   })
 
   return goals.sort((a, b) => a.targetAge - b.targetAge)
+}
+
+// Future-values a chosen accumulation product's contribution out to a goal's
+// target age, and nets it against that goal's targetCorpus/achieved — same
+// "gross split into segments that sum to needs" shape as buildTape(), but
+// for a goal instead of a protection pillar. Only ever includes items whose
+// allocatedGoalIds names this specific goal (the same tagging goalFunding's
+// fundedBy already relies on) — this is a projection, not a persisted
+// figure, so it's intentionally not frozen anywhere else in the snapshot.
+function buildAccumulationTape(
+  items: AccumulationActionItem[],
+  goal: ActionPlanGoal,
+  expectedReturnPct: number,
+  clientAge: number,
+): AccumulationTape | null {
+  if (goal.targetCorpus <= 0) return null
+  const yearsToTarget = Math.max(1, goal.targetAge - clientAge)
+  const r = expectedReturnPct / 100
+
+  let recommended = 0
+  const viaProducts: string[] = []
+  items.forEach(item => {
+    if (!item.allocatedGoalIds.includes(goal.id)) return
+    let itemFv = 0
+    if (item.hasLumpSum && item.lumpSumAmount > 0) {
+      itemFv += item.lumpSumAmount * Math.pow(1 + r, yearsToTarget)
+    }
+    if (item.hasRegular && item.annualContribution > 0) {
+      itemFv += fv(r / 12, yearsToTarget * 12, item.annualContribution / 12)
+    }
+    if (itemFv > 0) {
+      recommended += itemFv
+      viaProducts.push(item.company || item.planType || 'Accumulation plan')
+    }
+  })
+
+  if (recommended <= 0) return null // nothing recommended actually funds this goal
+
+  const needs = goal.targetCorpus
+  const displayAchieved = Math.min(Math.max(0, goal.achieved), needs)
+  const remAfterAchieved = needs - displayAchieved
+  const displayRecommended = Math.min(recommended, remAfterAchieved)
+  const displayRemaining = Math.max(0, remAfterAchieved - displayRecommended)
+
+  return {
+    needs: Math.round(needs),
+    achieved: Math.round(displayAchieved),
+    recommended: Math.round(displayRecommended),
+    remaining: Math.round(displayRemaining),
+    viaProducts,
+  }
 }
 
 function mapMedical(list: any[]): ProtectionActionItem[] {
@@ -339,8 +438,12 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
 }
 
 // Builds one framework tape (DTPD or CI) for a person's Core Protection
-// items against that pillar's needs/existingCoverage from the protection
-// snapshot. `benefitOf` reads the relevant benefit off a chosen core item;
+// items against that pillar's needs/assetMitigation/existingCoverage from
+// the protection snapshot. Segment order mirrors the real shortfall formula
+// there (netOfAssets = maxCapitalRequired - assetMitigation; shortfall =
+// netOfAssets - existingCoverage): assets close the gap first, then existing
+// cover, then the recommendation, with whatever's left over as shortfall.
+// `benefitOf` reads the relevant benefit off a chosen core item;
 // `replacedBenefitOf` reads the equivalent off a replaced policy so it can be
 // netted out of existingCoverage — existingCoverage is computed live off the
 // active policies table (see protectionSnapshot.ts) and has no idea a policy
@@ -349,6 +452,7 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
 function buildTape(
   coreItems: ProtectionActionItem[],
   needs: number,
+  assetMitigation: number,
   existingCoverage: number,
   benefitOf: (item: ProtectionActionItem) => number,
   replacedBenefitOf: (p: ActionPlanReplacedPolicy) => number,
@@ -373,12 +477,17 @@ function buildTape(
   if (recommended <= 0) return null // nothing in Core actually addresses this pillar
 
   const adjustedExisting = Math.max(0, existingCoverage - replacedOut)
-  const displayExisting = Math.min(adjustedExisting, needs)
-  const displayRecommended = Math.min(recommended, needs - displayExisting)
-  const displayRemaining = Math.max(0, needs - displayExisting - displayRecommended)
+
+  const displayAsset = Math.min(Math.max(0, assetMitigation), needs)
+  const remAfterAsset = needs - displayAsset
+  const displayExisting = Math.min(adjustedExisting, remAfterAsset)
+  const remAfterExisting = remAfterAsset - displayExisting
+  const displayRecommended = Math.min(recommended, remAfterExisting)
+  const displayRemaining = Math.max(0, remAfterExisting - displayRecommended)
 
   return {
     needs: Math.round(needs),
+    assetMitigation: Math.round(displayAsset),
     existing: Math.round(displayExisting),
     recommended: Math.round(displayRecommended),
     remaining: Math.round(displayRemaining),
@@ -411,6 +520,10 @@ export function buildActionPlanSnapshot(input: {
   const children = familyMembers.filter(f => ['Son', 'Daughter', 'Child'].includes(f.relationship))
 
   const goals = buildGoals(retData, eduData, cmData, clientAge)
+  // Same default/fallback as capitalFundSnapshot.ts and investments/page.tsx —
+  // kept identical so the projection here can't drift from what those tools
+  // already assume.
+  const expectedReturn = cmData?.settings?.expectedReturn ?? 6
 
   const medicalByPerson = recData?.medicalByPerson || {}
   const ltcByPerson = recData?.ltcByPerson || {}
@@ -450,7 +563,12 @@ export function buildActionPlanSnapshot(input: {
             productLabel: item.company || item.planType || 'Accumulation plan',
             annualContribution: item.annualContribution,
           }))
-        return { goal, fundedBy, totalAnnualContribution: fundedBy.reduce((s, f) => s + f.annualContribution, 0) }
+        return {
+          goal,
+          fundedBy,
+          totalAnnualContribution: fundedBy.reduce((s, f) => s + f.annualContribution, 0),
+          tape: buildAccumulationTape(accumulationItems, goal, expectedReturn, clientAge),
+        }
       })
       .filter(gf => gf.fundedBy.length > 0)
 
@@ -485,11 +603,11 @@ export function buildActionPlanSnapshot(input: {
       null
     const coreItems = protectionItems.filter(i => i.category === 'core')
     const dtpdTape = profile
-      ? buildTape(coreItems, profile.dtpd.maxCapitalRequired, profile.dtpd.existingCoverage,
+      ? buildTape(coreItems, profile.dtpd.maxCapitalRequired, profile.dtpd.assetMitigation, profile.dtpd.existingCoverage,
           item => item.deathBenefit, p => p.deathBenefit)
       : null
     const ciTape = profile
-      ? buildTape(coreItems, profile.ci.maxCapitalRequired, profile.ci.existingCoverage,
+      ? buildTape(coreItems, profile.ci.maxCapitalRequired, profile.ci.assetMitigation, profile.ci.existingCoverage,
           item => item.ciBenefit + item.earlyCiBenefit, p => Math.max(p.ciBenefit, p.earlyCiBenefit))
       : null
 
