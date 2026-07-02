@@ -35,7 +35,10 @@ const PLAN_TYPES = [
 ]
 
 // Cycled per chosen accumulation product in the Combined Goal Progress view —
-// existing portfolio always uses a fixed grey (var(--line2)), products are
+// existing portfolio always uses a fixed, darker neutral (distinct from both
+// the light track background and the product palette below) so it reads
+// clearly rather than blending into the unfilled portion of the bar; products
+// are
 // assigned these in the order they appear so colors stay stable as long as
 // the advisor doesn't reorder/delete products.
 const PRODUCT_COLOR_PALETTE = ['#2D5A4E', '#A8834A', '#7A9CBF', '#9B7BAA', '#8A9A7E', '#C97B63']
@@ -933,7 +936,7 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
             {view === 'with' && (
               <div style={{ display: 'flex', gap: 14, marginBottom: 12, fontFamily: 'Inter', fontSize: 11, color: 'var(--ink2)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: '#c9c4ba', display: 'inline-block' }} />
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: '#7A9CBF', display: 'inline-block' }} />
                   Existing portfolio
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -964,10 +967,10 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
                     </span>
                   </div>
                   <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 6 }}>Target age {g.targetAge} · Need {fmt(g.targetCorpus)}</div>
-                  <div style={{ height: 6, background: 'var(--cream3)', borderRadius: 3, overflow: 'hidden', marginBottom: 4, display: 'flex' }}>
-                    <div style={{ width: `${g.targetCorpus > 0 ? Math.min(100, (g.existingFunded / g.targetCorpus) * 100) : 0}%`, height: '100%', background: '#c9c4ba', transition: 'width 0.4s' }} />
+                  <div style={{ height: 8, background: 'var(--cream3)', borderRadius: 4, overflow: 'hidden', marginBottom: 4, display: 'flex' }}>
+                    <div style={{ width: `${g.targetCorpus > 0 ? Math.min(100, (g.existingFunded / g.targetCorpus) * 100) : 0}%`, height: '100%', background: '#7A9CBF', transition: 'width 0.4s' }} />
                     {g.productFunded > 0 && (
-                      <div style={{ width: `${g.targetCorpus > 0 ? Math.min(100, (g.productFunded / g.targetCorpus) * 100) : 0}%`, height: '100%', background: '#2D5A4E', transition: 'width 0.4s' }} />
+                      <div style={{ width: `${g.targetCorpus > 0 ? Math.min(100, (g.productFunded / g.targetCorpus) * 100) : 0}%`, height: '100%', background: '#2D5A4E', borderLeft: '1px solid #fff', transition: 'width 0.4s' }} />
                     )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Inter', fontSize: 11 }}>
@@ -977,7 +980,7 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
                   {g.productFunded > 0 && (
                     <div style={{ display: 'flex', gap: 12, marginTop: 3, fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 2, background: '#c9c4ba', display: 'inline-block' }} />
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: '#7A9CBF', display: 'inline-block' }} />
                         Existing {fmt(g.existingFunded)}
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#2D5A4E', fontWeight: 600 }}>
@@ -1044,7 +1047,7 @@ function CombinedGoalImpactModal({ data, goals, existingPortfolioValue, personTa
   )
 
   const sources: FundingSource[] = [
-    { key: 'existing', label: 'Existing portfolio', amount: existingPortfolioValue, color: 'var(--line2, #D0CDC5)' },
+    { key: 'existing', label: 'Existing portfolio', amount: existingPortfolioValue, color: '#9A9690' },
     ...chosenProducts.map((p, i) => ({ key: p.rec.id, label: p.label, amount: p.projValue, color: PRODUCT_COLOR_PALETTE[i % PRODUCT_COLOR_PALETTE.length] })),
   ]
 
