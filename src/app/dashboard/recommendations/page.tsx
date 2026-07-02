@@ -2328,13 +2328,19 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
 function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, existingPolicies, monthlyIncome, monthlyExpenses, accumulationCompanies, clientLabel, spouseLabel }: {
   rec: AccRec; onChange: (r: AccRec) => void; onDelete: () => void; onChoose: () => void
   goals: GoalItem[]; existingPortfolioValue: number
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; categoryCode?: string }[]
   monthlyIncome: number; monthlyExpenses: number
   accumulationCompanies: { id: number; name: string }[]
   clientLabel: string; spouseLabel: string
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof AccRec>(k: K, v: AccRec[K]) { onChange({ ...rec, [k]: v }) }
+
+  // Only existing Wealth Accumulation Portfolio policies (categoryCode
+  // 'endowment') belong here — replacing/topping up an investment product
+  // with a medical or life policy from the wider Protection Portfolio list
+  // doesn't make sense, so this scopes the picker to the same category.
+  const accumulationPolicies = existingPolicies.filter(p => p.categoryCode === 'endowment')
 
   const totalInvested = calcTotalInvested(rec)
   const projValue     = calcProjectedValue(rec)
@@ -2466,8 +2472,13 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
               <div style={{ ...S.lbl, marginBottom: 10 }}>Replacing existing policies</div>
+              {accumulationPolicies.length === 0 && (
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic', marginBottom: 8 }}>
+                  No existing Wealth Accumulation products found — add them in the Protection Portfolio tab first.
+                </div>
+              )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {existingPolicies.map(pol => {
+                {accumulationPolicies.map(pol => {
                   const selected = !!rec.replacedPolicies.find(p => p.policyId === pol.id)
                   return (
                     <button key={pol.id} onClick={() => {
@@ -2493,8 +2504,13 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
               <div style={{ ...S.lbl, marginBottom: 10 }}>Topping up existing product</div>
+              {accumulationPolicies.length === 0 && (
+                <div style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)', fontStyle: 'italic', marginBottom: 8 }}>
+                  No existing Wealth Accumulation products found — add them in the Protection Portfolio tab first.
+                </div>
+              )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: rec.topupOf ? 12 : 0 }}>
-                {existingPolicies.map(pol => {
+                {accumulationPolicies.map(pol => {
                   const selected = rec.topupOf?.policyId === pol.id
                   return (
                     <button key={pol.id} onClick={() => {
