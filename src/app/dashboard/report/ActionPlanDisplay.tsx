@@ -181,9 +181,11 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
                 </div>
               </div>
             ) : (
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(r.amount)}/yr</div>
-                <div style={{ fontSize: 10, color: 'var(--ink3)' }}>{r.tag}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink3)', border: '1px solid var(--line)', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                  {r.tag}
+                </span>
+                <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{fmt(r.amount)}/yr</div>
               </div>
             )}
           </div>
