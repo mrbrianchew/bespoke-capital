@@ -126,8 +126,9 @@ export default function ReportPage() {
       setError('Executive Wealth Summary snapshot build failed: ' + e.message)
     }
 
+    let protectionSnapshotResult: ReturnType<typeof buildProtectionSnapshot> | null = null
     try {
-      setProtectionSnapshot(buildProtectionSnapshot({
+      protectionSnapshotResult = buildProtectionSnapshot({
         ff: protectionFf,
         protection: merged['protection_needs']?.protection || {},
         policies,
@@ -135,7 +136,8 @@ export default function ReportPage() {
         isCouple,
         clientDob: client.dob || '',
         spouseDob: spouse?.dob || '',
-      }))
+      })
+      setProtectionSnapshot(protectionSnapshotResult)
     } catch (e: any) {
       setError('Protection snapshot build failed: ' + e.message)
     }
@@ -163,6 +165,9 @@ export default function ReportPage() {
         eduData: merged['education'] || {},
         cmData: merged['capital_mandate'] || {},
         annualSurplus: execSummaryResult?.annualSurplus || 0,
+        protectionProfiles: protectionSnapshotResult
+          ? { client: protectionSnapshotResult.client, spouse: protectionSnapshotResult.spouse }
+          : undefined,
       }))
     } catch (e: any) {
       setError('Action Plan snapshot build failed: ' + e.message)
