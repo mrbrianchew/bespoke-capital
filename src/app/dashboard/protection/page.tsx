@@ -2657,15 +2657,17 @@ function getRenewalStatus(p: Policy): { label: string; color: string; bg: string
   // "Reinstated" is no longer auto-derived — it's a manual-override-only status.
   if (diffDays >= -30) {
     if (p.status === 'In-Force') {
+      // Renewal date has passed — the policy has rolled into the next cycle.
       const year = renewal.getFullYear()
-      return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
+      return { label: `Paid for ${year}/${String(year + 1).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
     }
     return { label: 'Missed Premium', color: '#9A3412', bg: '#FEE2E2' }
   }
   // > 30 days overdue
   if (p.status === 'In-Force') {
+    // Renewal date has passed — the policy has rolled into the next cycle.
     const year = renewal.getFullYear()
-    return { label: `Paid for ${year - 1}/${String(year).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
+    return { label: `Paid for ${year}/${String(year + 1).slice(-2)}`, color: '#166534', bg: '#DCFCE7' }
   }
   return { label: 'Lapsed', color: '#7F1D1D', bg: '#FEE2E2' }
 }
