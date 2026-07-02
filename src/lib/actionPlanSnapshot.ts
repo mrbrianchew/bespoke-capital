@@ -34,6 +34,7 @@ export interface ProtectionActionItem {
   sumAssured: number
   benefits: string
   limitations: string
+  rationale: string
   replacedPolicies: ActionPlanReplacedPolicy[]
   replacedAnnualPremiumTotal: number
 }
@@ -57,6 +58,15 @@ export interface AccumulationActionItem {
   cashImpactDelta: number
   benefits: string
   limitations: string
+  rationale: string
+  // Joint-account contribution split, frozen at save time. accountType and
+  // jointSplitClientPct are only meaningful when accountType === 'joint';
+  // clientAnnualContribution/spouseAnnualContribution give each spouse's
+  // share of annualContribution (they sum back to annualContribution).
+  accountType: 'individual' | 'joint'
+  jointSplitClientPct: number
+  clientAnnualContribution: number
+  spouseAnnualContribution: number
   replacedPolicies: ActionPlanReplacedPolicy[]
   // Shown for context only — NOT netted out of annualContribution/cashImpactDelta
   // for the 'replacement' case. The live tool's CashflowSidebar treats every
@@ -206,6 +216,7 @@ function mapMedical(list: any[]): ProtectionActionItem[] {
       sumAssured: 0,
       benefits: r.benefits || '',
       limitations: r.limitations || '',
+      rationale: r.rationale || '',
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
       replacedAnnualPremiumTotal: Math.round(replacedTotal(r.replacedPolicies)),
     }
@@ -250,6 +261,7 @@ function mapProt(category: 'ltc' | 'core' | 'general', categoryLabel: string, li
       sumAssured: Math.round(r.sumAssured || r.accidentalDeathBenefit || 0),
       benefits: r.benefits || '',
       limitations: r.limitations || '',
+      rationale: r.rationale || '',
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
       replacedAnnualPremiumTotal: Math.round(replacedTotal(r.replacedPolicies)),
     }
@@ -262,6 +274,10 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
     const annualContribution = r.hasRegular ? (r.regularAmount || 0) * freqMult : 0
     const previousAnnualContribution = r.mode === 'topup' ? Math.round(r.topupOf?.previousAnnualAmount || 0) : 0
     const cashImpactDelta = annualContribution
+    const accountType: 'individual' | 'joint' = r.accountType === 'joint' ? 'joint' : 'individual'
+    const jointSplitClientPct = accountType === 'joint' ? (r.jointSplitClientPct ?? 50) : 100
+    const clientAnnualContribution = Math.round(annualContribution * jointSplitClientPct / 100)
+    const spouseAnnualContribution = Math.round(annualContribution) - clientAnnualContribution
     return {
       id: r.id,
       mode: r.mode,
@@ -275,6 +291,11 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
       cashImpactDelta: Math.round(cashImpactDelta),
       benefits: r.benefits || '',
       limitations: r.limitations || '',
+      rationale: r.rationale || '',
+      accountType,
+      jointSplitClientPct,
+      clientAnnualContribution,
+      spouseAnnualContribution,
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
       replacedAnnualContribution: Math.round(replacedTotal(r.replacedPolicies)),
       topupProductLabel: r.topupOf?.policyName || '',
@@ -316,8 +337,10 @@ export function buildActionPlanSnapshot(input: {
   // separate bucket from 'client'/'spouse' — mirrors recommendations/page.tsx's
   // getEffectiveAccRecs, which merges personal + joint for display. Shown
   // under both client and spouse action plans (it's one shared account, not
-  // two), but its cash contribution is added to the household total exactly
-  // once below — never per-person — to avoid double-counting.
+  // two). Each item carries clientAnnualContribution/spouseAnnualContribution
+  // (split via the advisor-set jointSplitClientPct, frozen at save time) —
+  // these two always sum back to annualContribution, so allocating each
+  // person their share below can never double-count the household total.
   const jointAccumulationItems = mapAccumulation(accumulationByPerson['joint'] || [])
 
   function buildPerson(personKey: string, name: string, includeJoint: boolean): PersonActionPlan {
@@ -329,8 +352,8 @@ export function buildActionPlanSnapshot(input: {
     ]
     const ownAccumulationItems = mapAccumulation(accumulationByPerson[personKey] || [])
     // Display list includes joint items (for the Overview tab and goal
-    // funding); cash-impact totals below deliberately use ownAccumulationItems
-    // only, so the joint contribution isn't summed twice across client+spouse.
+    // funding) at their full amount — the account is one shared product, not
+    // two. Only the cash-impact totals below split by each person's share.
     const accumulationItems = includeJoint ? [...ownAccumulationItems, ...jointAccumulationItems] : ownAccumulationItems
 
     const goalFunding: ActionPlanGoalFunding[] = goals
@@ -345,16 +368,26 @@ export function buildActionPlanSnapshot(input: {
       })
       .filter(gf => gf.fundedBy.length > 0)
 
+    // Each person's share of a joint item's contribution — 'client' gets
+    // jointSplitClientPct, 'spouse' gets the remainder. Children never
+    // include joint items (includeJoint is false for them).
+    const jointItemsForPerson = includeJoint ? jointAccumulationItems : []
+    const jointShare = (item: AccumulationActionItem) =>
+      personKey === 'spouse' ? item.spouseAnnualContribution : item.clientAnnualContribution
+
     const newAnnualCash =
       protectionItems.filter(i => i.mode === 'new').reduce((s, i) => s + i.annualPremiumCash, 0) +
-      ownAccumulationItems.filter(i => i.mode === 'new').reduce((s, i) => s + i.annualContribution, 0)
+      ownAccumulationItems.filter(i => i.mode === 'new').reduce((s, i) => s + i.annualContribution, 0) +
+      jointItemsForPerson.filter(i => i.mode === 'new').reduce((s, i) => s + jointShare(i), 0)
 
     const replacementNetDelta =
       protectionItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.cashImpactDelta, 0) +
-      ownAccumulationItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.annualContribution, 0)
+      ownAccumulationItems.filter(i => i.mode === 'replacement').reduce((s, i) => s + i.annualContribution, 0) +
+      jointItemsForPerson.filter(i => i.mode === 'replacement').reduce((s, i) => s + jointShare(i), 0)
 
     const topupNetDelta =
-      ownAccumulationItems.filter(i => i.mode === 'topup').reduce((s, i) => s + i.cashImpactDelta, 0)
+      ownAccumulationItems.filter(i => i.mode === 'topup').reduce((s, i) => s + i.cashImpactDelta, 0) +
+      jointItemsForPerson.filter(i => i.mode === 'topup').reduce((s, i) => s + jointShare(i), 0)
 
     return {
       personKey,
@@ -376,19 +409,13 @@ export function buildActionPlanSnapshot(input: {
 
   const allPersons = [clientPlan, ...(spousePlan ? [spousePlan] : []), ...childPlans]
 
-  const jointNewAnnualCash = jointAccumulationItems
-    .filter(i => i.mode === 'new')
-    .reduce((s, i) => s + i.annualContribution, 0)
-  const jointReplacementNetDelta = jointAccumulationItems
-    .filter(i => i.mode === 'replacement')
-    .reduce((s, i) => s + i.annualContribution, 0)
-  const jointTopupNetDelta = jointAccumulationItems
-    .filter(i => i.mode === 'topup')
-    .reduce((s, i) => s + i.cashImpactDelta, 0)
-
-  const totalAdditions = allPersons.reduce((s, p) => s + p.newAnnualCash, 0) + jointNewAnnualCash
-  const totalReplacementDelta = allPersons.reduce((s, p) => s + p.replacementNetDelta, 0) + jointReplacementNetDelta
-  const totalTopupDelta = allPersons.reduce((s, p) => s + p.topupNetDelta, 0) + jointTopupNetDelta
+  // Joint contributions are now folded into each person's own
+  // newAnnualCash/replacementNetDelta/topupNetDelta above via their split
+  // share, so summing across allPersons already captures the full joint
+  // amount exactly once — no separate joint addback needed here.
+  const totalAdditions = allPersons.reduce((s, p) => s + p.newAnnualCash, 0)
+  const totalReplacementDelta = allPersons.reduce((s, p) => s + p.replacementNetDelta, 0)
+  const totalTopupDelta = allPersons.reduce((s, p) => s + p.topupNetDelta, 0)
   const netAnnualCashImpact = totalAdditions + totalReplacementDelta + totalTopupDelta
 
   return {
