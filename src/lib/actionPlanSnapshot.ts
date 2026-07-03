@@ -1,5 +1,6 @@
 import { ageYearOnly, fv } from './calc'
 import { PersonProtectionProfile } from './protectionSnapshot'
+import { CapitalFundFullSeries } from './capitalFundSnapshot'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,9 @@ export interface ActionPlanGoal {
   targetCorpus: number
   // Projected value of savings/investments already in motion toward this
   // goal, by targetAge — 0 where the underlying tool doesn't track that
-  // (custom goals).
+  // (custom goals). For Retirement specifically, this is Capital Mandate's
+  // full portfolio projection when available (see buildGoals), not a
+  // standalone re-derivation.
   achieved: number
 }
 
@@ -219,13 +222,29 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
   const retCorpus = ret?.corpusNeeded || 0
   const retAge = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
   if (retCorpus > 0) {
-    // retirementGap is the net figure (corpus - existing savings future-valued
-    // to retirement age), saved alongside corpusNeeded by RetirementSection's
-    // onCalculated — see scheduleRetSave in objectives/page.tsx. Clients whose
-    // Retirement tab predates that field will have retirementGap undefined;
-    // achieved falls back to 0 rather than guessing.
-    const gap = typeof ret.retirementGap === 'number' ? ret.retirementGap : retCorpus
-    const achieved = Math.max(0, Math.round(retCorpus - gap))
+    // Preferred source: Capital Mandate's own projected-portfolio-at-retirement
+    // figure (chartSeries.projectedLine[retireIdx]), persisted by the live tool
+    // in investments/page.tsx. That engine walks every vehicle in the client's
+    // actual portfolio — CPF LIFE, SRS, endowment maturities, annuities,
+    // rental, regular contributions at each vehicle's own return — for both
+    // client and spouse where owner is tagged accordingly. This is what the
+    // advisor sees as the projected corpus in the Capital Mandate tab itself,
+    // so "achieved" here should never disagree with that number.
+    //
+    // Fallback: RetirementSection's own simpler gap calc (corpus minus
+    // household liquid assets future-valued at a flat pre-retirement rate),
+    // used only when the client hasn't built out Capital Mandate yet and so
+    // has no persisted chartSeries. Clients whose Retirement tab predates the
+    // retirementGap field will have it undefined; achieved falls back to 0
+    // rather than guessing.
+    const series: CapitalFundFullSeries | undefined = cm?.chartSeries
+    let achieved: number
+    if (series && Array.isArray(series.projectedLine) && typeof series.retireIdx === 'number' && series.retireIdx >= 0) {
+      achieved = Math.max(0, Math.round(series.projectedLine[series.retireIdx] || 0))
+    } else {
+      const gap = typeof ret.retirementGap === 'number' ? ret.retirementGap : retCorpus
+      achieved = Math.max(0, Math.round(retCorpus - gap))
+    }
     goals.push({ id: 'retirement', label: 'Retirement', targetAge: retAge, targetCorpus: Math.round(retCorpus), achieved })
   }
 
