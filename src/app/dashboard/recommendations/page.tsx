@@ -3225,11 +3225,19 @@ export default function RecommendationsPage() {
       const retCorpus = ret?.corpusNeeded || 0
       const retAge    = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
       if (retCorpus > 0) builtGoals.push({ id: 'retirement', label: 'Retirement', icon: '🌅', targetCorpus: retCorpus, targetAge: retAge })
+      const liveChildIds = new Set((kids || []).map((k: any) => k.id))
       const seenEduChildIds = new Set<string>()
       ;(edu?.edu?.children || []).forEach((c: any) => {
-        // Guard against duplicate/stale child records in the saved data
-        // (e.g. leftover entries from a prior family-member edit) producing
-        // two goals for what should be the same child.
+        // The education section's saved `children` array isn't cleaned up
+        // when a child is deleted from Family Members — deleting there
+        // removes the family_members row but leaves the orphaned entry
+        // sitting in this array. Skip anything that no longer matches a
+        // live family member, same guard investments/page.tsx's own goal
+        // list already uses.
+        const liveChildId = c.childId || c.id
+        if (liveChildId && !liveChildIds.has(liveChildId)) return
+        // Belt-and-braces: also guard against duplicate entries for the
+        // same child within the (post-filter) array itself.
         const eduKey = c.childId || c.name
         if (!eduKey || seenEduChildIds.has(eduKey)) return
         seenEduChildIds.add(eduKey)
