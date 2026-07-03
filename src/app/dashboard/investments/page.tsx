@@ -1080,6 +1080,12 @@ export default function CapitalMandatePage() {
   const chartRef = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<any>(null)
   const breakdownShortfallRef = useRef<number>(0)
+  // Net retirement portfolio target — baseAdjustedCorpus when the richer
+  // breakdown is available (nets PV of CPF LIFE/annuity/rental guaranteed
+  // income out of the gross need), else the plain legacy-adjusted corpus.
+  // Persisted so the report can read the SAME target this page displays as
+  // "Portfolio Target" instead of re-deriving a gross, unnetted figure.
+  const baseAdjustedCorpusRef = useRef<number>(0)
   const shortfallSolutionRef = useRef<{ pureMonthly: number; pureLump: number; lumpSumFraction: number } | null>(null)
   const chartSeriesRef = useRef<{
     ages: number[]; requiredLine: number[]; projectedLine: number[]; legacyLine: (number | null)[] | null
@@ -1260,6 +1266,12 @@ export default function CapitalMandatePage() {
       portfolio: updPortfolio, settings: updSettings, customGoals: updCustomGoals, notes: updNotes,
       portfolioStatus: shortfall != null ? (shortfall > 0 ? 'gap' : 'on_track') : undefined,
       retirementShortfall: effectiveShortfall,
+      // Net portfolio target — same "Portfolio Target" figure this page
+      // shows in the Retirement Income Breakdown panel, already netted for
+      // PV of CPF LIFE/annuity/rental guaranteed income. The report reads
+      // this instead of Retirement tab's gross corpusNeeded so the two
+      // pages can't disagree about how big a portfolio is actually required.
+      baseAdjustedCorpus: baseAdjustedCorpusRef.current || undefined,
       shortfallSolution: shortfallSolutionRef.current || undefined,
       chartSeries: chartSeriesRef.current || undefined,
       portfolioXIRR: portfolioXIRRRef.current,
@@ -1788,6 +1800,7 @@ export default function CapitalMandatePage() {
   useEffect(() => {
     if (retirementBreakdown) {
       breakdownShortfallRef.current = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
+      baseAdjustedCorpusRef.current = retirementBreakdown.baseAdjustedCorpus
     }
   }, [retirementBreakdown, projectedAtRetirement])
 
@@ -1808,6 +1821,7 @@ export default function CapitalMandatePage() {
     if (retirementBreakdown && projectedAtRetirement) {
       const _gap = Math.max(0, retirementBreakdown.baseAdjustedCorpus - projectedAtRetirement.atActual)
       breakdownShortfallRef.current = _gap
+      baseAdjustedCorpusRef.current = retirementBreakdown.baseAdjustedCorpus
       shortfallSolutionRef.current = solveFor(_gap)
     } else {
       // retirementBreakdown couldn't be computed (no desired income, no
@@ -1816,7 +1830,10 @@ export default function CapitalMandatePage() {
       // stay null while retirementShortfall (which already falls back to
       // corpusShortfall in saveData) reports a real gap. Without this,
       // the report's Required Amount could read $0 even with a real
-      // shortfall on file.
+      // shortfall on file. baseAdjustedCorpusRef falls back the same way —
+      // to the gross, unnetted legacy-adjusted corpus — rather than being
+      // left stale from a previous render.
+      baseAdjustedCorpusRef.current = requiredCorpusAtRet
       shortfallSolutionRef.current = solveFor(Math.max(0, corpusShortfall))
     }
   }
