@@ -3225,7 +3225,14 @@ export default function RecommendationsPage() {
       const retCorpus = ret?.corpusNeeded || 0
       const retAge    = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
       if (retCorpus > 0) builtGoals.push({ id: 'retirement', label: 'Retirement', icon: '🌅', targetCorpus: retCorpus, targetAge: retAge })
+      const seenEduChildIds = new Set<string>()
       ;(edu?.edu?.children || []).forEach((c: any) => {
+        // Guard against duplicate/stale child records in the saved data
+        // (e.g. leftover entries from a prior family-member edit) producing
+        // two goals for what should be the same child.
+        const eduKey = c.childId || c.name
+        if (!eduKey || seenEduChildIds.has(eduKey)) return
+        seenEduChildIds.add(eduKey)
         // c.corpus was never actually a persisted field on saved education
         // data (EducationSection.tsx's EducationChild has no `corpus`
         // property) — this always evaluated to 0, so Education goals never
