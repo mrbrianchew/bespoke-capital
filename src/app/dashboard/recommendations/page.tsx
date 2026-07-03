@@ -1440,7 +1440,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
         {/* Benefits / Limitations */}
         <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
-            <label style={S.lbl}>Benefits</label>
+            <label style={S.lbl}>Features/Benefits</label>
             <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }}
               value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
           </div>
@@ -1692,7 +1692,7 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
           {/* Row 4: Benefits + Limitations side by side */}
           <div style={{ gridColumn: '1/4', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <label style={S.lbl}>Benefits</label>
+              <label style={S.lbl}>Features/Benefits</label>
               <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
             </div>
             <div>
@@ -1904,7 +1904,7 @@ function GeneralCard({ rec, onChange, onDelete, onChoose, generalCompanies, mont
 
           {/* Benefits / Limitations */}
           <div style={{ gridColumn: '1/3' }}>
-            <label style={S.lbl}>Benefits</label>
+            <label style={S.lbl}>Features/Benefits</label>
             <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
           </div>
           <div>
@@ -2160,7 +2160,7 @@ function ExpenseCard({ rec, onChange, onDelete, onChoose,
           {/* ── Benefits / Limitations ── */}
           {ct && (<>
             <div style={{ gridColumn: isUL ? '1/3' : '1/3' }}>
-              <label style={S.lbl}>Benefits</label>
+              <label style={S.lbl}>Features/Benefits</label>
               <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
             </div>
             {!isDTerm && (
@@ -2318,7 +2318,7 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
             </div>
           </div>
           <div style={{ gridColumn: '1/3' }}>
-            <label style={S.lbl}>Benefits</label>
+            <label style={S.lbl}>Features/Benefits</label>
             <textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" />
           </div>
           <div>
@@ -2618,7 +2618,7 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
 
         {/* Benefits / Limitations */}
         <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div><label style={S.lbl}>Benefits</label><textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" /></div>
+          <div><label style={S.lbl}>Features/Benefits</label><textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.benefits} onChange={e => upd('benefits', e.target.value)} placeholder="Key benefits…" /></div>
           <div><label style={S.lbl}>Limitations</label><textarea style={{ ...S.inp, resize: 'vertical', minHeight: 68, fontFamily: 'Inter', lineHeight: 1.5 }} value={rec.limitations} onChange={e => upd('limitations', e.target.value)} placeholder="Limitations or trade-offs…" /></div>
         </div>
 
