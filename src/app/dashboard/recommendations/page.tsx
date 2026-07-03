@@ -3226,7 +3226,22 @@ export default function RecommendationsPage() {
       const retAge    = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
       if (retCorpus > 0) builtGoals.push({ id: 'retirement', label: 'Retirement', icon: '🌅', targetCorpus: retCorpus, targetAge: retAge })
       ;(edu?.edu?.children || []).forEach((c: any) => {
-        if ((c.corpus || 0) > 0) builtGoals.push({ id: `edu_${c.childId || c.name}`, label: `${c.name}'s Education`, icon: '🎓', targetCorpus: c.corpus, targetAge: clientAge + (c.yearsAway || 18) })
+        // c.corpus was never actually a persisted field on saved education
+        // data (EducationSection.tsx's EducationChild has no `corpus`
+        // property) — this always evaluated to 0, so Education goals never
+        // appeared here. Computing it the same way investments/page.tsx does
+        // for its own goal list, rather than reading a number that was never
+        // saved.
+        if ((c.annualTuition || 0) + (c.annualLiving || 0) === 0) return
+        const eduTuitionInf = (edu?.edu?.tuitionInflation ?? 5) / 100
+        const eduLivingInf = (edu?.edu?.livingInflation ?? 3) / 100
+        const eduReturnRate = edu?.edu?.returnRate ?? cm?.settings?.expectedReturn ?? 6
+        const yearsUntilUni = Math.max(1, (c.uniEntryAge || 18) - (c.age || 0))
+        const duration = c.courseDuration || 4
+        const fvTuition = (c.annualTuition || 0) * Math.pow(1 + eduTuitionInf, yearsUntilUni) * duration
+        const fvLiving = (c.annualLiving || 0) * Math.pow(1 + eduLivingInf, yearsUntilUni) * duration
+        const corpus = Math.max(0, fvTuition + fvLiving - ((c.existingSavings || 0) * Math.pow(1 + eduReturnRate / 100, yearsUntilUni)))
+        if (corpus > 0) builtGoals.push({ id: `edu_${c.childId || c.name}`, label: `${c.name}'s Education`, icon: '🎓', targetCorpus: corpus, targetAge: clientAge + yearsUntilUni })
       })
       ;(cm?.customGoals || []).forEach((g: any) => {
         if ((g.targetCorpus || 0) > 0) builtGoals.push({ id: g.id || `g_${g.label}`, label: g.label, icon: g.icon || '✦', targetCorpus: g.targetCorpus, targetAge: g.targetAge || 0 })
