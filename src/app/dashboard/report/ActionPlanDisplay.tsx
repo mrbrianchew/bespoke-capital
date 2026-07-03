@@ -277,6 +277,40 @@ function MeasuringTape({ label, tape }: { label: string; tape: ProtectionTape })
   )
 }
 
+// Compact per-product companion to MeasuringTape, shown on an individual
+// Protection Actions card. Same needs/asset/existing/remaining segments as
+// the household tape, but the "recommended" segment is split into this
+// item's own slice (solid emerald, via item.dtpdContribution/ciContribution
+// — see allocateTapeContributions in actionPlanSnapshot.ts) versus whatever
+// the rest of the household's Core products contribute (muted emerald), so
+// the card reads as "here's what THIS product does" rather than repeating
+// the household total.
+function ItemContributionBar({ label, tape, contribution }: { label: string; tape: ProtectionTape; contribution: number }) {
+  const otherRecommended = Math.max(0, tape.recommended - contribution)
+  const assetPct = (tape.assetMitigation / tape.needs) * 100
+  const existingPct = (tape.existing / tape.needs) * 100
+  const otherPct = (otherRecommended / tape.needs) * 100
+  const thisPct = (contribution / tape.needs) * 100
+  const remainingPct = (tape.remaining / tape.needs) * 100
+  const pctOfNeed = tape.needs > 0 ? Math.round((contribution / tape.needs) * 100) : 0
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink3)', marginBottom: 5 }}>
+        <span>{label}</span>
+        <span>covers {pctOfNeed}% of the need</span>
+      </div>
+      <div style={{ display: 'flex', height: 6, borderRadius: 3, overflow: 'hidden' }}>
+        {assetPct > 0 && <div style={{ width: `${assetPct}%`, background: 'var(--gold)' }} />}
+        {existingPct > 0 && <div style={{ width: `${existingPct}%`, background: 'var(--ink3)' }} />}
+        {otherPct > 0 && <div style={{ width: `${otherPct}%`, background: 'var(--emerald-l,#8FB5A8)' }} />}
+        {thisPct > 0 && <div style={{ width: `${thisPct}%`, background: 'var(--emerald)' }} />}
+        {remainingPct > 0 && <div style={{ width: `${remainingPct}%`, background: 'var(--rouge)' }} />}
+      </div>
+    </div>
+  )
+}
+
 // Wealth Accumulation's tape — needs split into achieved (grey, projected
 // from what's already in motion) / recommended (further split into
 // client / spouse / joint segments, coloured by whose product it is) /
@@ -381,27 +415,42 @@ function OverviewPage({ person, clientName, spouseName }: { person: PersonAction
   )
 }
 
-function ProtectionItemCard({ item }: { item: ProtectionActionItem }) {
+function ProtectionItemCard({ item, dtpdTape, ciTape }: { item: ProtectionActionItem; dtpdTape?: ProtectionTape | null; ciTape?: ProtectionTape | null }) {
   const stats = statsFor(item)
   const hasMidSection = stats.length > 0
   const hasLowerSection = !!item.rationale || !!item.benefits || !!item.limitations
   const hasReplacement = item.mode === 'replacement' && item.replacedPolicies.length > 0
+  const showDtpdBar = item.category === 'core' && !!dtpdTape && item.dtpdContribution > 0
+  const showCiBar = item.category === 'core' && !!ciTape && item.ciContribution > 0
+  const hasGapSection = showDtpdBar || showCiBar
+  const monthlyDelta = item.cashImpactDelta / 12
+
+  const termParts: string[] = []
+  if (item.premiumTerm) termParts.push(`Premium term ${item.premiumTerm}`)
+  if (item.policyTerm) termParts.push(`Coverage term ${item.policyTerm}`)
+  const subtitle = [
+    item.mode === 'replacement' ? `Replacing ${item.replacedPolicies.length} existing polic${item.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New coverage',
+    ...termParts,
+  ].join(' · ')
 
   return (
     <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: (hasMidSection || hasLowerSection || hasReplacement) ? 14 : 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: (hasMidSection || hasGapSection || hasLowerSection || hasReplacement) ? 14 : 0 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', marginBottom: 2 }}>
             {item.productName}{item.insurer ? ` — ${item.insurer}` : ''}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--ink3)' }}>
-            {item.mode === 'replacement' ? `Replacing ${item.replacedPolicies.length} existing polic${item.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New coverage'}
-          </div>
+          <div style={{ fontSize: 11, color: 'var(--ink3)' }}>{subtitle}</div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'var(--ink)' }}>{fmt(item.annualPremiumTotal)}/yr</div>
           {item.annualPremiumMedisave > 0 && (
             <div style={{ fontSize: 10, color: 'var(--ink3)' }}>incl. {fmt(item.annualPremiumMedisave)} via Medisave</div>
+          )}
+          {monthlyDelta !== 0 && (
+            <div style={{ fontSize: 10, color: monthlyDelta > 0 ? 'var(--rouge)' : 'var(--emerald)', marginTop: 2 }}>
+              {fmtSigned(monthlyDelta)}/mo cashflow
+            </div>
           )}
         </div>
       </div>
@@ -410,8 +459,8 @@ function ProtectionItemCard({ item }: { item: ProtectionActionItem }) {
         <div style={{
           display: 'grid', gridTemplateColumns: `repeat(${Math.min(stats.length, 4)}, minmax(0,1fr))`, gap: 12,
           padding: '12px 0', borderTop: '1px solid var(--cream3)',
-          borderBottom: (hasLowerSection || hasReplacement) ? '1px solid var(--cream3)' : 'none',
-          marginBottom: (hasLowerSection || hasReplacement) ? 14 : 0,
+          borderBottom: (hasGapSection || hasLowerSection || hasReplacement) ? '1px solid var(--cream3)' : 'none',
+          marginBottom: (hasGapSection || hasLowerSection || hasReplacement) ? 14 : 0,
         }}>
           {stats.map(s => (
             <div key={s.label}>
@@ -419,6 +468,16 @@ function ProtectionItemCard({ item }: { item: ProtectionActionItem }) {
               <div style={{ fontSize: 13, color: 'var(--ink)', fontFamily: 'DM Mono, monospace' }}>{s.value}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {hasGapSection && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 10,
+          marginBottom: (hasLowerSection || hasReplacement) ? 14 : 0,
+        }}>
+          {showDtpdBar && <ItemContributionBar label="Death and TPD" tape={dtpdTape as ProtectionTape} contribution={item.dtpdContribution} />}
+          {showCiBar && <ItemContributionBar label="Critical illness" tape={ciTape as ProtectionTape} contribution={item.ciContribution} />}
         </div>
       )}
 
@@ -430,7 +489,7 @@ function ProtectionItemCard({ item }: { item: ProtectionActionItem }) {
       )}
       {item.benefits && (
         <div style={{ marginBottom: item.limitations ? 8 : (hasReplacement ? 14 : 0) }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Benefits</div>
+          <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Features / Benefits</div>
           <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5 }}>{item.benefits}</div>
         </div>
       )}
@@ -473,8 +532,17 @@ function ProtectionPage({ person }: { person: PersonActionPlan }) {
               <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)' }}>{items[0].categoryLabel}</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {items.map(item => <ProtectionItemCard key={item.id} item={item} />)}
+              {items.map(item => (
+                <ProtectionItemCard
+                  key={item.id}
+                  item={item}
+                  dtpdTape={cat === 'core' ? person.dtpdTape : null}
+                  ciTape={cat === 'core' ? person.ciTape : null}
+                />
+              ))}
             </div>
+            {cat === 'core' && person.dtpdTape && <MeasuringTape label="Capital protection — Death & TPD" tape={person.dtpdTape} />}
+            {cat === 'core' && person.ciTape && <MeasuringTape label="Income protection — Critical Illness" tape={person.ciTape} />}
           </div>
         )
       })}
@@ -531,7 +599,7 @@ function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
       )}
       {item.benefits && (
         <div style={{ marginBottom: item.limitations ? 8 : 0 }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Benefits</div>
+          <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 4 }}>Features / Benefits</div>
           <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5 }}>{item.benefits}</div>
         </div>
       )}
