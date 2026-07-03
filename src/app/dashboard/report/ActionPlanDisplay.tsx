@@ -243,12 +243,14 @@ function MeasuringTape({ label, tape }: { label: string; tape: ProtectionTape })
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 10.5, flexWrap: 'wrap', rowGap: 10 }}>
-        <div>
-          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--gold)', display: 'inline-block' }} />Asset mitigation
+        {tape.assetMitigation > 0 && (
+          <div>
+            <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--gold)', display: 'inline-block' }} />Asset mitigation
+            </div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>{fmt(tape.assetMitigation)}</div>
           </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>{fmt(tape.assetMitigation)}</div>
-        </div>
+        )}
         <div>
           <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--ink3)', display: 'inline-block' }} />Existing
