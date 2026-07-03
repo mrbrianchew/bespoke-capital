@@ -10,6 +10,7 @@ import {
   ActionPlanGoalFunding,
   ActionPlanCashflowImpact,
   ActionPlanAffordability,
+  ActionPlanCostOfWaitingBreakdown,
   ProtectionTape,
   AccumulationTape,
 } from '@/lib/actionPlanSnapshot'
@@ -692,7 +693,8 @@ function GoalFundingCard({ gf }: { gf: ActionPlanGoalFunding }) {
 // used for corpus needs elsewhere. Hidden entirely when there's no open gap
 // to speak of, or when an old saved snapshot predates this field.
 function CostOfWaitingPanel({ affordability }: { affordability: ActionPlanAffordability }) {
-  const { requiredMonthlyNow, costOfWaitingMonthly, goalsWithGap } = affordability
+  const [showMath, setShowMath] = useState(false)
+  const { requiredMonthlyNow, costOfWaitingMonthly, goalsWithGap, breakdown } = affordability
   if (goalsWithGap === 0 || costOfWaitingMonthly <= 0) return null
 
   return (
@@ -706,7 +708,7 @@ function CostOfWaitingPanel({ affordability }: { affordability: ActionPlanAfford
         <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(requiredMonthlyNow + costOfWaitingMonthly)}/mo</b> instead
         — <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(costOfWaitingMonthly)} more, every month</b>, just to land in the same place.
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', height: 40, gap: 3 }}>
+      <div style={{ display: 'flex', alignItems: 'center', height: 40, gap: 3, marginBottom: 14 }}>
         <div style={{ width: `${Math.min(100, (requiredMonthlyNow / (requiredMonthlyNow + costOfWaitingMonthly)) * 100)}%`, height: '100%', background: 'var(--emerald)', borderRadius: '4px 0 0 4px', minWidth: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>Now</span>
         </div>
@@ -714,6 +716,33 @@ function CostOfWaitingPanel({ affordability }: { affordability: ActionPlanAfford
           <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>+1 year</span>
         </div>
       </div>
+
+      <button
+        onClick={() => setShowMath(s => !s)}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: 11.5, color: 'var(--ink3)', textDecoration: 'underline', textUnderlineOffset: 2 }}
+      >
+        {showMath ? 'Hide the math' : 'See the math'}
+      </button>
+
+      {showMath && (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--cream3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {breakdown.map((b, i) => <CostOfWaitingBreakdownRow key={i} b={b} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CostOfWaitingBreakdownRow({ b }: { b: ActionPlanCostOfWaitingBreakdown }) {
+  return (
+    <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.7 }}>
+      <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{b.goalLabel}</span>
+      {' — '}
+      gap of <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.gap)}</span>
+      {' '}(needs minus what's already achieved), <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.yearsToTarget}</span> years to target,
+      {' '}at <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.ratePercent}%</span> expected return
+      {' → '}<span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyNow)}/mo</span> now vs.{' '}
+      <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyIfDelayed)}/mo</span> if delayed a year.
     </div>
   )
 }
@@ -811,7 +840,7 @@ export default function ActionPlanDisplay({ snapshot, clientName, spouseName }: 
           // existed — CostOfWaitingPanel hides itself when goalsWithGap is 0,
           // so an old share link just shows nothing rather than crashing.
           affordability={snapshot.affordability || {
-            requiredMonthlyNow: 0, requiredMonthlyIfDelayed: 0, costOfWaitingMonthly: 0, goalsWithGap: 0,
+            requiredMonthlyNow: 0, requiredMonthlyIfDelayed: 0, costOfWaitingMonthly: 0, goalsWithGap: 0, breakdown: [],
           }}
         />
       )}
