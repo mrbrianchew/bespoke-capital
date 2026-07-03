@@ -131,13 +131,18 @@ export interface ActionPlanGoal {
 
 // The Wealth Accumulation equivalent of ProtectionTape — needs split into
 // achieved (grey, projected from what's already in motion) / recommended
-// (green, future-valued contribution from chosen accumulation products) /
-// remaining shortfall (red). No asset-mitigation-style gold segment here;
-// that concept doesn't apply to accumulation goals.
+// (future-valued contribution from chosen accumulation products, itself
+// broken down by whose product it is — client / spouse / joint each get
+// their own colour) / remaining shortfall (red). No asset-mitigation-style
+// gold segment here; that concept doesn't apply to accumulation goals.
 export interface AccumulationTape {
   needs: number
   achieved: number
+  // Sum of the three buckets below — kept for convenience/back-compat.
   recommended: number
+  recommendedClient: number
+  recommendedSpouse: number
+  recommendedJoint: number
   remaining: number
   viaProducts: string[]
 }
@@ -315,8 +320,16 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
 // allocatedGoalIds names this specific goal (the same tagging goalFunding's
 // fundedBy already relies on) — this is a projection, not a persisted
 // figure, so it's intentionally not frozen anywhere else in the snapshot.
+//
+// Takes three separate item pools (client's own, spouse's own, joint) rather
+// than one flat list so the "recommended" segment can be coloured by whose
+// product it is — retirement (and any shared Wealth goal) is a household
+// target, so a product either partner holds should count toward closing it,
+// not just whichever person's report tab happens to be open.
 function buildAccumulationTape(
-  items: AccumulationActionItem[],
+  clientItems: AccumulationActionItem[],
+  spouseItems: AccumulationActionItem[],
+  jointItems: AccumulationActionItem[],
   goal: ActionPlanGoal,
   expectedReturnPct: number,
   clientAge: number,
@@ -325,22 +338,30 @@ function buildAccumulationTape(
   const yearsToTarget = Math.max(1, goal.targetAge - clientAge)
   const r = expectedReturnPct / 100
 
-  let recommended = 0
-  const viaProducts: string[] = []
-  items.forEach(item => {
-    if (!item.allocatedGoalIds.includes(goal.id)) return
-    let itemFv = 0
-    if (item.hasLumpSum && item.lumpSumAmount > 0) {
-      itemFv += item.lumpSumAmount * Math.pow(1 + r, yearsToTarget)
-    }
-    if (item.hasRegular && item.annualContribution > 0) {
-      itemFv += fv(r / 12, yearsToTarget * 12, item.annualContribution / 12)
-    }
-    if (itemFv > 0) {
-      recommended += itemFv
-      viaProducts.push(item.company || item.planType || 'Accumulation plan')
-    }
-  })
+  function bucketFv(items: AccumulationActionItem[]): { fv: number; via: string[] } {
+    let total = 0
+    const via: string[] = []
+    items.forEach(item => {
+      if (!item.allocatedGoalIds.includes(goal.id)) return
+      let itemFv = 0
+      if (item.hasLumpSum && item.lumpSumAmount > 0) {
+        itemFv += item.lumpSumAmount * Math.pow(1 + r, yearsToTarget)
+      }
+      if (item.hasRegular && item.annualContribution > 0) {
+        itemFv += fv(r / 12, yearsToTarget * 12, item.annualContribution / 12)
+      }
+      if (itemFv > 0) {
+        total += itemFv
+        via.push(item.company || item.planType || 'Accumulation plan')
+      }
+    })
+    return { fv: total, via }
+  }
+
+  const clientBucket = bucketFv(clientItems)
+  const spouseBucket = bucketFv(spouseItems)
+  const jointBucket = bucketFv(jointItems)
+  const recommended = clientBucket.fv + spouseBucket.fv + jointBucket.fv
 
   if (recommended <= 0) return null // nothing recommended actually funds this goal
 
@@ -350,12 +371,26 @@ function buildAccumulationTape(
   const displayRecommended = Math.min(recommended, remAfterAchieved)
   const displayRemaining = Math.max(0, remAfterAchieved - displayRecommended)
 
+  // If the combined recommended amount gets capped against remaining need,
+  // shrink each owner's bucket by the same ratio so the three segments still
+  // sum exactly to displayRecommended — client/spouse/joint each keep their
+  // proportional share of the trim rather than one bucket absorbing all of it.
+  const capRatio = recommended > 0 ? displayRecommended / recommended : 0
+  const roundedClient = Math.round(clientBucket.fv * capRatio)
+  const roundedSpouse = Math.round(spouseBucket.fv * capRatio)
+  // Joint takes the rounding remainder so the three always sum exactly to
+  // the rounded displayRecommended total.
+  const roundedJoint = Math.round(displayRecommended) - roundedClient - roundedSpouse
+
   return {
     needs: Math.round(needs),
     achieved: Math.round(displayAchieved),
     recommended: Math.round(displayRecommended),
+    recommendedClient: roundedClient,
+    recommendedSpouse: roundedSpouse,
+    recommendedJoint: roundedJoint,
     remaining: Math.round(displayRemaining),
-    viaProducts,
+    viaProducts: [...clientBucket.via, ...spouseBucket.via, ...jointBucket.via],
   }
 }
 
@@ -579,6 +614,37 @@ export function buildActionPlanSnapshot(input: {
   // these two always sum back to annualContribution, so allocating each
   // person their share below can never double-count the household total.
   const jointAccumulationItems = mapAccumulation(accumulationByPerson['joint'] || [])
+  const clientOwnAccumulationItems = mapAccumulation(accumulationByPerson['client'] || [])
+  const spouseOwnAccumulationItems = mapAccumulation(accumulationByPerson['spouse'] || [])
+
+  // Retirement (and any custom Wealth goal) is a household target shared by
+  // both partners, so "who's funding it" and the tape's "recommended" figure
+  // can't be built from just one person's own+joint items — that silently
+  // dropped whichever partner's tab wasn't open. Built once here from the
+  // full household pool (client's own + spouse's own + joint) and reused
+  // identically for both adults' Overview pages, with the tape split into
+  // per-owner segments so the bar can colour each partner's contribution
+  // separately. Goal ids are unique per goal (retirement, edu_<childId>,
+  // custom ids), so folding every adult's items into one pool here is safe —
+  // filtering by allocatedGoalIds.includes(goal.id) already scopes each
+  // goal to only the items actually allocated to it.
+  const householdGoalFunding: ActionPlanGoalFunding[] = goals
+    .map(goal => {
+      const allItems = [...clientOwnAccumulationItems, ...spouseOwnAccumulationItems, ...jointAccumulationItems]
+      const fundedBy = allItems
+        .filter(item => item.allocatedGoalIds.includes(goal.id))
+        .map(item => ({
+          productLabel: item.company || item.planType || 'Accumulation plan',
+          annualContribution: item.annualContribution,
+        }))
+      return {
+        goal,
+        fundedBy,
+        totalAnnualContribution: fundedBy.reduce((s, f) => s + f.annualContribution, 0),
+        tape: buildAccumulationTape(clientOwnAccumulationItems, spouseOwnAccumulationItems, jointAccumulationItems, goal, expectedReturn, clientAge),
+      }
+    })
+    .filter(gf => gf.fundedBy.length > 0)
 
   function buildPerson(personKey: string, name: string, includeJoint: boolean): PersonActionPlan {
     const protectionItems: ProtectionActionItem[] = [
@@ -593,21 +659,28 @@ export function buildActionPlanSnapshot(input: {
     // two. Only the cash-impact totals below split by each person's share.
     const accumulationItems = includeJoint ? [...ownAccumulationItems, ...jointAccumulationItems] : ownAccumulationItems
 
-    const goalFunding: ActionPlanGoalFunding[] = goals
-      .map(goal => {
-        const fundedBy = accumulationItems
-          .filter(item => item.allocatedGoalIds.includes(goal.id))
-          .map(item => ({
-            productLabel: item.company || item.planType || 'Accumulation plan',
-            annualContribution: item.annualContribution,
-          }))
-        return {
-          goal,
-          fundedBy,
-          totalAnnualContribution: fundedBy.reduce((s, f) => s + f.annualContribution, 0),
-          tape: buildAccumulationTape(accumulationItems, goal, expectedReturn, clientAge),
-        }
-      })
+    // Client and spouse share the household goal-funding view built above.
+    // Children (includeJoint === false, and have no "spouse" bucket of their
+    // own) keep the narrower per-person calc, scoped to just their own items
+    // — e.g. a child's own education goal, not funded from a spouse bucket
+    // that doesn't apply to them.
+    const goalFunding: ActionPlanGoalFunding[] = (personKey === 'client' || personKey === 'spouse')
+      ? householdGoalFunding
+      : goals
+          .map(goal => {
+            const fundedBy = accumulationItems
+              .filter(item => item.allocatedGoalIds.includes(goal.id))
+              .map(item => ({
+                productLabel: item.company || item.planType || 'Accumulation plan',
+                annualContribution: item.annualContribution,
+              }))
+            return {
+              goal,
+              fundedBy,
+              totalAnnualContribution: fundedBy.reduce((s, f) => s + f.annualContribution, 0),
+              tape: buildAccumulationTape(accumulationItems, [], [], goal, expectedReturn, clientAge),
+            }
+          })
       .filter(gf => gf.fundedBy.length > 0)
 
     // Each person's share of a joint item's contribution — 'client' gets
