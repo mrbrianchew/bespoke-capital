@@ -209,7 +209,7 @@ function mapReplacedPolicies(list: any[]): ActionPlanReplacedPolicy[] {
 // against when the advisor allocated a product to a goal, so this can't be
 // rebuilt from a different (even if more "correct") derivation without
 // breaking the funding tie-in.
-function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, cmData: Record<string, any>, clientAge: number): ActionPlanGoal[] {
+function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, cmData: Record<string, any>, clientAge: number, liveChildIds: Set<string>): ActionPlanGoal[] {
   const ret = retData || {}
   const edu = eduData?.edu || eduData || {}
   const cm = cmData || {}
@@ -242,9 +242,15 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
   const eduReturnRate = edu?.returnRate ?? expectedReturn
   const seenEduChildIds = new Set<string>()
   ;(edu?.children || []).forEach((c: any) => {
-    // Guard against duplicate/stale child records in the saved data producing
-    // two goals for what should be the same child — kept identical to the
-    // same guard in recommendations/page.tsx's loadAll().
+    // The education section's saved `children` array isn't cleaned up when a
+    // child is deleted from Family Members — deleting there removes the
+    // family_members row but leaves the orphaned entry sitting in this
+    // array. Skip anything that no longer matches a live family member,
+    // same guard investments/page.tsx already uses for its own goal list.
+    const childId = c.childId || c.id
+    if (childId && !liveChildIds.has(childId)) return
+    // Belt-and-braces: also guard against duplicate entries for the same
+    // child within the (post-filter) array itself.
     const eduKey = c.childId || c.name
     if (!eduKey || seenEduChildIds.has(eduKey)) return
     seenEduChildIds.add(eduKey)
@@ -532,7 +538,7 @@ export function buildActionPlanSnapshot(input: {
   const spouseMember = familyMembers.find(f => f.relationship === 'Spouse') || null
   const children = familyMembers.filter(f => ['Son', 'Daughter', 'Child'].includes(f.relationship))
 
-  const goals = buildGoals(retData, eduData, cmData, clientAge)
+  const goals = buildGoals(retData, eduData, cmData, clientAge, new Set(children.map(c => c.id)))
   // Same default/fallback as capitalFundSnapshot.ts and investments/page.tsx —
   // kept identical so the projection here can't drift from what those tools
   // already assume.
