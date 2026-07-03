@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
+import { fv } from '@/lib/calc'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -235,10 +236,35 @@ function calcProjectedValue(rec: AccRec): number {
   if (rec.projMethod === 'illustration') {
     return rec.illusNonGuaranteed > 0 ? rec.illusNonGuaranteed : rec.illusGuaranteed
   }
-  const total = calcTotalInvested(rec)
   const r = (rec.rateReturn || 0) / 100
-  const y = rec.rateYears || 1
-  return total * Math.pow(1 + r, y)
+  const horizonYears = rec.rateYears || 1
+
+  // Lump sum: invested today, compounds for the full horizon.
+  const lumpFv = rec.hasLumpSum ? (rec.lumpSumAmount || 0) * Math.pow(1 + r, horizonYears) : 0
+
+  // Regular contributions: previously this compounded calcTotalInvested's
+  // flat sum (regularAmount × years) for the full horizon at rateReturn —
+  // i.e. treated every dollar as if it had been invested from day one. That
+  // overstates the true value: a contribution made in year 18 has had almost
+  // no time to grow, but the old formula credited it with the full horizon's
+  // compounding. Uses the same monthly annuity-due fv() Capital Mandate and
+  // the Action Plan tape already use, so a product's "projected value" here
+  // can't disagree with how the rest of the app projects the same money.
+  // Contribution period is capped at the horizon (contributing beyond the
+  // projection horizon doesn't count); if the horizon runs longer than the
+  // contribution period, the resulting balance just keeps compounding
+  // untouched for the remaining years.
+  let regFv = 0
+  if (rec.hasRegular && (rec.regularAmount || 0) > 0) {
+    const perYear = rec.regularFreq === 'Monthly' ? 12 : rec.regularFreq === 'Quarterly' ? 4 : 1
+    const annualContrib = (rec.regularAmount || 0) * perYear
+    const contribYears = Math.min(rec.regularYears || 0, horizonYears)
+    const balanceAtContribEnd = fv(r / 12, contribYears * 12, annualContrib / 12)
+    const idleYears = Math.max(0, horizonYears - contribYears)
+    regFv = balanceAtContribEnd * Math.pow(1 + r, idleYears)
+  }
+
+  return lumpFv + regFv
 }
 
 function calcAnnualContrib(rec: AccRec): number {
