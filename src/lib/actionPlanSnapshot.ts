@@ -1,4 +1,4 @@
-import { ageYearOnly, fv } from './calc'
+import { ageYearOnly, fv, neededMonthly } from './calc'
 import { PersonProtectionProfile } from './protectionSnapshot'
 import { CapitalFundFullSeries } from './capitalFundSnapshot'
 
@@ -203,24 +203,21 @@ export interface ActionPlanCashflowImpact {
   surplusAfter: number
 }
 
-// Household-level "can they afford this" reassurance figures for the
-// Accumulation & Goals page footer. Deliberately separate from
-// ActionPlanCashflowImpact (which drives the Overview banner) — this block
-// adds the emergency-cash-runway angle, which the Overview banner doesn't
-// need. Two conservative assumptions, called out here since they're new:
-// (1) every recommended lump sum is assumed funded from liquid cash (no
-// per-item funding-source field exists yet to say otherwise — same
-// conservative-by-default spirit as protectionSnapshot's shortfall calc);
-// (2) new recurring premiums/contributions are added to essential burn,
-// consistent with Savings & Investments and Insurance already counting as
-// essential burn in the Wealth Summary's runway definition.
+// Household-level "why act now" figure for the Accumulation & Goals page
+// footer. Replaced the earlier cost/safety-net footer (July 2026) — that
+// duplicated the CashflowImpactBanner already shown at the top of the whole
+// Action Plan, and the safety-net figure wasn't adding anything a client
+// would feel. This instead answers "what does delay actually cost me,
+// today", using the same neededMonthly() annuity-due solver already used
+// elsewhere — honest math, not a scare number: for each goal with an open
+// gap (tape.needs - tape.achieved), compares the monthly contribution
+// required to close that gap starting now vs. starting one year later with
+// one fewer year to compound.
 export interface ActionPlanAffordability {
-  monthlyCost: number
-  pctOfTakeHome: number
-  totalLumpSum: number
-  liquidCashAfter: number
-  runwayMonthsBefore: number
-  runwayMonthsAfter: number
+  requiredMonthlyNow: number
+  requiredMonthlyIfDelayed: number
+  costOfWaitingMonthly: number
+  goalsWithGap: number
 }
 
 export interface ActionPlanSnapshot {
@@ -681,20 +678,13 @@ export function buildActionPlanSnapshot(input: {
   // Read directly from the already-built Wealth Summary snapshot
   // (annualSurplus) rather than re-derived from raw financials here.
   annualSurplus: number
-  // Also read from the already-built Wealth Summary snapshot — same three
-  // figures behind its Key Financial Ratios / Emergency Cash Runway panel,
-  // reused here so the Accumulation & Goals affordability footer can never
-  // disagree with that panel's numbers.
-  totalInflow: number // annual household take-home income
-  liquidCash: number
-  monthlyEssentialBurn: number
   // DTPD/CI needs figures come from the already-built Protection snapshot —
   // frozen in here at save time like everything else, rather than
   // re-derived. null/undefined for a person with no protection profile
   // (e.g. no spouse on file) — that person's tapes will just be null.
   protectionProfiles?: { client: PersonProtectionProfile | null; spouse: PersonProtectionProfile | null }
 }): ActionPlanSnapshot {
-  const { client, familyMembers, recData, retData, eduData, cmData, annualSurplus, totalInflow, liquidCash, monthlyEssentialBurn, protectionProfiles } = input
+  const { client, familyMembers, recData, retData, eduData, cmData, annualSurplus, protectionProfiles } = input
   const clientAge = ageYearOnly(client.dob)
 
   const spouseMember = familyMembers.find(f => f.relationship === 'Spouse') || null
@@ -892,24 +882,23 @@ export function buildActionPlanSnapshot(input: {
   const totalTopupDelta = allPersons.reduce((s, p) => s + p.topupNetDelta, 0)
   const netAnnualCashImpact = totalAdditions + totalReplacementDelta + totalTopupDelta
 
-  // Household lump sum total — summed once from the three raw source arrays
-  // (client-own + spouse-own + joint), NOT from client/spousePlan.goalFunding,
-  // which share the same householdGoalFunding array and would double-count.
-  // Shown to the client for reference ("plus $X one-time") but deliberately
-  // NOT deducted from liquidCash below — there's no field anywhere in the
-  // data model that says whether a given lump sum is funded from cash, CPF
-  // OA, CPF SA, or SRS (e.g. "iFast Financial · CPF OA Investments" is
-  // explicitly CPF-funded, not cash). Treating every lump sum as a cash draw
-  // produced a wrong $0-runway result for a CPF-funded recommendation, so
-  // this was reverted (July 2026) until a real funding-source field exists
-  // on the accumulation product entry — flagged as a follow-up.
-  const totalLumpSum = [...clientOwnAccumulationItems, ...spouseOwnAccumulationItems, ...jointAccumulationItems]
-    .filter(i => i.hasLumpSum)
-    .reduce((s, i) => s + i.lumpSumAmount, 0)
-
-  const monthlyEssentialBurnAfter = monthlyEssentialBurn + (netAnnualCashImpact / 12)
-  const runwayMonthsBefore = monthlyEssentialBurn > 0 ? liquidCash / monthlyEssentialBurn : 0
-  const runwayMonthsAfter = monthlyEssentialBurnAfter > 0 ? liquidCash / monthlyEssentialBurnAfter : 0
+  // Cost of waiting — one year's delay on each goal's still-open gap
+  // (needs - achieved, before this recommendation's contribution), using
+  // the same annuity-due neededMonthly() solver used elsewhere. Only goals
+  // with a real gap and a valid target age count; a goal already fully
+  // funded by achieved alone contributes nothing (delay costs it nothing).
+  let requiredMonthlyNow = 0
+  let requiredMonthlyIfDelayed = 0
+  let goalsWithGap = 0
+  for (const gf of householdGoalFunding) {
+    if (!gf.tape) continue
+    const gap = Math.max(0, gf.tape.needs - gf.tape.achieved)
+    const yearsToTarget = gf.goal.targetAge - clientAge
+    if (gap <= 0 || yearsToTarget <= 1) continue
+    goalsWithGap += 1
+    requiredMonthlyNow += neededMonthly(gap, expectedReturn, yearsToTarget)
+    requiredMonthlyIfDelayed += neededMonthly(gap, expectedReturn, yearsToTarget - 1)
+  }
 
   return {
     client: clientPlan,
@@ -924,12 +913,10 @@ export function buildActionPlanSnapshot(input: {
       surplusAfter: Math.round(annualSurplus - netAnnualCashImpact),
     },
     affordability: {
-      monthlyCost: Math.round(netAnnualCashImpact / 12),
-      pctOfTakeHome: totalInflow > 0 ? Math.round((netAnnualCashImpact / totalInflow) * 1000) / 10 : 0,
-      totalLumpSum: Math.round(totalLumpSum),
-      liquidCashAfter: Math.round(liquidCash),
-      runwayMonthsBefore: Math.round(runwayMonthsBefore * 10) / 10,
-      runwayMonthsAfter: Math.round(runwayMonthsAfter * 10) / 10,
+      requiredMonthlyNow: Math.round(requiredMonthlyNow),
+      requiredMonthlyIfDelayed: Math.round(requiredMonthlyIfDelayed),
+      costOfWaitingMonthly: Math.round(requiredMonthlyIfDelayed - requiredMonthlyNow),
+      goalsWithGap,
     },
     hasAnyActions: allPersons.some(p => p.protectionItems.length > 0 || p.accumulationItems.length > 0),
   }
