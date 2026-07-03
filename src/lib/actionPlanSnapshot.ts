@@ -157,7 +157,14 @@ export interface AccumulationTape {
 
 export interface ActionPlanGoalFunding {
   goal: ActionPlanGoal
-  fundedBy: { productLabel: string; annualContribution: number }[]
+  // ownerLabel identifies whose account this is (client/spouse name, or
+  // 'Joint') — needed because the Retirement goal pools items from both
+  // partners onto one shared list (see householdGoalFunding below), so two
+  // same-company products from different people would otherwise render as
+  // indistinguishable duplicate lines. hasLumpSum/lumpSumAmount/hasRegular
+  // are carried through so the UI can show "$X lump sum" instead of a
+  // misleading "$0/yr" for lump-sum-only products.
+  fundedBy: { productLabel: string; ownerLabel: string; annualContribution: number; hasLumpSum: boolean; lumpSumAmount: number; hasRegular: boolean }[]
   totalAnnualContribution: number
   tape: AccumulationTape | null
 }
@@ -660,12 +667,24 @@ export function buildActionPlanSnapshot(input: {
   // goal to only the items actually allocated to it.
   const householdGoalFunding: ActionPlanGoalFunding[] = goals
     .map(goal => {
-      const allItems = [...clientOwnAccumulationItems, ...spouseOwnAccumulationItems, ...jointAccumulationItems]
+      // Tag each item with its owner BEFORE merging into one pool — this is
+      // the only place that knows which of the three source arrays an item
+      // came from, so the owner label has to be attached here, not derived
+      // later from the merged/filtered list.
+      const allItems = [
+        ...clientOwnAccumulationItems.map(item => ({ item, ownerLabel: client.name })),
+        ...spouseOwnAccumulationItems.map(item => ({ item, ownerLabel: spouseMember?.name || 'Spouse' })),
+        ...jointAccumulationItems.map(item => ({ item, ownerLabel: 'Joint' })),
+      ]
       const fundedBy = allItems
-        .filter(item => item.allocatedGoalIds.includes(goal.id))
-        .map(item => ({
+        .filter(({ item }) => item.allocatedGoalIds.includes(goal.id))
+        .map(({ item, ownerLabel }) => ({
           productLabel: item.company || item.planType || 'Accumulation plan',
+          ownerLabel,
           annualContribution: item.annualContribution,
+          hasLumpSum: item.hasLumpSum,
+          lumpSumAmount: item.lumpSumAmount,
+          hasRegular: item.hasRegular,
         }))
       return {
         goal,
@@ -702,7 +721,15 @@ export function buildActionPlanSnapshot(input: {
               .filter(item => item.allocatedGoalIds.includes(goal.id))
               .map(item => ({
                 productLabel: item.company || item.planType || 'Accumulation plan',
+                // No owner label here — unlike householdGoalFunding above,
+                // this list is already scoped to one child's own items, so
+                // there's no ownership ambiguity to disambiguate. UI hides
+                // the caption when this is blank.
+                ownerLabel: '',
                 annualContribution: item.annualContribution,
+                hasLumpSum: item.hasLumpSum,
+                lumpSumAmount: item.lumpSumAmount,
+                hasRegular: item.hasRegular,
               }))
             return {
               goal,
