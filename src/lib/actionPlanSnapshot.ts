@@ -213,11 +213,21 @@ export interface ActionPlanCashflowImpact {
 // gap (tape.needs - tape.achieved), compares the monthly contribution
 // required to close that gap starting now vs. starting one year later with
 // one fewer year to compound.
+export interface ActionPlanCostOfWaitingBreakdown {
+  goalLabel: string
+  gap: number
+  yearsToTarget: number
+  ratePercent: number
+  requiredMonthlyNow: number
+  requiredMonthlyIfDelayed: number
+}
+
 export interface ActionPlanAffordability {
   requiredMonthlyNow: number
   requiredMonthlyIfDelayed: number
   costOfWaitingMonthly: number
   goalsWithGap: number
+  breakdown: ActionPlanCostOfWaitingBreakdown[]
 }
 
 export interface ActionPlanSnapshot {
@@ -890,14 +900,25 @@ export function buildActionPlanSnapshot(input: {
   let requiredMonthlyNow = 0
   let requiredMonthlyIfDelayed = 0
   let goalsWithGap = 0
+  const breakdown: ActionPlanCostOfWaitingBreakdown[] = []
   for (const gf of householdGoalFunding) {
     if (!gf.tape) continue
     const gap = Math.max(0, gf.tape.needs - gf.tape.achieved)
     const yearsToTarget = gf.goal.targetAge - clientAge
     if (gap <= 0 || yearsToTarget <= 1) continue
     goalsWithGap += 1
-    requiredMonthlyNow += neededMonthly(gap, expectedReturn, yearsToTarget)
-    requiredMonthlyIfDelayed += neededMonthly(gap, expectedReturn, yearsToTarget - 1)
+    const mNow = neededMonthly(gap, expectedReturn, yearsToTarget)
+    const mDelayed = neededMonthly(gap, expectedReturn, yearsToTarget - 1)
+    requiredMonthlyNow += mNow
+    requiredMonthlyIfDelayed += mDelayed
+    breakdown.push({
+      goalLabel: gf.goal.label,
+      gap: Math.round(gap),
+      yearsToTarget,
+      ratePercent: expectedReturn,
+      requiredMonthlyNow: Math.round(mNow),
+      requiredMonthlyIfDelayed: Math.round(mDelayed),
+    })
   }
 
   return {
@@ -917,6 +938,7 @@ export function buildActionPlanSnapshot(input: {
       requiredMonthlyIfDelayed: Math.round(requiredMonthlyIfDelayed),
       costOfWaitingMonthly: Math.round(requiredMonthlyIfDelayed - requiredMonthlyNow),
       goalsWithGap,
+      breakdown,
     },
     hasAnyActions: allPersons.some(p => p.protectionItems.length > 0 || p.accumulationItems.length > 0),
   }
