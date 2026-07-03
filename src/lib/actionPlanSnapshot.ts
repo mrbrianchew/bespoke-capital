@@ -58,11 +58,20 @@ export interface ProtectionActionItem {
   earlyCiBenefit: number
   monthlyBenefit: number
   sumAssured: number
+  premiumTerm: string
+  policyTerm: string
   benefits: string
   limitations: string
   rationale: string
   replacedPolicies: ActionPlanReplacedPolicy[]
   replacedAnnualPremiumTotal: number
+  // This item's own slice of the household's dtpdTape/ciTape "recommended"
+  // segment (see allocateTapeContributions below) — always 0 for
+  // Medical/LTC/General, since only Core Protection draws from a tape.
+  // Lets the report show "this product closes X% of the shortfall" per
+  // card without re-deriving the split from the raw benefit figures.
+  dtpdContribution: number
+  ciContribution: number
 }
 
 export interface AccumulationActionItem {
@@ -455,11 +464,15 @@ function mapMedical(list: any[]): ProtectionActionItem[] {
       earlyCiBenefit: 0,
       monthlyBenefit: 0,
       sumAssured: 0,
+      premiumTerm: r.premiumTerm || '',
+      policyTerm: r.policyTerm || '',
       benefits: r.benefits || '',
       limitations: r.limitations || '',
       rationale: r.rationale || '',
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
       replacedAnnualPremiumTotal: Math.round(replacedTotal(r.replacedPolicies)),
+      dtpdContribution: 0,
+      ciContribution: 0,
     }
   })
 }
@@ -500,11 +513,18 @@ function mapProt(category: 'ltc' | 'core' | 'general', categoryLabel: string, li
       earlyCiBenefit: Math.round(r.earlyCiBenefit || 0),
       monthlyBenefit: Math.round(r.monthlyBenefit || 0),
       sumAssured: Math.round(r.sumAssured || r.accidentalDeathBenefit || 0),
+      premiumTerm: r.premiumTerm || '',
+      policyTerm: r.policyTerm || '',
       benefits: r.benefits || '',
       limitations: r.limitations || '',
       rationale: r.rationale || '',
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
       replacedAnnualPremiumTotal: Math.round(replacedTotal(r.replacedPolicies)),
+      // Overwritten below (buildPerson) for Core Protection items once the
+      // household's dtpdTape/ciTape are known — 0 here is just the default
+      // for LTC/General, which never draw from either tape.
+      dtpdContribution: 0,
+      ciContribution: 0,
     }
   })
 }
@@ -603,6 +623,29 @@ function buildTape(
     remaining: Math.round(displayRemaining),
     viaProducts,
   }
+}
+
+// Splits a tape's (already-clamped) `recommended` segment back out across
+// the individual Core items that fed it, so each product's card can show
+// "this product closes X% of the shortfall" rather than only the pillar
+// total. Proportional to each item's raw benefit — if the raw benefits
+// overshot the need and got clamped, every item's slice is scaled down by
+// the same factor, so the slices still sum to exactly tape.recommended.
+function allocateTapeContributions(
+  coreItems: ProtectionActionItem[],
+  tape: ProtectionTape | null,
+  benefitOf: (item: ProtectionActionItem) => number,
+): Map<string, number> {
+  const map = new Map<string, number>()
+  if (!tape || tape.recommended <= 0) return map
+  const rawTotal = coreItems.reduce((s, item) => s + Math.max(0, benefitOf(item)), 0)
+  if (rawTotal <= 0) return map
+  const scale = tape.recommended / rawTotal
+  coreItems.forEach(item => {
+    const raw = Math.max(0, benefitOf(item))
+    if (raw > 0) map.set(item.id, Math.round(raw * scale))
+  })
+  return map
 }
 
 // ─── BUILDER ─────────────────────────────────────────────────────────────────
@@ -778,6 +821,17 @@ export function buildActionPlanSnapshot(input: {
       ? buildTape(coreItems, profile.ci.maxCapitalRequired, profile.ci.assetMitigation, profile.ci.existingCoverage,
           item => item.ciBenefit + item.earlyCiBenefit, p => Math.max(p.ciBenefit, p.earlyCiBenefit))
       : null
+
+    // Mutates the same object references held in coreItems/protectionItems —
+    // deliberate, avoids re-mapping the whole array just to attach two
+    // numbers. Only Core items are touched; Medical/LTC/General keep the
+    // 0/0 default set in mapMedical/mapProt above.
+    const dtpdContribMap = allocateTapeContributions(coreItems, dtpdTape, item => item.deathBenefit)
+    const ciContribMap = allocateTapeContributions(coreItems, ciTape, item => item.ciBenefit + item.earlyCiBenefit)
+    coreItems.forEach(item => {
+      item.dtpdContribution = dtpdContribMap.get(item.id) || 0
+      item.ciContribution = ciContribMap.get(item.id) || 0
+    })
 
     return {
       personKey,
