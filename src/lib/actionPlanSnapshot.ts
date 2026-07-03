@@ -108,6 +108,14 @@ export interface AccumulationActionItem {
   topupProductLabel: string
   previousAnnualContribution: number
   allocatedGoalIds: string[]
+  // Advisor-entered projected return for THIS product (recommendations/page.tsx's
+  // "Projected annual return" field), as a percentage (e.g. 5 for 5%). 0/unset
+  // when the advisor hasn't filled it in (e.g. illustration-method products,
+  // which don't use a rate at all) — buildAccumulationTape falls back to
+  // Capital Mandate's household expectedReturn in that case. Used so the
+  // Action Plan tape's FV projection for a product can't disagree with what
+  // the advisor actually assumed for it in the Impact Analysis modal.
+  rateReturn: number
 }
 
 export interface ActionPlanGoal {
@@ -336,13 +344,19 @@ function buildAccumulationTape(
 ): AccumulationTape | null {
   if (goal.targetCorpus <= 0) return null
   const yearsToTarget = Math.max(1, goal.targetAge - clientAge)
-  const r = expectedReturnPct / 100
+  const fallbackR = expectedReturnPct / 100
 
   function bucketFv(items: AccumulationActionItem[]): { fv: number; via: string[] } {
     let total = 0
     const via: string[] = []
     items.forEach(item => {
       if (!item.allocatedGoalIds.includes(goal.id)) return
+      // Prefer the product's own advisor-entered rate (matches what the
+      // Impact Analysis modal in Recommendations projects for this exact
+      // product) — only fall back to Capital Mandate's blanket household
+      // assumption when the advisor hasn't set one (e.g. illustration-method
+      // products, or older records saved before this field existed).
+      const r = item.rateReturn > 0 ? item.rateReturn / 100 : fallbackR
       let itemFv = 0
       if (item.hasLumpSum && item.lumpSumAmount > 0) {
         itemFv += item.lumpSumAmount * Math.pow(1 + r, yearsToTarget)
@@ -506,6 +520,7 @@ function mapAccumulation(list: any[]): AccumulationActionItem[] {
       topupProductLabel: r.topupOf?.policyName || '',
       previousAnnualContribution,
       allocatedGoalIds: r.allocatedGoalIds || [],
+      rateReturn: r.projMethod === 'illustration' ? 0 : (r.rateReturn || 0),
     }
   })
 }
