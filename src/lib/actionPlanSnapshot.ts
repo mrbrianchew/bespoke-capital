@@ -895,14 +895,21 @@ export function buildActionPlanSnapshot(input: {
   // Household lump sum total — summed once from the three raw source arrays
   // (client-own + spouse-own + joint), NOT from client/spousePlan.goalFunding,
   // which share the same householdGoalFunding array and would double-count.
+  // Shown to the client for reference ("plus $X one-time") but deliberately
+  // NOT deducted from liquidCash below — there's no field anywhere in the
+  // data model that says whether a given lump sum is funded from cash, CPF
+  // OA, CPF SA, or SRS (e.g. "iFast Financial · CPF OA Investments" is
+  // explicitly CPF-funded, not cash). Treating every lump sum as a cash draw
+  // produced a wrong $0-runway result for a CPF-funded recommendation, so
+  // this was reverted (July 2026) until a real funding-source field exists
+  // on the accumulation product entry — flagged as a follow-up.
   const totalLumpSum = [...clientOwnAccumulationItems, ...spouseOwnAccumulationItems, ...jointAccumulationItems]
     .filter(i => i.hasLumpSum)
     .reduce((s, i) => s + i.lumpSumAmount, 0)
 
-  const liquidCashAfter = Math.max(0, liquidCash - totalLumpSum)
   const monthlyEssentialBurnAfter = monthlyEssentialBurn + (netAnnualCashImpact / 12)
   const runwayMonthsBefore = monthlyEssentialBurn > 0 ? liquidCash / monthlyEssentialBurn : 0
-  const runwayMonthsAfter = monthlyEssentialBurnAfter > 0 ? liquidCashAfter / monthlyEssentialBurnAfter : 0
+  const runwayMonthsAfter = monthlyEssentialBurnAfter > 0 ? liquidCash / monthlyEssentialBurnAfter : 0
 
   return {
     client: clientPlan,
@@ -920,7 +927,7 @@ export function buildActionPlanSnapshot(input: {
       monthlyCost: Math.round(netAnnualCashImpact / 12),
       pctOfTakeHome: totalInflow > 0 ? Math.round((netAnnualCashImpact / totalInflow) * 1000) / 10 : 0,
       totalLumpSum: Math.round(totalLumpSum),
-      liquidCashAfter: Math.round(liquidCashAfter),
+      liquidCashAfter: Math.round(liquidCash),
       runwayMonthsBefore: Math.round(runwayMonthsBefore * 10) / 10,
       runwayMonthsAfter: Math.round(runwayMonthsAfter * 10) / 10,
     },
