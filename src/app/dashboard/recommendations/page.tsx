@@ -801,13 +801,25 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
 
 interface GoalItem { id: string; label: string; icon: string; targetCorpus: number; targetAge: number }
 
-function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, monthlyExpenses, onClose }: {
+function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, monthlyExpenses, onClose, onAllocateGoals }: {
   rec: AccRec; goals: GoalItem[]; existingPortfolioValue: number
   monthlyIncome: number; monthlyExpenses: number; onClose: () => void
+  // Writes back to AccRec.allocatedGoalIds — this is the only place in the
+  // app that sets it. Everything downstream (the live "Funds N goal(s)" tag,
+  // the Action Plan report's goal-funding cards and tapes) reads this field
+  // but nothing else ever wrote to it before now.
+  onAllocateGoals: (ids: string[]) => void
 }) {
   const [view, setView] = useState<'existing' | 'with'>('existing')
   const [orderedGoals, setOrderedGoals] = useState<GoalItem[]>(() => [...goals].sort((a, b) => a.targetAge - b.targetAge))
   const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [selectedGoalIds, setSelectedGoalIds] = useState<string[]>(rec.allocatedGoalIds || [])
+
+  function toggleGoal(id: string) {
+    const next = selectedGoalIds.includes(id) ? selectedGoalIds.filter(x => x !== id) : [...selectedGoalIds, id]
+    setSelectedGoalIds(next)
+    onAllocateGoals(next)
+  }
 
   const totalInvested  = calcTotalInvested(rec)
   const projValue      = calcProjectedValue(rec)
@@ -931,7 +943,7 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
               </div>
             </div>
             <div style={{ fontFamily: 'Inter', fontSize: 11, color: 'var(--ink3)', marginBottom: 10 }}>
-              Drag to reorder priority. Portfolio waterfall funds goals in order shown.
+              Drag to reorder priority. Portfolio waterfall funds goals in order shown. Tick a goal to allocate this product to it — that's what drives the Action Plan report's goal funding.
             </div>
             {view === 'with' && (
               <div style={{ display: 'flex', gap: 14, marginBottom: 12, fontFamily: 'Inter', fontSize: 11, color: 'var(--ink2)' }}>
@@ -951,11 +963,26 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
                 onDragOver={e => onDragOver(e, idx)}
                 onDragEnd={onDragEnd}
                 style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0',
+                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 8px',
+                  margin: '0 -8px',
+                  borderRadius: 8,
+                  background: selectedGoalIds.includes(g.id) ? 'var(--emerald-l, #E8F2ED)' : 'transparent',
                   borderBottom: idx < goalResults.length - 1 ? '1px solid var(--cream3)' : 'none',
                   cursor: 'grab', opacity: dragIdx === idx ? 0.5 : 1,
                 }}
               >
+                <label
+                  onClick={e => e.stopPropagation()}
+                  style={{ display: 'flex', alignItems: 'center', paddingTop: 8, flexShrink: 0, cursor: 'pointer' }}
+                  title="Allocate this product to this goal"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedGoalIds.includes(g.id)}
+                    onChange={() => toggleGoal(g.id)}
+                    style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#2D5A4E' }}
+                  />
+                </label>
                 <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0, background: statusBg(g.pct), color: statusColor(g.pct) }}>
                   {g.icon}
                 </div>
@@ -2583,7 +2610,7 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
         </div>
       </div>
 
-      {showImpact && <AccImpactModal rec={rec} goals={goals} existingPortfolioValue={existingPortfolioValue} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} onClose={() => setShowImpact(false)} />}
+      {showImpact && <AccImpactModal rec={rec} goals={goals} existingPortfolioValue={existingPortfolioValue} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} onClose={() => setShowImpact(false)} onAllocateGoals={ids => upd('allocatedGoalIds', ids)} />}
     </>
   )
 }
