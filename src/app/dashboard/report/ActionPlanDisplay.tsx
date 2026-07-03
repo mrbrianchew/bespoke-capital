@@ -694,8 +694,10 @@ function GoalFundingCard({ gf }: { gf: ActionPlanGoalFunding }) {
 // to speak of, or when an old saved snapshot predates this field.
 function CostOfWaitingPanel({ affordability }: { affordability: ActionPlanAffordability }) {
   const [showMath, setShowMath] = useState(false)
-  const { requiredMonthlyNow, costOfWaitingMonthly, goalsWithGap, breakdown } = affordability
-  if (goalsWithGap === 0 || costOfWaitingMonthly <= 0) return null
+  const { requiredMonthlyNow, costOfWaitingMonthly, lumpSumCostOfWaiting, goalsWithCost, breakdown } = affordability
+  const hasMonthlyCost = costOfWaitingMonthly > 0
+  const hasLumpSumCost = lumpSumCostOfWaiting > 0
+  if (goalsWithCost === 0 || (!hasMonthlyCost && !hasLumpSumCost)) return null
 
   return (
     <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, padding: '22px 26px' }}>
@@ -703,19 +705,32 @@ function CostOfWaitingPanel({ affordability }: { affordability: ActionPlanAfford
         The cost of waiting
       </div>
       <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 14 }}>
-        Starting today, closing this gap takes <b style={{ color: 'var(--ink)' }}>{fmt(requiredMonthlyNow)}/mo</b>.
-        Wait a year, and the same goal needs{' '}
-        <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(requiredMonthlyNow + costOfWaitingMonthly)}/mo</b> instead
-        — <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(costOfWaitingMonthly)} more, every month</b>, just to land in the same place.
+        {hasLumpSumCost && hasMonthlyCost && (
+          <>Waiting a year on this plan costs{' '}
+            <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(lumpSumCostOfWaiting)} more upfront</b> on the recommended lump sum, and{' '}
+            <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(costOfWaitingMonthly)} more, every month</b> on the recommended contribution — just to land in the same place.</>
+        )}
+        {hasLumpSumCost && !hasMonthlyCost && (
+          <>Waiting a year on the recommended lump sum costs{' '}
+            <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(lumpSumCostOfWaiting)} more</b>, just to land in the same place.</>
+        )}
+        {!hasLumpSumCost && hasMonthlyCost && (
+          <>Starting today, closing this gap takes <b style={{ color: 'var(--ink)' }}>{fmt(requiredMonthlyNow)}/mo</b>.
+            Wait a year, and the same goal needs{' '}
+            <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(requiredMonthlyNow + costOfWaitingMonthly)}/mo</b> instead
+            — <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(costOfWaitingMonthly)} more, every month</b>, just to land in the same place.</>
+        )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', height: 40, gap: 3, marginBottom: 14 }}>
-        <div style={{ width: `${Math.min(100, (requiredMonthlyNow / (requiredMonthlyNow + costOfWaitingMonthly)) * 100)}%`, height: '100%', background: 'var(--emerald)', borderRadius: '4px 0 0 4px', minWidth: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>Now</span>
+      {hasMonthlyCost && (
+        <div style={{ display: 'flex', alignItems: 'center', height: 40, gap: 3, marginBottom: 14 }}>
+          <div style={{ width: `${Math.min(100, (requiredMonthlyNow / (requiredMonthlyNow + costOfWaitingMonthly)) * 100)}%`, height: '100%', background: 'var(--emerald)', borderRadius: '4px 0 0 4px', minWidth: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>Now</span>
+          </div>
+          <div style={{ flex: 1, height: '100%', background: 'var(--gold-tag,#C9A467)', borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>+1 year</span>
+          </div>
         </div>
-        <div style={{ flex: 1, height: '100%', background: 'var(--gold-tag,#C9A467)', borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>+1 year</span>
-        </div>
-      </div>
+      )}
 
       <button
         onClick={() => setShowMath(s => !s)}
@@ -734,15 +749,26 @@ function CostOfWaitingPanel({ affordability }: { affordability: ActionPlanAfford
 }
 
 function CostOfWaitingBreakdownRow({ b }: { b: ActionPlanCostOfWaitingBreakdown }) {
+  const hasLumpSum = b.lumpSumAmount > 0
+  const hasMonthly = b.gap > 0
   return (
     <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.7 }}>
       <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{b.goalLabel}</span>
       {' — '}
-      gap of <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.gap)}</span>
-      {' '}(needs, minus what's already achieved, minus the recommended lump sum's projected growth), <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.yearsToTarget}</span> years to target,
-      {' '}at <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.ratePercent}%</span> expected return
-      {' → '}<span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyNow)}/mo</span> now vs.{' '}
-      <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyIfDelayed)}/mo</span> if delayed a year.
+      {hasLumpSum && (
+        <>recommended lump sum of <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.lumpSumAmount)}</span> at{' '}
+          <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.ratePercent}%</span>{' '}
+          → delaying it a year costs <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.lumpSumCostOfWaiting)}</span> more.
+          {hasMonthly && ' '}
+        </>
+      )}
+      {hasMonthly && (
+        <>remaining gap of <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.gap)}</span>
+          {' '}(needs, minus achieved, minus the lump sum's projected growth), <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.yearsToTarget}</span> years to target
+          {' → '}<span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyNow)}/mo</span> now vs.{' '}
+          <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyIfDelayed)}/mo</span> if delayed a year.
+        </>
+      )}
     </div>
   )
 }
@@ -840,7 +866,7 @@ export default function ActionPlanDisplay({ snapshot, clientName, spouseName }: 
           // existed — CostOfWaitingPanel hides itself when goalsWithGap is 0,
           // so an old share link just shows nothing rather than crashing.
           affordability={snapshot.affordability || {
-            requiredMonthlyNow: 0, requiredMonthlyIfDelayed: 0, costOfWaitingMonthly: 0, goalsWithGap: 0, breakdown: [],
+            requiredMonthlyNow: 0, requiredMonthlyIfDelayed: 0, costOfWaitingMonthly: 0, lumpSumCostOfWaiting: 0, goalsWithCost: 0, breakdown: [],
           }}
         />
       )}
