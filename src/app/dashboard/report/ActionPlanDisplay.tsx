@@ -567,8 +567,17 @@ function GoalFundingCard({ gf }: { gf: ActionPlanGoalFunding }) {
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {gf.fundedBy.map((f, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--cream3)' }}>
-            <div style={{ fontSize: 13, color: 'var(--ink2)' }}>{f.productLabel}</div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink)' }}>{fmt(f.annualContribution)}/yr</div>
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--ink2)' }}>{f.productLabel}</div>
+              {f.ownerLabel && (
+                <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 1 }}>{f.ownerLabel}</div>
+              )}
+            </div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink)', textAlign: 'right', flexShrink: 0 }}>
+              {f.annualContribution > 0
+                ? `${fmt(f.annualContribution)}/yr`
+                : (f.hasLumpSum && f.lumpSumAmount > 0 ? `${fmt(f.lumpSumAmount)} lump sum` : `${fmt(f.annualContribution)}/yr`)}
+            </div>
           </div>
         ))}
       </div>
