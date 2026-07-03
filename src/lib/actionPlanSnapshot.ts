@@ -208,24 +208,13 @@ function mapReplacedPolicies(list: any[]): ActionPlanReplacedPolicy[] {
 // own loadAll() builds — that's what AccRec.allocatedGoalIds was tagged
 // against when the advisor allocated a product to a goal, so this can't be
 // rebuilt from a different (even if more "correct") derivation without
-// breaking the funding tie-in. Reads corpusNeeded / child.corpus directly,
-// same as the live tool — no independent recalculation.
-//
-// KNOWN GAP (pre-existing, not introduced here): education goals read
-// `c.corpus` off each child, but EducationChild never actually persists a
-// `corpus` field (see EducationSection.tsx's EducationChild interface) —
-// recommendations/page.tsx's own loadAll() has the identical read at line
-// ~3202. In practice this means `(c.corpus || 0) > 0` is always false, so
-// education goals never appear in either the live goal picker or here.
-// Left as-is deliberately — fixing it only in this report file wouldn't
-// change anything for real clients, since no accumulation product could
-// ever have been allocated to an education goal id that was never offered
-// as an option in recommendations/page.tsx's picker in the first place.
+// breaking the funding tie-in.
 function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, cmData: Record<string, any>, clientAge: number): ActionPlanGoal[] {
   const ret = retData || {}
   const edu = eduData?.edu || eduData || {}
   const cm = cmData || {}
   const goals: ActionPlanGoal[] = []
+  const expectedReturn = cm?.settings?.expectedReturn ?? 6
 
   const retCorpus = ret?.corpusNeeded || 0
   const retAge = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
@@ -240,16 +229,33 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
     goals.push({ id: 'retirement', label: 'Retirement', targetAge: retAge, targetCorpus: Math.round(retCorpus), achieved })
   }
 
+  // Mirrors recommendations/page.tsx's loadAll() exactly — same inflation/
+  // return-rate fallbacks, same yearsUntilUni/duration math. Previously this
+  // read a `c.corpus` field that was never actually persisted (EducationChild
+  // has no `corpus` property), so education goals never appeared here or in
+  // the live goal picker at all. Computed directly now instead of reading a
+  // number that was never saved — kept in sync with recommendations/page.tsx
+  // by using the identical formula, since goal ids/corpus here have to match
+  // what the picker showed the advisor when they allocated a product to it.
+  const eduTuitionInf = (edu?.tuitionInflation ?? 5) / 100
+  const eduLivingInf = (edu?.livingInflation ?? 3) / 100
+  const eduReturnRate = edu?.returnRate ?? expectedReturn
   ;(edu?.children || []).forEach((c: any) => {
-    if ((c.corpus || 0) > 0) {
-      goals.push({
-        id: `edu_${c.childId || c.name}`,
-        label: `${c.name}'s Education`,
-        targetAge: clientAge + (c.yearsAway || 18),
-        targetCorpus: Math.round(c.corpus),
-        achieved: 0,
-      })
-    }
+    if ((c.annualTuition || 0) + (c.annualLiving || 0) === 0) return
+    const yearsUntilUni = Math.max(1, (c.uniEntryAge || 18) - (c.age || 0))
+    const duration = c.courseDuration || 4
+    const fvTuition = (c.annualTuition || 0) * Math.pow(1 + eduTuitionInf, yearsUntilUni) * duration
+    const fvLiving = (c.annualLiving || 0) * Math.pow(1 + eduLivingInf, yearsUntilUni) * duration
+    const gross = fvTuition + fvLiving
+    const achieved = Math.min(gross, (c.existingSavings || 0) * Math.pow(1 + eduReturnRate / 100, yearsUntilUni))
+    if (gross <= 0) return
+    goals.push({
+      id: `edu_${c.childId || c.name}`,
+      label: `${c.name}'s Education`,
+      targetAge: clientAge + yearsUntilUni,
+      targetCorpus: Math.round(gross),
+      achieved: Math.round(achieved),
+    })
   })
 
   ;(cm?.customGoals || []).forEach((g: any) => {
