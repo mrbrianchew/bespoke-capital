@@ -232,7 +232,22 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
   const goals: ActionPlanGoal[] = []
   const expectedReturn = cm?.settings?.expectedReturn ?? 6
 
-  const retCorpus = ret?.corpusNeeded || 0
+  // targetCorpus: Capital Mandate's baseAdjustedCorpus when available — the
+  // same "Portfolio Target" figure shown in its Retirement Income Breakdown
+  // panel, already netted for PV of CPF LIFE / annuity / rental guaranteed
+  // income (see retirementBreakdown in investments/page.tsx). Falls back to
+  // Retirement tab's gross corpusNeeded (no netting) for clients who haven't
+  // saved Capital Mandate since this field was added. Note: this goal's
+  // targetAge/id still have to match what recommendations/page.tsx's own
+  // loadAll() builds for allocatedGoalIds tagging to line up — only the
+  // corpus VALUE differs here, which doesn't affect that id-based linkage.
+  // recommendations/page.tsx's own goal-progress panel still shows the
+  // gross figure (it doesn't read baseAdjustedCorpus) — a known remaining
+  // inconsistency, flagged rather than silently fixed here since it's a
+  // separate surface.
+  const retCorpus = (typeof cm?.baseAdjustedCorpus === 'number' && cm.baseAdjustedCorpus > 0)
+    ? cm.baseAdjustedCorpus
+    : (ret?.corpusNeeded || 0)
   const retAge = ret?.ret?.client?.retirementAge || ret?.retirementAge || 65
   if (retCorpus > 0) {
     // Preferred source: Capital Mandate's own projected-portfolio-at-retirement
