@@ -739,7 +739,7 @@ function CostOfWaitingBreakdownRow({ b }: { b: ActionPlanCostOfWaitingBreakdown 
       <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{b.goalLabel}</span>
       {' — '}
       gap of <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.gap)}</span>
-      {' '}(needs minus what's already achieved), <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.yearsToTarget}</span> years to target,
+      {' '}(needs, minus what's already achieved, minus the recommended lump sum's projected growth), <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.yearsToTarget}</span> years to target,
       {' '}at <span style={{ fontFamily: 'DM Mono, monospace' }}>{b.ratePercent}%</span> expected return
       {' → '}<span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyNow)}/mo</span> now vs.{' '}
       <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(b.requiredMonthlyIfDelayed)}/mo</span> if delayed a year.
