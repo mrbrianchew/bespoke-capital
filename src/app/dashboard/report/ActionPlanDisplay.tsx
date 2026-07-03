@@ -685,50 +685,33 @@ function GoalFundingCard({ gf }: { gf: ActionPlanGoalFunding }) {
   )
 }
 
-// Household-level "can they afford this" reassurance — sits once below all
-// goal cards, not per-goal (deliberately: cost and safety net are shared
-// household resources, not divisible per goal). Same gold-label / DM Mono
-// language as the rest of the report; two columns matching the client-facing
-// mockup approved for this page.
-function AffordabilityFooter({ affordability }: { affordability: ActionPlanAffordability }) {
-  const { monthlyCost, pctOfTakeHome, totalLumpSum, liquidCashAfter, runwayMonthsAfter } = affordability
-  const monthDotsFilled = Math.max(0, Math.min(12, Math.round(runwayMonthsAfter)))
+// Household-level "why now" panel — replaces the earlier cost/safety-net
+// footer, which duplicated the CashflowImpactBanner at the top of the whole
+// Action Plan page. This instead shows the honest cost of a year's delay,
+// computed for real (not a scare number) from the same annuity-due math
+// used for corpus needs elsewhere. Hidden entirely when there's no open gap
+// to speak of, or when an old saved snapshot predates this field.
+function CostOfWaitingPanel({ affordability }: { affordability: ActionPlanAffordability }) {
+  const { requiredMonthlyNow, costOfWaitingMonthly, goalsWithGap } = affordability
+  if (goalsWithGap === 0 || costOfWaitingMonthly <= 0) return null
 
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 260px', padding: '20px 24px', borderRight: '1px solid var(--line)' }}>
-          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8 }}>
-            What this costs you
-          </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 19, color: 'var(--ink)', marginBottom: 4 }}>
-            {fmt(monthlyCost)}<span style={{ fontSize: 12, color: 'var(--ink3)' }}>/mo</span>
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
-            About {pctOfTakeHome}% of your take-home income
-            {totalLumpSum > 0 && <> · plus {fmt(totalLumpSum)} one-time</>}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-            <div style={{ flex: 1, height: 5, background: 'var(--cream2)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${Math.min(100, pctOfTakeHome)}%`, background: 'var(--gold-tag,#C9A467)', borderRadius: 3 }} />
-            </div>
-          </div>
+    <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, padding: '22px 26px' }}>
+      <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 10 }}>
+        The cost of waiting
+      </div>
+      <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, marginBottom: 14 }}>
+        Starting today, closing this gap takes <b style={{ color: 'var(--ink)' }}>{fmt(requiredMonthlyNow)}/mo</b>.
+        Wait a year, and the same goal needs{' '}
+        <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(requiredMonthlyNow + costOfWaitingMonthly)}/mo</b> instead
+        — <b style={{ color: 'var(--rouge,#8A3B32)' }}>{fmt(costOfWaitingMonthly)} more, every month</b>, just to land in the same place.
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', height: 40, gap: 3 }}>
+        <div style={{ width: `${Math.min(100, (requiredMonthlyNow / (requiredMonthlyNow + costOfWaitingMonthly)) * 100)}%`, height: '100%', background: 'var(--emerald)', borderRadius: '4px 0 0 4px', minWidth: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>Now</span>
         </div>
-        <div style={{ flex: '1 1 260px', padding: '20px 24px' }}>
-          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8 }}>
-            Your safety net, after this
-          </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 19, color: 'var(--ink)', marginBottom: 4 }}>
-            {runwayMonthsAfter}<span style={{ fontSize: 12, color: 'var(--ink3)' }}> months</span>
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
-            {fmt(liquidCashAfter)} emergency cash, untouched by this plan
-          </div>
-          <div style={{ display: 'flex', gap: 3, marginTop: 10 }}>
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} style={{ flex: 1, height: 5, borderRadius: 2, background: i < monthDotsFilled ? 'var(--emerald)' : 'var(--emerald-l,#DCE8E2)' }} />
-            ))}
-          </div>
+        <div style={{ flex: 1, height: '100%', background: 'var(--gold-tag,#C9A467)', borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#fff' }}>+1 year</span>
         </div>
       </div>
     </div>
@@ -755,9 +738,9 @@ function AccumulationPage({ person, affordability }: { person: PersonActionPlan;
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {person.goalFunding.map(gf => <GoalFundingCard key={gf.goal.id} gf={gf} />)}
           </div>
-          {(affordability.liquidCashAfter > 0 || affordability.runwayMonthsAfter > 0 || affordability.monthlyCost !== 0 || affordability.totalLumpSum > 0) && (
+          {(person.goalFunding.length > 0) && (
             <div style={{ marginTop: 20 }}>
-              <AffordabilityFooter affordability={affordability} />
+              <CostOfWaitingPanel affordability={affordability} />
             </div>
           )}
         </div>
@@ -825,10 +808,10 @@ export default function ActionPlanDisplay({ snapshot, clientName, spouseName }: 
         <AccumulationPage
           person={active.plan}
           // Falls back to zeroed figures for reports saved before this field
-          // existed — hides the footer's numbers rather than crashing on an
-          // old share link. Client needs a re-save to populate it for real.
+          // existed — CostOfWaitingPanel hides itself when goalsWithGap is 0,
+          // so an old share link just shows nothing rather than crashing.
           affordability={snapshot.affordability || {
-            monthlyCost: 0, pctOfTakeHome: 0, totalLumpSum: 0, liquidCashAfter: 0, runwayMonthsBefore: 0, runwayMonthsAfter: 0,
+            requiredMonthlyNow: 0, requiredMonthlyIfDelayed: 0, costOfWaitingMonthly: 0, goalsWithGap: 0,
           }}
         />
       )}
