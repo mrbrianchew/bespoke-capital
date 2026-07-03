@@ -801,8 +801,13 @@ function ProtImpactModal({ rec, monthlyIncome, monthlyExpenses, annualSurplusOve
 
 interface GoalItem { id: string; label: string; icon: string; targetCorpus: number; targetAge: number }
 
-function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, monthlyExpenses, onClose, onAllocateGoals }: {
+function AccImpactModal({ rec, goals, existingPortfolioValue, goalExistingFunded, monthlyIncome, monthlyExpenses, onClose, onAllocateGoals }: {
   rec: AccRec; goals: GoalItem[]; existingPortfolioValue: number
+  // Per-goal existing coverage from Capital Mandate's own chartSeries —
+  // authoritative when present. Empty object for clients whose Capital
+  // Mandate predates chartSeries, in which case this falls back to the
+  // older single-pool existingPortfolioValue model.
+  goalExistingFunded: Record<string, number>
   monthlyIncome: number; monthlyExpenses: number; onClose: () => void
   // Writes back to AccRec.allocatedGoalIds — this is the only place in the
   // app that sets it. Everything downstream (the live "Funds N goal(s)" tag,
@@ -829,29 +834,40 @@ function AccImpactModal({ rec, goals, existingPortfolioValue, monthlyIncome, mon
   const irr = calcIRR(totalInvested, projValue, rec.projMethod === 'illustration' ? rec.illusTerm : rec.rateYears)
   const surplusAfter   = (monthlyIncome - monthlyExpenses) - monthlyContrib
 
-  // Waterfall — run twice over the same goal order: once against the existing
-  // portfolio alone, once against existing + this product. The difference per
-  // goal (which can only be >= 0, since the pool only grows) is exactly how
-  // much of that goal's coverage this specific product is responsible for —
-  // used below to split the bar into an "existing" segment and a "this
-  // product" segment instead of one undifferentiated color.
-  function runWaterfall(pool: number) {
+  // Waterfall — "existing" now comes directly from Capital Mandate's own
+  // chartSeries (already drawdown-aware: it deducts each earlier goal's
+  // corpus at its own target age before continuing to grow toward later
+  // ones), rather than re-splitting a single reconstructed pool number
+  // across goals a second time. "This product" is still an age-ordered
+  // waterfall — filling whatever gap remains after the real existing
+  // figure, in priority order — but it's now seeded from a correct
+  // per-goal baseline instead of one number that mixed two different
+  // "capital required" figures and double-counted education drawdowns.
+  const hasChartSeriesData = Object.keys(goalExistingFunded).length > 0
+
+  function runWaterfallFallback(pool: number) {
     let remaining = pool
     return orderedGoals.map(g => {
       const funded = Math.min(remaining, g.targetCorpus)
       remaining = Math.max(0, remaining - g.targetCorpus)
-      const shortfall = Math.max(0, g.targetCorpus - funded)
-      const pct = g.targetCorpus > 0 ? Math.min(100, Math.round((funded / g.targetCorpus) * 100)) : 100
-      return { ...g, funded, shortfall, pct }
+      return { ...g, existingFunded: funded }
     })
   }
-  const existingResults = runWaterfall(existingPortfolioValue)
-  const withResults = runWaterfall(existingPortfolioValue + projValue)
-  const goalResults = (view === 'with' ? withResults : existingResults).map((g, idx) => ({
-    ...g,
-    existingFunded: existingResults[idx].funded,
-    productFunded: view === 'with' ? Math.max(0, withResults[idx].funded - existingResults[idx].funded) : 0,
-  }))
+
+  const existingBaseline = hasChartSeriesData
+    ? orderedGoals.map(g => ({ ...g, existingFunded: Math.min(goalExistingFunded[g.id] ?? 0, g.targetCorpus) }))
+    : runWaterfallFallback(existingPortfolioValue)
+
+  let productRemaining = projValue
+  const goalResults = existingBaseline.map(g => {
+    const gapAfterExisting = Math.max(0, g.targetCorpus - g.existingFunded)
+    const productFunded = view === 'with' ? Math.min(productRemaining, gapAfterExisting) : 0
+    if (view === 'with') productRemaining = Math.max(0, productRemaining - gapAfterExisting)
+    const funded = g.existingFunded + productFunded
+    const shortfall = Math.max(0, g.targetCorpus - funded)
+    const pct = g.targetCorpus > 0 ? Math.min(100, Math.round((funded / g.targetCorpus) * 100)) : 100
+    return { ...g, funded, shortfall, pct, existingFunded: g.existingFunded, productFunded }
+  })
 
   function onDragStart(idx: number) { setDragIdx(idx) }
   function onDragOver(e: React.DragEvent, idx: number) {
@@ -2352,9 +2368,9 @@ function ProtCard({ rec, category, onChange, onDelete, onChoose,
 
 // ─── ACCUMULATION CARD ────────────────────────────────────────────────────────
 
-function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, existingPolicies, monthlyIncome, monthlyExpenses, accumulationCompanies, clientLabel, spouseLabel }: {
+function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioValue, goalExistingFunded, existingPolicies, monthlyIncome, monthlyExpenses, accumulationCompanies, clientLabel, spouseLabel }: {
   rec: AccRec; onChange: (r: AccRec) => void; onDelete: () => void; onChoose: () => void
-  goals: GoalItem[]; existingPortfolioValue: number
+  goals: GoalItem[]; existingPortfolioValue: number; goalExistingFunded: Record<string, number>
   existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; categoryCode?: string }[]
   monthlyIncome: number; monthlyExpenses: number
   accumulationCompanies: { id: number; name: string }[]
@@ -2610,7 +2626,7 @@ function AccCard({ rec, onChange, onDelete, onChoose, goals, existingPortfolioVa
         </div>
       </div>
 
-      {showImpact && <AccImpactModal rec={rec} goals={goals} existingPortfolioValue={existingPortfolioValue} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} onClose={() => setShowImpact(false)} onAllocateGoals={ids => upd('allocatedGoalIds', ids)} />}
+      {showImpact && <AccImpactModal rec={rec} goals={goals} existingPortfolioValue={existingPortfolioValue} goalExistingFunded={goalExistingFunded} monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses} onClose={() => setShowImpact(false)} onAllocateGoals={ids => upd('allocatedGoalIds', ids)} />}
     </>
   )
 }
@@ -2997,6 +3013,10 @@ export default function RecommendationsPage() {
   // Goals for accumulation waterfall
   const [goals, setGoals]                         = useState<GoalItem[]>([])
   const [existingPortfolioValue, setExistingPortfolioValue] = useState(0)
+  // Per-goal existing coverage sourced from Capital Mandate's own chartSeries
+  // — see the comment where this is populated in loadAll() for why this
+  // replaced the old single-pool existingPortfolioValue reconstruction.
+  const [goalExistingFunded, setGoalExistingFunded] = useState<Record<string, number>>({})
   const [showCombinedImpact, setShowCombinedImpact] = useState(false)
 
   useEffect(() => {
@@ -3269,8 +3289,39 @@ export default function RecommendationsPage() {
       // capitalFundSnapshot.ts's retirementCorpus/shortfall pattern. (Was
       // previously reading cm?.settings?.retirementCorpus, a field Capital
       // Mandate never saves, which silently always came back S$0.)
+      //
+      // Kept only as a FALLBACK now (see goalExistingFunded below) — this
+      // number mixes retCorpus (Strategic Objectives' simple corpus figure)
+      // with cm.retirementShortfall (computed by Capital Mandate against its
+      // own richer baseAdjustedCorpus, which additionally factors in legacy
+      // amount and guaranteed income streams). Those two corpus figures
+      // aren't the same thing, so subtracting one from the other doesn't
+      // reliably recover a real portfolio value — only used when a client's
+      // Capital Mandate predates chartSeries and there's nothing better.
       const portValue = cm?.retirementShortfall != null ? Math.max(0, retCorpus - (cm?.retirementShortfall || 0)) : 0
       setExistingPortfolioValue(portValue)
+
+      // Per-goal "already funded from the existing portfolio" — read
+      // directly off Capital Mandate's own chartSeries.projectedLine, which
+      // already models the portfolio being drawn down to pay for each
+      // earlier goal (education) before continuing to grow toward later
+      // ones (retirement). This is the exact same trajectory Capital
+      // Mandate's own chart displays, so a goal's "existing" figure here
+      // will always match what you see there — no re-derivation, no
+      // re-deducting education a second time on top of an already-net
+      // number. Falls back to the flawed portValue-based single-pool
+      // model above only for clients whose Capital Mandate hasn't been
+      // saved since chartSeries started being persisted.
+      const cs = cm?.chartSeries
+      const goalFundedMap: Record<string, number> = {}
+      if (cs?.ages?.length && cs?.projectedLine?.length) {
+        builtGoals.forEach(g => {
+          const idx = cs.ages.indexOf(g.targetAge)
+          const atAge = idx >= 0 ? cs.projectedLine[idx] : null
+          if (atAge != null) goalFundedMap[g.id] = Math.max(0, Math.min(atAge, g.targetCorpus))
+        })
+      }
+      setGoalExistingFunded(goalFundedMap)
 
       // Load saved
       const saved = by['strategic_recommendations_v2']
@@ -3764,7 +3815,7 @@ export default function RecommendationsPage() {
                     onChange={r => updateAcc(rec.id, r)}
                     onDelete={() => deleteAcc(rec.id)}
                     onChoose={() => chooseAcc(rec.id)}
-                    goals={goals} existingPortfolioValue={existingPortfolioValue}
+                    goals={goals} existingPortfolioValue={existingPortfolioValue} goalExistingFunded={goalExistingFunded}
                     existingPolicies={existingPolicies}
                     monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
                     accumulationCompanies={accumulationCompanies}
