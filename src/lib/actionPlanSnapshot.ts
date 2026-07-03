@@ -220,13 +220,16 @@ export interface ActionPlanCostOfWaitingBreakdown {
   ratePercent: number
   requiredMonthlyNow: number
   requiredMonthlyIfDelayed: number
+  lumpSumAmount: number
+  lumpSumCostOfWaiting: number
 }
 
 export interface ActionPlanAffordability {
   requiredMonthlyNow: number
   requiredMonthlyIfDelayed: number
   costOfWaitingMonthly: number
-  goalsWithGap: number
+  lumpSumCostOfWaiting: number
+  goalsWithCost: number
   breakdown: ActionPlanCostOfWaitingBreakdown[]
 }
 
@@ -892,41 +895,53 @@ export function buildActionPlanSnapshot(input: {
   const totalTopupDelta = allPersons.reduce((s, p) => s + p.topupNetDelta, 0)
   const netAnnualCashImpact = totalAdditions + totalReplacementDelta + totalTopupDelta
 
-  // Cost of waiting — one year's delay on each goal's still-open gap, using
-  // the same annuity-due neededMonthly() solver used elsewhere.
+  // Cost of waiting has two distinct components, computed separately because
+  // they're different kinds of decisions with different costs:
   //
-  // The gap here is needs - achieved - (FV of the recommended lump sum),
-  // NOT just needs - achieved. Reasoning: tape.recommended already nets in
-  // both the lump sum's future value and the regular contribution's future
-  // value (see bucketFv above) — but "required monthly" is solving for the
-  // regular-contribution side specifically, so folding the whole
-  // tape.recommended in would double count it against the thing being
-  // solved for. The lump sum itself is a one-time action assumed to happen
-  // now either way, so only its FV is netted out here; the regular
-  // contribution's FV is deliberately left out of the netting since that's
-  // exactly what requiredMonthly is computing. A goal already fully covered
-  // by achieved + the lump sum alone correctly drops out (gap <= 0).
+  // (1) Delaying the recommended LUMP SUM by a year. A lump sum invested one
+  // year later loses exactly one year of compounding — to land in the same
+  // place it would need to be exactly (1+r) times bigger. So the "cost" is
+  // simply lumpSum × r; no gap/achieved math needed for this half at all.
+  //
+  // (2) Delaying the recommended MONTHLY/regular contribution by a year.
+  // Solved via neededMonthly() against needs - achieved - (FV of the
+  // recommended lump sum) — netting the lump sum's FV out here (not its
+  // cost-of-waiting) because that's what "required monthly" is solving for;
+  // folding the whole lump sum FV in would double count it. The lump sum
+  // itself is still assumed to happen now for this half's calculation.
   let requiredMonthlyNow = 0
   let requiredMonthlyIfDelayed = 0
-  let goalsWithGap = 0
+  let lumpSumCostOfWaiting = 0
+  let goalsWithCost = 0
   const breakdown: ActionPlanCostOfWaitingBreakdown[] = []
   const allAccumulationItemsForLumpSum = [...clientOwnAccumulationItems, ...spouseOwnAccumulationItems, ...jointAccumulationItems]
   for (const gf of householdGoalFunding) {
     if (!gf.tape) continue
     const yearsToTarget = gf.goal.targetAge - clientAge
     if (yearsToTarget <= 1) continue
-    const lumpSumFv = allAccumulationItemsForLumpSum.reduce((s, item) => {
-      if (!item.allocatedGoalIds.includes(gf.goal.id) || !item.hasLumpSum || item.lumpSumAmount <= 0) return s
-      const r = item.rateReturn > 0 ? item.rateReturn / 100 : expectedReturn / 100
-      return s + item.lumpSumAmount * Math.pow(1 + r, yearsToTarget)
+
+    const lumpSumItems = allAccumulationItemsForLumpSum.filter(
+      item => item.allocatedGoalIds.includes(gf.goal.id) && item.hasLumpSum && item.lumpSumAmount > 0
+    )
+    const lumpSumTotal = lumpSumItems.reduce((s, i) => s + i.lumpSumAmount, 0)
+    const lumpSumCostOfWaitingForGoal = lumpSumItems.reduce((s, i) => {
+      const r = i.rateReturn > 0 ? i.rateReturn / 100 : expectedReturn / 100
+      return s + i.lumpSumAmount * r
     }, 0)
+    const lumpSumFv = lumpSumItems.reduce((s, i) => {
+      const r = i.rateReturn > 0 ? i.rateReturn / 100 : expectedReturn / 100
+      return s + i.lumpSumAmount * Math.pow(1 + r, yearsToTarget)
+    }, 0)
+
     const gap = Math.max(0, gf.tape.needs - gf.tape.achieved - lumpSumFv)
-    if (gap <= 0) continue
-    goalsWithGap += 1
-    const mNow = neededMonthly(gap, expectedReturn, yearsToTarget)
-    const mDelayed = neededMonthly(gap, expectedReturn, yearsToTarget - 1)
+    const mNow = gap > 0 ? neededMonthly(gap, expectedReturn, yearsToTarget) : 0
+    const mDelayed = gap > 0 ? neededMonthly(gap, expectedReturn, yearsToTarget - 1) : 0
+
+    if (gap <= 0 && lumpSumCostOfWaitingForGoal <= 0) continue // nothing to show for this goal
+    goalsWithCost += 1
     requiredMonthlyNow += mNow
     requiredMonthlyIfDelayed += mDelayed
+    lumpSumCostOfWaiting += lumpSumCostOfWaitingForGoal
     breakdown.push({
       goalLabel: gf.goal.label,
       gap: Math.round(gap),
@@ -934,6 +949,8 @@ export function buildActionPlanSnapshot(input: {
       ratePercent: expectedReturn,
       requiredMonthlyNow: Math.round(mNow),
       requiredMonthlyIfDelayed: Math.round(mDelayed),
+      lumpSumAmount: Math.round(lumpSumTotal),
+      lumpSumCostOfWaiting: Math.round(lumpSumCostOfWaitingForGoal),
     })
   }
 
@@ -953,7 +970,8 @@ export function buildActionPlanSnapshot(input: {
       requiredMonthlyNow: Math.round(requiredMonthlyNow),
       requiredMonthlyIfDelayed: Math.round(requiredMonthlyIfDelayed),
       costOfWaitingMonthly: Math.round(requiredMonthlyIfDelayed - requiredMonthlyNow),
-      goalsWithGap,
+      lumpSumCostOfWaiting: Math.round(lumpSumCostOfWaiting),
+      goalsWithCost,
       breakdown,
     },
     hasAnyActions: allPersons.some(p => p.protectionItems.length > 0 || p.accumulationItems.length > 0),
