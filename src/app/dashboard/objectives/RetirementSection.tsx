@@ -958,7 +958,18 @@ export default function RetirementSection({
     if (!onCalculated) return
     const corpus = phasedResult.totalCorpusNeeded
     if (corpus <= 0) return
-    const existingFV = clientLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement)
+    // corpus is the combined household target for couples (isCouple threads
+    // spouse ages/income into phasedResult above), so the assets netted
+    // against it must be combined too. spouseLiquid was previously accepted
+    // as a prop but never actually used here — for couples this silently
+    // dropped the spouse's savings/FD/SRS/shares/ETF/UT/bonds/alternatives
+    // from "already on track", understating progress. Fixed to include it.
+    // Note: this is only the fallback path when Capital Mandate hasn't been
+    // built out yet — actionPlanSnapshot.ts prefers Capital Mandate's own
+    // (per-owner) portfolio projection for the Action Plan's "achieved" figure
+    // once that's available.
+    const combinedLiquid = clientLiquid + (isCouple ? spouseLiquid : 0)
+    const existingFV = combinedLiquid * Math.pow(1 + data.preReturnRate / 100, phasedResult.yearsToClientRetirement)
     const gap = Math.max(0, corpus - existingFV)
     const rMo = data.preReturnRate / 100 / 12
     const preMo = phasedResult.yearsToClientRetirement * 12
@@ -969,7 +980,7 @@ export default function RetirementSection({
         : gap * rMo / ((Math.pow(1 + rMo, preMo) - 1) * (1 + rMo))
     }
     onCalculated(corpus, gap, monthly)
-  }, [phasedResult.totalCorpusNeeded, data.preReturnRate, phasedResult.yearsToClientRetirement, clientLiquid, onCalculated])
+  }, [phasedResult.totalCorpusNeeded, data.preReturnRate, phasedResult.yearsToClientRetirement, clientLiquid, spouseLiquid, isCouple, onCalculated])
 
   const inp: React.CSSProperties = {
     background: 'white', border: '1px solid var(--line)', borderRadius: 8,
