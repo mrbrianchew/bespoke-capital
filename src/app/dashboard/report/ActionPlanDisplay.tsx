@@ -9,6 +9,7 @@ import {
   AccumulationActionItem,
   ActionPlanGoalFunding,
   ActionPlanCashflowImpact,
+  ActionPlanAffordability,
   ProtectionTape,
   AccumulationTape,
 } from '@/lib/actionPlanSnapshot'
@@ -615,6 +616,34 @@ function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
   )
 }
 
+// Plain-language "does this work?" strip — one sentence + one fill bar, no
+// percentage the client has to interpret on its own. Hidden entirely when a
+// goal has no tape (e.g. a custom Wealth goal with no needs/achieved split
+// in the data model) rather than showing a misleading 0% or 100%.
+function GoalProgressStrip({ tape, targetAge }: { tape: AccumulationTape; targetAge: number }) {
+  const funded = tape.needs > 0 ? Math.min(100, ((tape.achieved + tape.recommended) / tape.needs) * 100) : 100
+  const isFullyFunded = tape.remaining <= 0
+  const ageSuffix = targetAge > 0 ? ` by age ${targetAge}` : ''
+
+  return (
+    <div style={{ padding: '0 0 14px 0', marginBottom: 14, borderBottom: '1px solid var(--cream3)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, gap: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink2)' }}>
+          These recommendations bring you to{' '}
+          <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>
+            {isFullyFunded ? 'fully funded' : `${Math.round(funded)}% funded`}
+          </span>
+          {ageSuffix}
+        </div>
+        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', whiteSpace: 'nowrap' }}>{Math.round(funded)}%</div>
+      </div>
+      <div style={{ height: 6, background: 'var(--cream2)', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${funded}%`, borderRadius: 4, background: 'linear-gradient(90deg, var(--gold), var(--emerald))' }} />
+      </div>
+    </div>
+  )
+}
+
 function GoalFundingCard({ gf }: { gf: ActionPlanGoalFunding }) {
   const Icon = objectiveIcon(gf.goal.id)
   const accentColor = gf.goal.id === 'retirement' ? 'var(--gold)' : 'var(--emerald)'
@@ -634,6 +663,7 @@ function GoalFundingCard({ gf }: { gf: ActionPlanGoalFunding }) {
           <div style={{ fontSize: 11, color: 'var(--ink3)', whiteSpace: 'nowrap' }}>Target {fmt(gf.goal.targetCorpus)}</div>
         </div>
       </div>
+      {gf.tape && <GoalProgressStrip tape={gf.tape} targetAge={gf.goal.targetAge} />}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {gf.fundedBy.map((f, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--cream3)' }}>
@@ -655,7 +685,57 @@ function GoalFundingCard({ gf }: { gf: ActionPlanGoalFunding }) {
   )
 }
 
-function AccumulationPage({ person }: { person: PersonActionPlan }) {
+// Household-level "can they afford this" reassurance — sits once below all
+// goal cards, not per-goal (deliberately: cost and safety net are shared
+// household resources, not divisible per goal). Same gold-label / DM Mono
+// language as the rest of the report; two columns matching the client-facing
+// mockup approved for this page.
+function AffordabilityFooter({ affordability }: { affordability: ActionPlanAffordability }) {
+  const { monthlyCost, pctOfTakeHome, totalLumpSum, liquidCashAfter, runwayMonthsAfter } = affordability
+  const monthDotsFilled = Math.max(0, Math.min(12, Math.round(runwayMonthsAfter)))
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 260px', padding: '20px 24px', borderRight: '1px solid var(--line)' }}>
+          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8 }}>
+            What this costs you
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 19, color: 'var(--ink)', marginBottom: 4 }}>
+            {fmt(monthlyCost)}<span style={{ fontSize: 12, color: 'var(--ink3)' }}>/mo</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+            About {pctOfTakeHome}% of your take-home income
+            {totalLumpSum > 0 && <> · plus {fmt(totalLumpSum)} one-time</>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+            <div style={{ flex: 1, height: 5, background: 'var(--cream2)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.min(100, pctOfTakeHome)}%`, background: 'var(--gold-tag,#C9A467)', borderRadius: 3 }} />
+            </div>
+          </div>
+        </div>
+        <div style={{ flex: '1 1 260px', padding: '20px 24px' }}>
+          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8 }}>
+            Your safety net, after this
+          </div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 19, color: 'var(--ink)', marginBottom: 4 }}>
+            {runwayMonthsAfter}<span style={{ fontSize: 12, color: 'var(--ink3)' }}> months</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+            {fmt(liquidCashAfter)} emergency cash, untouched by this plan
+          </div>
+          <div style={{ display: 'flex', gap: 3, marginTop: 10 }}>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} style={{ flex: 1, height: 5, borderRadius: 2, background: i < monthDotsFilled ? 'var(--emerald)' : 'var(--emerald-l,#DCE8E2)' }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AccumulationPage({ person, affordability }: { person: PersonActionPlan; affordability: ActionPlanAffordability }) {
   if (person.accumulationItems.length === 0 && person.goalFunding.length === 0) {
     return <EmptyNote text={`No accumulation actions recorded yet for ${person.name}.`} />
   }
@@ -675,6 +755,11 @@ function AccumulationPage({ person }: { person: PersonActionPlan }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {person.goalFunding.map(gf => <GoalFundingCard key={gf.goal.id} gf={gf} />)}
           </div>
+          {(affordability.liquidCashAfter > 0 || affordability.runwayMonthsAfter > 0 || affordability.monthlyCost !== 0 || affordability.totalLumpSum > 0) && (
+            <div style={{ marginTop: 20 }}>
+              <AffordabilityFooter affordability={affordability} />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -736,7 +821,17 @@ export default function ActionPlanDisplay({ snapshot, clientName, spouseName }: 
 
       {page === 'overview' && <OverviewPage person={active.plan} clientName={clientName || snapshot.client.name} spouseName={spouseName || (snapshot.spouse?.name ?? 'Spouse')} />}
       {page === 'protection' && <ProtectionPage person={active.plan} />}
-      {page === 'accumulation' && <AccumulationPage person={active.plan} />}
+      {page === 'accumulation' && (
+        <AccumulationPage
+          person={active.plan}
+          // Falls back to zeroed figures for reports saved before this field
+          // existed — hides the footer's numbers rather than crashing on an
+          // old share link. Client needs a re-save to populate it for real.
+          affordability={snapshot.affordability || {
+            monthlyCost: 0, pctOfTakeHome: 0, totalLumpSum: 0, liquidCashAfter: 0, runwayMonthsBefore: 0, runwayMonthsAfter: 0,
+          }}
+        />
+      )}
     </div>
   )
 }
