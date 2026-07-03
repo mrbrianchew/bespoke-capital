@@ -32,6 +32,11 @@ const CATEGORY_META: Record<ProtectionActionCategory, { icon: LucideIcon; color:
   general: { icon: Home, color: '#8A9A7E' },
 }
 
+// Same client/spouse/joint palette Capital Mandate already uses for its own
+// portfolio-by-owner colouring (investments/page.tsx) — reused here so a
+// product's colour means the same thing wherever it's shown in the report.
+const OWNER_COLORS = { client: '#4A7C9E', spouse: '#6B5B8B', joint: '#A8834A' }
+
 // Mirrors CapitalFundDisplay's objectiveIcon — same goal ids, same icons,
 // so a goal looks the same whether it's seen on the Capital Fund tab or here.
 function objectiveIcon(id: string): LucideIcon {
@@ -273,14 +278,26 @@ function MeasuringTape({ label, tape }: { label: string; tape: ProtectionTape })
 }
 
 // Wealth Accumulation's tape — needs split into achieved (grey, projected
-// from what's already in motion) / recommended (green, future-valued
-// contribution from chosen products) / remaining shortfall (red). No gold
-// segment — asset mitigation doesn't apply to a savings goal.
-function AccumulationTapeView({ label, tape }: { label: string; tape: AccumulationTape }) {
+// from what's already in motion) / recommended (further split into
+// client / spouse / joint segments, coloured by whose product it is) /
+// remaining shortfall (red). No gold segment — asset mitigation doesn't
+// apply to a savings goal.
+function AccumulationTapeView({ label, tape, clientName, spouseName }: { label: string; tape: AccumulationTape; clientName: string; spouseName: string }) {
   const achievedPct = (tape.achieved / tape.needs) * 100
-  const recommendedPct = (tape.recommended / tape.needs) * 100
+  const clientPct = (tape.recommendedClient / tape.needs) * 100
+  const spousePct = (tape.recommendedSpouse / tape.needs) * 100
+  const jointPct = (tape.recommendedJoint / tape.needs) * 100
   const remainingPct = (tape.remaining / tape.needs) * 100
   const isClosed = tape.remaining === 0
+
+  const legendItem = (color: string, label: string, amount: string) => (
+    <div key={label}>
+      <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />{label}
+      </div>
+      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>{amount}</div>
+    </div>
+  )
 
   return (
     <div style={{ padding: '16px 0 18px', borderBottom: '1px solid var(--cream3)' }}>
@@ -293,23 +310,17 @@ function AccumulationTapeView({ label, tape }: { label: string; tape: Accumulati
       <div style={{ borderTop: '1px dashed var(--line2)', borderBottom: '1px dashed var(--line2)', padding: '5px 0' }}>
         <div style={{ display: 'flex', height: 11, borderRadius: 6, overflow: 'hidden' }}>
           {achievedPct > 0 && <div style={{ width: `${achievedPct}%`, background: 'var(--ink3)' }} />}
-          {recommendedPct > 0 && <div style={{ width: `${recommendedPct}%`, background: 'var(--emerald)' }} />}
+          {clientPct > 0 && <div style={{ width: `${clientPct}%`, background: OWNER_COLORS.client }} />}
+          {spousePct > 0 && <div style={{ width: `${spousePct}%`, background: OWNER_COLORS.spouse }} />}
+          {jointPct > 0 && <div style={{ width: `${jointPct}%`, background: OWNER_COLORS.joint }} />}
           {remainingPct > 0 && <div style={{ width: `${remainingPct}%`, background: 'var(--rouge)' }} />}
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 10.5 }}>
-        <div>
-          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--ink3)', display: 'inline-block' }} />Already on track
-          </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>{fmt(tape.achieved)}</div>
-        </div>
-        <div>
-          <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--emerald)', display: 'inline-block' }} />Recommended
-          </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: 'var(--ink)', paddingLeft: 13 }}>+{fmt(tape.recommended)}</div>
-        </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '10px 14px', marginTop: 10, fontSize: 10.5 }}>
+        {legendItem('var(--ink3)', 'Already on track', fmt(tape.achieved))}
+        {tape.recommendedClient > 0 && legendItem(OWNER_COLORS.client, `${clientName}'s products`, `+${fmt(tape.recommendedClient)}`)}
+        {tape.recommendedSpouse > 0 && legendItem(OWNER_COLORS.spouse, `${spouseName}'s products`, `+${fmt(tape.recommendedSpouse)}`)}
+        {tape.recommendedJoint > 0 && legendItem(OWNER_COLORS.joint, 'Joint products', `+${fmt(tape.recommendedJoint)}`)}
         <div>
           <div style={{ color: 'var(--ink3)', display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--rouge)', opacity: isClosed ? 0.25 : 1, display: 'inline-block' }} />Remaining shortfall
@@ -339,7 +350,7 @@ function CategorySection({ label, color, children }: { label: string; color: str
   )
 }
 
-function OverviewPage({ person }: { person: PersonActionPlan }) {
+function OverviewPage({ person, clientName, spouseName }: { person: PersonActionPlan; clientName: string; spouseName: string }) {
   const hasAnyProtection = person.protectionItems.length > 0
   const hasAny = hasAnyProtection || person.accumulationItems.length > 0
 
@@ -362,7 +373,7 @@ function OverviewPage({ person }: { person: PersonActionPlan }) {
         <CategorySection label="Wealth Accumulation" color="var(--emerald)">
           {person.accumulationItems.map(item => <OverviewProductRow key={item.id} row={accumulationToRow(item)} />)}
           {person.goalFunding.filter(gf => gf.tape).map(gf => (
-            <AccumulationTapeView key={gf.goal.id} label={`${gf.goal.label} · target age ${gf.goal.targetAge}`} tape={gf.tape as AccumulationTape} />
+            <AccumulationTapeView key={gf.goal.id} label={`${gf.goal.label} · target age ${gf.goal.targetAge}`} tape={gf.tape as AccumulationTape} clientName={clientName} spouseName={spouseName} />
           ))}
         </CategorySection>
       )}
@@ -644,7 +655,7 @@ export default function ActionPlanDisplay({ snapshot, clientName, spouseName }: 
 
       <PageNav page={page} setPage={setPage} />
 
-      {page === 'overview' && <OverviewPage person={active.plan} />}
+      {page === 'overview' && <OverviewPage person={active.plan} clientName={clientName || snapshot.client.name} spouseName={spouseName || (snapshot.spouse?.name ?? 'Spouse')} />}
       {page === 'protection' && <ProtectionPage person={active.plan} />}
       {page === 'accumulation' && <AccumulationPage person={active.plan} />}
     </div>
