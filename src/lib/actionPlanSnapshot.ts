@@ -892,20 +892,36 @@ export function buildActionPlanSnapshot(input: {
   const totalTopupDelta = allPersons.reduce((s, p) => s + p.topupNetDelta, 0)
   const netAnnualCashImpact = totalAdditions + totalReplacementDelta + totalTopupDelta
 
-  // Cost of waiting — one year's delay on each goal's still-open gap
-  // (needs - achieved, before this recommendation's contribution), using
-  // the same annuity-due neededMonthly() solver used elsewhere. Only goals
-  // with a real gap and a valid target age count; a goal already fully
-  // funded by achieved alone contributes nothing (delay costs it nothing).
+  // Cost of waiting — one year's delay on each goal's still-open gap, using
+  // the same annuity-due neededMonthly() solver used elsewhere.
+  //
+  // The gap here is needs - achieved - (FV of the recommended lump sum),
+  // NOT just needs - achieved. Reasoning: tape.recommended already nets in
+  // both the lump sum's future value and the regular contribution's future
+  // value (see bucketFv above) — but "required monthly" is solving for the
+  // regular-contribution side specifically, so folding the whole
+  // tape.recommended in would double count it against the thing being
+  // solved for. The lump sum itself is a one-time action assumed to happen
+  // now either way, so only its FV is netted out here; the regular
+  // contribution's FV is deliberately left out of the netting since that's
+  // exactly what requiredMonthly is computing. A goal already fully covered
+  // by achieved + the lump sum alone correctly drops out (gap <= 0).
   let requiredMonthlyNow = 0
   let requiredMonthlyIfDelayed = 0
   let goalsWithGap = 0
   const breakdown: ActionPlanCostOfWaitingBreakdown[] = []
+  const allAccumulationItemsForLumpSum = [...clientOwnAccumulationItems, ...spouseOwnAccumulationItems, ...jointAccumulationItems]
   for (const gf of householdGoalFunding) {
     if (!gf.tape) continue
-    const gap = Math.max(0, gf.tape.needs - gf.tape.achieved)
     const yearsToTarget = gf.goal.targetAge - clientAge
-    if (gap <= 0 || yearsToTarget <= 1) continue
+    if (yearsToTarget <= 1) continue
+    const lumpSumFv = allAccumulationItemsForLumpSum.reduce((s, item) => {
+      if (!item.allocatedGoalIds.includes(gf.goal.id) || !item.hasLumpSum || item.lumpSumAmount <= 0) return s
+      const r = item.rateReturn > 0 ? item.rateReturn / 100 : expectedReturn / 100
+      return s + item.lumpSumAmount * Math.pow(1 + r, yearsToTarget)
+    }, 0)
+    const gap = Math.max(0, gf.tape.needs - gf.tape.achieved - lumpSumFv)
+    if (gap <= 0) continue
     goalsWithGap += 1
     const mNow = neededMonthly(gap, expectedReturn, yearsToTarget)
     const mDelayed = neededMonthly(gap, expectedReturn, yearsToTarget - 1)
