@@ -165,6 +165,9 @@ export default function ReportPage() {
         eduData: merged['education'] || {},
         cmData: merged['capital_mandate'] || {},
         annualSurplus: execSummaryResult?.annualSurplus || 0,
+        totalInflow: execSummaryResult?.totalInflow || 0,
+        liquidCash: execSummaryResult?.liquidCash || 0,
+        monthlyEssentialBurn: execSummaryResult?.monthlyEssentialBurn || 0,
         protectionProfiles: protectionSnapshotResult
           ? { client: protectionSnapshotResult.client, spouse: protectionSnapshotResult.spouse }
           : undefined,
