@@ -240,7 +240,14 @@ function buildGoals(retData: Record<string, any>, eduData: Record<string, any>, 
   const eduTuitionInf = (edu?.tuitionInflation ?? 5) / 100
   const eduLivingInf = (edu?.livingInflation ?? 3) / 100
   const eduReturnRate = edu?.returnRate ?? expectedReturn
+  const seenEduChildIds = new Set<string>()
   ;(edu?.children || []).forEach((c: any) => {
+    // Guard against duplicate/stale child records in the saved data producing
+    // two goals for what should be the same child — kept identical to the
+    // same guard in recommendations/page.tsx's loadAll().
+    const eduKey = c.childId || c.name
+    if (!eduKey || seenEduChildIds.has(eduKey)) return
+    seenEduChildIds.add(eduKey)
     if ((c.annualTuition || 0) + (c.annualLiving || 0) === 0) return
     const yearsUntilUni = Math.max(1, (c.uniEntryAge || 18) - (c.age || 0))
     const duration = c.courseDuration || 4
