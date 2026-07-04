@@ -280,13 +280,35 @@ export function buildProtectionSnapshot(input: {
     return annual * ((Math.pow(1 + r, y) - 1) / r)
   }
 
+  // Mortgage data lives directly on each PropertyItem (outstanding,
+  // initialLoanAmount, initialTenure, remainingTenure, loanStartDate) — there
+  // is no nested `property.mortgages[]` array in the schema. Mirrors the same
+  // field resolution as calcMortgageForPerson() on the Objectives page so the
+  // Risk Management timeline agrees with the saved need figure.
+  function resolveMortgageFields(pr: any): { outstanding: number; rate: number; tenure: number } | null {
+    const hasLoan = pr.initialLoanAmount || pr.outstanding || pr.monthlyRepayment
+    if (!hasLoan) return null
+    const initialTenure = Number(pr.initialTenure) || 25
+    const initialLoan = Number(pr.initialLoanAmount ?? pr.outstanding ?? 0)
+    const rate = Number(pr.interestRate || 0) / 100
+    let remainingTenure = pr.remainingTenure ?? initialTenure
+    if (!pr.remainingTenure && pr.loanStartDate) {
+      const [mm, yyyy] = String(pr.loanStartDate).split('/')
+      if (mm && yyyy) {
+        const start = new Date(parseInt(yyyy), parseInt(mm) - 1)
+        const elapsedYears = (Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+        remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+      }
+    }
+    const outstanding = Number(pr.outstanding ?? initialLoan)
+    return { outstanding, rate, tenure: Number(remainingTenure) || 0 }
+  }
+
   function mortBalanceAtAge(atAge: number, currentAge: number, properties: any[]): number {
-    const allMortgages = (properties || []).flatMap((pr: any) => pr.mortgages || [])
-    return allMortgages.reduce((total: number, m: any) => {
-      const outstanding = Number(m.outstanding || 0)
-      const rate = Number(m.interestRate || 0) / 100
-      const tenure = Number(m.tenure || m.remainingTenure || 25)
-      if (outstanding <= 0) return total
+    const resolved = (properties || []).map(resolveMortgageFields).filter((m): m is { outstanding: number; rate: number; tenure: number } => m !== null)
+    return resolved.reduce((total: number, m) => {
+      const { outstanding, rate, tenure } = m
+      if (outstanding <= 0 || tenure <= 0) return total
       const yearsElapsed = atAge - currentAge
       const yearsLeft = Math.max(0, tenure - yearsElapsed)
       if (yearsLeft <= 0) return total
@@ -414,9 +436,11 @@ export function buildProtectionSnapshot(input: {
   }
 
   function getMortEndAge(currentAge: number): number | null {
-    const allMortgages = (ff.properties || []).flatMap((pr: any) => pr.mortgages || [])
-    if (allMortgages.length === 0) return null
-    const maxTenure = Math.max(...allMortgages.map((m: any) => Number(m.tenure || m.remainingTenure || 0)))
+    const resolved: { outstanding: number; rate: number; tenure: number }[] = (ff.properties || [])
+      .map((pr: any) => resolveMortgageFields(pr))
+      .filter((m: { outstanding: number; rate: number; tenure: number } | null): m is { outstanding: number; rate: number; tenure: number } => m !== null && m.outstanding > 0)
+    if (resolved.length === 0) return null
+    const maxTenure = Math.max(...resolved.map((m: { outstanding: number; rate: number; tenure: number }) => m.tenure))
     return maxTenure > 0 ? Math.round(currentAge + maxTenure) : null
   }
 
