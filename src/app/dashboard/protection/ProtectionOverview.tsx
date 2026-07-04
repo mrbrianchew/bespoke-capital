@@ -249,7 +249,13 @@ export default function ProtectionOverview({
  const ff = ffData || {}
 const properties: any[] = ff.properties || []
 const savedPlanType = ff.protection?.planType ?? ff.planType ?? null
-const effectiveIsCouple = savedPlanType ? savedPlanType === 'couple' : isCouple
+// Mirrors the isIndividualMode check in protection/page.tsx: an explicit
+// 'individual' planType forces individual mode, but the default/unset value
+// ('individual' is the Objectives page's initial state before a client is
+// ever configured) must NOT silently hide a real spouse — trust the isCouple
+// prop (already derived from actual person2 presence) unless planType is
+// explicitly 'individual'.
+const effectiveIsCouple = savedPlanType === 'individual' ? false : isCouple
 
 // Refs to stabilize memoization
 const policiesRef = useRef(activePolicies)
@@ -1078,6 +1084,7 @@ allMilestonesRaw.forEach((m, i) => {
 
     const goldLen = circumference * Math.min(1, breakdown.existingCoverage / total)
     const sageLen = circumference * Math.max(0, Math.min(1 - breakdown.existingCoverage / total, breakdown.assetMitigation / total))
+    const shortfallLen = breakdown.status === 'shortfall' ? Math.max(0, circumference - goldLen - sageLen) : 0
 
     const pct = breakdown.maxCapitalRequired > 0
       ? Math.min(100, Math.round(((breakdown.existingCoverage + breakdown.assetMitigation) / breakdown.maxCapitalRequired) * 100))
@@ -1085,8 +1092,12 @@ allMilestonesRaw.forEach((m, i) => {
 
     return (
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
-        {/* Unfilled track — dim sage, not a literal data segment */}
-        <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(127,196,127,0.18)" strokeWidth={strokeW} />
+        {/* Neutral base track underneath every segment */}
+        <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={strokeW} />
+        {shortfallLen > 0 && (
+          <circle cx={c} cy={c} r={r} fill="none" stroke="#E8544A" strokeWidth={strokeW} strokeLinecap="round"
+            strokeDasharray={`${shortfallLen} ${circumference}`} strokeDashoffset={-(goldLen + sageLen)} transform={`rotate(-90 ${c} ${c})`} />
+        )}
         {sageLen > 0 && (
           <circle cx={c} cy={c} r={r} fill="none" stroke="#7FC47F" strokeWidth={strokeW} strokeLinecap="round"
             strokeDasharray={`${sageLen} ${circumference}`} strokeDashoffset={-goldLen} transform={`rotate(-90 ${c} ${c})`} />
@@ -1115,18 +1126,32 @@ allMilestonesRaw.forEach((m, i) => {
     )
   }
 
+  // Distinct per-category colors so "Family living", "Mortgage", "Education"
+  // etc. read as different lines at a glance, consistent across both the
+  // D/TPD and CI cards (same category = same color in both). Falls back to
+  // brand gold for any unrecognized label.
+  const CATEGORY_COLORS: Record<string, { swatch: string; gradient: string }> = {
+    'Family living':   { swatch: '#c8a96e', gradient: 'linear-gradient(180deg, #ddbb80 0%, #c8a96e 55%, #a3813f 100%)' },
+    'Mortgage':        { swatch: '#5B92BE', gradient: 'linear-gradient(180deg, #8fb8dc 0%, #5B92BE 55%, #3f6a8f 100%)' },
+    'Education':       { swatch: '#8B78B0', gradient: 'linear-gradient(180deg, #b3a3d1 0%, #8B78B0 55%, #665783 100%)' },
+    'Medical buffer':  { swatch: '#C97B5D', gradient: 'linear-gradient(180deg, #e3a487 0%, #C97B5D 55%, #9a5940 100%)' },
+    'Recovery buffer': { swatch: '#4F9A82', gradient: 'linear-gradient(180deg, #7fc4ab 0%, #4F9A82 55%, #366b5a 100%)' },
+  }
+  const DEFAULT_CATEGORY_COLOR = { swatch: '#c8a96e', gradient: 'linear-gradient(180deg, #ddbb80 0%, #c8a96e 55%, #a3813f 100%)' }
+
   // Category row with its own proportional bar (scaled against the largest
   // row in the group, so the three bars read as a relative comparison) and
   // duration caption underneath, matching the reference screenshot.
-  function ScenarioBreakdownRow({ label, value, maxValue, durationYears, barColor = 'gold' }: { label: string; value: number; maxValue: number; durationYears?: number | null; barColor?: 'gold' | 'sage' }) {
+  function ScenarioBreakdownRow({ label, value, maxValue, durationYears }: { label: string; value: number; maxValue: number; durationYears?: number | null }) {
     const barPct = maxValue > 0 ? Math.max(2, Math.round((value / maxValue) * 100)) : 0
-    const gradient = barColor === 'sage'
-      ? 'linear-gradient(180deg, #a3dfa3 0%, #7FC47F 55%, #4f9a4f 100%)'
-      : 'linear-gradient(180deg, #ddbb80 0%, #c8a96e 55%, #a3813f 100%)'
+    const { swatch, gradient } = CATEGORY_COLORS[label] || DEFAULT_CATEGORY_COLOR
     return (
       <div style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <span style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.7)' }}>{label}</span>
+          <span style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0, display: 'inline-block' }} />
+            {label}
+          </span>
           <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13.5, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
         </div>
         <div style={{ height: 9, borderRadius: 99, background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
@@ -1248,7 +1273,6 @@ allMilestonesRaw.forEach((m, i) => {
                     value={r.value}
                     maxValue={maxRowValue}
                     durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
-                    barColor={type === 'ci' ? 'sage' : 'gold'}
                   />
                 ))}
               </div>
@@ -1378,6 +1402,33 @@ allMilestonesRaw.forEach((m, i) => {
         )}
       </div>
 
+      {/* D/TPD CHART — sits directly under the D/TPD scenario card above */}
+      <div style={{ background: 'white', borderRadius: 20, padding: '26px 30px' }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 4 }}>
+            Coverage needs analysis
+          </div>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17' }}>
+            Death / TPD coverage need — {aName}
+          </div>
+          <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
+            Required capital vs portfolio · sharp drops at uni · mortgage slope · permanent floor
+          </div>
+        </div>
+        <CoverageChart
+  data={chartData}
+  type="dtpd"
+  floor={aFloor}
+  accentColor="#C4A464"
+  currentAge={aAge}
+  milestones={milestoneAges}
+  personName={aName} 
+/>
+        <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
+          Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
+        </div>
+      </div>
+
       {/* ② CI SCENARIO PANEL — single frosted card, no nested boxes */}
       <div style={{
         position: 'relative', borderRadius: 22, overflow: 'hidden',
@@ -1434,59 +1485,20 @@ allMilestonesRaw.forEach((m, i) => {
         )}
       </div>
 
-      {/* ③ FAMILY JOURNEY + CHARTS — reads the same activePerson toggle above */}
+      {/* CI CHART — sits directly under the CI scenario card above */}
       <div style={{ background: 'white', borderRadius: 20, padding: '26px 30px' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 4 }}>
-              Coverage needs analysis
-            </div>
-            <div style={{ fontFamily: 'Georgia, serif', fontSize: 17, fontWeight: 300, color: '#1C1A17' }}>
-              {aName}'s protection journey — age {aAge} to 100
-            </div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#2D6A4F', marginBottom: 4 }}>
+            Coverage needs analysis
+          </div>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17' }}>
+            Critical illness coverage need — {aName}
+          </div>
+          <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
+            Income window · sharp drops at uni · mortgage slope · survival floor forever
           </div>
         </div>
-
-        {/* D/TPD Chart */}
-        <div style={{ borderTop: '0.5px solid #F0EDE8', paddingTop: 20, marginTop: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div>
-              <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 2 }}>
-                Death / TPD coverage need — {aName}
-              </div>
-              <div style={{ fontSize: 11, color: '#bbb' }}>
-                Required capital vs portfolio · sharp drops at uni · mortgage slope · permanent floor
-              </div>
-            </div>
-          </div>
-          <CoverageChart
-  data={chartData}
-  type="dtpd"
-  floor={aFloor}
-  accentColor="#C4A464"
-  currentAge={aAge}
-  milestones={milestoneAges}
-  personName={aName} 
-/>
-          <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-            Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
-          </div>
-        </div>
-
-        {/* CI Chart */}
-        <div style={{ borderTop: '0.5px solid #F0EDE8', paddingTop: 20, marginTop: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div>
-              <div style={{ fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2D6A4F', marginBottom: 2 }}>
-                Critical illness coverage need — {aName}
-              </div>
-              <div style={{ fontSize: 11, color: '#bbb' }}>
-                Income window · sharp drops at uni · mortgage slope · survival floor forever
-              </div>
-            </div>
-          </div>
-          <CoverageChart
+        <CoverageChart
   data={chartData}
   type="ci"
   floor={aFloor}
@@ -1495,9 +1507,8 @@ allMilestonesRaw.forEach((m, i) => {
   milestones={milestoneAges}
   personName={aName}
 />
-          <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-            Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
-          </div>
+        <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
+          Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
         </div>
       </div>
 
