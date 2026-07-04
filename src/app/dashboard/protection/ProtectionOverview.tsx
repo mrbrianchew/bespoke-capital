@@ -1225,8 +1225,50 @@ allMilestonesRaw.forEach((m, i) => {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
+  // Resolved once here so both scenario panels below (and the existing chart
+  // section, unchanged) read off the same activePerson toggle instead of
+  // showing both people side-by-side — a single control point for the page.
+  const activeName = activePerson === 'client' ? clientName : spouseName
+  const activeAge = activePerson === 'client' ? clientAge : spouseAge
+  const activeIncome = activePerson === 'client' ? p1MonthlyInc : p2MonthlyInc
+  const activeInitialsColor = activePerson === 'client' ? '#c8a96e' : '#7FC47F'
+  const activeInitialsBg = activePerson === 'client' ? 'rgba(200,169,110,0.15)' : 'rgba(127,196,127,0.12)'
+  const activeProfile = protectionSnapshot
+    ? (activePerson === 'spouse' ? protectionSnapshot.spouse : protectionSnapshot.client)
+    : null
+  const activeCIBelowFloor = activePerson === 'client' ? clientCIBelowFloor : spouseCIBelowFloor
+  const activeFloor = activePerson === 'client' ? clientFloor : spouseFloor
+
   return (
     <div style={{ padding: '32px 48px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Person toggle — controls both scenario panels below and the chart section */}
+      {effectiveIsCouple && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 4, background: '#F5F3EE', padding: 4, borderRadius: 10 }}>
+            {(['client', 'spouse'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setActivePerson(p)}
+                style={{
+                  padding: '8px 22px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontFamily: 'Inter, sans-serif',
+                  borderRadius: 8,
+                  background: activePerson === p ? '#1C1A17' : 'transparent',
+                  color: activePerson === p ? '#c8a96e' : '#888',
+                  fontWeight: activePerson === p ? 500 : 400,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {p === 'client' ? clientName : spouseName}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ① D/TPD SCENARIO PANEL */}
       <div style={{ background: '#1C1A17', borderRadius: 20, overflow: 'hidden' }}>
@@ -1236,11 +1278,7 @@ allMilestonesRaw.forEach((m, i) => {
             Death &amp; total permanent disability
           </div>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            {effectiveIsCouple ? (
-              <>If <span style={{ color: '#c8a96e', fontSize: 30 }}>{clientName}</span> or <span style={{ color: '#c8a96e', fontSize: 30 }}>{spouseName}</span> were gone tomorrow —</>
-            ) : (
-              <>If <span style={{ color: '#c8a96e', fontSize: 30 }}>{clientName}</span> were gone tomorrow —</>
-            )}
+            <>If <span style={{ color: '#c8a96e', fontSize: 30 }}>{activeName}</span> were gone tomorrow —</>
           </div>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 15, fontWeight: 300, color: 'rgba(240,237,232,0.45)', lineHeight: 1.7, maxWidth: 600 }}>
             {children.length > 0
@@ -1253,49 +1291,27 @@ allMilestonesRaw.forEach((m, i) => {
         {/* Coverage cells */}
         {!protectionSnapshot ? (
           <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
+        ) : !activeProfile ? (
+          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
-            gap: 12,
-            padding: '0 28px 28px',
-          }}>
+          <div style={{ padding: '0 28px 28px' }}>
             <ScenarioDialCell
-              personLabel={clientName}
-              initials={clientName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-              initialsColor="#c8a96e"
-              initialsBg="rgba(200,169,110,0.15)"
-              age={clientAge}
-              income={p1MonthlyInc}
-              breakdown={protectionSnapshot.client.dtpd}
+              personLabel={activeName}
+              initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              initialsColor={activeInitialsColor}
+              initialsBg={activeInitialsBg}
+              age={activeAge}
+              income={activeIncome}
+              breakdown={activeProfile.dtpd}
               rows={[
-                { label: 'Family living', value: protectionSnapshot.client.dtpd.familyDependency },
-                { label: 'Mortgage', value: protectionSnapshot.client.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
-                { label: 'Education', value: protectionSnapshot.client.dtpd.tertiaryFunding, milestoneType: 'education' },
+                { label: 'Family living', value: activeProfile.dtpd.familyDependency },
+                { label: 'Mortgage', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
+                { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
               ]}
               showDurations
-              timeline={protectionSnapshot.client.dtpdTimeline}
+              timeline={activeProfile.dtpdTimeline}
               type="dtpd"
             />
-            {effectiveIsCouple && protectionSnapshot.spouse && (
-              <ScenarioDialCell
-                personLabel={spouseName}
-                initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                initialsColor="#7FC47F"
-                initialsBg="rgba(127,196,127,0.12)"
-                age={spouseAge}
-                income={p2MonthlyInc}
-                breakdown={protectionSnapshot.spouse.dtpd}
-                rows={[
-                  { label: 'Family living', value: protectionSnapshot.spouse.dtpd.familyDependency },
-                  { label: 'Mortgage', value: protectionSnapshot.spouse.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
-                  { label: 'Education', value: protectionSnapshot.spouse.dtpd.tertiaryFunding, milestoneType: 'education' },
-                ]}
-                showDurations
-                timeline={protectionSnapshot.spouse.dtpdTimeline}
-                type="dtpd"
-              />
-            )}
           </div>
         )}
       </div>
@@ -1307,11 +1323,7 @@ allMilestonesRaw.forEach((m, i) => {
             Critical illness
           </div>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            {effectiveIsCouple ? (
-              <>If <span style={{ color: '#7FC47F', fontSize: 30 }}>{clientName}</span> or <span style={{ color: '#7FC47F', fontSize: 30 }}>{spouseName}</span> received a critical illness diagnosis —</>
-            ) : (
-              <>If <span style={{ color: '#7FC47F', fontSize: 30 }}>{clientName}</span> received a critical illness diagnosis —</>
-            )}
+            <>If <span style={{ color: '#7FC47F', fontSize: 30 }}>{activeName}</span> received a critical illness diagnosis —</>
           </div>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 15, fontWeight: 300, color: 'rgba(240,237,232,0.45)', lineHeight: 1.7, maxWidth: 600 }}>
             Life would not end — but income would pause. Recovery takes years, not months. And CI coverage is not just for working years. Even at retirement, a diagnosis without a payout is still a crisis.
@@ -1319,66 +1331,39 @@ allMilestonesRaw.forEach((m, i) => {
         </div>
         {!protectionSnapshot ? (
           <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
+        ) : !activeProfile ? (
+          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
-            gap: 12,
-            padding: '0 28px 28px',
-          }}>
+          <div style={{ padding: '0 28px 28px' }}>
             <ScenarioDialCell
-              personLabel={clientName}
-              initials={clientName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-              initialsColor="#c8a96e"
-              initialsBg="rgba(200,169,110,0.15)"
-              age={clientAge}
-              income={p1MonthlyInc}
-              breakdown={protectionSnapshot.client.ci}
+              personLabel={activeName}
+              initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              initialsColor={activeInitialsColor}
+              initialsBg={activeInitialsBg}
+              age={activeAge}
+              income={activeIncome}
+              breakdown={activeProfile.ci}
               rows={[
-                { label: 'Family living', value: protectionSnapshot.client.ci.familyDependency },
-                { label: 'Mortgage', value: protectionSnapshot.client.ci.mortgageDebtClearance },
-                { label: 'Education', value: protectionSnapshot.client.ci.tertiaryFunding },
-                { label: 'Medical buffer', value: protectionSnapshot.client.ci.medicalBuffer },
-                { label: 'Recovery buffer', value: protectionSnapshot.client.ci.recoveryBuffer },
+                { label: 'Family living', value: activeProfile.ci.familyDependency },
+                { label: 'Mortgage', value: activeProfile.ci.mortgageDebtClearance },
+                { label: 'Education', value: activeProfile.ci.tertiaryFunding },
+                { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
+                { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer },
               ]}
               showDurations={false}
-              timeline={protectionSnapshot.client.ciTimeline}
+              timeline={activeProfile.ciTimeline}
               type="ci"
-              recoveryWindowYears={protectionSnapshot.client.ci.ciYears}
-              belowFloor={clientCIBelowFloor}
-              floor={clientFloor}
+              recoveryWindowYears={activeProfile.ci.ciYears}
+              belowFloor={activeCIBelowFloor}
+              floor={activeFloor}
             />
-            {effectiveIsCouple && protectionSnapshot.spouse && (
-              <ScenarioDialCell
-                personLabel={spouseName}
-                initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                initialsColor="#7FC47F"
-                initialsBg="rgba(127,196,127,0.12)"
-                age={spouseAge}
-                income={p2MonthlyInc}
-                breakdown={protectionSnapshot.spouse.ci}
-                rows={[
-                  { label: 'Family living', value: protectionSnapshot.spouse.ci.familyDependency },
-                  { label: 'Mortgage', value: protectionSnapshot.spouse.ci.mortgageDebtClearance },
-                  { label: 'Education', value: protectionSnapshot.spouse.ci.tertiaryFunding },
-                  { label: 'Medical buffer', value: protectionSnapshot.spouse.ci.medicalBuffer },
-                  { label: 'Recovery buffer', value: protectionSnapshot.spouse.ci.recoveryBuffer },
-                ]}
-                showDurations={false}
-                timeline={protectionSnapshot.spouse.ciTimeline}
-                type="ci"
-                recoveryWindowYears={protectionSnapshot.spouse.ci.ciYears}
-                belowFloor={spouseCIBelowFloor}
-                floor={spouseFloor}
-              />
-            )}
           </div>
         )}
       </div>
 
-      {/* ③ FAMILY JOURNEY + CHARTS with person toggle */}
+      {/* ③ FAMILY JOURNEY + CHARTS — reads the same activePerson toggle above */}
       <div style={{ background: 'white', borderRadius: 20, padding: '26px 30px' }}>
-        {/* Header + toggle */}
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 4 }}>
@@ -1388,30 +1373,6 @@ allMilestonesRaw.forEach((m, i) => {
               {aName}'s protection journey — age {aAge} to 100
             </div>
           </div>
-          {effectiveIsCouple && (
-            <div style={{ display: 'flex', gap: 4, background: '#F5F3EE', padding: 4, borderRadius: 10 }}>
-              {(['client', 'spouse'] as const).map(p => (
-                <button
-                  key={p}
-                  onClick={() => setActivePerson(p)}
-                  style={{
-                    padding: '8px 22px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontFamily: 'Inter, sans-serif',
-                    borderRadius: 8,
-                    background: activePerson === p ? '#1C1A17' : 'transparent',
-                    color: activePerson === p ? '#c8a96e' : '#888',
-                    fontWeight: activePerson === p ? 500 : 400,
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {p === 'client' ? clientName : spouseName}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* D/TPD Chart */}
