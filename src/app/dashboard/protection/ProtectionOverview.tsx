@@ -1320,7 +1320,9 @@ allMilestonesRaw.forEach((m, i) => {
   return (
     <div style={{ padding: '32px 48px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Person toggle — controls both scenario panels below and the chart section */}
+      {/* Person toggle — controls both scenario panels below and the chart section.
+          Sits on the cream page background, so unselected state uses charcoal-based
+          colors for contrast — not the white-based tones used inside the dark cards. */}
       {effectiveIsCouple && (
         <div style={{ display: 'flex', gap: 10 }}>
           {(['client', 'spouse'] as const).map(p => (
@@ -1333,10 +1335,11 @@ allMilestonesRaw.forEach((m, i) => {
                 fontSize: 13,
                 fontFamily: 'Inter, sans-serif',
                 borderRadius: 999,
-                border: activePerson === p ? '1px solid rgba(200,169,110,0.5)' : '1px solid rgba(255,255,255,0.12)',
-                background: activePerson === p ? 'rgba(200,169,110,0.12)' : 'transparent',
-                color: activePerson === p ? '#c8a96e' : 'rgba(255,255,255,0.5)',
+                border: activePerson === p ? '1px solid rgba(200,169,110,0.5)' : '1px solid rgba(28,26,23,0.16)',
+                background: activePerson === p ? 'rgba(200,169,110,0.12)' : '#FFFFFF',
+                color: activePerson === p ? '#c8a96e' : 'rgba(28,26,23,0.55)',
                 fontWeight: activePerson === p ? 500 : 400,
+                boxShadow: activePerson === p ? 'none' : '0 1px 2px rgba(28,26,23,0.04)',
                 transition: 'all 0.15s',
               }}
             >
