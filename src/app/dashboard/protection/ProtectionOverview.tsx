@@ -111,18 +111,42 @@ function pvMortgage(outstanding: number, rate: number, tenure: number): number {
   return outstanding
 }
 
+// Mortgage data lives directly on each PropertyItem (outstanding,
+// initialLoanAmount, initialTenure, remainingTenure, loanStartDate) — there
+// is no nested `property.mortgages[]` array in the schema. Mirrors
+// calcMortgageForPerson() on the Objectives page so this page's mortgage
+// slope agrees with the saved need figure and the Risk Management timeline.
+function resolveMortgageFields(pr: any): { outstanding: number; rate: number; tenure: number } | null {
+  const hasLoan = pr.initialLoanAmount || pr.outstanding || pr.monthlyRepayment
+  if (!hasLoan) return null
+  const initialTenure = Number(pr.initialTenure) || 25
+  const initialLoan = Number(pr.initialLoanAmount ?? pr.outstanding ?? 0)
+  const rate = Number(pr.interestRate || 0) / 100
+  let remainingTenure = pr.remainingTenure ?? initialTenure
+  if (!pr.remainingTenure && pr.loanStartDate) {
+    const [mm, yyyy] = String(pr.loanStartDate).split('/')
+    if (mm && yyyy) {
+      const start = new Date(parseInt(yyyy), parseInt(mm) - 1)
+      const elapsedYears = (Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+      remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
+    }
+  }
+  const outstanding = Number(pr.outstanding ?? initialLoan)
+  return { outstanding, rate, tenure: Number(remainingTenure) || 0 }
+}
+
 // Mortgage balance remaining at a future age
 function mortBalanceAtAge(
   atAge: number,
   currentAge: number,
   properties: any[]
 ): number {
-  const allMortgages = (properties || []).flatMap((p: any) => p.mortgages || [])
-  return allMortgages.reduce((total: number, m: any) => {
-    const outstanding = Number(m.outstanding || 0)
-    const rate = Number(m.interestRate || 0) / 100
-    const tenure = Number(m.tenure || m.remainingTenure || 25)
-    if (outstanding <= 0) return total
+  const resolved = (properties || [])
+    .map(resolveMortgageFields)
+    .filter((m): m is { outstanding: number; rate: number; tenure: number } => m !== null)
+  return resolved.reduce((total: number, m) => {
+    const { outstanding, rate, tenure } = m
+    if (outstanding <= 0 || tenure <= 0) return total
     const yearsElapsed = atAge - currentAge
     const yearsLeft = Math.max(0, tenure - yearsElapsed)
     if (yearsLeft <= 0) return total
@@ -1045,8 +1069,8 @@ allMilestonesRaw.forEach((m, i) => {
     status: 'covered' | 'shortfall'
   }
 
-  function RadialDial({ breakdown, size = 128 }: { breakdown: DialBreakdown; size?: number }) {
-    const strokeW = 10
+  function RadialDial({ breakdown, size = 196 }: { breakdown: DialBreakdown; size?: number }) {
+    const strokeW = size * 0.065
     const r = size / 2 - strokeW
     const c = size / 2
     const circumference = 2 * Math.PI * r
@@ -1064,17 +1088,17 @@ allMilestonesRaw.forEach((m, i) => {
         {/* Unfilled track — dim sage, not a literal data segment */}
         <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(127,196,127,0.18)" strokeWidth={strokeW} />
         {sageLen > 0 && (
-          <circle cx={c} cy={c} r={r} fill="none" stroke="#7FC47F" strokeWidth={strokeW}
+          <circle cx={c} cy={c} r={r} fill="none" stroke="#7FC47F" strokeWidth={strokeW} strokeLinecap="round"
             strokeDasharray={`${sageLen} ${circumference}`} strokeDashoffset={-goldLen} transform={`rotate(-90 ${c} ${c})`} />
         )}
         {goldLen > 0 && (
-          <circle cx={c} cy={c} r={r} fill="none" stroke="#c8a96e" strokeWidth={strokeW}
+          <circle cx={c} cy={c} r={r} fill="none" stroke="#c8a96e" strokeWidth={strokeW} strokeLinecap="round"
             strokeDasharray={`${goldLen} ${circumference}`} transform={`rotate(-90 ${c} ${c})`} />
         )}
-        <text x={c} y={c - 3} textAnchor="middle" fontFamily="Georgia, serif" fontWeight={400} fontSize={size * 0.19} fill="#F0EDE8">
+        <text x={c} y={c - 4} textAnchor="middle" fontFamily="Cormorant Garamond, Georgia, serif" fontWeight={500} fontSize={size * 0.205} fill="#F0EDE8">
           {pct}%
         </text>
-        <text x={c} y={c + 16} textAnchor="middle" fontSize={size * 0.075} letterSpacing="0.1em" fill="rgba(255,255,255,0.4)">
+        <text x={c} y={c + 20} textAnchor="middle" fontFamily="Inter, sans-serif" fontSize={size * 0.06} letterSpacing="0.15em" fill="rgba(255,255,255,0.4)">
           PROTECTED
         </text>
       </svg>
@@ -1083,10 +1107,10 @@ allMilestonesRaw.forEach((m, i) => {
 
   function LegendRow({ swatch, label, value }: { swatch: string; label: string; value: number }) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', flex: 1 }}>{label}</span>
-        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#F0EDE8' }}>{fmt(value)}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0' }}>
+        <div style={{ width: 9, height: 9, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
+        <span style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.55)', flex: 1 }}>{label}</span>
+        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5, color: '#F0EDE8' }}>{fmt(value)}</span>
       </div>
     )
   }
@@ -1094,19 +1118,26 @@ allMilestonesRaw.forEach((m, i) => {
   // Category row with its own proportional bar (scaled against the largest
   // row in the group, so the three bars read as a relative comparison) and
   // duration caption underneath, matching the reference screenshot.
-  function ScenarioBreakdownRow({ label, value, maxValue, durationYears }: { label: string; value: number; maxValue: number; durationYears?: number | null }) {
+  function ScenarioBreakdownRow({ label, value, maxValue, durationYears, barColor = 'gold' }: { label: string; value: number; maxValue: number; durationYears?: number | null; barColor?: 'gold' | 'sage' }) {
     const barPct = maxValue > 0 ? Math.max(2, Math.round((value / maxValue) * 100)) : 0
+    const gradient = barColor === 'sage'
+      ? 'linear-gradient(180deg, #a3dfa3 0%, #7FC47F 55%, #4f9a4f 100%)'
+      : 'linear-gradient(180deg, #ddbb80 0%, #c8a96e 55%, #a3813f 100%)'
     return (
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{label}</span>
-          <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+          <span style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.7)' }}>{label}</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13.5, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
         </div>
-        <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99 }}>
-          <div style={{ width: `${barPct}%`, height: '100%', background: '#c8a96e', borderRadius: 99 }} />
+        <div style={{ height: 9, borderRadius: 99, background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+          <div style={{
+            width: `${barPct}%`, height: '100%', borderRadius: 99,
+            background: gradient,
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 3px rgba(0,0,0,0.35)',
+          }} />
         </div>
         {durationYears != null && durationYears > 0 && (
-          <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.3)', marginTop: 5 }}>{durationYears} yrs</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 7 }}>{durationYears} yrs</div>
         )}
       </div>
     )
@@ -1146,98 +1177,103 @@ allMilestonesRaw.forEach((m, i) => {
     const hasNeed = breakdown.maxCapitalRequired > 0
     const visibleRows = rows.filter(r => r.value > 0)
     const maxRowValue = Math.max(0, ...visibleRows.map(r => r.value))
+    const fundedPct = hasNeed
+      ? Math.min(100, Math.round(((breakdown.existingCoverage + breakdown.assetMitigation) / breakdown.maxCapitalRequired) * 100))
+      : 100
 
     return (
-      <div style={{
-        position: 'relative', borderRadius: 14, overflow: 'hidden',
-        border: '1px solid rgba(255,255,255,0.08)',
-      }}>
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'radial-gradient(circle at 20% 15%, rgba(200,169,110,0.08), transparent 55%), radial-gradient(circle at 85% 90%, rgba(127,196,127,0.08), transparent 55%)',
-        }} />
-        <div style={{ position: 'relative', padding: '24px 26px' }}>
-          {/* Person header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: '50%', background: initialsBg,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 10, fontWeight: 500, color: initialsColor, flexShrink: 0,
-            }}>{initials}</div>
-            <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: initialsColor }}>
-              {personLabel}, {age}
-            </div>
-            {income > 0 && (
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginLeft: 2 }}>
-                · {fmt(income)}/mo
-              </div>
-            )}
+      <div>
+        {/* Person header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 24 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%', background: initialsBg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 11, fontWeight: 500, color: initialsColor, flexShrink: 0,
+          }}>{initials}</div>
+          <div style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: initialsColor, fontWeight: 500 }}>
+            {personLabel}, {age}
           </div>
-
-          {!hasNeed ? (
-            <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>
-              No need identified yet.
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
-              {/* Left: dial + shortfall + legend */}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
-                  <RadialDial breakdown={breakdown} />
-                </div>
-                {breakdown.status === 'shortfall' && (
-                  <div style={{ textAlign: 'center', fontFamily: 'Georgia, serif', fontSize: 20, color: '#FF8A80', marginBottom: 6 }}>
-                    {fmt(breakdown.shortfall)}
-                  </div>
-                )}
-                {breakdown.status === 'shortfall' && (
-                  <div style={{ textAlign: 'center', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,138,128,0.6)', marginBottom: 18 }}>
-                    Shortfall
-                  </div>
-                )}
-
-                {type === 'ci' && belowFloor && floor && breakdown.shortfall > 0 && (
-                  <div style={{ marginBottom: 14, padding: '7px 12px', borderRadius: 8, background: 'rgba(192,57,43,0.12)', border: '1px solid rgba(232,160,160,0.2)' }}>
-                    <div style={{ fontSize: 10, color: 'rgba(255,138,128,0.85)', fontWeight: 500 }}>Below {fmt(floor)} survival floor</div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>CI protection is needed for life — not just working years</div>
-                  </div>
-                )}
-
-                <div style={{ marginTop: 'auto', paddingTop: 8 }}>
-                  <LegendRow swatch="#c8a96e" label="Insurance" value={breakdown.existingCoverage} />
-                  <LegendRow swatch="#7FC47F" label="Assets" value={breakdown.assetMitigation} />
-                </div>
-              </div>
-
-              {/* Right: need composition */}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>
-                  Need composition
-                </div>
-                <div>
-                  {visibleRows.map((r, i) => (
-                    <ScenarioBreakdownRow
-                      key={i}
-                      label={r.label}
-                      value={r.value}
-                      maxValue={maxRowValue}
-                      durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
-                    />
-                  ))}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 13, fontWeight: 600, color: '#F0EDE8' }}>
-                  <span>Total need</span>
-                  <span style={{ fontFamily: 'monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
-                </div>
-                {recoveryWindowYears != null && (
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 8 }}>
-                    Recovery window: {recoveryWindowYears} years
-                  </div>
-                )}
-              </div>
+          {income > 0 && (
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginLeft: 2 }}>
+              · {fmt(income)}/mo
             </div>
           )}
         </div>
+
+        {!hasNeed ? (
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontStyle: 'italic', fontSize: 14, color: 'rgba(255,255,255,0.35)' }}>
+            No need identified yet.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36 }}>
+            {/* Left: dial + shortfall + legend */}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+                <RadialDial breakdown={breakdown} />
+              </div>
+              {breakdown.status === 'shortfall' && (
+                <div style={{ textAlign: 'center', fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 24, color: '#FF8A80', marginBottom: 4 }}>
+                  {fmt(breakdown.shortfall)}
+                </div>
+              )}
+              {breakdown.status === 'shortfall' && (
+                <div style={{ textAlign: 'center', fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,138,128,0.65)', marginBottom: 18 }}>
+                  Shortfall
+                </div>
+              )}
+
+              {type === 'ci' && belowFloor && floor && breakdown.shortfall > 0 && (
+                <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(192,57,43,0.14)', border: '1px solid rgba(232,160,160,0.22)' }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,138,128,0.9)', fontWeight: 600, marginBottom: 3 }}>Below {fmt(floor)} survival floor</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>CI protection is needed for life — not just working years</div>
+                </div>
+              )}
+
+              <div style={{ marginTop: 'auto', paddingTop: 8, width: '100%' }}>
+                <LegendRow swatch="#c8a96e" label="Insurance" value={breakdown.existingCoverage} />
+                <LegendRow swatch="#7FC47F" label="Assets" value={breakdown.assetMitigation} />
+              </div>
+            </div>
+
+            {/* Right: need composition */}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 20, fontWeight: 500 }}>
+                Need composition
+              </div>
+              <div>
+                {visibleRows.map((r, i) => (
+                  <ScenarioBreakdownRow
+                    key={i}
+                    label={r.label}
+                    value={r.value}
+                    maxValue={maxRowValue}
+                    durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+                    barColor={type === 'ci' ? 'sage' : 'gold'}
+                  />
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.09)', fontSize: 14, fontWeight: 600, color: '#F0EDE8' }}>
+                <span>Total need</span>
+                <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
+              </div>
+              {type === 'ci' && recoveryWindowYears != null && (
+                <>
+                  <div style={{
+                    marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 14px', borderRadius: 10,
+                    background: 'rgba(127,196,127,0.10)', border: '1px solid rgba(127,196,127,0.22)',
+                  }}>
+                    <span style={{ fontSize: 11, color: 'rgba(160,220,160,0.9)', fontWeight: 500 }}>Recovery window</span>
+                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#F0EDE8' }}>{recoveryWindowYears} years</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.3)', marginTop: 7, lineHeight: 1.55 }}>
+                    Funded {fundedPct}% of a {recoveryWindowYears}-year income-replacement window — CI planning covers the recovery period after diagnosis, not a permanent loss like D/TPD.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1286,17 +1322,26 @@ allMilestonesRaw.forEach((m, i) => {
         </div>
       )}
 
-      {/* ① D/TPD SCENARIO PANEL */}
-      <div style={{ background: '#1C1A17', borderRadius: 20, overflow: 'hidden' }}>
+      {/* ① D/TPD SCENARIO PANEL — single frosted card, no nested boxes */}
+      <div style={{
+        position: 'relative', borderRadius: 22, overflow: 'hidden',
+        background: 'linear-gradient(180deg, #221F1A 0%, #17150F 100%)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        boxShadow: '0 24px 60px -20px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: 'radial-gradient(circle at 15% 8%, rgba(200,169,110,0.10), transparent 45%), radial-gradient(circle at 90% 95%, rgba(127,196,127,0.09), transparent 50%)',
+        }} />
         {/* Narrative */}
-        <div style={{ padding: '28px 32px 20px' }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(200,169,110,0.5)', marginBottom: 12 }}>
+        <div style={{ position: 'relative', padding: '34px 36px 20px' }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontWeight: 500, fontSize: 21, letterSpacing: '0.01em', color: 'rgba(200,169,110,0.9)', marginBottom: 14 }}>
             Death &amp; total permanent disability
           </div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            <>If <span style={{ color: '#c8a96e', fontSize: 30 }}>{activeName}</span> were gone tomorrow —</>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 27, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
+            <>If <span style={{ color: '#c8a96e', fontSize: 31 }}>{activeName}</span> were gone tomorrow —</>
           </div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
             {children.length > 0
               ? `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would be left to raise ${children.map((c: any) => c.name || 'your child').join(' and ')} alone. The mortgage, school fees, and daily life continue — but the income that makes it possible would not.`
               : `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would face an immediate income gap. The mortgage and daily expenses continue — but without your income to fund them.`
@@ -1304,13 +1349,15 @@ allMilestonesRaw.forEach((m, i) => {
           </div>
         </div>
 
+        <div style={{ position: 'relative', margin: '0 36px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
         {/* Coverage cells */}
         {!protectionSnapshot ? (
-          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
+          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
         ) : !activeProfile ? (
-          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
+          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
         ) : (
-          <div style={{ padding: '0 28px 28px' }}>
+          <div style={{ position: 'relative', padding: '24px 36px 34px' }}>
             <ScenarioDialCell
               personLabel={activeName}
               initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -1331,25 +1378,37 @@ allMilestonesRaw.forEach((m, i) => {
         )}
       </div>
 
-      {/* ② CI SCENARIO PANEL */}
-      <div style={{ background: '#1C1A17', borderRadius: 20, overflow: 'hidden' }}>
-        <div style={{ padding: '28px 32px 20px' }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(45,106,79,0.7)', marginBottom: 12 }}>
+      {/* ② CI SCENARIO PANEL — single frosted card, no nested boxes */}
+      <div style={{
+        position: 'relative', borderRadius: 22, overflow: 'hidden',
+        background: 'linear-gradient(180deg, #221F1A 0%, #17150F 100%)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        boxShadow: '0 24px 60px -20px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: 'radial-gradient(circle at 15% 8%, rgba(200,169,110,0.10), transparent 45%), radial-gradient(circle at 90% 95%, rgba(127,196,127,0.09), transparent 50%)',
+        }} />
+        <div style={{ position: 'relative', padding: '34px 36px 20px' }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontWeight: 500, fontSize: 21, letterSpacing: '0.01em', color: 'rgba(127,196,127,0.9)', marginBottom: 14 }}>
             Critical illness
           </div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            <>If <span style={{ color: '#7FC47F', fontSize: 30 }}>{activeName}</span> received a critical illness diagnosis —</>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 27, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
+            <>If <span style={{ color: '#7FC47F', fontSize: 31 }}>{activeName}</span> received a critical illness diagnosis —</>
           </div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
             Life would not end — but income would pause. Recovery takes years, not months. And CI coverage is not just for working years. Even at retirement, a diagnosis without a payout is still a crisis.
           </div>
         </div>
+
+        <div style={{ position: 'relative', margin: '0 36px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
         {!protectionSnapshot ? (
-          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
+          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
         ) : !activeProfile ? (
-          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
+          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
         ) : (
-          <div style={{ padding: '0 28px 28px' }}>
+          <div style={{ position: 'relative', padding: '24px 36px 34px' }}>
             <ScenarioDialCell
               personLabel={activeName}
               initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -1360,8 +1419,8 @@ allMilestonesRaw.forEach((m, i) => {
               breakdown={activeProfile.ci}
               rows={[
                 { label: 'Family living', value: activeProfile.ci.familyDependency },
-                { label: 'Mortgage', value: activeProfile.ci.mortgageDebtClearance },
-                { label: 'Education', value: activeProfile.ci.tertiaryFunding },
+                { label: 'Mortgage', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
+                { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education' },
                 { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
                 { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer },
               ]}
