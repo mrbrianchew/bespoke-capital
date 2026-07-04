@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
+import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType } from '@/lib/protectionSnapshot'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Policy {
@@ -74,6 +75,11 @@ interface ProtectionOverviewProps {
   updateRm: (data: RiskMgmtData) => void
   inflation: number
   educationChildren?: any[]  // From Objectives page - contains uniEntryAge per child
+  // Richer per-category breakdown, built by the same protectionSnapshot.ts
+  // used on the Financial Report — powers the redesigned scenario cards below.
+  // Optional/nullable because it loads asynchronously; cards fall back to a
+  // loading state until it's ready rather than reading undefined fields.
+  protectionSnapshot?: ProtectionSnapshot | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -213,6 +219,7 @@ export default function ProtectionOverview({
   updateRm,
   inflation,
   educationChildren = [],
+  protectionSnapshot,
 }: ProtectionOverviewProps) {
   const [activePerson, setActivePerson] = useState<'client' | 'spouse'>('client')
  const ff = ffData || {}
@@ -1024,23 +1031,96 @@ allMilestonesRaw.forEach((m, i) => {
   )
 }
 
-  // ── Coverage cell ────────────────────────────────────────────────────────────
-  function CoverageCell({
-    personLabel,
-    initials,
-    initialsColor,
-    initialsBg,
-    age,
-    income,
-    have,
-    need,
-    shortfall,
-    pct,
-    accentColor,
-    type,
-    runwayMonths,
-    belowFloor,
-    floor,
+  // ── Scenario dial cell (frosted dial redesign) ───────────────────────────────
+  // Replaces the old flat have/need CoverageCell. Colors match this page's
+  // existing inline palette (gold #c8a96e, CI green #7FC47F, shortfall red
+  // #FF8A80) rather than the Financial Report's CSS variables, since this
+  // file doesn't use those custom properties.
+  interface DialBreakdown {
+    existingCoverage: number
+    assetMitigation: number
+    shortfall: number
+    maxCapitalRequired: number
+    status: 'covered' | 'shortfall'
+  }
+
+  function RadialDial({ breakdown, size = 116 }: { breakdown: DialBreakdown; size?: number }) {
+    const strokeW = 9
+    const r = size / 2 - strokeW
+    const c = size / 2
+    const circumference = 2 * Math.PI * r
+    const total = breakdown.maxCapitalRequired > 0 ? breakdown.maxCapitalRequired : 1
+
+    const goldLen = circumference * Math.min(1, breakdown.existingCoverage / total)
+    const sageLen = circumference * Math.max(0, Math.min(1 - breakdown.existingCoverage / total, breakdown.assetMitigation / total))
+    const rougeLen = Math.max(0, circumference - goldLen - sageLen) * (breakdown.shortfall > 0 ? 1 : 0)
+
+    const pct = breakdown.maxCapitalRequired > 0
+      ? Math.min(100, Math.round(((breakdown.existingCoverage + breakdown.assetMitigation) / breakdown.maxCapitalRequired) * 100))
+      : 100
+
+    return (
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+        <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={strokeW} />
+        {goldLen > 0 && (
+          <circle cx={c} cy={c} r={r} fill="none" stroke="#c8a96e" strokeWidth={strokeW}
+            strokeDasharray={`${goldLen} ${circumference}`} transform={`rotate(-90 ${c} ${c})`} />
+        )}
+        {sageLen > 0 && (
+          <circle cx={c} cy={c} r={r} fill="none" stroke="#7FC47F" strokeWidth={strokeW}
+            strokeDasharray={`${sageLen} ${circumference}`} strokeDashoffset={-goldLen} transform={`rotate(-90 ${c} ${c})`} />
+        )}
+        {rougeLen > 0 && (
+          <circle cx={c} cy={c} r={r} fill="none" stroke="#FF8A80" strokeWidth={strokeW}
+            strokeDasharray={`${rougeLen} ${circumference}`} strokeDashoffset={-(goldLen + sageLen)} transform={`rotate(-90 ${c} ${c})`} />
+        )}
+        <text x={c} y={c - 2} textAnchor="middle" fontFamily="Georgia, serif" fontWeight={400} fontSize={size * 0.2} fill="#F0EDE8">
+          {pct}%
+        </text>
+        <text x={c} y={c + 15} textAnchor="middle" fontSize={size * 0.075} letterSpacing="0.08em" fill="rgba(255,255,255,0.4)">
+          PROTECTED
+        </text>
+      </svg>
+    )
+  }
+
+  function LegendRow({ swatch, label, value }: { swatch: string; label: string; value: number }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', flex: 1 }}>{label}</span>
+        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#F0EDE8' }}>{fmt(value)}</span>
+      </div>
+    )
+  }
+
+  function ScenarioBreakdownRow({ label, value, durationYears }: { label: string; value: number; durationYears?: number | null }) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}>
+          {label}{durationYears != null && durationYears > 0 ? ` · ${durationYears} yrs` : ''}
+        </span>
+        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>
+          {fmt(value)}
+        </span>
+      </div>
+    )
+  }
+
+  // "Years until milestone" for a category row, reusing the same
+  // CoverageTimeline milestones the report's chart plots — see the
+  // equivalent helper in ProtectionDisplay.tsx for the full rationale.
+  function getScenarioDuration(timeline: CoverageTimeline, type: CoverageMilestoneType): number | null {
+    const currentAge = timeline.points.length > 0 ? timeline.points[0].age : null
+    if (currentAge === null) return null
+    const matches = timeline.milestones.filter(m => m.type === type)
+    if (matches.length === 0) return null
+    return Math.max(0, Math.round(Math.max(...matches.map(m => m.age)) - currentAge))
+  }
+
+  function ScenarioDialCell({
+    personLabel, initials, initialsColor, initialsBg, age, income,
+    breakdown, rows, showDurations, timeline, type, recoveryWindowYears, belowFloor, floor,
   }: {
     personLabel: string
     initials: string
@@ -1048,106 +1128,97 @@ allMilestonesRaw.forEach((m, i) => {
     initialsBg: string
     age: number
     income: number
-    have: number
-    need: number
-    shortfall: number
-    pct: number
-    accentColor: string
+    breakdown: DialBreakdown
+    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType }[]
+    showDurations: boolean
+    timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
-    runwayMonths?: number
+    recoveryWindowYears?: number
     belowFloor?: boolean
     floor?: number
   }) {
+    const hasNeed = breakdown.maxCapitalRequired > 0
+    const visibleRows = rows.filter(r => r.value > 0)
+
     return (
       <div style={{
-        background: '#1C1A17',
-        borderRadius: 14,
-        padding: '20px 22px',
+        position: 'relative', borderRadius: 14, overflow: 'hidden',
         border: type === 'ci' ? '1px solid rgba(45,106,79,0.25)' : 'none',
       }}>
-        {/* Person header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <div style={{
-            width: 26, height: 26, borderRadius: '50%',
-            background: initialsBg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 10, fontWeight: 500, color: initialsColor, flexShrink: 0,
-          }}>{initials}</div>
-          <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: initialsColor }}>
-            {personLabel}, {age}
-          </div>
-          {income > 0 && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 4 }}>
-              · {fmt(income)}/mo
-            </div>
-          )}
-        </div>
-
-        {/* Have */}
-        <div style={{ fontFamily: 'Georgia, serif', fontSize: 24, fontWeight: 300, color: accentColor, lineHeight: 1 }}>
-          {fmt(have)}
-        </div>
-
-        {/* Need */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 5 }}>
-          <span style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>of</span>
-          <span style={{ fontFamily: 'Georgia, serif', fontSize: 20, fontWeight: 300, color: '#F0EDE8' }}>{fmt(need)}</span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>needed</span>
-        </div>
-
-        {/* Shortfall box */}
         <div style={{
-          marginTop: 14,
-          padding: '10px 14px',
-          borderRadius: 10,
-          background: shortfall > 0 ? 'rgba(192,57,43,0.2)' : 'rgba(45,106,79,0.2)',
-          border: `1px solid ${shortfall > 0 ? 'rgba(232,160,160,0.3)' : 'rgba(144,198,144,0.3)'}`,
-        }}>
-          <div style={{
-            fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 300,
-            color: shortfall > 0 ? '#FF8A80' : '#90C890',
-            lineHeight: 1,
-          }}>
-            {shortfall > 0 ? fmt(shortfall) : '✓ Covered'}
-          </div>
-          <div style={{
-            fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' as const,
-            color: shortfall > 0 ? 'rgba(255,138,128,0.7)' : 'rgba(144,200,144,0.7)',
-            marginTop: 4,
-          }}>
-            {shortfall > 0 ? `shortfall · ${pct}% covered` : `fully covered`}
-            {type === 'ci' && runwayMonths !== undefined && runwayMonths > 0 && ` · ${runwayMonths} months runway`}
-          </div>
-        </div>
-
-        {/* Below floor warning */}
-        {type === 'ci' && belowFloor && floor && shortfall > 0 && (
-          <div style={{
-            marginTop: 8,
-            padding: '7px 12px',
-            borderRadius: 8,
-            background: 'rgba(192,57,43,0.12)',
-            border: '1px solid rgba(232,160,160,0.2)',
-          }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,138,128,0.85)', fontWeight: 500 }}>
-              Below {fmt(floor)} survival floor
+          position: 'absolute', inset: 0,
+          background: 'radial-gradient(circle at 20% 15%, rgba(200,169,110,0.10), transparent 55%), radial-gradient(circle at 85% 90%, rgba(127,196,127,0.10), transparent 55%)',
+        }} />
+        <div style={{ position: 'relative', background: 'rgba(28,26,23,0.92)', padding: '20px 22px' }}>
+          {/* Person header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%', background: initialsBg,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, fontWeight: 500, color: initialsColor, flexShrink: 0,
+            }}>{initials}</div>
+            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: initialsColor }}>
+              {personLabel}, {age}
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>
-              CI protection is needed for life — not just working years
-            </div>
+            {income > 0 && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 4 }}>
+                · {fmt(income)}/mo
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Progress bar */}
-        <div style={{ height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 99, marginTop: 12 }}>
-          <div style={{
-            width: `${Math.min(pct, 100)}%`, height: '100%',
-            background: pct >= 100 ? '#2D6A4F' : accentColor,
-            borderRadius: 99,
-          }} />
-        </div>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 4 }}>
-          {pct}% covered
+          {!hasNeed ? (
+            <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>
+              No need identified yet.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+                <RadialDial breakdown={breakdown} />
+              </div>
+              {breakdown.status === 'shortfall' && (
+                <div style={{ textAlign: 'center', fontFamily: 'Georgia, serif', fontSize: 17, color: '#FF8A80', marginBottom: 14 }}>
+                  {fmt(breakdown.shortfall)} shortfall
+                </div>
+              )}
+
+              {type === 'ci' && belowFloor && floor && breakdown.shortfall > 0 && (
+                <div style={{ marginBottom: 12, padding: '7px 12px', borderRadius: 8, background: 'rgba(192,57,43,0.12)', border: '1px solid rgba(232,160,160,0.2)' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,138,128,0.85)', fontWeight: 500 }}>Below {fmt(floor)} survival floor</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>CI protection is needed for life — not just working years</div>
+                </div>
+              )}
+
+              <div style={{ paddingTop: 10, marginBottom: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                <LegendRow swatch="#c8a96e" label="Existing insurance" value={breakdown.existingCoverage} />
+                <LegendRow swatch="#7FC47F" label="Asset mitigation" value={breakdown.assetMitigation} />
+                {breakdown.shortfall > 0 && <LegendRow swatch="#FF8A80" label="Shortfall" value={breakdown.shortfall} />}
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
+                <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: 8 }}>
+                  What the need is for
+                </div>
+                {visibleRows.map((r, i) => (
+                  <ScenarioBreakdownRow
+                    key={i}
+                    label={r.label}
+                    value={r.value}
+                    durationYears={showDurations && r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+                  />
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, marginTop: 4, fontSize: 12, fontWeight: 600, color: '#F0EDE8' }}>
+                  <span>Total need</span>
+                  <span style={{ fontFamily: 'monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
+                </div>
+                {recoveryWindowYears != null && (
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>
+                    Recovery window: {recoveryWindowYears} years
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     )
@@ -1180,43 +1251,53 @@ allMilestonesRaw.forEach((m, i) => {
         </div>
 
         {/* Coverage cells */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
-          gap: 12,
-          padding: '0 28px 28px',
-        }}>
-          <CoverageCell
-            personLabel={clientName}
-            initials={clientName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-            initialsColor="#c8a96e"
-            initialsBg="rgba(200,169,110,0.15)"
-            age={clientAge}
-            income={p1MonthlyInc}
-            have={clientDTPDHave}
-            need={clientDTPD}
-            shortfall={clientDTPDShortfall}
-            pct={clientDTPDPct}
-            accentColor="#c8a96e"
-            type="dtpd"
-          />
-          {effectiveIsCouple && (
-            <CoverageCell
-              personLabel={spouseName}
-              initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-              initialsColor="#7FC47F"
-              initialsBg="rgba(127,196,127,0.12)"
-              age={spouseAge}
-              income={p2MonthlyInc}
-              have={spouseDTPDHave}
-              need={spouseDTPD}
-              shortfall={spouseDTPDShortfall}
-              pct={spouseDTPDPct}
-              accentColor="#7FC47F"
+        {!protectionSnapshot ? (
+          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
+            gap: 12,
+            padding: '0 28px 28px',
+          }}>
+            <ScenarioDialCell
+              personLabel={clientName}
+              initials={clientName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              initialsColor="#c8a96e"
+              initialsBg="rgba(200,169,110,0.15)"
+              age={clientAge}
+              income={p1MonthlyInc}
+              breakdown={protectionSnapshot.client.dtpd}
+              rows={[
+                { label: 'Family living', value: protectionSnapshot.client.dtpd.familyDependency },
+                { label: 'Mortgage', value: protectionSnapshot.client.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
+                { label: 'Education', value: protectionSnapshot.client.dtpd.tertiaryFunding, milestoneType: 'education' },
+              ]}
+              showDurations
+              timeline={protectionSnapshot.client.dtpdTimeline}
               type="dtpd"
             />
-          )}
-        </div>
+            {effectiveIsCouple && protectionSnapshot.spouse && (
+              <ScenarioDialCell
+                personLabel={spouseName}
+                initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                initialsColor="#7FC47F"
+                initialsBg="rgba(127,196,127,0.12)"
+                age={spouseAge}
+                income={p2MonthlyInc}
+                breakdown={protectionSnapshot.spouse.dtpd}
+                rows={[
+                  { label: 'Family living', value: protectionSnapshot.spouse.dtpd.familyDependency },
+                  { label: 'Mortgage', value: protectionSnapshot.spouse.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
+                  { label: 'Education', value: protectionSnapshot.spouse.dtpd.tertiaryFunding, milestoneType: 'education' },
+                ]}
+                showDurations
+                timeline={protectionSnapshot.spouse.dtpdTimeline}
+                type="dtpd"
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* ② CI SCENARIO PANEL */}
@@ -1236,49 +1317,63 @@ allMilestonesRaw.forEach((m, i) => {
             Life would not end — but income would pause. Recovery takes years, not months. And CI coverage is not just for working years. Even at retirement, a diagnosis without a payout is still a crisis.
           </div>
         </div>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
-          gap: 12,
-          padding: '0 28px 28px',
-        }}>
-          <CoverageCell
-            personLabel={clientName}
-            initials={clientName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-            initialsColor="#c8a96e"
-            initialsBg="rgba(200,169,110,0.15)"
-            age={clientAge}
-            income={p1MonthlyInc}
-            have={clientCIHave}
-            need={clientCI}
-            shortfall={clientCIShortfall}
-            pct={clientCIPct}
-            accentColor="#2D6A4F"
-            type="ci"
-            runwayMonths={clientRunwayMonths}
-            belowFloor={clientCIBelowFloor}
-            floor={clientFloor}
-          />
-          {effectiveIsCouple && (
-            <CoverageCell
-              personLabel={spouseName}
-              initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-              initialsColor="#7FC47F"
-              initialsBg="rgba(127,196,127,0.12)"
-              age={spouseAge}
-              income={p2MonthlyInc}
-              have={spouseCIHave}
-              need={spouseCI}
-              shortfall={spouseCIShortfall}
-              pct={spouseCIPct}
-              accentColor="#2D6A4F"
+        {!protectionSnapshot ? (
+          <div style={{ padding: '0 28px 28px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: effectiveIsCouple ? '1fr 1fr' : '1fr',
+            gap: 12,
+            padding: '0 28px 28px',
+          }}>
+            <ScenarioDialCell
+              personLabel={clientName}
+              initials={clientName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              initialsColor="#c8a96e"
+              initialsBg="rgba(200,169,110,0.15)"
+              age={clientAge}
+              income={p1MonthlyInc}
+              breakdown={protectionSnapshot.client.ci}
+              rows={[
+                { label: 'Family living', value: protectionSnapshot.client.ci.familyDependency },
+                { label: 'Mortgage', value: protectionSnapshot.client.ci.mortgageDebtClearance },
+                { label: 'Education', value: protectionSnapshot.client.ci.tertiaryFunding },
+                { label: 'Medical buffer', value: protectionSnapshot.client.ci.medicalBuffer },
+                { label: 'Recovery buffer', value: protectionSnapshot.client.ci.recoveryBuffer },
+              ]}
+              showDurations={false}
+              timeline={protectionSnapshot.client.ciTimeline}
               type="ci"
-              runwayMonths={spouseRunwayMonths}
-              belowFloor={spouseCIBelowFloor}
-              floor={spouseFloor}
+              recoveryWindowYears={protectionSnapshot.client.ci.ciYears}
+              belowFloor={clientCIBelowFloor}
+              floor={clientFloor}
             />
-          )}
-        </div>
+            {effectiveIsCouple && protectionSnapshot.spouse && (
+              <ScenarioDialCell
+                personLabel={spouseName}
+                initials={spouseName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                initialsColor="#7FC47F"
+                initialsBg="rgba(127,196,127,0.12)"
+                age={spouseAge}
+                income={p2MonthlyInc}
+                breakdown={protectionSnapshot.spouse.ci}
+                rows={[
+                  { label: 'Family living', value: protectionSnapshot.spouse.ci.familyDependency },
+                  { label: 'Mortgage', value: protectionSnapshot.spouse.ci.mortgageDebtClearance },
+                  { label: 'Education', value: protectionSnapshot.spouse.ci.tertiaryFunding },
+                  { label: 'Medical buffer', value: protectionSnapshot.spouse.ci.medicalBuffer },
+                  { label: 'Recovery buffer', value: protectionSnapshot.spouse.ci.recoveryBuffer },
+                ]}
+                showDurations={false}
+                timeline={protectionSnapshot.spouse.ciTimeline}
+                type="ci"
+                recoveryWindowYears={protectionSnapshot.spouse.ci.ciYears}
+                belowFloor={spouseCIBelowFloor}
+                floor={spouseFloor}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* ③ FAMILY JOURNEY + CHARTS with person toggle */}
