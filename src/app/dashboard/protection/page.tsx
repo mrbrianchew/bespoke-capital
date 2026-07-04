@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
 
@@ -170,6 +171,12 @@ function ProtectionPage() {
   const [isCouple,   setIsCouple]   = useState(false)
   const [children,   setChildren]   = useState<any[]>([])
   const [ffData,     setFfData]     = useState<any>(null)
+  // Richer per-category breakdown (familyDependency/mortgage/education/asset
+  // mitigation/existing coverage), built from the same protectionSnapshot.ts
+  // used on the Financial Report — kept separate from the page's existing
+  // flat clientDTPD/clientCI numbers below so nothing already depending on
+  // those changes; only the redesigned scenario cards read from this.
+  const [protectionSnapshot, setProtectionSnapshot] = useState<ProtectionSnapshot | null>(null)
 
   // Reference data from DB
   const [refCategories,  setRefCategories]  = useState<InsCategory[]>([])
@@ -398,6 +405,28 @@ if (familyRows && familyRows.length > 0) {
 } else {
   const jsonKids = merged.children || []
   setChildren(Array.isArray(jsonKids) ? jsonKids : [])
+}
+
+// Same buildProtectionSnapshot() call report/page.tsx makes for the
+// Financial Report — reusing it here (rather than this page's own separate
+// flat need/have calc) means the redesigned scenario cards show the same
+// trusted category breakdown, instead of a second, independently-computed
+// set of numbers that can drift out of sync with the report.
+try {
+  const spouseRow = (familyRows || []).find((m: any) => m.relationship?.toLowerCase() === 'spouse')
+  const kidRows = (familyRows || []).filter((m: any) => m.relationship?.toLowerCase() !== 'spouse')
+  const isCoupleForSnapshot = !isIndividualMode && !!(p2?.name || spouseRow?.name)
+  setProtectionSnapshot(buildProtectionSnapshot({
+    ff: merged,
+    protection: merged.protection || {},
+    policies: merged.risk_management?.policies || [],
+    children: kidRows.map((k: any) => ({ id: k.id, name: k.name, dob: k.dob, gender: k.gender })),
+    isCouple: isCoupleForSnapshot,
+    clientDob: client?.dob || '',
+    spouseDob: spouseRow?.dob || p2?.dob || '',
+  }))
+} catch (e) {
+  console.error('Protection snapshot build failed:', e)
 }
 
       const rm = merged.risk_management
@@ -705,6 +734,7 @@ async function handleGeneratePaymentShare() {
           updateRm={updateRm}
           inflation={inflation}
           educationChildren={ff.protection?.educationChildren || []}
+          protectionSnapshot={protectionSnapshot}
         />
       )}
 
