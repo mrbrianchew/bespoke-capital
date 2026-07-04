@@ -280,66 +280,12 @@ export function buildProtectionSnapshot(input: {
     return annual * ((Math.pow(1 + r, y) - 1) / r)
   }
 
-  // Amortized balance from original loan terms — mirrors calcAmortizedBalance()
-  // on Strategic Objectives (objectives/page.tsx), used there to derive the
-  // p1_dtpd_mort / p2_dtpd_mort figures this timeline is anchored to. Kept as
-  // an identical copy rather than a shared import since neither page currently
-  // exposes this as a shared lib helper.
-  function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYears: number, startMmYyyy: string): number {
-    if (!initialLoan || !tenureYears) return 0
-    const parts = (startMmYyyy || '').split('/')
-    if (parts.length !== 2) return initialLoan
-    const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
-    const today = new Date()
-    const monthsElapsed = (today.getFullYear() - startDate.getFullYear()) * 12 + (today.getMonth() - startDate.getMonth())
-    if (monthsElapsed <= 0) return initialLoan
-    const n = tenureYears * 12
-    if (monthsElapsed >= n) return 0
-    if (!annualRate) return Math.round(initialLoan * (1 - monthsElapsed / n))
-    const r = annualRate / 100 / 12
-    const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
-    return Math.max(0, Math.round(initialLoan * Math.pow(1 + r, monthsElapsed) - pmt * (Math.pow(1 + r, monthsElapsed) - 1) / r))
-  }
-
-  // Mortgage records live directly on each property (initialLoanAmount,
-  // outstanding, interestRate, initialTenure, loanStartDate, remainingTenure)
-  // — there is no nested property.mortgages[] array anywhere in the real data
-  // model. This mirrors calcMortgageForPerson() on Strategic Objectives
-  // (default case only: no per-property coverage-% override, no
-  // nonMortgageDebts — both already netted into the saved p1_dtpd_mort /
-  // p2_dtpd_mort figures this curve is rescaled against, so omitting them
-  // here only affects the decay *shape*, not the anchored dollar totals).
-  function deriveMortgageRecords(properties: any[]): { outstanding: number; interestRate: number; tenure: number }[] {
-    return (properties || [])
-      .filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
-      .map((prop: any) => {
-        const startDate = prop.loanStartDate ?? ''
-        const initialTenure = Number(prop.initialTenure) || 25
-        const interestRate = Number(prop.interestRate) || 0
-        const initialLoan = Number(prop.initialLoanAmount ?? prop.outstanding) || 0
-        const outstanding = prop.outstanding != null
-          ? Number(prop.outstanding)
-          : calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
-        let remainingTenure = Number(prop.remainingTenure) || initialTenure
-        if (!prop.remainingTenure && startDate) {
-          const parts = startDate.split('/')
-          if (parts.length === 2) {
-            const start = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1)
-            const now = new Date()
-            const elapsedYears = (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
-            remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
-          }
-        }
-        return { outstanding, interestRate, tenure: remainingTenure }
-      })
-  }
-
   function mortBalanceAtAge(atAge: number, currentAge: number, properties: any[]): number {
-    const allMortgages = deriveMortgageRecords(properties)
+    const allMortgages = (properties || []).flatMap((pr: any) => pr.mortgages || [])
     return allMortgages.reduce((total: number, m: any) => {
       const outstanding = Number(m.outstanding || 0)
       const rate = Number(m.interestRate || 0) / 100
-      const tenure = Number(m.tenure || 25)
+      const tenure = Number(m.tenure || m.remainingTenure || 25)
       if (outstanding <= 0) return total
       const yearsElapsed = atAge - currentAge
       const yearsLeft = Math.max(0, tenure - yearsElapsed)
@@ -468,9 +414,9 @@ export function buildProtectionSnapshot(input: {
   }
 
   function getMortEndAge(currentAge: number): number | null {
-    const allMortgages = deriveMortgageRecords(ff.properties || [])
+    const allMortgages = (ff.properties || []).flatMap((pr: any) => pr.mortgages || [])
     if (allMortgages.length === 0) return null
-    const maxTenure = Math.max(...allMortgages.map((m: any) => Number(m.tenure || 0)))
+    const maxTenure = Math.max(...allMortgages.map((m: any) => Number(m.tenure || m.remainingTenure || 0)))
     return maxTenure > 0 ? Math.round(currentAge + maxTenure) : null
   }
 
