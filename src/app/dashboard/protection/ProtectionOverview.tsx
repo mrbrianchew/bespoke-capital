@@ -1031,11 +1031,12 @@ allMilestonesRaw.forEach((m, i) => {
   )
 }
 
-  // ── Scenario dial cell (frosted dial redesign) ───────────────────────────────
-  // Replaces the old flat have/need CoverageCell. Colors match this page's
-  // existing inline palette (gold #c8a96e, CI green #7FC47F, shortfall red
-  // #FF8A80) rather than the Financial Report's CSS variables, since this
-  // file doesn't use those custom properties.
+  // ── Scenario dial cell (matches reference screenshot) ────────────────────────
+  // Two-column layout: dial + shortfall + legend on the left, need-composition
+  // rows (each with its own proportional bar and duration caption) on the
+  // right. Colors match this page's existing inline palette (gold #c8a96e,
+  // sage #7FC47F, shortfall red #FF8A80) rather than the Financial Report's
+  // CSS variables, since this file doesn't use those custom properties.
   interface DialBreakdown {
     existingCoverage: number
     assetMitigation: number
@@ -1044,8 +1045,8 @@ allMilestonesRaw.forEach((m, i) => {
     status: 'covered' | 'shortfall'
   }
 
-  function RadialDial({ breakdown, size = 116 }: { breakdown: DialBreakdown; size?: number }) {
-    const strokeW = 9
+  function RadialDial({ breakdown, size = 128 }: { breakdown: DialBreakdown; size?: number }) {
+    const strokeW = 10
     const r = size / 2 - strokeW
     const c = size / 2
     const circumference = 2 * Math.PI * r
@@ -1053,7 +1054,6 @@ allMilestonesRaw.forEach((m, i) => {
 
     const goldLen = circumference * Math.min(1, breakdown.existingCoverage / total)
     const sageLen = circumference * Math.max(0, Math.min(1 - breakdown.existingCoverage / total, breakdown.assetMitigation / total))
-    const rougeLen = Math.max(0, circumference - goldLen - sageLen) * (breakdown.shortfall > 0 ? 1 : 0)
 
     const pct = breakdown.maxCapitalRequired > 0
       ? Math.min(100, Math.round(((breakdown.existingCoverage + breakdown.assetMitigation) / breakdown.maxCapitalRequired) * 100))
@@ -1061,23 +1061,20 @@ allMilestonesRaw.forEach((m, i) => {
 
     return (
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
-        <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={strokeW} />
-        {goldLen > 0 && (
-          <circle cx={c} cy={c} r={r} fill="none" stroke="#c8a96e" strokeWidth={strokeW}
-            strokeDasharray={`${goldLen} ${circumference}`} transform={`rotate(-90 ${c} ${c})`} />
-        )}
+        {/* Unfilled track — dim sage, not a literal data segment */}
+        <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(127,196,127,0.18)" strokeWidth={strokeW} />
         {sageLen > 0 && (
           <circle cx={c} cy={c} r={r} fill="none" stroke="#7FC47F" strokeWidth={strokeW}
             strokeDasharray={`${sageLen} ${circumference}`} strokeDashoffset={-goldLen} transform={`rotate(-90 ${c} ${c})`} />
         )}
-        {rougeLen > 0 && (
-          <circle cx={c} cy={c} r={r} fill="none" stroke="#FF8A80" strokeWidth={strokeW}
-            strokeDasharray={`${rougeLen} ${circumference}`} strokeDashoffset={-(goldLen + sageLen)} transform={`rotate(-90 ${c} ${c})`} />
+        {goldLen > 0 && (
+          <circle cx={c} cy={c} r={r} fill="none" stroke="#c8a96e" strokeWidth={strokeW}
+            strokeDasharray={`${goldLen} ${circumference}`} transform={`rotate(-90 ${c} ${c})`} />
         )}
-        <text x={c} y={c - 2} textAnchor="middle" fontFamily="Georgia, serif" fontWeight={400} fontSize={size * 0.2} fill="#F0EDE8">
+        <text x={c} y={c - 3} textAnchor="middle" fontFamily="Georgia, serif" fontWeight={400} fontSize={size * 0.19} fill="#F0EDE8">
           {pct}%
         </text>
-        <text x={c} y={c + 15} textAnchor="middle" fontSize={size * 0.075} letterSpacing="0.08em" fill="rgba(255,255,255,0.4)">
+        <text x={c} y={c + 16} textAnchor="middle" fontSize={size * 0.075} letterSpacing="0.1em" fill="rgba(255,255,255,0.4)">
           PROTECTED
         </text>
       </svg>
@@ -1086,23 +1083,31 @@ allMilestonesRaw.forEach((m, i) => {
 
   function LegendRow({ swatch, label, value }: { swatch: string; label: string; value: number }) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', flex: 1 }}>{label}</span>
-        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#F0EDE8' }}>{fmt(value)}</span>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', flex: 1 }}>{label}</span>
+        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#F0EDE8' }}>{fmt(value)}</span>
       </div>
     )
   }
 
-  function ScenarioBreakdownRow({ label, value, durationYears }: { label: string; value: number; durationYears?: number | null }) {
+  // Category row with its own proportional bar (scaled against the largest
+  // row in the group, so the three bars read as a relative comparison) and
+  // duration caption underneath, matching the reference screenshot.
+  function ScenarioBreakdownRow({ label, value, maxValue, durationYears }: { label: string; value: number; maxValue: number; durationYears?: number | null }) {
+    const barPct = maxValue > 0 ? Math.max(2, Math.round((value / maxValue) * 100)) : 0
     return (
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)' }}>
-          {label}{durationYears != null && durationYears > 0 ? ` · ${durationYears} yrs` : ''}
-        </span>
-        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>
-          {fmt(value)}
-        </span>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{label}</span>
+          <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
+        </div>
+        <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99 }}>
+          <div style={{ width: `${barPct}%`, height: '100%', background: '#c8a96e', borderRadius: 99 }} />
+        </div>
+        {durationYears != null && durationYears > 0 && (
+          <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.3)', marginTop: 5 }}>{durationYears} yrs</div>
+        )}
       </div>
     )
   }
@@ -1110,6 +1115,8 @@ allMilestonesRaw.forEach((m, i) => {
   // "Years until milestone" for a category row, reusing the same
   // CoverageTimeline milestones the report's chart plots — see the
   // equivalent helper in ProtectionDisplay.tsx for the full rationale.
+  // Family living uses the retirement milestone as its duration proxy, since
+  // income-replacement need runs until retirement rather than a fixed term.
   function getScenarioDuration(timeline: CoverageTimeline, type: CoverageMilestoneType): number | null {
     const currentAge = timeline.points.length > 0 ? timeline.points[0].age : null
     if (currentAge === null) return null
@@ -1120,7 +1127,7 @@ allMilestonesRaw.forEach((m, i) => {
 
   function ScenarioDialCell({
     personLabel, initials, initialsColor, initialsBg, age, income,
-    breakdown, rows, showDurations, timeline, type, recoveryWindowYears, belowFloor, floor,
+    breakdown, rows, timeline, type, recoveryWindowYears, belowFloor, floor,
   }: {
     personLabel: string
     initials: string
@@ -1130,7 +1137,6 @@ allMilestonesRaw.forEach((m, i) => {
     income: number
     breakdown: DialBreakdown
     rows: { label: string; value: number; milestoneType?: CoverageMilestoneType }[]
-    showDurations: boolean
     timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
     recoveryWindowYears?: number
@@ -1139,29 +1145,30 @@ allMilestonesRaw.forEach((m, i) => {
   }) {
     const hasNeed = breakdown.maxCapitalRequired > 0
     const visibleRows = rows.filter(r => r.value > 0)
+    const maxRowValue = Math.max(0, ...visibleRows.map(r => r.value))
 
     return (
       <div style={{
         position: 'relative', borderRadius: 14, overflow: 'hidden',
-        border: type === 'ci' ? '1px solid rgba(45,106,79,0.25)' : 'none',
+        border: '1px solid rgba(255,255,255,0.08)',
       }}>
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'radial-gradient(circle at 20% 15%, rgba(200,169,110,0.10), transparent 55%), radial-gradient(circle at 85% 90%, rgba(127,196,127,0.10), transparent 55%)',
+          background: 'radial-gradient(circle at 20% 15%, rgba(200,169,110,0.08), transparent 55%), radial-gradient(circle at 85% 90%, rgba(127,196,127,0.08), transparent 55%)',
         }} />
-        <div style={{ position: 'relative', background: 'rgba(28,26,23,0.92)', padding: '20px 22px' }}>
+        <div style={{ position: 'relative', padding: '24px 26px' }}>
           {/* Person header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
             <div style={{
               width: 26, height: 26, borderRadius: '50%', background: initialsBg,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 10, fontWeight: 500, color: initialsColor, flexShrink: 0,
             }}>{initials}</div>
-            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: initialsColor }}>
+            <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: initialsColor }}>
               {personLabel}, {age}
             </div>
             {income > 0 && (
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 4 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginLeft: 2 }}>
                 · {fmt(income)}/mo
               </div>
             )}
@@ -1172,52 +1179,63 @@ allMilestonesRaw.forEach((m, i) => {
               No need identified yet.
             </div>
           ) : (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
-                <RadialDial breakdown={breakdown} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
+              {/* Left: dial + shortfall + legend */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+                  <RadialDial breakdown={breakdown} />
+                </div>
+                {breakdown.status === 'shortfall' && (
+                  <div style={{ textAlign: 'center', fontFamily: 'Georgia, serif', fontSize: 20, color: '#FF8A80', marginBottom: 6 }}>
+                    {fmt(breakdown.shortfall)}
+                  </div>
+                )}
+                {breakdown.status === 'shortfall' && (
+                  <div style={{ textAlign: 'center', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,138,128,0.6)', marginBottom: 18 }}>
+                    Shortfall
+                  </div>
+                )}
+
+                {type === 'ci' && belowFloor && floor && breakdown.shortfall > 0 && (
+                  <div style={{ marginBottom: 14, padding: '7px 12px', borderRadius: 8, background: 'rgba(192,57,43,0.12)', border: '1px solid rgba(232,160,160,0.2)' }}>
+                    <div style={{ fontSize: 10, color: 'rgba(255,138,128,0.85)', fontWeight: 500 }}>Below {fmt(floor)} survival floor</div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>CI protection is needed for life — not just working years</div>
+                  </div>
+                )}
+
+                <div style={{ marginTop: 'auto', paddingTop: 8 }}>
+                  <LegendRow swatch="#c8a96e" label="Insurance" value={breakdown.existingCoverage} />
+                  <LegendRow swatch="#7FC47F" label="Assets" value={breakdown.assetMitigation} />
+                </div>
               </div>
-              {breakdown.status === 'shortfall' && (
-                <div style={{ textAlign: 'center', fontFamily: 'Georgia, serif', fontSize: 17, color: '#FF8A80', marginBottom: 14 }}>
-                  {fmt(breakdown.shortfall)} shortfall
-                </div>
-              )}
 
-              {type === 'ci' && belowFloor && floor && breakdown.shortfall > 0 && (
-                <div style={{ marginBottom: 12, padding: '7px 12px', borderRadius: 8, background: 'rgba(192,57,43,0.12)', border: '1px solid rgba(232,160,160,0.2)' }}>
-                  <div style={{ fontSize: 10, color: 'rgba(255,138,128,0.85)', fontWeight: 500 }}>Below {fmt(floor)} survival floor</div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>CI protection is needed for life — not just working years</div>
+              {/* Right: need composition */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>
+                  Need composition
                 </div>
-              )}
-
-              <div style={{ paddingTop: 10, marginBottom: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <LegendRow swatch="#c8a96e" label="Existing insurance" value={breakdown.existingCoverage} />
-                <LegendRow swatch="#7FC47F" label="Asset mitigation" value={breakdown.assetMitigation} />
-                {breakdown.shortfall > 0 && <LegendRow swatch="#FF8A80" label="Shortfall" value={breakdown.shortfall} />}
-              </div>
-
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
-                <div style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)', marginBottom: 8 }}>
-                  What the need is for
+                <div>
+                  {visibleRows.map((r, i) => (
+                    <ScenarioBreakdownRow
+                      key={i}
+                      label={r.label}
+                      value={r.value}
+                      maxValue={maxRowValue}
+                      durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+                    />
+                  ))}
                 </div>
-                {visibleRows.map((r, i) => (
-                  <ScenarioBreakdownRow
-                    key={i}
-                    label={r.label}
-                    value={r.value}
-                    durationYears={showDurations && r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
-                  />
-                ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, marginTop: 4, fontSize: 12, fontWeight: 600, color: '#F0EDE8' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 13, fontWeight: 600, color: '#F0EDE8' }}>
                   <span>Total need</span>
                   <span style={{ fontFamily: 'monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
                 </div>
                 {recoveryWindowYears != null && (
-                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 8 }}>
                     Recovery window: {recoveryWindowYears} years
                   </div>
                 )}
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -1244,29 +1262,27 @@ allMilestonesRaw.forEach((m, i) => {
 
       {/* Person toggle — controls both scenario panels below and the chart section */}
       {effectiveIsCouple && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ display: 'flex', gap: 4, background: '#F5F3EE', padding: 4, borderRadius: 10 }}>
-            {(['client', 'spouse'] as const).map(p => (
-              <button
-                key={p}
-                onClick={() => setActivePerson(p)}
-                style={{
-                  padding: '8px 22px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontFamily: 'Inter, sans-serif',
-                  borderRadius: 8,
-                  background: activePerson === p ? '#1C1A17' : 'transparent',
-                  color: activePerson === p ? '#c8a96e' : '#888',
-                  fontWeight: activePerson === p ? 500 : 400,
-                  transition: 'all 0.15s',
-                }}
-              >
-                {p === 'client' ? clientName : spouseName}
-              </button>
-            ))}
-          </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {(['client', 'spouse'] as const).map(p => (
+            <button
+              key={p}
+              onClick={() => setActivePerson(p)}
+              style={{
+                padding: '9px 20px',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontFamily: 'Inter, sans-serif',
+                borderRadius: 999,
+                border: activePerson === p ? '1px solid rgba(200,169,110,0.5)' : '1px solid rgba(255,255,255,0.12)',
+                background: activePerson === p ? 'rgba(200,169,110,0.12)' : 'transparent',
+                color: activePerson === p ? '#c8a96e' : 'rgba(255,255,255,0.5)',
+                fontWeight: activePerson === p ? 500 : 400,
+                transition: 'all 0.15s',
+              }}
+            >
+              {p === 'client' ? clientName : spouseName}
+            </button>
+          ))}
         </div>
       )}
 
@@ -1280,7 +1296,7 @@ allMilestonesRaw.forEach((m, i) => {
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
             <>If <span style={{ color: '#c8a96e', fontSize: 30 }}>{activeName}</span> were gone tomorrow —</>
           </div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 15, fontWeight: 300, color: 'rgba(240,237,232,0.45)', lineHeight: 1.7, maxWidth: 600 }}>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
             {children.length > 0
               ? `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would be left to raise ${children.map((c: any) => c.name || 'your child').join(' and ')} alone. The mortgage, school fees, and daily life continue — but the income that makes it possible would not.`
               : `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would face an immediate income gap. The mortgage and daily expenses continue — but without your income to fund them.`
@@ -1304,11 +1320,10 @@ allMilestonesRaw.forEach((m, i) => {
               income={activeIncome}
               breakdown={activeProfile.dtpd}
               rows={[
-                { label: 'Family living', value: activeProfile.dtpd.familyDependency },
+                { label: 'Family living', value: activeProfile.dtpd.familyDependency, milestoneType: 'retirement' },
                 { label: 'Mortgage', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
                 { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
               ]}
-              showDurations
               timeline={activeProfile.dtpdTimeline}
               type="dtpd"
             />
@@ -1325,7 +1340,7 @@ allMilestonesRaw.forEach((m, i) => {
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
             <>If <span style={{ color: '#7FC47F', fontSize: 30 }}>{activeName}</span> received a critical illness diagnosis —</>
           </div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 15, fontWeight: 300, color: 'rgba(240,237,232,0.45)', lineHeight: 1.7, maxWidth: 600 }}>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
             Life would not end — but income would pause. Recovery takes years, not months. And CI coverage is not just for working years. Even at retirement, a diagnosis without a payout is still a crisis.
           </div>
         </div>
@@ -1350,7 +1365,6 @@ allMilestonesRaw.forEach((m, i) => {
                 { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
                 { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer },
               ]}
-              showDurations={false}
               timeline={activeProfile.ciTimeline}
               type="ci"
               recoveryWindowYears={activeProfile.ci.ciYears}
