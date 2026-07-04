@@ -756,10 +756,6 @@ function CoverageChart({
     return `${top} ${bot} Z`
   }
 
-  // Base of chart, insurance top, and combined stack top (insurance + assets)
-  const basePoints = data.map(d => ({ x: xP(d.age), y: PT + iH }))
-  const insuranceTopPoints = data.map(d => ({ x: xP(d.age), y: yP((d as any)[insuranceKey] || 0) }))
-  const stackTopPoints = data.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
   const needPoints = data.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
   const needPath = linePath(needPoints)
 
@@ -886,17 +882,6 @@ allMilestonesRaw.forEach((m, i) => {
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHovered(null)}
       >
-        <defs>
-          <linearGradient id={`ins-grad-${type}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={insuranceColor} stopOpacity="0.4" />
-            <stop offset="100%" stopColor={insuranceColor} stopOpacity="0.08" />
-          </linearGradient>
-          <linearGradient id={`ast-grad-${type}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={assetsColor} stopOpacity="0.38" />
-            <stop offset="100%" stopColor={assetsColor} stopOpacity="0.07" />
-          </linearGradient>
-        </defs>
-
         {/* Grid lines */}
         {ticks.map((f) => {
           const y = PT + iH - f * iH
@@ -922,19 +907,38 @@ allMilestonesRaw.forEach((m, i) => {
         <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
         <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
 
-        {/* Stacked coverage: Insurance (base) + Assets (on top of insurance) */}
-        <path d={areaPath(insuranceTopPoints, basePoints)} fill={`url(#ins-grad-${type})`} stroke="none" />
-        <path d={areaPath(stackTopPoints, insuranceTopPoints)} fill={`url(#ast-grad-${type})`} stroke="none" />
-        <path d={linePath(insuranceTopPoints)} stroke={insuranceColor} strokeWidth="1" fill="none" opacity="0.6" />
-        <path d={linePath(stackTopPoints)} stroke={assetsColor} strokeWidth="1" fill="none" opacity="0.6" />
+        {/* Stacked coverage bars: Insurance (base) + Assets (on top), one pair per age */}
+        {data.map(d => {
+          const insurance = (d as any)[insuranceKey] || 0
+          const assets = (d as any)[assetsKey] || 0
+          if (insurance <= 0 && assets <= 0) return null
+          const bx = xP(d.age)
+          const barW = Math.max(3, (iW / data.length) * 0.8)
+          const baseY = PT + iH
+          const insTopY = yP(insurance)
+          const stackTopY = yP(insurance + assets)
+          return (
+            <g key={`bar-${d.age}`}>
+              {insurance > 0 && (
+                <rect x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.5" rx="1.5" />
+              )}
+              {assets > 0 && (
+                <rect x={bx - barW / 2} y={stackTopY} width={barW} height={Math.max(0, insTopY - stackTopY)} fill={assetsColor} opacity="0.5" rx="1.5" />
+              )}
+            </g>
+          )
+        })}
 
         {/* Shortfall fill — where Needs pokes above the stack */}
         {shortfallSegments.map((d, i) => (
-          <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.14)" stroke="none" />
+          <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
         ))}
 
-        {/* Needs line — drawn on top so it's always legible against the stack */}
+        {/* Needs line — full need at every age, drawn with a light halo so it reads
+            as its own curve rather than looking like the shortfall region's edge */}
+        <path d={needPath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
         <path d={needPath} stroke={needColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
 
         {/* Milestone markers - tiered to prevent label overlap */}
 {allMilestones.map((m, i) => {
