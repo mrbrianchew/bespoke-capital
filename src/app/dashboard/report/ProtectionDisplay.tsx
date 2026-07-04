@@ -1,9 +1,9 @@
 'use client'
-import { useState, ReactNode, MouseEvent } from 'react'
-import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Building2, Palmtree, LucideIcon } from 'lucide-react'
-import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
+import { useState, MouseEvent } from 'react'
+import { Stethoscope, HeartPulse, Shield, Bandage, Key, GraduationCap, ArrowRight, Palmtree, LucideIcon } from 'lucide-react'
+import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone, CoverageMilestoneType } from '@/lib/protectionSnapshot'
 
-type Page = 'overview' | 'dtpd' | 'ci'
+type Page = 'overview' | 'dtpd'
 
 function fmt(n: number): string {
   if (!n || isNaN(n)) return '$0'
@@ -17,11 +17,6 @@ function fmtCompact(n: number): string {
   if (n >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M'
   if (n >= 1000) return '$' + Math.round(n / 1000) + 'K'
   return fmt(n)
-}
-
-function fundedPct(have: number, need: number): number {
-  if (need <= 0) return 100
-  return Math.round((have / need) * 100)
 }
 
 function joinWithAnd(parts: string[]): string {
@@ -276,8 +271,7 @@ function ContinueLink({ label, onClick }: { label: string; onClick: () => void }
 function PageNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
   const items: { id: Page; label: string }[] = [
     { id: 'overview', label: 'Overview' },
-    { id: 'dtpd', label: 'Death & TPD' },
-    { id: 'ci', label: 'Critical illness' },
+    { id: 'dtpd', label: 'Protection scenarios' },
   ]
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 36, borderBottom: '1px solid var(--line)' }}>
@@ -376,7 +370,7 @@ function OverviewPage({
 
       <LifeInsuranceTable policies={profile.lifePolicies} />
 
-      <ContinueLink label="See the Death & TPD breakdown" onClick={onContinue} />
+      <ContinueLink label="See the protection scenarios" onClick={onContinue} />
     </div>
   )
 }
@@ -384,85 +378,6 @@ function OverviewPage({
 // ─── Death & TPD breakdown (card-based redesign) ────────────────────────────
 // Replaces the old narrative buildDTPDContent()/ProtectionSection combo for
 // this tab. The CI tab below was rebuilt the same way — see CIBreakdownPage.
-
-function NeedsHaveRow({ icon, label, value, accent }: { icon: LucideIcon; label: string; value: number; accent?: string }) {
-  const Icon = icon
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--cream3)' }}>
-      <Icon size={15} color={accent || 'var(--ink3)'} aria-hidden="true" />
-      <span style={{ fontSize: 13, color: 'var(--ink2)', flex: 1 }}>{label}</span>
-      <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 16, color: 'var(--ink)', whiteSpace: 'nowrap', marginLeft: 12 }}>
-        {fmtCompact(value)}
-      </span>
-    </div>
-  )
-}
-
-function NeedsCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
-  return (
-    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
-        Protection objectives (needs)
-      </div>
-      <NeedsHaveRow icon={Coins} label="Their day-to-day life — keeping the household running" value={dtpd.familyDependency} />
-      {dtpd.mortgageDebtClearance > 0 && (
-        <NeedsHaveRow icon={Home} label="The roof over their heads — mortgage and debts cleared" value={dtpd.mortgageDebtClearance} />
-      )}
-      {dtpd.tertiaryFunding > 0 && (
-        <NeedsHaveRow icon={GraduationCap} label="Their children's future — university funded" value={dtpd.tertiaryFunding} />
-      )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', fontSize: 14, fontWeight: 600 }}>
-        <span style={{ color: 'var(--ink)' }}>Max capital required</span>
-        <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(dtpd.maxCapitalRequired)}</span>
-      </div>
-    </div>
-  )
-}
-
-function HaveCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
-  // Both splits below are reconciled-by-construction against figures the
-  // shortfall math already trusts (assetMitigation, existingCoverage) rather
-  // than trusting the sum of the granular fields directly — clients whose
-  // Strategic Objectives predate a given split will just show 0 on one side
-  // until they're re-saved, instead of a number that doesn't add up.
-  const propertyRaw = dtpd.assetMitigationProperty
-  const propertyEquity = Math.min(propertyRaw, dtpd.assetMitigation)
-  const cashSavings = Math.max(0, dtpd.assetMitigation - propertyEquity)
-
-  const total = dtpd.assetMitigation + dtpd.existingCoverage
-
-  return (
-    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
-        Existing infrastructure (have)
-      </div>
-      <NeedsHaveRow icon={Wallet} label="Savings &amp; CPF" value={cashSavings} accent="var(--emerald)" />
-      <NeedsHaveRow icon={Building2} label="Property equity" value={propertyEquity} accent="var(--emerald)" />
-      <NeedsHaveRow icon={ShieldCheck} label="Existing insurance coverage" value={dtpd.existingCoverage} accent="var(--gold)" />
-      <div style={{ marginTop: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontSize: 14, fontWeight: 600 }}>
-          <span style={{ color: 'var(--ink)' }}>Total</span>
-          <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(total)}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, fontSize: 14, fontWeight: 600 }}>
-          <span style={{ color: 'var(--ink)' }}>Status</span>
-          <span style={{ color: dtpd.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)' }}>
-            {dtpd.status === 'shortfall' ? 'Shortfall' : 'Covered'}
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function NeedsHaveGrid({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
-      <NeedsCard dtpd={dtpd} />
-      <HaveCard dtpd={dtpd} />
-    </div>
-  )
-}
 
 function milestoneColor(type: CoverageMilestone['type']): string {
   if (type === 'education') return 'var(--emerald)'
@@ -676,40 +591,6 @@ function CoverageTimelineChart({ name, timeline, currentAge }: { name: string; t
   )
 }
 
-function CoverageAnalysisBar({ breakdown }: { breakdown: { assetMitigation: number; existingCoverage: number; maxCapitalRequired: number; shortfall: number } }) {
-  const have = breakdown.assetMitigation + breakdown.existingCoverage
-  const need = breakdown.maxCapitalRequired
-  const havePct = need > 0 ? Math.min(100, (have / need) * 100) : 100
-
-  return (
-    <div style={{ marginTop: 8, marginBottom: 28 }}>
-      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 12 }}>
-        Coverage analysis
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink2)', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
-        <span>Total protection in place — {fmt(have)}</span>
-        <span>{breakdown.shortfall > 0 ? `Shortfall — ${fmt(breakdown.shortfall)}` : 'Fully funded'}</span>
-      </div>
-      <div style={{ display: 'flex', height: 34, borderRadius: 6, overflow: 'hidden' }}>
-        <div style={{
-          width: `${havePct}%`, background: 'var(--charcoal)', display: 'flex', alignItems: 'center',
-          paddingLeft: 12, fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#F5F0E8', whiteSpace: 'nowrap', overflow: 'hidden',
-        }}>
-          {fmt(have)}
-        </div>
-        {breakdown.shortfall > 0 && (
-          <div style={{
-            width: `${100 - havePct}%`, background: 'var(--rouge)', display: 'flex', alignItems: 'center',
-            justifyContent: 'flex-end', paddingRight: 12, fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden',
-          }}>
-            {fmt(breakdown.shortfall)}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // Same closing-line copy the old narrative version used — only the
 // surrounding layout changed, not the voice.
 function buildDTPDClosingLine(name: string, dtpd: PersonProtectionBreakdown): string {
@@ -734,71 +615,280 @@ function ClosingCallout({ text, accentColor }: { text: string; accentColor: stri
   )
 }
 
-// Second-person, dynamic subtitle — replaces the old static caption with the
-// same kind of personalized sentence the original narrative headline used
-// (name + live have/need figures), just addressed directly to the client
-// ("you"/"your family") instead of using their name in the third person.
-function buildDTPDSubtitle(dtpd: PersonProtectionBreakdown): ReactNode {
-  const have = dtpd.assetMitigation + dtpd.existingCoverage
-  const hasNeed = dtpd.maxCapitalRequired > 0
-  const isShortfall = dtpd.status === 'shortfall'
+// ─── Scenario card (frosted dial redesign) ──────────────────────────────────
+// Replaces the old light two-column Needs/Have cards for both DTPD and CI.
+// Client-blue / spouse-purple tints match OWNER_COLORS in ActionPlanDisplay.tsx.
+const NARRATIVE_TINTS: Record<'client' | 'spouse', string> = { client: '#4A7C9E', spouse: '#6B5B8B' }
 
-  if (!hasNeed) {
-    return <>No death &amp; TPD protection need has been identified for you yet.</>
-  }
-  if (isShortfall) {
-    const pct = fundedPct(have, dtpd.maxCapitalRequired)
-    return (
-      <>
-        If something were to happen to you today, your family would have{' '}
-        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — about{' '}
-        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need to clear debts and carry on without you.
-      </>
-    )
-  }
+// Shape shared by PersonProtectionBreakdown and PersonCIBreakdown — enough
+// for the dial and legend, which don't need the protection-type-specific extras.
+interface DialBreakdown {
+  existingCoverage: number
+  assetMitigation: number
+  shortfall: number
+  maxCapitalRequired: number
+  status: 'covered' | 'shortfall'
+}
+
+function RadialDial({ breakdown, size = 148 }: { breakdown: DialBreakdown; size?: number }) {
+  const strokeW = 10
+  const r = size / 2 - strokeW
+  const c = size / 2
+  const circumference = 2 * Math.PI * r
+  const total = breakdown.maxCapitalRequired > 0 ? breakdown.maxCapitalRequired : 1
+
+  const goldLen = circumference * Math.min(1, breakdown.existingCoverage / total)
+  const sageLen = circumference * Math.max(0, Math.min(1 - breakdown.existingCoverage / total, breakdown.assetMitigation / total))
+  const rougeLen = Math.max(0, circumference - goldLen - sageLen) * (breakdown.shortfall > 0 ? 1 : 0)
+
+  const pct = breakdown.maxCapitalRequired > 0
+    ? Math.min(100, Math.round(((breakdown.existingCoverage + breakdown.assetMitigation) / breakdown.maxCapitalRequired) * 100))
+    : 100
+
   return (
-    <>
-      If something were to happen to you today, your family would have{' '}
-      <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — more than enough to clear debts and carry on without you.
-    </>
+    <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+      <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(245,240,232,0.1)" strokeWidth={strokeW} />
+      {goldLen > 0 && (
+        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--gold)" strokeWidth={strokeW}
+          strokeDasharray={`${goldLen} ${circumference}`} transform={`rotate(-90 ${c} ${c})`} />
+      )}
+      {sageLen > 0 && (
+        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--emerald)" strokeWidth={strokeW}
+          strokeDasharray={`${sageLen} ${circumference}`} strokeDashoffset={-goldLen} transform={`rotate(-90 ${c} ${c})`} />
+      )}
+      {rougeLen > 0 && (
+        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--rouge)" strokeWidth={strokeW}
+          strokeDasharray={`${rougeLen} ${circumference}`} strokeDashoffset={-(goldLen + sageLen)} transform={`rotate(-90 ${c} ${c})`} />
+      )}
+      <text x={c} y={c - 3} textAnchor="middle" fontFamily="Cormorant Garamond, serif" fontWeight={600} fontSize={size * 0.19} fill="#F5F0E8">
+        {pct}%
+      </text>
+      <text x={c} y={c + 17} textAnchor="middle" fontSize={size * 0.07} letterSpacing="0.08em" fill="rgba(245,240,232,0.5)">
+        PROTECTED
+      </text>
+    </svg>
   )
 }
 
-function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonProtectionProfile }) {
+function LegendRow({ swatch, label, value }: { swatch: string; label: string; value: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+      <div style={{ width: 9, height: 9, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
+      <span style={{ fontSize: 12, color: 'rgba(245,240,232,0.7)', flex: 1 }}>{label}</span>
+      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#F5F0E8' }}>{fmt(value)}</span>
+    </div>
+  )
+}
+
+function BreakdownRow({ label, value, durationYears }: { label: string; value: number; durationYears?: number | null }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '9px 0', borderBottom: '1px solid rgba(245,240,232,0.08)' }}>
+      <span style={{ fontSize: 12.5, color: 'rgba(245,240,232,0.75)' }}>
+        {label}{durationYears != null && durationYears > 0 ? ` · ${durationYears} yrs` : ''}
+      </span>
+      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#F5F0E8', whiteSpace: 'nowrap', marginLeft: 12 }}>
+        {fmt(value)}
+      </span>
+    </div>
+  )
+}
+
+// "Years until milestone" for a category row — e.g. years left on the
+// mortgage, or years until the youngest child reaches university. Reuses the
+// same CoverageTimeline milestones the chart below already plots, rather
+// than re-deriving ages from raw property/child data a second time. When a
+// category has more than one milestone of its type (one per child, for
+// education), the furthest-out one is used, matching how the dollar figure
+// itself represents the combined need until everyone is through.
+function getDuration(timeline: CoverageTimeline, type: CoverageMilestoneType): number | null {
+  const currentAge = timeline.points.length > 0 ? timeline.points[0].age : null
+  if (currentAge === null) return null
+  const matches = timeline.milestones.filter(m => m.type === type)
+  if (matches.length === 0) return null
+  return Math.max(0, Math.round(Math.max(...matches.map(m => m.age)) - currentAge))
+}
+
+interface ScenarioRow {
+  label: string
+  value: number
+  milestoneType?: CoverageMilestoneType
+}
+
+function ScenarioCard({
+  who, name, eyebrow, narrativeClause, breakdown, rows, showDurations, timeline, closingLine, recoveryWindowYears,
+}: {
+  who: 'client' | 'spouse'
+  name: string
+  eyebrow: string
+  narrativeClause: string
+  breakdown: DialBreakdown
+  rows: ScenarioRow[]
+  showDurations: boolean
+  timeline: CoverageTimeline
+  closingLine: string
+  recoveryWindowYears?: number
+}) {
+  const hasNeed = breakdown.maxCapitalRequired > 0
+  const nameColor = NARRATIVE_TINTS[who]
+  const visibleRows = rows.filter(r => r.value > 0)
+
+  return (
+    <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', marginBottom: 20 }}>
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(circle at 18% 12%, rgba(168,131,74,0.14), transparent 55%), radial-gradient(circle at 85% 88%, rgba(42,94,70,0.16), transparent 55%)',
+      }} />
+      <div style={{ position: 'relative', background: 'rgba(28,26,23,0.94)', padding: '28px 30px' }}>
+        <div style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8 }}>
+          {eyebrow}
+        </div>
+        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 24, lineHeight: 1.3, color: '#F5F0E8', marginBottom: hasNeed ? 22 : 0 }}>
+          If <span style={{ color: nameColor }}>{name}</span> {narrativeClause}
+        </div>
+
+        {!hasNeed ? (
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 15, color: 'rgba(245,240,232,0.55)', marginTop: 14 }}>
+            No need has been identified for {name} yet.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 30 }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                  <RadialDial breakdown={breakdown} />
+                </div>
+                {breakdown.status === 'shortfall' && (
+                  <div style={{ textAlign: 'center', fontFamily: 'Cormorant Garamond, serif', fontSize: 19, color: '#C97C76', marginBottom: 18 }}>
+                    {fmt(breakdown.shortfall)} shortfall
+                  </div>
+                )}
+                <div style={{ marginTop: 'auto', paddingTop: 12, borderTop: '1px solid rgba(245,240,232,0.08)' }}>
+                  <LegendRow swatch="var(--gold)" label="Existing insurance" value={breakdown.existingCoverage} />
+                  <LegendRow swatch="var(--emerald)" label="Asset mitigation" value={breakdown.assetMitigation} />
+                  {breakdown.shortfall > 0 && <LegendRow swatch="var(--rouge)" label="Shortfall" value={breakdown.shortfall} />}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(245,240,232,0.4)', marginBottom: 10 }}>
+                  What the capital need is for
+                </div>
+                <div>
+                  {visibleRows.map((r, i) => (
+                    <BreakdownRow
+                      key={i}
+                      label={r.label}
+                      value={r.value}
+                      durationYears={showDurations && r.milestoneType ? getDuration(timeline, r.milestoneType) : null}
+                    />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', fontSize: 13, fontWeight: 600, color: '#F5F0E8' }}>
+                  <span>Total need</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
+                </div>
+                {recoveryWindowYears != null && (
+                  <div style={{ fontSize: 10, color: 'rgba(245,240,232,0.4)', marginTop: 6 }}>
+                    Recovery window: {recoveryWindowYears} years
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {closingLine && (
+              <div style={{ marginTop: 24, paddingLeft: 14, borderLeft: `2px solid ${breakdown.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)'}` }}>
+                <div style={{ fontFamily: 'Cormorant Garamond, serif', fontStyle: 'italic', fontSize: 14, color: 'rgba(245,240,232,0.75)', lineHeight: 1.6 }}>
+                  {closingLine}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DTPDCard({ who, name, profile }: { who: 'client' | 'spouse'; name: string; profile: PersonProtectionProfile }) {
   const { dtpd, dtpdTimeline } = profile
-  const closingLine = buildDTPDClosingLine(name, dtpd)
-  const accentColor = dtpd.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)'
-  const currentAge = dtpdTimeline.points.length > 0 ? dtpdTimeline.points[0].age : null
+  const rows: ScenarioRow[] = [
+    { label: 'Family living', value: dtpd.familyDependency },
+    { label: 'Mortgage', value: dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
+    { label: 'Education', value: dtpd.tertiaryFunding, milestoneType: 'education' },
+  ]
+  return (
+    <ScenarioCard
+      who={who} name={name}
+      eyebrow="Death, terminal illness or permanent disability"
+      narrativeClause="were gone tomorrow —"
+      breakdown={dtpd}
+      rows={rows}
+      showDurations
+      timeline={dtpdTimeline}
+      closingLine={buildDTPDClosingLine(name, dtpd)}
+    />
+  )
+}
+
+function CICard({ who, name, profile }: { who: 'client' | 'spouse'; name: string; profile: PersonProtectionProfile }) {
+  const { ci, ciTimeline } = profile
+  const rows: ScenarioRow[] = [
+    { label: 'Family living', value: ci.familyDependency },
+    { label: 'Mortgage', value: ci.mortgageDebtClearance },
+    { label: 'Education', value: ci.tertiaryFunding },
+    { label: 'Medical buffer', value: ci.medicalBuffer },
+    { label: 'Recovery buffer', value: ci.recoveryBuffer },
+  ]
+  return (
+    <ScenarioCard
+      who={who} name={name}
+      eyebrow="Critical illness"
+      narrativeClause="were diagnosed with a critical illness tomorrow —"
+      breakdown={ci}
+      rows={rows}
+      showDurations={false}
+      timeline={ciTimeline}
+      closingLine={buildCIClosingLine(name, ci)}
+      recoveryWindowYears={ci.ciYears}
+    />
+  )
+}
+
+// Stacked DTPD-then-CI view for one person. Each card is followed by its
+// existing coverage timeline chart, called exactly as DTPDBreakdownPage /
+// CIBreakdownPage did before — same component, same props, untouched.
+function ScenarioPage({ who, name, profile }: { who: 'client' | 'spouse'; name: string; profile: PersonProtectionProfile }) {
+  const { dtpdTimeline, ciTimeline } = profile
+  const dtpdCurrentAge = dtpdTimeline.points.length > 0 ? dtpdTimeline.points[0].age : null
+  const ciCurrentAge = ciTimeline.points.length > 0 ? ciTimeline.points[0].age : null
 
   return (
     <div>
-      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>
-        Capital protection — death &amp; TPD
-      </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
-        Death &amp; TPD: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
-      </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', marginBottom: 32 }}>
-        {buildDTPDSubtitle(dtpd)}
-      </div>
-
-      <NeedsHaveGrid dtpd={dtpd} />
-
-      {currentAge !== null && (
-        <div style={{ marginBottom: 36 }}>
+      <DTPDCard who={who} name={name} profile={profile} />
+      {dtpdCurrentAge !== null && (
+        <div style={{ marginBottom: 40 }}>
           <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
             Coverage timeline
           </div>
           <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 14 }}>
             How the capital need and existing portfolio evolve as {name} ages.
           </div>
-          <CoverageTimelineChart name={name} timeline={dtpdTimeline} currentAge={currentAge} />
+          <CoverageTimelineChart name={name} timeline={dtpdTimeline} currentAge={dtpdCurrentAge} />
         </div>
       )}
 
-      <CoverageAnalysisBar breakdown={dtpd} />
-
-      <ClosingCallout text={closingLine} accentColor={accentColor} />
+      <CICard who={who} name={name} profile={profile} />
+      {ciCurrentAge !== null && (
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
+            Coverage timeline
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 14 }}>
+            How the capital need and existing portfolio evolve as {name} ages.
+          </div>
+          <CoverageTimelineChart name={name} timeline={ciTimeline} currentAge={ciCurrentAge} />
+        </div>
+      )}
     </div>
   )
 }
@@ -813,68 +903,6 @@ function DTPDBreakdownPage({ name, profile }: { name: string; profile: PersonPro
 // the coverage-timeline chart is the correct way to show coverage changing
 // over time, not a point-in-time split.
 
-function CINeedsCard({ ci }: { ci: PersonCIBreakdown }) {
-  return (
-    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
-        Protection objectives (needs)
-      </div>
-      <NeedsHaveRow icon={HeartPulse} label="Income during recovery — replacing earnings while unable to work" value={ci.familyDependency} />
-      {ci.mortgageDebtClearance > 0 && (
-        <NeedsHaveRow icon={Key} label="Mortgage and debts cleared through the recovery period" value={ci.mortgageDebtClearance} />
-      )}
-      {ci.tertiaryFunding > 0 && (
-        <NeedsHaveRow icon={GraduationCap} label="Children's education — protected even if income stops" value={ci.tertiaryFunding} />
-      )}
-      {ci.medicalBuffer > 0 && (
-        <NeedsHaveRow icon={Stethoscope} label="Medical and alternative treatment costs" value={ci.medicalBuffer} />
-      )}
-      {ci.recoveryBuffer > 0 && (
-        <NeedsHaveRow icon={Bandage} label="A cushion for the wider cost of recovery" value={ci.recoveryBuffer} />
-      )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, marginTop: 'auto', fontSize: 14, fontWeight: 600 }}>
-        <span style={{ color: 'var(--ink)' }}>Max capital required</span>
-        <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(ci.maxCapitalRequired)}</span>
-      </div>
-    </div>
-  )
-}
-
-function CIHaveCard({ ci }: { ci: PersonCIBreakdown }) {
-  const total = ci.assetMitigation + ci.existingCoverage
-
-  return (
-    <div style={{ background: '#fff', border: '1px solid var(--line2)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)', marginBottom: 14 }}>
-        Existing infrastructure (have)
-      </div>
-      <NeedsHaveRow icon={Wallet} label="Savings &amp; liquid assets" value={ci.assetMitigation} accent="var(--emerald)" />
-      <NeedsHaveRow icon={ShieldCheck} label="Existing critical illness coverage" value={ci.existingCoverage} accent="var(--gold)" />
-      <div style={{ marginTop: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontSize: 14, fontWeight: 600 }}>
-          <span style={{ color: 'var(--ink)' }}>Total</span>
-          <span style={{ fontFamily: 'DM Mono, monospace', color: 'var(--ink)' }}>{fmt(total)}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, fontSize: 14, fontWeight: 600 }}>
-          <span style={{ color: 'var(--ink)' }}>Status</span>
-          <span style={{ color: ci.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)' }}>
-            {ci.status === 'shortfall' ? 'Shortfall' : 'Covered'}
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function CINeedsHaveGrid({ ci }: { ci: PersonCIBreakdown }) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 16, marginBottom: 36, alignItems: 'stretch' }}>
-      <CINeedsCard ci={ci} />
-      <CIHaveCard ci={ci} />
-    </div>
-  )
-}
-
 // Same closing-line copy the old narrative version used — only the
 // surrounding layout changed, not the voice.
 function buildCIClosingLine(name: string, ci: PersonCIBreakdown): string {
@@ -885,81 +913,10 @@ function buildCIClosingLine(name: string, ci: PersonCIBreakdown): string {
   return `Unlike death, a critical illness leaves ${name} present but unable to provide. Closing this gap means the people around them can focus on recovery — not on making ends meet.`
 }
 
-// CI sibling of buildDTPDSubtitle above — same second-person, dynamic pattern.
-function buildCISubtitle(ci: PersonCIBreakdown): ReactNode {
-  const have = ci.assetMitigation + ci.existingCoverage
-  const hasNeed = ci.maxCapitalRequired > 0
-  const isShortfall = ci.status === 'shortfall'
-
-  if (!hasNeed) {
-    return <>No critical illness protection need has been identified for you yet.</>
-  }
-  if (isShortfall) {
-    const pct = fundedPct(have, ci.maxCapitalRequired)
-    // Years of the selected recovery window (Strategic Objectives > Critical
-    // Illness) that current funding would actually stretch across — same
-    // proportion as pct, scaled onto ci.ciYears instead of shown as a bare %.
-    const yearsCovered = Math.round((pct / 100) * ci.ciYears * 2) / 2
-    return (
-      <>
-        If you were diagnosed with a critical illness today, your family would have{' '}
-        <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — about{' '}
-        <span style={{ fontWeight: 600 }}>{pct}%</span> of what they would need, or roughly{' '}
-        <span style={{ fontWeight: 600 }}>{yearsCovered} {yearsCovered === 1 ? 'year' : 'years'}</span> of the{' '}
-        <span style={{ fontWeight: 600 }}>{ci.ciYears}</span>-year recovery window you've planned for.
-      </>
-    )
-  }
-  return (
-    <>
-      If you were diagnosed with a critical illness today, your family would have{' '}
-      <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{fmtCompact(have)}</span> ready — more than enough to replace lost income and cover the cost of recovery.
-    </>
-  )
-}
-
-function CIBreakdownPage({ name, profile }: { name: string; profile: PersonProtectionProfile }) {
-  const { ci, ciTimeline } = profile
-  const closingLine = buildCIClosingLine(name, ci)
-  const accentColor = ci.status === 'shortfall' ? 'var(--rouge)' : 'var(--emerald)'
-  const currentAge = ciTimeline.points.length > 0 ? ciTimeline.points[0].age : null
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>
-        Income protection — critical illness
-      </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 28, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 6 }}>
-        Critical illness: <span style={{ fontStyle: 'italic', fontWeight: 500, color: 'var(--ink2)' }}>{name}</span>
-      </div>
-      <div style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 500, fontSize: 27, lineHeight: 1.5, color: 'var(--ink)', marginBottom: 32 }}>
-        {buildCISubtitle(ci)}
-      </div>
-
-      <CINeedsHaveGrid ci={ci} />
-
-      {currentAge !== null && (
-        <div style={{ marginBottom: 36 }}>
-          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>
-            Coverage timeline
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--ink2)', marginBottom: 14 }}>
-            How the capital need and existing portfolio evolve as {name} ages.
-          </div>
-          <CoverageTimelineChart name={name} timeline={ciTimeline} currentAge={currentAge} />
-        </div>
-      )}
-
-      <CoverageAnalysisBar breakdown={ci} />
-
-      <ClosingCallout text={closingLine} accentColor={accentColor} />
-    </div>
-  )
-}
-
 function PersonStory({
-  name, profile, page, onAdvance, editable, onOverrideChange,
+  who, name, profile, page, onAdvance, editable, onOverrideChange,
 }: {
+  who: 'client' | 'spouse'
   name: string
   profile: PersonProtectionProfile
   page: Page
@@ -978,15 +935,7 @@ function PersonStory({
       />
     )
   }
-  if (page === 'dtpd') {
-    return (
-      <div>
-        <DTPDBreakdownPage name={name} profile={profile} />
-        <ContinueLink label="See the critical illness breakdown" onClick={() => onAdvance('ci')} />
-      </div>
-    )
-  }
-  return <CIBreakdownPage name={name} profile={profile} />
+  return <ScenarioPage who={who} name={name} profile={profile} />
 }
 
 export default function ProtectionDisplay({ snapshot, clientName, spouseName, editable, onFrameworkOverrideChange }: {
@@ -1042,6 +991,7 @@ export default function ProtectionDisplay({ snapshot, clientName, spouseName, ed
 
       {active === 'client' && (
         <PersonStory
+          who="client"
           name={clientName}
           profile={snapshot.client}
           page={page}
@@ -1052,6 +1002,7 @@ export default function ProtectionDisplay({ snapshot, clientName, spouseName, ed
       )}
       {active === 'spouse' && snapshot.spouse && (
         <PersonStory
+          who="spouse"
           name={spouseLabel}
           profile={snapshot.spouse}
           page={page}
