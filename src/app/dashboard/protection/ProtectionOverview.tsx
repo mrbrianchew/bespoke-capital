@@ -1230,7 +1230,7 @@ allMilestonesRaw.forEach((m, i) => {
             No need identified yet.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36, alignItems: 'start' }}>
             {/* Left: dial + shortfall + legend */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
@@ -1254,7 +1254,7 @@ allMilestonesRaw.forEach((m, i) => {
                 </div>
               )}
 
-              <div style={{ marginTop: 'auto', paddingTop: 8, width: '100%' }}>
+              <div style={{ marginTop: 12, paddingTop: 8, width: '100%', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <LegendRow swatch="#c8a96e" label="Insurance" value={breakdown.existingCoverage} />
                 <LegendRow swatch="#7FC47F" label="Assets" value={breakdown.assetMitigation} />
               </div>
@@ -1276,7 +1276,7 @@ allMilestonesRaw.forEach((m, i) => {
                   />
                 ))}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.09)', fontSize: 14, fontWeight: 600, color: '#F0EDE8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.09)', fontSize: 14, fontWeight: 600, color: '#F0EDE8' }}>
                 <span>Total need</span>
                 <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
               </div>
