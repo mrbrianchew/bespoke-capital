@@ -704,8 +704,7 @@ function CoverageChart({
     need: number
     insurance: number
     x: number
-    yNeed: number
-    yStack: number
+    yShortfall: number
   } | null>(null)
 
   if (!data.length) return null
@@ -761,30 +760,21 @@ function CoverageChart({
     return `${top} ${bot} Z`
   }
 
-  const needPoints = data.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
-  const needPath = linePath(needPoints)
-
-  // Build shortfall segments — where Needs pokes above the top of the stack
-  const shortfallSegments: string[] = []
-  let segStart = -1
-  for (let i = 0; i < data.length; i++) {
-    const isShortfall = (data[i] as any)[needKey] > stackAt(data[i])
-    if (isShortfall && segStart === -1) {
-      segStart = i
-    } else if (!isShortfall && segStart !== -1) {
-      const seg = data.slice(segStart, i)
-      const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
-      const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
-      shortfallSegments.push(areaPath(top, bot))
-      segStart = -1
-    }
-  }
-  if (segStart !== -1) {
-    const seg = data.slice(segStart)
-    const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
-    const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
-    shortfallSegments.push(areaPath(top, bot))
-  }
+  // Shortfall curve — max(0, Need − Insurance) at every age, plotted as one
+  // continuous area from the baseline. A raw "Needs" line (pinned to the
+  // Need value itself, colored black/needColor) used to run here — that's
+  // why the chart read as "still showing Needs instead of Shortfall": the
+  // line's height WAS the Need number, not the gap. Plotting the shortfall
+  // figure directly fixes that, and it never disappears — it just reads 0
+  // (flat along the baseline) whenever Insurance covers the Need, instead of
+  // segmenting/hiding for those years.
+  const shortfallPoints = data.map(d => ({
+    x: xP(d.age),
+    y: yP(Math.max(0, (d as any)[needKey] - stackAt(d))),
+  }))
+  const baselinePoints = data.map(d => ({ x: xP(d.age), y: PT + iH }))
+  const shortfallLinePath = linePath(shortfallPoints)
+  const shortfallAreaPath = areaPath(shortfallPoints, baselinePoints)
 
   // Age labels (every 5 years)
   const ageLabels = data.filter(d => d.age % 5 === 0 || d.age === currentAge || d.age === 100)
@@ -805,8 +795,7 @@ function CoverageChart({
         need: (closest as any)[needKey],
         insurance: (closest as any)[insuranceKey] || 0,
         x: xP(closest.age),
-        yNeed: yP((closest as any)[needKey]),
-        yStack: yP(stackAt(closest)),
+        yShortfall: yP(Math.max(0, (closest as any)[needKey] - stackAt(closest))),
       })
     } else {
       setHovered(null)
@@ -849,7 +838,7 @@ allMilestonesRaw.forEach((m, i) => {
 })
 
   const insuranceColor = '#c8a96e'
-  const needColor = '#1C1A17'
+  const shortfallColor = '#C0392B'
 
   return (
     <div style={{ position: 'relative', overflow: 'visible' }}>
@@ -860,15 +849,11 @@ allMilestonesRaw.forEach((m, i) => {
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 16, height: 2, background: needColor }} />
-            <span style={{ fontSize: 10, color: '#9A9896' }}>Needs</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 12, height: 8, background: insuranceColor, opacity: 0.55, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Insurance</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 12, height: 8, background: '#C0392B', opacity: 0.2, borderRadius: 2 }} />
+            <div style={{ width: 16, height: 2, background: shortfallColor }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Shortfall</span>
           </div>
         </div>
@@ -920,15 +905,17 @@ allMilestonesRaw.forEach((m, i) => {
           )
         })}
 
-        {/* Shortfall fill — where Needs pokes above the stack */}
-        {shortfallSegments.map((d, i) => (
-          <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
-        ))}
+        {/* Shortfall fill — continuous area under the shortfall curve (max(0,
+            Need − Insurance)), from the baseline. Reads as a flat zero
+            wherever Insurance covers the Need, so there's no visual gap. */}
+        <path d={shortfallAreaPath} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
 
-        {/* Needs line — full need at every age, drawn with a light halo so it reads
-            as its own curve rather than looking like the shortfall region's edge */}
-        <path d={needPath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-        <path d={needPath} stroke={needColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Shortfall line — one continuous curve, no breaks. Its height IS
+            the shortfall dollar amount (Need minus Insurance), not the raw
+            Need. It just runs flat along the baseline during years Insurance
+            fully covers the Need, rather than tracing the Need value. */}
+        <path d={shortfallLinePath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <path d={shortfallLinePath} stroke={shortfallColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
 
         {/* Milestone markers - tiered to prevent label overlap */}
@@ -986,14 +973,9 @@ allMilestonesRaw.forEach((m, i) => {
           />
         )}
 
-        {/* Hover dot on need line */}
+        {/* Hover dot on shortfall line */}
         {hovered && (
-          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill={needColor} stroke="#FDFCFA" strokeWidth="2" />
-        )}
-
-        {/* Hover dot on stack top */}
-        {hovered && (
-          <circle cx={hovered.x} cy={hovered.yStack} r="3" fill={insuranceColor} stroke="#FDFCFA" strokeWidth="1.5" opacity="0.8" />
+          <circle cx={hovered.x} cy={hovered.yShortfall} r="4" fill="#1C1A17" stroke="#FDFCFA" strokeWidth="2" />
         )}
       </svg>
 
