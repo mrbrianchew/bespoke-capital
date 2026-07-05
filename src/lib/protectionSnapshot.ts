@@ -326,6 +326,30 @@ export function buildProtectionSnapshot(input: {
     }, 0)
   }
 
+  // CI's mortgage component — instalments due during the recovery window
+  // only, not the full outstanding balance. Mirrors ProtectionOverview.tsx's
+  // identical fix exactly (same live-page bug existed here too): using the
+  // full balance made CI's need decline smoothly for years in a way
+  // unrelated to when the mortgage is actually paid off, instead of the
+  // flat-then-drop character the rest of the CI curve has.
+  function mortInstalmentsAtAge(atAge: number, currentAge: number, properties: any[], windowYears: number): number {
+    const resolved = (properties || []).map(resolveMortgageFields).filter((m): m is { outstanding: number; rate: number; tenure: number } => m !== null)
+    return resolved.reduce((total: number, m) => {
+      const { outstanding, rate, tenure } = m
+      if (outstanding <= 0 || tenure <= 0) return total
+      const yearsElapsed = atAge - currentAge
+      const yearsLeftFull = Math.max(0, tenure - yearsElapsed)
+      const yearsLeft = Math.min(windowYears, yearsLeftFull)
+      if (yearsLeft <= 0) return total
+      if (rate === 0) return total + outstanding * (yearsLeft / tenure)
+      const monthlyRate = rate / 12
+      const totalMonths = tenure * 12
+      const monthlyPmt = outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
+      const monthsLeft = yearsLeft * 12
+      return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
+    }, 0)
+  }
+
   function policyActiveAtAge(pol: any, age: number, currentAge: number): boolean {
     const mat = pol.coverageMaturity
     if (!mat || mat === 'Lifetime' || mat === 'Renewable') return true
@@ -537,7 +561,8 @@ export function buildProtectionSnapshot(input: {
       const yLeft = Math.max(0, (currentAge + coverageTerm) - age)
       const fdYears = Math.min(ciWindow, yLeft)
       const ageFD = fvAnnuity(annExp, inflation, fdYears)
-      const ageMort = mortBalanceAtAge(age, currentAge, ff.properties || [])
+      // Windowed to the recovery period only — see mortInstalmentsAtAge.
+      const ageMort = mortInstalmentsAtAge(age, currentAge, ff.properties || [], ciWindow)
       let eduRemaining = 0
       if (children.length > 0) {
         eduRemaining = children.reduce((s: number, c) => {
