@@ -547,6 +547,19 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     ? profile.ci.maxCapitalRequired
     : (activePerson === 'client' ? clientCI : spouseCI)
 
+  // Anchor the scale to the NET-of-assets figure, not gross — mirrors
+  // protectionSnapshot.ts's buildDTPDTimeline/buildCITimeline exactly (the
+  // Financial Report's Coverage Timeline chart, which doesn't have this
+  // page's flattening bug). Netting assets downstream, after scaling to a
+  // GROSS anchor, was the root cause: it made the scale factor larger than
+  // it should be, over-steepening the curve's decline and hitting the floor
+  // years before it should. Anchoring to net-of-assets from the start and
+  // flooring exactly once — same as the Financial Report — avoids that.
+  const dtpdAssetMitigation = profile?.dtpd.assetMitigation || 0
+  const ciAssetMitigation = profile?.ci.assetMitigation || 0
+  const netDTPDAtCurrent = Math.max(0, savedDTPD - dtpdAssetMitigation)
+  const netCIAtCurrent = Math.max(0, savedCI - ciAssetMitigation)
+
   // Compute raw need at current age as scaling baseline
   const rawDTPDAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
   const rawCIAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
@@ -556,23 +569,21 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
     const ciHave = getCIHaveAtAge(age, personKey, currentAge, activePolicies)
 
-    // Scale chart curve so it anchors to saved Strategic Objectives value at current age
+    // Scale chart curve so it anchors to the saved net-of-assets value at current age
     const rawDTPD = getDTPDNeedAtAge(age, personKey, properties)
     const rawCI = getCINeedAtAge(age, personKey, properties)
 
-    const dtpdScale = rawDTPDAtCurrent > 0 ? savedDTPD / rawDTPDAtCurrent : 1
-    const ciScale = rawCIAtCurrent > 0 ? savedCI / rawCIAtCurrent : 1
+    const dtpdScale = rawDTPDAtCurrent > 0 ? netDTPDAtCurrent / rawDTPDAtCurrent : 1
+    const ciScale = rawCIAtCurrent > 0 ? netCIAtCurrent / rawCIAtCurrent : 1
 
-    // Not floored here — CoverageChart floors exactly once, after netting
-    // out Asset Mitigation. Flooring this raw value first (as before) meant
-    // the chart's later asset-subtraction step would floor a second time,
-    // going flat far earlier than the true (need − assets) curve should —
-    // masking any milestone step-downs that fall after that point.
+    const personFloor = activePerson === 'client' ? clientFloor : spouseFloor
+    // Floored exactly once, directly on the scaled (already net-of-assets)
+    // raw value — matches the Financial Report's Math.max(floor, raw*scale).
     result.push({
       age,
-      dtpdNeed: rawDTPD * dtpdScale,
+      dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
       dtpdHave,
-      ciNeed: rawCI * ciScale,
+      ciNeed: Math.max(personFloor, rawCI * ciScale),
       ciHave,
     })
   }
@@ -736,7 +747,6 @@ function CoverageChart({
   data,
   type,
   floor,
-  assetMitigation,
   accentColor,
   currentAge,
   milestones,
@@ -745,7 +755,6 @@ function CoverageChart({
   data: typeof chartData
   type: 'dtpd' | 'ci'
   floor: number
-  assetMitigation: number
   accentColor: string
   currentAge: number
   milestones: { uniAges: { age: number; label: string }[]; mortEndAge: number | null; retireAge: number }
@@ -776,13 +785,14 @@ function CoverageChart({
   const needKey = type === 'dtpd' ? 'dtpdNeed' : 'ciNeed'
   const insuranceKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
 
-  // Plotted quantity = the gross need net of Asset Mitigation, floored. The
-  // gross need (needKey) already declines with age and is anchored to the
-  // Strategic-Objectives maxCapitalRequired. Asset Mitigation is a flat
-  // today-snapshot figure (same one the frosted dial shows); subtracting it
-  // and re-flooring means the curve falls with age but pins at the survival
-  // floor once (gross need − assets) would drop below it — never to zero.
-  const needAfterAt = (d: any) => Math.max(floor, ((d as any)[needKey] || 0) - assetMitigation)
+  // Plotted quantity is already net-of-assets and floored upstream in
+  // chartData (scaled against the net-of-assets anchor, matching how the
+  // Financial Report's Coverage Timeline computes its own curve). No
+  // separate asset subtraction here — that used to be a second netting
+  // step on top of an already-gross-anchored scale, which over-steepened
+  // the curve and hit the floor years earlier than it should. The
+  // Math.max below is just an idempotent safety net, not doing real work.
+  const needAfterAt = (d: any) => Math.max(floor, (d as any)[needKey] || 0)
   const insAt = (d: any) => (d as any)[insuranceKey] || 0
 
   // Find max value for Y-axis scaling — scale to the plotted (floored,
@@ -1452,7 +1462,6 @@ function CoverageChart({
   data={chartData}
   type="dtpd"
   floor={aFloor}
-  assetMitigation={activeProfile?.dtpd.assetMitigation || 0}
   accentColor="#C4A464"
   currentAge={aAge}
   milestones={milestoneAges}
@@ -1536,7 +1545,6 @@ function CoverageChart({
   data={chartData}
   type="ci"
   floor={aFloor}
-  assetMitigation={activeProfile?.ci.assetMitigation || 0}
   accentColor="#2D6A4F"
   currentAge={aAge}
   milestones={milestoneAges}
