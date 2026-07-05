@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { GraduationCap, Key, Palmtree } from 'lucide-react'
+import { GraduationCap, Key, Palmtree, TrendingDown } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType } from '@/lib/protectionSnapshot'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -620,9 +620,19 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   })()
 
   const retireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
-  
-  return { uniAges, mortEndAge, retireAge }
-}, [activePerson, clientAge, spouseAge, childUniEntryAges, children, properties, p1RetireAge, p2RetireAge])
+
+  // Multiplier-expiry milestones — a policy like a whole life plan with a 3x
+  // multiplier rider that drops off at a stated age (multiplierEnd) causes a
+  // real, immediate coverage cliff on the chart. Surfacing it as a milestone
+  // (rather than leaving the resulting gap unexplained) is what turns "why
+  // did the shortfall suddenly reappear at 70?" into a legible insight.
+  const multiplierDropAges = activePolicies
+    .filter(p => p.person === activePerson && p.categoryCode === 'life' && Number(p.multiplier) > 1 && Number(p.multiplierEnd) > 0)
+    .map(p => ({ age: Number(p.multiplierEnd), label: `${p.multiplier}× multiplier ends — ${p.productName || p.companyName || 'policy'}` }))
+    .filter(a => a.age > currentAge && a.age < 100)
+
+  return { uniAges, mortEndAge, retireAge, multiplierDropAges }
+}, [activePerson, clientAge, spouseAge, childUniEntryAges, children, properties, p1RetireAge, p2RetireAge, activePolicies])
 
   // ── Priority actions (dynamically ranked) ───────────────────────────────────
   const priorityActions = useMemo(() => {
@@ -721,7 +731,7 @@ function CoverageChart({
   floor: number
   accentColor: string
   currentAge: number
-  milestones: { uniAges: { age: number; label: string }[]; mortEndAge: number | null; retireAge: number }
+  milestones: { uniAges: { age: number; label: string }[]; mortEndAge: number | null; retireAge: number; multiplierDropAges: { age: number; label: string }[] }
   personName: string
 }) {
   const [hovered, setHovered] = useState<{
@@ -852,7 +862,7 @@ function CoverageChart({
  // amount at that age surface in a tooltip on hover instead of being drawn
  // as permanent text (which is what forced the old tier/stagger logic to
  // exist in the first place once 2-3 milestones landed close together).
-type MilestoneKind = 'education' | 'mortgage' | 'retirement'
+type MilestoneKind = 'education' | 'mortgage' | 'retirement' | 'coverage_drop'
 const allMilestonesRaw: { age: number; label: string; color: string; kind: MilestoneKind }[] = []
 
 milestones.uniAges.forEach((m) => {
@@ -864,6 +874,9 @@ if (milestones.mortEndAge) {
 if (milestones.retireAge) {
   allMilestonesRaw.push({ age: milestones.retireAge, label: 'Retirement', color: '#6B7B8D', kind: 'retirement' })
 }
+milestones.multiplierDropAges.forEach((m) => {
+  allMilestonesRaw.push({ age: m.age, label: m.label, color: '#B5651D', kind: 'coverage_drop' })
+})
 
 // Sort by age, stagger vertically only when icons would actually overlap
 allMilestonesRaw.sort((a, b) => a.age - b.age)
@@ -884,6 +897,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
   education: GraduationCap,
   mortgage: Key,
   retirement: Palmtree,
+  coverage_drop: TrendingDown,
 }
 
   const insuranceColor = '#c8a96e'
