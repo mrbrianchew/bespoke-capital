@@ -135,14 +135,19 @@ function getDetailedCategoryTotal(ff: Record<string, any>, category: string, pre
   }, 0)
 }
 
-function getDetailedTotal(ff: Record<string, any>, categories: Record<string, boolean>, subItems: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
+// Exported so ProtectionOverview's chart-shape calculation can reuse the
+// exact same expense figure that feeds maxCapitalRequired here — previously
+// it had its own simple-mode-only approximation that silently fell back to
+// income×0.7 for detailed-mode clients, badly distorting the chart's
+// scale-anchor factor.
+export function getDetailedTotal(ff: Record<string, any>, categories: Record<string, boolean>, subItems: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
   return Object.entries(categories).reduce((total, [cat, enabled]) => {
     if (!enabled) return total
     return total + getDetailedCategoryTotal(ff, cat, prefix, subItems)
   }, 0)
 }
 
-function getSimpleCategoryTotal(ff: Record<string, any>, categories: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
+export function getSimpleCategoryTotal(ff: Record<string, any>, categories: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
   const p = prefix === 'spouse' ? 's2_' : 's_'
   const catMap: Record<string, string[]> = {
     financial: [`${p}income_tax`, `${p}insurance`, `${p}regular_savings`],
