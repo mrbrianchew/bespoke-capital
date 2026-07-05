@@ -318,7 +318,18 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 
   // ── Floor calculation ───────────────────────────────────────────────────────
   // Floor = higher of ($300K) or (basic living expenses inflated to retirement/last milestone)
-  function getFloor(person: 'client' | 'spouse'): number {
+  // Returns the full breakdown (not just the number) so the UI can explain
+  // *why* the floor lands where it does, rather than stating it as a bare figure.
+  function getFloorDetail(person: 'client' | 'spouse'): {
+    floor: number
+    floorFromExpenses: number
+    effectiveExp: number
+    lifeExp: number
+    ciWindow: number
+    windowStart: number
+    windowEnd: number
+    usingMinimum: boolean
+  } {
     const currentAge = person === 'client' ? clientAge : spouseAge
     const lifeExp = Number(
       person === 'client'
@@ -347,14 +358,25 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       const yearsFromNow = Math.max(0, age - currentAge)
       floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
     }
-   console.log('[FLOOR] ' + JSON.stringify({ person, lifeExp, ciWindow, effectiveExp, windowStart, floorFromExpenses, result: Math.max(300000, floorFromExpenses) }))
-    return Math.max(300000, floorFromExpenses)
+    const floor = Math.max(300000, floorFromExpenses)
+    return {
+      floor,
+      floorFromExpenses,
+      effectiveExp,
+      lifeExp,
+      ciWindow,
+      windowStart,
+      windowEnd: lifeExp - 1,
+      usingMinimum: floorFromExpenses < 300000,
+    }
   }
 
   const p1LifeExp = Number(ff.client?.lifeExpectancy) || 85
   const p2LifeExp = Number(ff.spouse?.lifeExpectancy) || 85
-  const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household, ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance, ff.s_household, ff.s_personal])
-  const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d2_conservancy, ff.d2_utilities, ff.d2_family_food, ff.d2_maid, ff.d2_other_household, ff.d2_personal_food, ff.d2_transport, ff.d2_car_petrol, ff.d2_car_insurance, ff.s2_household, ff.s2_personal])
+  const clientFloorDetail = useMemo(() => getFloorDetail('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household, ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance, ff.s_household, ff.s_personal])
+  const spouseFloorDetail = useMemo(() => getFloorDetail('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d2_conservancy, ff.d2_utilities, ff.d2_family_food, ff.d2_maid, ff.d2_other_household, ff.d2_personal_food, ff.d2_transport, ff.d2_car_petrol, ff.d2_car_insurance, ff.s2_household, ff.s2_personal])
+  const clientFloor = clientFloorDetail.floor
+  const spouseFloor = spouseFloorDetail.floor
 
   // ── CPF and liquid assets ───────────────────────────────────────────────────
   const p1CPF = (Number(ff.a_cpf_oa) || 0) + (Number(ff.a_cpf_sa) || 0) + (Number(ff.a_cpf_ma) || 0)
@@ -484,9 +506,14 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
-  const savedDTPD = activePerson === 'client' ? clientDTPD : spouseDTPD
-  const savedCI = activePerson === 'client' ? clientCI : spouseCI
-
+  // Anchor to the same protectionSnapshot totals the frosted scenario card
+  // above displays (activeProfile.dtpd/ci.maxCapitalRequired). clientDTPD/
+  // clientCI (page-level props, sourced from ff.p1_dtpd_gross with a local
+  // fallback formula) used to be the anchor here, but that number can diverge
+  // from the snapshot's — which made the chart's Needs line (and therefore its
+  // Shortfall) show a different figure than the card just above it for the
+  // same person. Falls back to the old props only while the snapshot hasn't
+  // loaded yet.
   // Asset mitigation is a single saved figure (Strategic Objectives), not a
   // per-age projection — there's no growth/decay model for it anywhere in
   // the app yet. Held flat across every age until that's built; flagged in
@@ -494,6 +521,12 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const profile = protectionSnapshot
     ? (activePerson === 'spouse' ? protectionSnapshot.spouse : protectionSnapshot.client)
     : null
+  const savedDTPD = profile
+    ? profile.dtpd.maxCapitalRequired
+    : (activePerson === 'client' ? clientDTPD : spouseDTPD)
+  const savedCI = profile
+    ? profile.ci.maxCapitalRequired
+    : (activePerson === 'client' ? clientCI : spouseCI)
   const dtpdAssets = profile?.dtpd.assetMitigation || 0
   const ciAssets = profile?.ci.assetMitigation || 0
 
@@ -535,6 +568,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const aAge = activePerson === 'client' ? clientAge : spouseAge
   const aRetireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
   const aFloor = activePerson === 'client' ? clientFloor : spouseFloor
+  const aFloorDetail = activePerson === 'client' ? clientFloorDetail : spouseFloorDetail
   const aDTPDNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
   const aCINeed = activePerson === 'client' ? clientCI : spouseCI
 
@@ -1202,7 +1236,7 @@ allMilestonesRaw.forEach((m, i) => {
     age: number
     income: number
     breakdown: DialBreakdown
-    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType }[]
+    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; durationYears?: number }[]
     timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
     recoveryWindowYears?: number
@@ -1282,7 +1316,7 @@ allMilestonesRaw.forEach((m, i) => {
                     label={r.label}
                     value={r.value}
                     maxValue={maxRowValue}
-                    durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+                    durationYears={r.durationYears ?? (r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null)}
                   />
                 ))}
               </div>
@@ -1438,7 +1472,10 @@ allMilestonesRaw.forEach((m, i) => {
   personName={aName} 
 />
         <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-          Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
+          {aFloorDetail.usingMinimum
+            ? `Floor ${fmt(aFloor)} — the $300,000 minimum applies here; ${aName}'s basic household & personal expenses over the last ${aFloorDetail.ciWindow} years of life (age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd}) would only total ${fmt(aFloorDetail.floorFromExpenses)}. Permanent regardless of age.`
+            : `Floor ${fmt(aFloor)} — ${aName}'s basic household & personal expenses (${fmt(aFloorDetail.effectiveExp)}/yr today) inflated at ${(inflation * 100).toFixed(1)}% across age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd} (the ${aFloorDetail.ciWindow} years before a life expectancy of ${aFloorDetail.lifeExp}), which exceeds the $300,000 minimum. Permanent regardless of age.`
+          }
         </div>
       </div>
 
@@ -1482,7 +1519,7 @@ allMilestonesRaw.forEach((m, i) => {
               income={activeIncome}
               breakdown={activeProfile.ci}
               rows={[
-                { label: 'Family living', value: activeProfile.ci.familyDependency },
+                { label: 'Family living', value: activeProfile.ci.familyDependency, durationYears: activeProfile.ci.ciYears },
                 { label: 'Mortgage', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
                 { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education' },
                 { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
@@ -1521,7 +1558,10 @@ allMilestonesRaw.forEach((m, i) => {
   personName={aName}
 />
         <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-          Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
+          {aFloorDetail.usingMinimum
+            ? `Survival floor ${fmt(aFloor)} — the $300,000 minimum applies here; ${aName}'s basic household & personal expenses over the last ${aFloorDetail.ciWindow} years of life (age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd}) would only total ${fmt(aFloorDetail.floorFromExpenses)}. Even at age 100 — no mortgage, no dependants — a CI diagnosis without it is still a crisis.`
+            : `Survival floor ${fmt(aFloor)} — ${aName}'s basic household & personal expenses (${fmt(aFloorDetail.effectiveExp)}/yr today) inflated at ${(inflation * 100).toFixed(1)}% across age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd} (the ${aFloorDetail.ciWindow} years before a life expectancy of ${aFloorDetail.lifeExp}). Even at age 100 — no mortgage, no dependants — a CI diagnosis without it is still a crisis.`
+          }
         </div>
       </div>
 
