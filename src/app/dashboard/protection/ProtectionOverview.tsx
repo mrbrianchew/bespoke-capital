@@ -446,10 +446,16 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const edu = Object.values(perChildFund).reduce((s, v) => s + v, 0)
 
   // ── D/TPD need at age ───────────────────────────────────────────────────────
+  // Returns the RAW need — deliberately not floored here. Flooring happens
+  // exactly once, in CoverageChart, after Asset Mitigation is netted out.
+  // Flooring here too used to cause a double-floor bug: chartData floored
+  // this value, then CoverageChart subtracted assetMitigation from the
+  // already-floored figure and floored again — which made the plotted line
+  // go flat far earlier than the true (need − assets) curve would, hiding
+  // any milestone step-downs (uni entry, etc.) that fall after that point.
   function getDTPDNeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
     const currentAge = person === 'client' ? clientAge : spouseAge
     const annExp = person === 'client' ? p1AnnExp : p2AnnExp
-    const floor = person === 'client' ? clientFloor : spouseFloor
     const yLeft = Math.max(0, (currentAge + coverTerm) - age)
 
     const ageFD = fvAnnuity(annExp, inflation, yLeft)
@@ -469,16 +475,15 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     }
 
     const assetOffset = person === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
-    const raw = ageFD + ageMort + eduRemaining - assetOffset
-    return Math.max(floor, raw)
+    return ageFD + ageMort + eduRemaining - assetOffset
   }
   // ── CI need at age ──────────────────────────────────────────────────────────
+  // Also returns the RAW need — see note above getDTPDNeedAtAge.
   function getCINeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
   const currentAge = person === 'client' ? clientAge : spouseAge
   const annExp = person === 'client' ? p1AnnExp : p2AnnExp
   const monthlyInc = person === 'client' ? p1MonthlyInc : p2MonthlyInc
   const liqAssets = person === 'client' ? p1Liq : p2Liq
-  const floor = person === 'client' ? clientFloor : spouseFloor
 
   const ciWindow = Number(ff.protection?.ciYears) || 5
   const yLeft = Math.max(0, (currentAge + coverTerm) - age)
@@ -506,8 +511,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     eduComponent = yLeft > 0 ? edu : 0
   }
 
-    const raw = incomeComponent + mortComponent + eduComponent
-    return Math.max(floor, raw)
+    return incomeComponent + mortComponent + eduComponent
   }
 
 // ── Build chart data (age arrays) ───────────────────────────────────────────
@@ -547,12 +551,16 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     const dtpdScale = rawDTPDAtCurrent > 0 ? savedDTPD / rawDTPDAtCurrent : 1
     const ciScale = rawCIAtCurrent > 0 ? savedCI / rawCIAtCurrent : 1
 
-    const personFloor = activePerson === 'client' ? clientFloor : spouseFloor
+    // Not floored here — CoverageChart floors exactly once, after netting
+    // out Asset Mitigation. Flooring this raw value first (as before) meant
+    // the chart's later asset-subtraction step would floor a second time,
+    // going flat far earlier than the true (need − assets) curve should —
+    // masking any milestone step-downs that fall after that point.
     result.push({
       age,
-      dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
+      dtpdNeed: rawDTPD * dtpdScale,
       dtpdHave,
-      ciNeed: rawCI <= personFloor ? personFloor : Math.max(personFloor, rawCI * ciScale),
+      ciNeed: rawCI * ciScale,
       ciHave,
     })
   }
