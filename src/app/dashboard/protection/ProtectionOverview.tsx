@@ -701,7 +701,6 @@ function CoverageChart({
     age: number
     need: number
     insurance: number
-    assets: number
     x: number
     yNeed: number
     yStack: number
@@ -721,8 +720,12 @@ function CoverageChart({
 
   const needKey = type === 'dtpd' ? 'dtpdNeed' : 'ciNeed'
   const insuranceKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
-  const assetsKey = type === 'dtpd' ? 'dtpdAssets' : 'ciAssets'
-  const stackAt = (d: any) => (d[insuranceKey] || 0) + (d[assetsKey] || 0)
+  // Coverage stack is Insurance only now — Asset mitigation removed per
+  // request. It's a single saved point-in-time figure with no growth/decay
+  // model, so stacking it on top of Insurance across a 50+ year timeline
+  // implied more precision than the data has. Still shown as a today
+  // snapshot on the scenario card above.
+  const stackAt = (d: any) => d[insuranceKey] || 0
 
   // Find max value for Y-axis scaling
   const maxV = Math.max(
@@ -799,7 +802,6 @@ function CoverageChart({
         age: closest.age,
         need: (closest as any)[needKey],
         insurance: (closest as any)[insuranceKey] || 0,
-        assets: (closest as any)[assetsKey] || 0,
         x: xP(closest.age),
         yNeed: yP((closest as any)[needKey]),
         yStack: yP(stackAt(closest)),
@@ -845,7 +847,6 @@ allMilestonesRaw.forEach((m, i) => {
 })
 
   const insuranceColor = '#c8a96e'
-  const assetsColor = '#7FC47F'
   const needColor = '#1C1A17'
 
   return (
@@ -863,10 +864,6 @@ allMilestonesRaw.forEach((m, i) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 12, height: 8, background: insuranceColor, opacity: 0.55, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Insurance</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 12, height: 8, background: assetsColor, opacity: 0.55, borderRadius: 2 }} />
-            <span style={{ fontSize: 10, color: '#9A9896' }}>Assets</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 12, height: 8, background: '#C0392B', opacity: 0.2, borderRadius: 2 }} />
@@ -907,25 +904,17 @@ allMilestonesRaw.forEach((m, i) => {
         <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
         <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
 
-        {/* Stacked coverage bars: Insurance (base) + Assets (on top), one pair per age */}
+        {/* Insurance coverage bars — one per age. Assets no longer stack on
+            top here; shown only as a today snapshot on the scenario card. */}
         {data.map(d => {
           const insurance = (d as any)[insuranceKey] || 0
-          const assets = (d as any)[assetsKey] || 0
-          if (insurance <= 0 && assets <= 0) return null
+          if (insurance <= 0) return null
           const bx = xP(d.age)
           const barW = Math.max(3, (iW / data.length) * 0.8)
           const baseY = PT + iH
           const insTopY = yP(insurance)
-          const stackTopY = yP(insurance + assets)
           return (
-            <g key={`bar-${d.age}`}>
-              {insurance > 0 && (
-                <rect x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.5" rx="1.5" />
-              )}
-              {assets > 0 && (
-                <rect x={bx - barW / 2} y={stackTopY} width={barW} height={Math.max(0, insTopY - stackTopY)} fill={assetsColor} opacity="0.5" rx="1.5" />
-              )}
-            </g>
+            <rect key={`bar-${d.age}`} x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.5" rx="1.5" />
           )
         })}
 
@@ -1002,7 +991,7 @@ allMilestonesRaw.forEach((m, i) => {
 
         {/* Hover dot on stack top */}
         {hovered && (
-          <circle cx={hovered.x} cy={hovered.yStack} r="3" fill={assetsColor} stroke="#FDFCFA" strokeWidth="1.5" opacity="0.8" />
+          <circle cx={hovered.x} cy={hovered.yStack} r="3" fill={insuranceColor} stroke="#FDFCFA" strokeWidth="1.5" opacity="0.8" />
         )}
       </svg>
 
@@ -1037,23 +1026,19 @@ allMilestonesRaw.forEach((m, i) => {
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Insurance</span>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 400, color: insuranceColor }}>{fmt(hovered.insurance)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
-              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Assets</span>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 400, color: assetsColor }}>{fmt(hovered.assets)}</span>
-            </div>
             <div style={{ paddingTop: 10, borderTop: '0.5px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', gap: 32 }}>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {hovered.need > hovered.insurance + hovered.assets ? 'Shortfall' : 'Surplus'}
+                {hovered.need > hovered.insurance ? 'Shortfall' : 'Surplus'}
               </span>
               <span style={{
                 fontFamily: 'Cormorant Garamond, Georgia, serif',
                 fontSize: 18,
                 fontWeight: 300,
-                color: hovered.need > hovered.insurance + hovered.assets ? '#FF8A80' : '#A0D0B8',
+                color: hovered.need > hovered.insurance ? '#FF8A80' : '#A0D0B8',
               }}>
-                {hovered.need > hovered.insurance + hovered.assets
-                  ? fmt(hovered.need - hovered.insurance - hovered.assets)
-                  : fmt(hovered.insurance + hovered.assets - hovered.need)}
+                {hovered.need > hovered.insurance
+                  ? fmt(hovered.need - hovered.insurance)
+                  : fmt(hovered.insurance - hovered.need)}
               </span>
             </div>
           </div>
