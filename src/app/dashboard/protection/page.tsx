@@ -544,11 +544,14 @@ const localClientCI   = Math.max(0, p1Mo * 60 - p1Liq)
 const localSpouseDTPD = isCouple ? Math.max(0, fvAnn(finalP2Exp, inflation, coverTerm) + mort - p2CPF - p2Prop) : 0
 const localSpouseCI   = isCouple ? Math.max(0, p2Mo * 60 - p2Liq) : 0
 
-// Prefer saved needs from Strategic Objectives; fall back to local estimate if not yet calculated
-const clientDTPD = Number(ff.p1_dtpd_need || 0) || localClientDTPD
-const clientCI   = Number(ff.p1_ci_need   || 0) || localClientCI
-const spouseDTPD = isCouple ? (Number(ff.p2_dtpd_need || 0) || localSpouseDTPD) : 0
-const spouseCI   = isCouple ? (Number(ff.p2_ci_need   || 0) || localSpouseCI)   : 0
+// Prefer saved GROSS needs from Strategic Objectives (matches the dial card's
+// "Total need" above, which reads p1_dtpd_gross / p1_ci_gross via protectionSnapshot).
+// The *_need fields are net-of-assets figures, not the full need — using them here
+// made the chart's Needs line plot a shortfall-like number instead of the actual need.
+const clientDTPD = Number(ff.p1_dtpd_gross || 0) || localClientDTPD
+const clientCI   = Number(ff.p1_ci_gross   || 0) || localClientCI
+const spouseDTPD = isCouple ? (Number(ff.p2_dtpd_gross || 0) || localSpouseDTPD) : 0
+const spouseCI   = isCouple ? (Number(ff.p2_ci_gross   || 0) || localSpouseCI)   : 0
 
   function toSGD(val: number, p: Policy) {
     return p.isUSD ? val * (p.fxRate || 1.35) : val
