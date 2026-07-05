@@ -484,18 +484,22 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
-  const savedDTPD = activePerson === 'client' ? clientDTPD : spouseDTPD
-  const savedCI = activePerson === 'client' ? clientCI : spouseCI
-
-  // Asset mitigation is a single saved figure (Strategic Objectives), not a
-  // per-age projection — there's no growth/decay model for it anywhere in
-  // the app yet. Held flat across every age until that's built; flagged in
-  // the chart's own caption so it doesn't read as more precise than it is.
+  // Anchor to the same protectionSnapshot totals the frosted scenario card
+  // above displays (profile.dtpd/ci.maxCapitalRequired). clientDTPD/clientCI
+  // (page-level props, sourced from ff.p1_dtpd_gross with a separate local
+  // fallback formula) is a DIFFERENT number from the snapshot's — using it
+  // here is why the chart's starting Needs figure didn't match the card's
+  // Total Need. Falls back to the old props only while the snapshot hasn't
+  // loaded yet.
   const profile = protectionSnapshot
     ? (activePerson === 'spouse' ? protectionSnapshot.spouse : protectionSnapshot.client)
     : null
-  const dtpdAssets = profile?.dtpd.assetMitigation || 0
-  const ciAssets = profile?.ci.assetMitigation || 0
+  const savedDTPD = profile
+    ? profile.dtpd.maxCapitalRequired
+    : (activePerson === 'client' ? clientDTPD : spouseDTPD)
+  const savedCI = profile
+    ? profile.ci.maxCapitalRequired
+    : (activePerson === 'client' ? clientCI : spouseCI)
 
   // Compute raw need at current age as scaling baseline
   const rawDTPDAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
@@ -518,10 +522,8 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       age,
       dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
       dtpdHave,
-      dtpdAssets,
       ciNeed: rawCI <= personFloor ? personFloor : Math.max(personFloor, rawCI * ciScale),
       ciHave,
-      ciAssets,
     })
   }
   
