@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType, getDetailedTotal, getSimpleCategoryTotal } from '@/lib/protectionSnapshot'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Policy {
@@ -297,29 +297,33 @@ useEffect(() => {
 }, [activePolicies, properties])
 
   // ── Expenses ────────────────────────────────────────────────────────────────
+  // Mirrors buildProtectionSnapshot's own getAnnualExpense exactly (same
+  // isDetailed/cats/subItems resolution, same helper functions) so this
+  // page's local "raw" need — used only to shape the chart curve, then
+  // rescaled to the saved total — starts from the same expense base as the
+  // saved total itself. Previously this only read simple-mode fields and
+  // silently fell back to income×0.7 for detailed-mode clients, which
+  // badly distorted the chart's scale-anchor factor for anyone in detailed
+  // mode (the common case).
+  const isDetailedExpense = (ff.protection?.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
+  const expenseCats = ff.protection?.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
+  const expenseSubItems = ff.protection?.expenseSubItems ?? {}
+
   const p1AnnExp = useMemo(() => {
-    const exp =
-      (Number(ff.s_financial) || 0) +
-      (Number(ff.s_household) || 0) +
-      (Number(ff.s_personal) || 0) +
-      (Number(ff.s_children) || 0) +
-      (Number(ff.s_lifestyle) || 0)
-    // s_mortgage excluded — mortgage is handled separately via mortBalanceAtAge
+    const exp = isDetailedExpense
+      ? getDetailedTotal(ff, expenseCats, expenseSubItems, 'client')
+      : getSimpleCategoryTotal(ff, expenseCats, 'client')
     const income = Number(ff.person1?.gross_monthly || ff.monthly_income || 0) * 12
     return exp > 0 ? exp : income * 0.7
-  }, [ff])
+  }, [ff, isDetailedExpense, expenseCats, expenseSubItems])
 
   const p2AnnExp = useMemo(() => {
-    const exp =
-      (Number(ff.s2_financial) || 0) +
-      (Number(ff.s2_household) || 0) +
-      (Number(ff.s2_personal) || 0) +
-      (Number(ff.s2_children) || 0) +
-      (Number(ff.s2_lifestyle) || 0)
-    // s2_mortgage excluded — mortgage is handled separately via mortBalanceAtAge
+    const exp = isDetailedExpense
+      ? getDetailedTotal(ff, expenseCats, expenseSubItems, 'spouse')
+      : getSimpleCategoryTotal(ff, expenseCats, 'spouse')
     const income = Number(ff.person2?.gross_monthly || ff.monthly_income_spouse || 0) * 12
     return exp > 0 ? exp : income * 0.7
-  }, [ff])
+  }, [ff, isDetailedExpense, expenseCats, expenseSubItems])
 
   const p1MonthlyInc = Number(ff.person1?.gross_monthly || ff.monthly_income || 0)
   const p2MonthlyInc = Number(ff.person2?.gross_monthly || ff.monthly_income_spouse || 0)
@@ -474,8 +478,16 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       eduRemaining = yLeft > 0 ? edu : 0
     }
 
-    const assetOffset = person === 'client' ? p1CPF + p1Prop : p2CPF + p2Prop
-    return ageFD + ageMort + eduRemaining - assetOffset
+    // Note: no local asset subtraction here. This used to subtract
+    // p1CPF+p1Prop/p2CPF+p2Prop, but that double-counted against
+    // assetMitigation (netted in CoverageChart) AND, more importantly,
+    // broke the scale anchor below — savedDTPD (the anchor) is the GROSS
+    // need with no asset subtraction, so subtracting assets here made
+    // rawDTPDAtCurrent artificially small, inflating dtpdScale, which then
+    // made the whole curve decline far too steeply and hit the floor+assets
+    // threshold years earlier than it should — masking milestone step-downs
+    // that occur after that point.
+    return ageFD + ageMort + eduRemaining
   }
   // ── CI need at age ──────────────────────────────────────────────────────────
   // Also returns the RAW need — see note above getDTPDNeedAtAge.
@@ -967,7 +979,6 @@ function CoverageChart({
               {Math.abs(m.x - gx) > 0.5 && (
                 <line x1={m.x} y1={PT - 12} x2={gx} y2={PT} stroke={m.color} strokeWidth="0.5" opacity="0.2" />
               )}
-              <circle cx={m.x} cy={PT - 24} r="12" fill="#FDFCFA" stroke={m.color} strokeWidth="1" opacity="0.95" />
               <g transform={`translate(${m.x},${PT - 24})`}>
                 <MilestoneIconAtOrigin icon={m.icon} size={14} color={m.color} />
               </g>
