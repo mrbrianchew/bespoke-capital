@@ -1,6 +1,5 @@
 'use client'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { GraduationCap, Key, Palmtree, TrendingDown } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType } from '@/lib/protectionSnapshot'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -319,18 +318,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 
   // ── Floor calculation ───────────────────────────────────────────────────────
   // Floor = higher of ($300K) or (basic living expenses inflated to retirement/last milestone)
-  // Returns the full breakdown (not just the number) so the UI can explain
-  // *why* the floor lands where it does, rather than stating it as a bare figure.
-  function getFloorDetail(person: 'client' | 'spouse'): {
-    floor: number
-    floorFromExpenses: number
-    effectiveExp: number
-    lifeExp: number
-    ciWindow: number
-    windowStart: number
-    windowEnd: number
-    usingMinimum: boolean
-  } {
+  function getFloor(person: 'client' | 'spouse'): number {
     const currentAge = person === 'client' ? clientAge : spouseAge
     const lifeExp = Number(
       person === 'client'
@@ -359,25 +347,14 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       const yearsFromNow = Math.max(0, age - currentAge)
       floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
     }
-    const floor = Math.max(300000, floorFromExpenses)
-    return {
-      floor,
-      floorFromExpenses,
-      effectiveExp,
-      lifeExp,
-      ciWindow,
-      windowStart,
-      windowEnd: lifeExp - 1,
-      usingMinimum: floorFromExpenses < 300000,
-    }
+   console.log('[FLOOR] ' + JSON.stringify({ person, lifeExp, ciWindow, effectiveExp, windowStart, floorFromExpenses, result: Math.max(300000, floorFromExpenses) }))
+    return Math.max(300000, floorFromExpenses)
   }
 
   const p1LifeExp = Number(ff.client?.lifeExpectancy) || 85
   const p2LifeExp = Number(ff.spouse?.lifeExpectancy) || 85
-  const clientFloorDetail = useMemo(() => getFloorDetail('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household, ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance, ff.s_household, ff.s_personal])
-  const spouseFloorDetail = useMemo(() => getFloorDetail('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d2_conservancy, ff.d2_utilities, ff.d2_family_food, ff.d2_maid, ff.d2_other_household, ff.d2_personal_food, ff.d2_transport, ff.d2_car_petrol, ff.d2_car_insurance, ff.s2_household, ff.s2_personal])
-  const clientFloor = clientFloorDetail.floor
-  const spouseFloor = spouseFloorDetail.floor
+  const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household, ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance, ff.s_household, ff.s_personal])
+  const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d2_conservancy, ff.d2_utilities, ff.d2_family_food, ff.d2_maid, ff.d2_other_household, ff.d2_personal_food, ff.d2_transport, ff.d2_car_petrol, ff.d2_car_insurance, ff.s2_household, ff.s2_personal])
 
   // ── CPF and liquid assets ───────────────────────────────────────────────────
   const p1CPF = (Number(ff.a_cpf_oa) || 0) + (Number(ff.a_cpf_sa) || 0) + (Number(ff.a_cpf_ma) || 0)
@@ -507,23 +484,18 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const chartData = useMemo(() => {
   const currentAge = activePerson === 'client' ? clientAge : spouseAge
   const personKey = activePerson
-  // Anchor to the same protectionSnapshot totals the frosted scenario card
-  // above displays (activeProfile.dtpd/ci.maxCapitalRequired). clientDTPD/
-  // clientCI (page-level props, sourced from ff.p1_dtpd_gross with a local
-  // fallback formula) used to be the anchor here, but that number can diverge
-  // from the snapshot's — which made the chart's Needs line (and therefore its
-  // Shortfall) show a different figure than the card just above it for the
-  // same person. Falls back to the old props only while the snapshot hasn't
-  // loaded yet.
+  const savedDTPD = activePerson === 'client' ? clientDTPD : spouseDTPD
+  const savedCI = activePerson === 'client' ? clientCI : spouseCI
+
+  // Asset mitigation is a single saved figure (Strategic Objectives), not a
+  // per-age projection — there's no growth/decay model for it anywhere in
+  // the app yet. Held flat across every age until that's built; flagged in
+  // the chart's own caption so it doesn't read as more precise than it is.
   const profile = protectionSnapshot
     ? (activePerson === 'spouse' ? protectionSnapshot.spouse : protectionSnapshot.client)
     : null
-  const savedDTPD = profile
-    ? profile.dtpd.maxCapitalRequired
-    : (activePerson === 'client' ? clientDTPD : spouseDTPD)
-  const savedCI = profile
-    ? profile.ci.maxCapitalRequired
-    : (activePerson === 'client' ? clientCI : spouseCI)
+  const dtpdAssets = profile?.dtpd.assetMitigation || 0
+  const ciAssets = profile?.ci.assetMitigation || 0
 
   // Compute raw need at current age as scaling baseline
   const rawDTPDAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
@@ -546,8 +518,10 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       age,
       dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
       dtpdHave,
+      dtpdAssets,
       ciNeed: rawCI <= personFloor ? personFloor : Math.max(personFloor, rawCI * ciScale),
       ciHave,
+      ciAssets,
     })
   }
   
@@ -561,7 +535,6 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const aAge = activePerson === 'client' ? clientAge : spouseAge
   const aRetireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
   const aFloor = activePerson === 'client' ? clientFloor : spouseFloor
-  const aFloorDetail = activePerson === 'client' ? clientFloorDetail : spouseFloorDetail
   const aDTPDNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
   const aCINeed = activePerson === 'client' ? clientCI : spouseCI
 
@@ -620,19 +593,9 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   })()
 
   const retireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
-
-  // Multiplier-expiry milestones — a policy like a whole life plan with a 3x
-  // multiplier rider that drops off at a stated age (multiplierEnd) causes a
-  // real, immediate coverage cliff on the chart. Surfacing it as a milestone
-  // (rather than leaving the resulting gap unexplained) is what turns "why
-  // did the shortfall suddenly reappear at 70?" into a legible insight.
-  const multiplierDropAges = activePolicies
-    .filter(p => p.person === activePerson && p.categoryCode === 'life' && Number(p.multiplier) > 1 && Number(p.multiplierEnd) > 0)
-    .map(p => ({ age: Number(p.multiplierEnd), label: `${p.multiplier}× multiplier ends — ${p.productName || p.companyName || 'policy'}` }))
-    .filter(a => a.age > currentAge && a.age < 100)
-
-  return { uniAges, mortEndAge, retireAge, multiplierDropAges }
-}, [activePerson, clientAge, spouseAge, childUniEntryAges, children, properties, p1RetireAge, p2RetireAge, activePolicies])
+  
+  return { uniAges, mortEndAge, retireAge }
+}, [activePerson, clientAge, spouseAge, childUniEntryAges, children, properties, p1RetireAge, p2RetireAge])
 
   // ── Priority actions (dynamically ranked) ───────────────────────────────────
   const priorityActions = useMemo(() => {
@@ -731,22 +694,17 @@ function CoverageChart({
   floor: number
   accentColor: string
   currentAge: number
-  milestones: { uniAges: { age: number; label: string }[]; mortEndAge: number | null; retireAge: number; multiplierDropAges: { age: number; label: string }[] }
+  milestones: { uniAges: { age: number; label: string }[]; mortEndAge: number | null; retireAge: number }
   personName: string
 }) {
   const [hovered, setHovered] = useState<{
     age: number
     need: number
     insurance: number
+    assets: number
     x: number
-    yShortfall: number
-  } | null>(null)
-  const [hoveredMilestone, setHoveredMilestone] = useState<{
-    x: number
-    y: number
-    label: string
-    age: number
-    shortfall: number
+    yNeed: number
+    yStack: number
   } | null>(null)
 
   if (!data.length) return null
@@ -763,13 +721,8 @@ function CoverageChart({
 
   const needKey = type === 'dtpd' ? 'dtpdNeed' : 'ciNeed'
   const insuranceKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
-  // Coverage stack is Insurance only. Asset mitigation used to be stacked on
-  // top of it here, but that figure is a single point-in-time number with no
-  // growth/decay model — plotting it flat across 50+ years implied a
-  // precision the data doesn't have. It's still shown as a today snapshot on
-  // the scenario card above; this chart now only plots what has a real
-  // schedule over time (Needs and Insurance).
-  const stackAt = (d: any) => d[insuranceKey] || 0
+  const assetsKey = type === 'dtpd' ? 'dtpdAssets' : 'ciAssets'
+  const stackAt = (d: any) => (d[insuranceKey] || 0) + (d[assetsKey] || 0)
 
   // Find max value for Y-axis scaling
   const maxV = Math.max(
@@ -803,21 +756,30 @@ function CoverageChart({
     return `${top} ${bot} Z`
   }
 
-  // Shortfall curve — max(0, Need − Insurance) at every age, plotted as one
-  // continuous area from the baseline. Two earlier attempts kept the line's
-  // height pinned to the raw Need value (just recolored, or only drawn
-  // during gap years) — the height itself was still the Need number, and
-  // hiding the line for fully-covered years produced a visible break.
-  // Plotting the actual shortfall figure fixes both: the y-position now IS
-  // the shortfall amount, and it never disappears — it just reads 0 (flat
-  // along the baseline) whenever Insurance covers the Need.
-  const shortfallPoints = data.map(d => ({
-    x: xP(d.age),
-    y: yP(Math.max(0, (d as any)[needKey] - stackAt(d))),
-  }))
-  const baselinePoints = data.map(d => ({ x: xP(d.age), y: PT + iH }))
-  const shortfallLinePath = linePath(shortfallPoints)
-  const shortfallAreaPath = areaPath(shortfallPoints, baselinePoints)
+  const needPoints = data.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
+  const needPath = linePath(needPoints)
+
+  // Build shortfall segments — where Needs pokes above the top of the stack
+  const shortfallSegments: string[] = []
+  let segStart = -1
+  for (let i = 0; i < data.length; i++) {
+    const isShortfall = (data[i] as any)[needKey] > stackAt(data[i])
+    if (isShortfall && segStart === -1) {
+      segStart = i
+    } else if (!isShortfall && segStart !== -1) {
+      const seg = data.slice(segStart, i)
+      const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
+      const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
+      shortfallSegments.push(areaPath(top, bot))
+      segStart = -1
+    }
+  }
+  if (segStart !== -1) {
+    const seg = data.slice(segStart)
+    const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
+    const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
+    shortfallSegments.push(areaPath(top, bot))
+  }
 
   // Age labels (every 5 years)
   const ageLabels = data.filter(d => d.age % 5 === 0 || d.age === currentAge || d.age === 100)
@@ -837,58 +799,54 @@ function CoverageChart({
         age: closest.age,
         need: (closest as any)[needKey],
         insurance: (closest as any)[insuranceKey] || 0,
+        assets: (closest as any)[assetsKey] || 0,
         x: xP(closest.age),
-        yShortfall: yP(Math.max(0, (closest as any)[needKey] - stackAt(closest))),
+        yNeed: yP((closest as any)[needKey]),
+        yStack: yP(stackAt(closest)),
       })
     } else {
       setHovered(null)
     }
   }
 
- // Build milestone markers — icon + age always visible; name and needed
- // amount at that age surface in a tooltip on hover instead of being drawn
- // as permanent text (which is what forced the old tier/stagger logic to
- // exist in the first place once 2-3 milestones landed close together).
-type MilestoneKind = 'education' | 'mortgage' | 'retirement' | 'coverage_drop'
-const allMilestonesRaw: { age: number; label: string; color: string; kind: MilestoneKind }[] = []
+ // Build milestone markers with tier assignment to prevent overlap
+const allMilestonesRaw: { age: number; label: string; color: string }[] = []
 
 milestones.uniAges.forEach((m) => {
-  allMilestonesRaw.push({ age: m.age, label: m.label, color: '#2D6A4F', kind: 'education' })
+  allMilestonesRaw.push({ age: m.age, label: m.label, color: '#2D6A4F' })
 })
 if (milestones.mortEndAge) {
-  allMilestonesRaw.push({ age: milestones.mortEndAge, label: 'Mortgage paid', color: '#A8834A', kind: 'mortgage' })
+  allMilestonesRaw.push({ age: milestones.mortEndAge, label: 'Mortgage paid', color: '#A8834A' })
 }
 if (milestones.retireAge) {
-  allMilestonesRaw.push({ age: milestones.retireAge, label: 'Retirement', color: '#6B7B8D', kind: 'retirement' })
+  allMilestonesRaw.push({ age: milestones.retireAge, label: 'Retirement', color: '#6B7B8D' })
 }
-milestones.multiplierDropAges.forEach((m) => {
-  allMilestonesRaw.push({ age: m.age, label: m.label, color: '#B5651D', kind: 'coverage_drop' })
-})
 
-// Sort by age, stagger vertically only when icons would actually overlap
+// Sort by age, then assign tiers based on proximity
+const MIN_GAP = 7
 allMilestonesRaw.sort((a, b) => a.age - b.age)
-const allMilestones: { age: number; label: string; color: string; kind: MilestoneKind; tier: number }[] = []
+const allMilestones: { age: number; label: string; color: string; tier: number; anchor: string }[] = []
 allMilestonesRaw.forEach((m, i) => {
   if (i === 0) {
-    allMilestones.push({ ...m, tier: 0 })
+    allMilestones.push({ ...m, tier: 0, anchor: 'middle' })
   } else {
     const prev = allMilestonesRaw[i - 1]
     const prevTier = allMilestones[i - 1].tier
     const gap = m.age - prev.age
-    const newTier = gap <= 3 ? (prevTier + 1) % 3 : 0
-    allMilestones.push({ ...m, tier: newTier })
+    if (gap <= 8) {
+      // Close enough that names could collide: push labels apart horizontally, stagger vertically
+      const newTier = gap <= 3 ? 0 : (prevTier + 1) % 3
+      allMilestones[i - 1] = { ...allMilestones[i - 1], anchor: 'end' }
+      allMilestones.push({ ...m, tier: newTier, anchor: 'start' })
+    } else {
+      allMilestones.push({ ...m, tier: 0, anchor: 'middle' })
+    }
   }
 })
 
-const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
-  education: GraduationCap,
-  mortgage: Key,
-  retirement: Palmtree,
-  coverage_drop: TrendingDown,
-}
-
   const insuranceColor = '#c8a96e'
-  const shortfallColor = '#C0392B'
+  const assetsColor = '#7FC47F'
+  const needColor = '#1C1A17'
 
   return (
     <div style={{ position: 'relative', overflow: 'visible' }}>
@@ -899,11 +857,19 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 16, height: 2, background: needColor }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Needs</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 12, height: 8, background: insuranceColor, opacity: 0.55, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Insurance</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 16, height: 2, background: shortfallColor }} />
+            <div style={{ width: 12, height: 8, background: assetsColor, opacity: 0.55, borderRadius: 2 }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Assets</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 12, height: 8, background: '#C0392B', opacity: 0.2, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Shortfall</span>
           </div>
         </div>
@@ -941,72 +907,61 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
         <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
         <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
 
-        {/* Shortfall fill — continuous area under the shortfall curve (max(0,
-            Need − Insurance)), from the baseline. Reads as a flat zero
-            wherever Insurance covers the Need, so there's no visual gap. */}
-        <path d={shortfallAreaPath} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
-
-        {/* Insurance coverage bars — drawn after the shortfall fill so they
-            stay visually distinct as their own layer even where both start
-            from the same baseline. Assets no longer stack on top here (see
-            stackAt note above); shown only as a today snapshot on the
-            scenario card. */}
+        {/* Stacked coverage bars: Insurance (base) + Assets (on top), one pair per age */}
         {data.map(d => {
           const insurance = (d as any)[insuranceKey] || 0
-          if (insurance <= 0) return null
+          const assets = (d as any)[assetsKey] || 0
+          if (insurance <= 0 && assets <= 0) return null
           const bx = xP(d.age)
           const barW = Math.max(3, (iW / data.length) * 0.8)
           const baseY = PT + iH
           const insTopY = yP(insurance)
+          const stackTopY = yP(insurance + assets)
           return (
-            <rect key={`bar-${d.age}`} x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.6" rx="1.5" />
+            <g key={`bar-${d.age}`}>
+              {insurance > 0 && (
+                <rect x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.5" rx="1.5" />
+              )}
+              {assets > 0 && (
+                <rect x={bx - barW / 2} y={stackTopY} width={barW} height={Math.max(0, insTopY - stackTopY)} fill={assetsColor} opacity="0.5" rx="1.5" />
+              )}
+            </g>
           )
         })}
 
-        {/* Shortfall line — one continuous curve, no breaks. Its height IS
-            the shortfall dollar amount (Need minus Insurance), not the raw
-            Need — that's the actual fix for "still showing needs instead of
-            shortfall". It just runs flat along the baseline during years
-            Insurance fully covers the Need, rather than disappearing. */}
-        <path d={shortfallLinePath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-        <path d={shortfallLinePath} stroke={shortfallColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Shortfall fill — where Needs pokes above the stack */}
+        {shortfallSegments.map((d, i) => (
+          <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
+        ))}
+
+        {/* Needs line — full need at every age, drawn with a light halo so it reads
+            as its own curve rather than looking like the shortfall region's edge */}
+        <path d={needPath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <path d={needPath} stroke={needColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
 
-        {/* Milestone markers — icon + age always visible; name + needed amount
-            at that age shown in a tooltip on hover (see hoveredMilestone). */}
+        {/* Milestone markers - tiered to prevent label overlap */}
 {allMilestones.map((m, i) => {
   const mx = xP(m.age)
   if (mx < PL || mx > PL + iW) return null
-  // Higher tier must move FURTHER from the plot (smaller y), not closer —
-  // adding a positive offset to a y that starts near the top was pushing
-  // staggered icons back down toward each other instead of apart.
-  const tierOffset = m.tier * 24
-  const iconSize = 13
-  const dotY = PT - 16 - tierOffset
-  const closest = data.reduce((prev, curr) =>
-    Math.abs(curr.age - m.age) < Math.abs(prev.age - m.age) ? curr : prev
-  )
-  const milestoneShortfall = Math.max(0, (closest as any)[needKey] - (closest as any)[insuranceKey])
-  const Icon = MILESTONE_ICONS[m.kind]
+  // tier 0 = closest to chart, tier 1 = 22px higher, tier 2 = 44px higher
+  const tierOffset = m.tier * 22
+  const labelY = PT - 24 + tierOffset
+  const ageY   = PT - 13 + tierOffset
+  const dotY   = PT - 6  + tierOffset
   return (
-    <g
-      key={`ms-${i}`}
-      style={{ cursor: 'pointer' }}
-      onMouseEnter={() => setHoveredMilestone({
-        x: mx, y: dotY, label: m.label, age: m.age, shortfall: milestoneShortfall,
-      })}
-      onMouseLeave={() => setHoveredMilestone(null)}
-    >
+    <g key={`ms-${i}`}>
       {/* Vertical line from top of chart down */}
       <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.25" />
-      {/* Connector from icon down to chart top */}
-      <line x1={mx} y1={dotY + iconSize / 2 + 2} x2={mx} y2={PT} stroke={m.color} strokeWidth="0.5" opacity="0.2" />
-      {/* Larger transparent hit-target so the icon is easy to hover */}
-      <circle cx={mx} cy={dotY} r="11" fill="transparent" />
-      <circle cx={mx} cy={dotY} r={iconSize / 2 + 3} fill="#FDFCFA" stroke={m.color} strokeWidth="1" opacity="0.9" />
-      <svg x={mx - iconSize / 2} y={dotY - iconSize / 2} width={iconSize} height={iconSize} viewBox="0 0 24 24">
-        <Icon size={24} color={m.color} strokeWidth={2} />
-      </svg>
+      {/* Connector from dot up to chart top */}
+      <line x1={mx} y1={dotY + 3} x2={mx} y2={PT} stroke={m.color} strokeWidth="0.5" opacity="0.2" />
+      <circle cx={mx} cy={dotY} r="2.5" fill={m.color} opacity="0.6" />
+      <text x={mx} y={labelY} fontSize="8.5" fill={m.color} textAnchor={m.anchor as any} fontFamily="Inter, sans-serif" fontWeight="500">
+        {m.label}
+      </text>
+      <text x={mx} y={ageY} fontSize="7.5" fill="#9A9896" textAnchor={m.anchor as any} fontFamily="Inter, sans-serif">
+        age {m.age}
+      </text>
     </g>
   )
 })}
@@ -1042,7 +997,12 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
 
         {/* Hover dot on need line */}
         {hovered && (
-          <circle cx={hovered.x} cy={hovered.yShortfall} r="4" fill="#1C1A17" stroke="#FDFCFA" strokeWidth="2" />
+          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill={needColor} stroke="#FDFCFA" strokeWidth="2" />
+        )}
+
+        {/* Hover dot on stack top */}
+        {hovered && (
+          <circle cx={hovered.x} cy={hovered.yStack} r="3" fill={assetsColor} stroke="#FDFCFA" strokeWidth="1.5" opacity="0.8" />
         )}
       </svg>
 
@@ -1077,63 +1037,25 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Insurance</span>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 400, color: insuranceColor }}>{fmt(hovered.insurance)}</span>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Assets</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 400, color: assetsColor }}>{fmt(hovered.assets)}</span>
+            </div>
             <div style={{ paddingTop: 10, borderTop: '0.5px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', gap: 32 }}>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {hovered.need > hovered.insurance ? 'Shortfall' : 'Surplus'}
+                {hovered.need > hovered.insurance + hovered.assets ? 'Shortfall' : 'Surplus'}
               </span>
               <span style={{
                 fontFamily: 'Cormorant Garamond, Georgia, serif',
                 fontSize: 18,
                 fontWeight: 300,
-                color: hovered.need > hovered.insurance ? '#FF8A80' : '#A0D0B8',
+                color: hovered.need > hovered.insurance + hovered.assets ? '#FF8A80' : '#A0D0B8',
               }}>
-                {hovered.need > hovered.insurance
-                  ? fmt(hovered.need - hovered.insurance)
-                  : fmt(hovered.insurance - hovered.need)}
+                {hovered.need > hovered.insurance + hovered.assets
+                  ? fmt(hovered.need - hovered.insurance - hovered.assets)
+                  : fmt(hovered.insurance + hovered.assets - hovered.need)}
               </span>
             </div>
-          </div>
-          <div style={{
-            position: 'absolute',
-            bottom: -6,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 0,
-            height: 0,
-            borderLeft: '6px solid transparent',
-            borderRight: '6px solid transparent',
-            borderTop: '6px solid #1C1A17',
-          }} />
-        </div>
-      )}
-
-      {/* Milestone tooltip — name + shortfall amount at that age, on hover only */}
-      {hoveredMilestone && (
-        <div
-          style={{
-            position: 'absolute',
-            left: Math.min(Math.max(((hoveredMilestone.x - PL) / iW) * 100, 8), 92) + '%',
-            top: Math.max((hoveredMilestone.y / H) * 100, 0) + '%',
-            transform: 'translate(-50%, calc(-100% - 10px))',
-            background: '#1C1A17',
-            color: '#F0EDE8',
-            padding: '10px 14px',
-            borderRadius: 10,
-            fontSize: 11,
-            pointerEvents: 'none',
-            zIndex: 11,
-            whiteSpace: 'nowrap',
-            boxShadow: '0 12px 32px rgba(0,0,0,0.2)',
-          }}
-        >
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 14, fontWeight: 400, marginBottom: 3 }}>
-            {hoveredMilestone.label}
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, marginBottom: 4 }}>
-            Age {hoveredMilestone.age}
-          </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: hoveredMilestone.shortfall > 0 ? '#FF8A80' : '#A0D0B8' }}>
-            {hoveredMilestone.shortfall > 0 ? `${fmt(hoveredMilestone.shortfall)} shortfall` : 'Fully covered'}
           </div>
           <div style={{
             position: 'absolute',
@@ -1280,7 +1202,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
     age: number
     income: number
     breakdown: DialBreakdown
-    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; durationYears?: number }[]
+    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType }[]
     timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
     recoveryWindowYears?: number
@@ -1360,7 +1282,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
                     label={r.label}
                     value={r.value}
                     maxValue={maxRowValue}
-                    durationYears={r.durationYears ?? (r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null)}
+                    durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
                   />
                 ))}
               </div>
@@ -1516,10 +1438,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
   personName={aName} 
 />
         <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-          {aFloorDetail.usingMinimum
-            ? `Floor ${fmt(aFloor)} — the $300,000 minimum applies here; ${aName}'s basic household & personal expenses over the last ${aFloorDetail.ciWindow} years of life (age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd}) would only total ${fmt(aFloorDetail.floorFromExpenses)}. Permanent regardless of age.`
-            : `Floor ${fmt(aFloor)} — ${aName}'s basic household & personal expenses (${fmt(aFloorDetail.effectiveExp)}/yr today) inflated at ${(inflation * 100).toFixed(1)}% across age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd} (the ${aFloorDetail.ciWindow} years before a life expectancy of ${aFloorDetail.lifeExp}), which exceeds the $300,000 minimum. Permanent regardless of age.`
-          }
+          Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
         </div>
       </div>
 
@@ -1563,7 +1482,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
               income={activeIncome}
               breakdown={activeProfile.ci}
               rows={[
-                { label: 'Family living', value: activeProfile.ci.familyDependency, durationYears: activeProfile.ci.ciYears },
+                { label: 'Family living', value: activeProfile.ci.familyDependency },
                 { label: 'Mortgage', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
                 { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education' },
                 { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
@@ -1602,10 +1521,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
   personName={aName}
 />
         <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-          {aFloorDetail.usingMinimum
-            ? `Survival floor ${fmt(aFloor)} — the $300,000 minimum applies here; ${aName}'s basic household & personal expenses over the last ${aFloorDetail.ciWindow} years of life (age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd}) would only total ${fmt(aFloorDetail.floorFromExpenses)}. Even at age 100 — no mortgage, no dependants — a CI diagnosis without it is still a crisis.`
-            : `Survival floor ${fmt(aFloor)} — ${aName}'s basic household & personal expenses (${fmt(aFloorDetail.effectiveExp)}/yr today) inflated at ${(inflation * 100).toFixed(1)}% across age ${aFloorDetail.windowStart}–${aFloorDetail.windowEnd} (the ${aFloorDetail.ciWindow} years before a life expectancy of ${aFloorDetail.lifeExp}). Even at age 100 — no mortgage, no dependants — a CI diagnosis without it is still a crisis.`
-          }
+          Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
         </div>
       </div>
 
