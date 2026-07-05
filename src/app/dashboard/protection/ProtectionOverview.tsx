@@ -95,6 +95,24 @@ function fmtShort(n: number): string {
   return `$${Math.round(n).toLocaleString()}`
 }
 
+// Explains why the floor is what it is — which basis is binding (the
+// $300K minimum, or projected basic living expenses), and if it's the
+// expense basis, the actual expense figure, inflation rate, and age
+// window that produced it. Surfaces the same inputs the app's own
+// [FLOOR] diagnostic log uses, so the caption and the calculation can
+// never drift apart.
+function floorExplanation(
+  name: string,
+  detail: { effectiveExp: number; windowStart: number; windowEnd: number; lifeExp: number; ciWindow: number; isExpenseBinding: boolean },
+  inflationPct: number
+): string {
+  if (!detail.isExpenseBinding) {
+    return `${name}'s floor is held at the $300,000 minimum — projected basic living expenses over ages ${detail.windowStart}–${detail.windowEnd} would come in lower than that.`
+  }
+  const article = detail.lifeExp >= 80 && detail.lifeExp < 90 ? 'an' : 'a'
+  return `${name}'s floor is set by projected basic living expenses: ${fmtShort(detail.effectiveExp)}/yr today, inflated at ${inflationPct}%/yr to ages ${detail.windowStart}–${detail.windowEnd} — the last ${detail.ciWindow} years of ${article} ${detail.lifeExp}-year life expectancy — which comes in above the $300,000 minimum.`
+}
+
 // Milestone icons — lucide path data (GraduationCap / Home / Palmtree), drawn
 // as raw SVG paths so the chart's SVG coordinate space needs no lucide import.
 // Same three icons ProtectionDisplay uses. Names now live in the hover
@@ -386,7 +404,15 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 
   // ── Floor calculation ───────────────────────────────────────────────────────
   // Floor = higher of ($300K) or (basic living expenses inflated to retirement/last milestone)
-  function getFloor(person: 'client' | 'spouse'): number {
+  function getFloorDetail(person: 'client' | 'spouse'): {
+    result: number
+    effectiveExp: number
+    windowStart: number
+    windowEnd: number
+    lifeExp: number
+    ciWindow: number
+    isExpenseBinding: boolean
+  } {
     const currentAge = person === 'client' ? clientAge : spouseAge
     const lifeExp = Number(
       person === 'client'
@@ -415,14 +441,32 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       const yearsFromNow = Math.max(0, age - currentAge)
       floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
     }
-   console.log('[FLOOR] ' + JSON.stringify({ person, lifeExp, ciWindow, effectiveExp, windowStart, floorFromExpenses, result: Math.max(300000, floorFromExpenses) }))
-    return Math.max(300000, floorFromExpenses)
+    const result = Math.max(300000, floorFromExpenses)
+    console.log('[FLOOR] ' + JSON.stringify({ person, lifeExp, ciWindow, effectiveExp, windowStart, floorFromExpenses, result }))
+    return {
+      result,
+      effectiveExp,
+      windowStart,
+      windowEnd: lifeExp - 1,
+      lifeExp,
+      ciWindow,
+      isExpenseBinding: floorFromExpenses > 300000,
+    }
+  }
+
+  function getFloor(person: 'client' | 'spouse'): number {
+    return getFloorDetail(person).result
   }
 
   const p1LifeExp = Number(ff.client?.lifeExpectancy) || 85
   const p2LifeExp = Number(ff.spouse?.lifeExpectancy) || 85
   const clientFloor = useMemo(() => getFloor('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household, ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance, ff.s_household, ff.s_personal])
   const spouseFloor = useMemo(() => getFloor('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d2_conservancy, ff.d2_utilities, ff.d2_family_food, ff.d2_maid, ff.d2_other_household, ff.d2_personal_food, ff.d2_transport, ff.d2_car_petrol, ff.d2_car_insurance, ff.s2_household, ff.s2_personal])
+  // Same underlying calc as clientFloor/spouseFloor, but exposing the
+  // reasoning (expense figure, inflation, age window, which basis binds) so
+  // the chart caption can explain the number instead of just stating it.
+  const clientFloorDetail = useMemo(() => getFloorDetail('client'), [clientAge, inflation, p1AnnExp, p1LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d_conservancy, ff.d_utilities, ff.d_family_food, ff.d_maid, ff.d_other_household, ff.d_personal_food, ff.d_transport, ff.d_car_petrol, ff.d_car_insurance, ff.s_household, ff.s_personal])
+  const spouseFloorDetail = useMemo(() => getFloorDetail('spouse'), [spouseAge, inflation, p2AnnExp, p2LifeExp, ff.protection?.ciYears, ff.expense_mode, ff.d2_conservancy, ff.d2_utilities, ff.d2_family_food, ff.d2_maid, ff.d2_other_household, ff.d2_personal_food, ff.d2_transport, ff.d2_car_petrol, ff.d2_car_insurance, ff.s2_household, ff.s2_personal])
 
   // ── CPF and liquid assets ───────────────────────────────────────────────────
   const p1CPF = (Number(ff.a_cpf_oa) || 0) + (Number(ff.a_cpf_sa) || 0) + (Number(ff.a_cpf_ma) || 0)
@@ -636,6 +680,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const aAge = activePerson === 'client' ? clientAge : spouseAge
   const aRetireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
   const aFloor = activePerson === 'client' ? clientFloor : spouseFloor
+  const aFloorDetail = activePerson === 'client' ? clientFloorDetail : spouseFloorDetail
   const aDTPDNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
   const aCINeed = activePerson === 'client' ? clientCI : spouseCI
 
@@ -1508,6 +1553,9 @@ function CoverageChart({
         <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
           Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
         </div>
+        <div style={{ fontSize: 10, color: '#bbb', marginTop: 2, fontStyle: 'italic' }}>
+          {floorExplanation(aName, aFloorDetail, Math.round(inflation * 100))}
+        </div>
       </div>
 
       {/* ② CI SCENARIO PANEL — single frosted card, no nested boxes */}
@@ -1590,6 +1638,9 @@ function CoverageChart({
 />
         <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
           Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
+        </div>
+        <div style={{ fontSize: 10, color: '#bbb', marginTop: 2, fontStyle: 'italic' }}>
+          {floorExplanation(aName, aFloorDetail, Math.round(inflation * 100))}
         </div>
       </div>
 
