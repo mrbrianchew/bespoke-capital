@@ -736,7 +736,7 @@ function CoverageChart({
     y: number
     label: string
     age: number
-    need: number
+    shortfall: number
   } | null>(null)
 
   if (!data.length) return null
@@ -793,11 +793,13 @@ function CoverageChart({
     return `${top} ${bot} Z`
   }
 
-  const needPoints = data.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
-  const needPath = linePath(needPoints)
-
-  // Build shortfall segments — where Needs pokes above the top of the stack
+  // Build shortfall segments — where Needs pokes above the Insurance stack.
+  // Each segment yields both a filled area AND its own top-boundary stroke
+  // (drawn in the shortfall color) — there's no longer a black "Needs" line
+  // spanning the whole age range; the boundary only appears where there
+  // actually is a shortfall to show.
   const shortfallSegments: string[] = []
+  const shortfallBoundaryPaths: string[] = []
   let segStart = -1
   for (let i = 0; i < data.length; i++) {
     const isShortfall = (data[i] as any)[needKey] > stackAt(data[i])
@@ -808,6 +810,7 @@ function CoverageChart({
       const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
       const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
       shortfallSegments.push(areaPath(top, bot))
+      shortfallBoundaryPaths.push(linePath(top))
       segStart = -1
     }
   }
@@ -816,6 +819,7 @@ function CoverageChart({
     const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
     const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
     shortfallSegments.push(areaPath(top, bot))
+    shortfallBoundaryPaths.push(linePath(top))
   }
 
   // Age labels (every 5 years)
@@ -883,7 +887,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
 }
 
   const insuranceColor = '#c8a96e'
-  const needColor = '#1C1A17'
+  const shortfallColor = '#C0392B'
 
   return (
     <div style={{ position: 'relative', overflow: 'visible' }}>
@@ -894,15 +898,11 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 16, height: 2, background: needColor }} />
-            <span style={{ fontSize: 10, color: '#9A9896' }}>Needs</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 12, height: 8, background: insuranceColor, opacity: 0.55, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Insurance</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 12, height: 8, background: '#C0392B', opacity: 0.2, borderRadius: 2 }} />
+            <div style={{ width: 16, height: 2, background: shortfallColor }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Shortfall</span>
           </div>
         </div>
@@ -960,10 +960,16 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
           <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
         ))}
 
-        {/* Needs line — full need at every age, drawn with a light halo so it reads
-            as its own curve rather than looking like the shortfall region's edge */}
-        <path d={needPath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-        <path d={needPath} stroke={needColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Shortfall boundary — a rouge stroke tracing the top edge of each
+            shortfall segment. Only drawn where there's an actual gap; a
+            fully-covered ("surplus") stretch shows no line at all, just the
+            insurance bars. Replaces the old always-on black "Needs" line. */}
+        {shortfallBoundaryPaths.map((d, i) => (
+          <g key={`sfline-${i}`}>
+            <path d={d} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+            <path d={d} stroke={shortfallColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </g>
+        ))}
 
 
         {/* Milestone markers — icon + age always visible; name + needed amount
@@ -971,20 +977,23 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
 {allMilestones.map((m, i) => {
   const mx = xP(m.age)
   if (mx < PL || mx > PL + iW) return null
-  const tierOffset = m.tier * 20
+  // Higher tier must move FURTHER from the plot (smaller y), not closer —
+  // adding a positive offset to a y that starts near the top was pushing
+  // staggered icons back down toward each other instead of apart.
+  const tierOffset = m.tier * 24
   const iconSize = 13
-  const dotY = PT - 16 + tierOffset
-  const ageY = PT - 1
+  const dotY = PT - 16 - tierOffset
   const closest = data.reduce((prev, curr) =>
     Math.abs(curr.age - m.age) < Math.abs(prev.age - m.age) ? curr : prev
   )
+  const milestoneShortfall = Math.max(0, (closest as any)[needKey] - (closest as any)[insuranceKey])
   const Icon = MILESTONE_ICONS[m.kind]
   return (
     <g
       key={`ms-${i}`}
       style={{ cursor: 'pointer' }}
       onMouseEnter={() => setHoveredMilestone({
-        x: mx, y: dotY, label: m.label, age: m.age, need: (closest as any)[needKey],
+        x: mx, y: dotY, label: m.label, age: m.age, shortfall: milestoneShortfall,
       })}
       onMouseLeave={() => setHoveredMilestone(null)}
     >
@@ -998,9 +1007,6 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
       <svg x={mx - iconSize / 2} y={dotY - iconSize / 2} width={iconSize} height={iconSize} viewBox="0 0 24 24">
         <Icon size={24} color={m.color} strokeWidth={2} />
       </svg>
-      <text x={mx} y={ageY} fontSize="7.5" fill="#9A9896" textAnchor="middle" fontFamily="Inter, sans-serif">
-        {m.age}
-      </text>
     </g>
   )
 })}
@@ -1036,7 +1042,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
 
         {/* Hover dot on need line */}
         {hovered && (
-          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill={needColor} stroke="#FDFCFA" strokeWidth="2" />
+          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill="#1C1A17" stroke="#FDFCFA" strokeWidth="2" />
         )}
       </svg>
 
@@ -1101,14 +1107,14 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
         </div>
       )}
 
-      {/* Milestone tooltip — name + needed amount at that age, on hover only */}
+      {/* Milestone tooltip — name + shortfall amount at that age, on hover only */}
       {hoveredMilestone && (
         <div
           style={{
             position: 'absolute',
             left: Math.min(Math.max(((hoveredMilestone.x - PL) / iW) * 100, 8), 92) + '%',
-            top: '0px',
-            transform: 'translate(-50%, -100%)',
+            top: Math.max((hoveredMilestone.y / H) * 100, 0) + '%',
+            transform: 'translate(-50%, calc(-100% - 10px))',
             background: '#1C1A17',
             color: '#F0EDE8',
             padding: '10px 14px',
@@ -1126,8 +1132,8 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
           <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, marginBottom: 4 }}>
             Age {hoveredMilestone.age}
           </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#F0EDE8' }}>
-            {fmt(hoveredMilestone.need)} needed
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: hoveredMilestone.shortfall > 0 ? '#FF8A80' : '#A0D0B8' }}>
+            {hoveredMilestone.shortfall > 0 ? `${fmt(hoveredMilestone.shortfall)} shortfall` : 'Fully covered'}
           </div>
           <div style={{
             position: 'absolute',
