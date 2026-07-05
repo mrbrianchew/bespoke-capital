@@ -487,6 +487,16 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const savedDTPD = activePerson === 'client' ? clientDTPD : spouseDTPD
   const savedCI = activePerson === 'client' ? clientCI : spouseCI
 
+  // Asset mitigation is a single saved figure (Strategic Objectives), not a
+  // per-age projection — there's no growth/decay model for it anywhere in
+  // the app yet. Held flat across every age until that's built; flagged in
+  // the chart's own caption so it doesn't read as more precise than it is.
+  const profile = protectionSnapshot
+    ? (activePerson === 'spouse' ? protectionSnapshot.spouse : protectionSnapshot.client)
+    : null
+  const dtpdAssets = profile?.dtpd.assetMitigation || 0
+  const ciAssets = profile?.ci.assetMitigation || 0
+
   // Compute raw need at current age as scaling baseline
   const rawDTPDAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
   const rawCIAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
@@ -508,15 +518,17 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
       age,
       dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
       dtpdHave,
+      dtpdAssets,
       ciNeed: rawCI <= personFloor ? personFloor : Math.max(personFloor, rawCI * ciScale),
       ciHave,
+      ciAssets,
     })
   }
   
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
     p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
-    clientDTPD, spouseDTPD, clientCI, spouseCI])
+    clientDTPD, spouseDTPD, clientCI, spouseCI, protectionSnapshot])
   
   // ── Current values ──────────────────────────────────────────────────────────
   const aName = activePerson === 'client' ? clientName : spouseName
@@ -688,10 +700,11 @@ function CoverageChart({
   const [hovered, setHovered] = useState<{
     age: number
     need: number
-    have: number
+    insurance: number
+    assets: number
     x: number
     yNeed: number
-    yHave: number
+    yStack: number
   } | null>(null)
 
   if (!data.length) return null
@@ -707,11 +720,13 @@ function CoverageChart({
   const iH = H - PT - PB
 
   const needKey = type === 'dtpd' ? 'dtpdNeed' : 'ciNeed'
-  const haveKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
+  const insuranceKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
+  const assetsKey = type === 'dtpd' ? 'dtpdAssets' : 'ciAssets'
+  const stackAt = (d: any) => (d[insuranceKey] || 0) + (d[assetsKey] || 0)
 
   // Find max value for Y-axis scaling
- const maxV = Math.max(
-    ...data.map(d => Math.max((d as any)[needKey], (d as any)[haveKey])),
+  const maxV = Math.max(
+    ...data.map(d => Math.max((d as any)[needKey], stackAt(d))),
     floor,
     100000
   )
@@ -732,51 +747,38 @@ function CoverageChart({
   const ticks = [0, 0.25, 0.5, 0.75, 1]
   const floorY = yP(floor)
 
-  // Build need line path
-  const needPoints = data.map(d => ({
-    x: xP(d.age),
-    y: yP((d as any)[needKey])
-  }))
-  const needPath = needPoints.map((p, i) => 
-    `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`
-  ).join(' ')
+  function linePath(points: { x: number; y: number }[]) {
+    return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  }
+  function areaPath(topPts: { x: number; y: number }[], botPts: { x: number; y: number }[]) {
+    const top = linePath(topPts)
+    const bot = [...botPts].reverse().map(p => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+    return `${top} ${bot} Z`
+  }
 
-  // Build have line path
-  const havePoints = data.map(d => ({
-    x: xP(d.age),
-    y: yP((d as any)[haveKey])
-  }))
-  const havePath = havePoints.map((p, i) => 
-    `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`
-  ).join(' ')
+  const needPoints = data.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
+  const needPath = linePath(needPoints)
 
-  // Build shortfall fill areas (where need > have)
+  // Build shortfall segments — where Needs pokes above the top of the stack
   const shortfallSegments: string[] = []
   let segStart = -1
-  
   for (let i = 0; i < data.length; i++) {
-    const need = (data[i] as any)[needKey]
-    const have = (data[i] as any)[haveKey]
-    const isShortfall = need > have
-    
+    const isShortfall = (data[i] as any)[needKey] > stackAt(data[i])
     if (isShortfall && segStart === -1) {
       segStart = i
     } else if (!isShortfall && segStart !== -1) {
-      // End of a shortfall segment
       const seg = data.slice(segStart, i)
-      const topPts = seg.map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[needKey]).toFixed(1)}`)
-      const botPts = [...seg].reverse().map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[haveKey]).toFixed(1)}`)
-      shortfallSegments.push(`M ${topPts.join(' L ')} L ${botPts.join(' L ')} Z`)
+      const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
+      const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
+      shortfallSegments.push(areaPath(top, bot))
       segStart = -1
     }
   }
-  
-  // Handle segment that goes to the end
   if (segStart !== -1) {
     const seg = data.slice(segStart)
-    const topPts = seg.map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[needKey]).toFixed(1)}`)
-    const botPts = [...seg].reverse().map(d => `${xP(d.age).toFixed(1)},${yP((d as any)[haveKey]).toFixed(1)}`)
-    shortfallSegments.push(`M ${topPts.join(' L ')} L ${botPts.join(' L ')} Z`)
+    const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
+    const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
+    shortfallSegments.push(areaPath(top, bot))
   }
 
   // Age labels (every 5 years)
@@ -786,7 +788,7 @@ function CoverageChart({
   function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect()
     const mx = (e.clientX - rect.left) * (W / rect.width)
-    
+
     if (mx >= PL && mx <= PL + iW) {
       const rel = (mx - PL) / iW
       const targetAge = minA + rel * aRange
@@ -796,10 +798,11 @@ function CoverageChart({
       setHovered({
         age: closest.age,
         need: (closest as any)[needKey],
-        have: (closest as any)[haveKey],
+        insurance: (closest as any)[insuranceKey] || 0,
+        assets: (closest as any)[assetsKey] || 0,
         x: xP(closest.age),
         yNeed: yP((closest as any)[needKey]),
-        yHave: yP((closest as any)[haveKey]),
+        yStack: yP(stackAt(closest)),
       })
     } else {
       setHovered(null)
@@ -841,24 +844,32 @@ allMilestonesRaw.forEach((m, i) => {
   }
 })
 
+  const insuranceColor = '#c8a96e'
+  const assetsColor = '#7FC47F'
+  const needColor = '#1C1A17'
+
   return (
     <div style={{ position: 'relative', overflow: 'visible' }}>
       {/* Chart header */}
-      <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9A9896' }}>
           {personName} · Age {currentAge} to 100
         </div>
-        <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 16, height: 2, background: accentColor }} />
-            <span style={{ fontSize: 10, color: '#9A9896' }}>Coverage Needed</span>
+            <div style={{ width: 16, height: 2, background: needColor }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Needs</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 12, height: 8, background: accentColor, opacity: 0.25, borderRadius: 2 }} />
-            <span style={{ fontSize: 10, color: '#9A9896' }}>Existing Portfolio</span>
+            <div style={{ width: 12, height: 8, background: insuranceColor, opacity: 0.55, borderRadius: 2 }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Insurance</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 12, height: 8, background: '#C0392B', opacity: 0.15, borderRadius: 2 }} />
+            <div style={{ width: 12, height: 8, background: assetsColor, opacity: 0.55, borderRadius: 2 }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Assets</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 12, height: 8, background: '#C0392B', opacity: 0.2, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Shortfall</span>
           </div>
         </div>
@@ -896,42 +907,38 @@ allMilestonesRaw.forEach((m, i) => {
         <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
         <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
 
-        {/* Shortfall fill (red shading) */}
+        {/* Stacked coverage bars: Insurance (base) + Assets (on top), one pair per age */}
+        {data.map(d => {
+          const insurance = (d as any)[insuranceKey] || 0
+          const assets = (d as any)[assetsKey] || 0
+          if (insurance <= 0 && assets <= 0) return null
+          const bx = xP(d.age)
+          const barW = Math.max(3, (iW / data.length) * 0.8)
+          const baseY = PT + iH
+          const insTopY = yP(insurance)
+          const stackTopY = yP(insurance + assets)
+          return (
+            <g key={`bar-${d.age}`}>
+              {insurance > 0 && (
+                <rect x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.5" rx="1.5" />
+              )}
+              {assets > 0 && (
+                <rect x={bx - barW / 2} y={stackTopY} width={barW} height={Math.max(0, insTopY - stackTopY)} fill={assetsColor} opacity="0.5" rx="1.5" />
+              )}
+            </g>
+          )
+        })}
+
+        {/* Shortfall fill — where Needs pokes above the stack */}
         {shortfallSegments.map((d, i) => (
           <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
         ))}
 
-        {/* Have bars (existing portfolio) */}
-{data.map(d => {
-  const have = (d as any)[haveKey]
-  
-  // Only render if there's actual coverage
-  if (have <= 0) return null
-  
-  const bx = xP(d.age)
-  const haveY = yP(have)
-  const barH = Math.max(2, PT + iH - haveY)
-  const barW = Math.max(3, (iW / data.length) * 0.8)
-  
-  return (
-    <rect
-      key={`bar-${d.age}`}
-      x={bx - barW / 2}
-      y={haveY}
-      width={barW}
-      height={barH}
-      fill={accentColor}
-      opacity="0.35"
-      rx="2"
-    />
-  )
-})}
+        {/* Needs line — full need at every age, drawn with a light halo so it reads
+            as its own curve rather than looking like the shortfall region's edge */}
+        <path d={needPath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <path d={needPath} stroke={needColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* Need line */}
-        <path d={needPath} stroke={accentColor} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-
-        {/* Have line (optional, subtle) */}
-        <path d={havePath} stroke={accentColor} strokeWidth="0.8" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
 
         {/* Milestone markers - tiered to prevent label overlap */}
 {allMilestones.map((m, i) => {
@@ -990,12 +997,12 @@ allMilestonesRaw.forEach((m, i) => {
 
         {/* Hover dot on need line */}
         {hovered && (
-          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill={accentColor} stroke="#FDFCFA" strokeWidth="2" />
+          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill={needColor} stroke="#FDFCFA" strokeWidth="2" />
         )}
 
-        {/* Hover dot on have line */}
-        {hovered && hovered.have > 0 && (
-          <circle cx={hovered.x} cy={hovered.yHave} r="3" fill={accentColor} stroke="#FDFCFA" strokeWidth="1.5" opacity="0.6" />
+        {/* Hover dot on stack top */}
+        {hovered && (
+          <circle cx={hovered.x} cy={hovered.yStack} r="3" fill={assetsColor} stroke="#FDFCFA" strokeWidth="1.5" opacity="0.8" />
         )}
       </svg>
 
@@ -1023,24 +1030,30 @@ allMilestonesRaw.forEach((m, i) => {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
-              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Coverage Needed</span>
-              <span style={{ fontFamily: 'Georgia, serif', fontSize: 18, fontWeight: 300 }}>{fmt(hovered.need)}</span>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Needs</span>
+              <span style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 18, fontWeight: 300 }}>{fmt(hovered.need)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
-              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Existing Portfolio</span>
-              <span style={{ fontFamily: 'Georgia, serif', fontSize: 18, fontWeight: 300, color: accentColor }}>{fmt(hovered.have)}</span>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Insurance</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 400, color: insuranceColor }}>{fmt(hovered.insurance)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Assets</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, fontWeight: 400, color: assetsColor }}>{fmt(hovered.assets)}</span>
             </div>
             <div style={{ paddingTop: 10, borderTop: '0.5px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', gap: 32 }}>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {hovered.need > hovered.have ? 'Shortfall' : 'Surplus'}
+                {hovered.need > hovered.insurance + hovered.assets ? 'Shortfall' : 'Surplus'}
               </span>
               <span style={{
-                fontFamily: 'Georgia, serif',
+                fontFamily: 'Cormorant Garamond, Georgia, serif',
                 fontSize: 18,
                 fontWeight: 300,
-                color: hovered.need > hovered.have ? '#FF8A80' : '#A0D0B8',
+                color: hovered.need > hovered.insurance + hovered.assets ? '#FF8A80' : '#A0D0B8',
               }}>
-                {hovered.need > hovered.have ? fmt(hovered.need - hovered.have) : fmt(hovered.have - hovered.need)}
+                {hovered.need > hovered.insurance + hovered.assets
+                  ? fmt(hovered.need - hovered.insurance - hovered.assets)
+                  : fmt(hovered.insurance + hovered.assets - hovered.need)}
               </span>
             </div>
           </div>
@@ -1061,6 +1074,7 @@ allMilestonesRaw.forEach((m, i) => {
   )
 }
 
+
   // ── Scenario dial cell (matches reference screenshot) ────────────────────────
   // Two-column layout: dial + shortfall + legend on the left, need-composition
   // rows (each with its own proportional bar and duration caption) on the
@@ -1075,8 +1089,8 @@ allMilestonesRaw.forEach((m, i) => {
     status: 'covered' | 'shortfall'
   }
 
-  function RadialDial({ breakdown, size = 196 }: { breakdown: DialBreakdown; size?: number }) {
-    const strokeW = size * 0.065
+  function RadialDial({ breakdown, size = 128 }: { breakdown: DialBreakdown; size?: number }) {
+    const strokeW = 10
     const r = size / 2 - strokeW
     const c = size / 2
     const circumference = 2 * Math.PI * r
@@ -1106,10 +1120,10 @@ allMilestonesRaw.forEach((m, i) => {
           <circle cx={c} cy={c} r={r} fill="none" stroke="#c8a96e" strokeWidth={strokeW} strokeLinecap="round"
             strokeDasharray={`${goldLen} ${circumference}`} transform={`rotate(-90 ${c} ${c})`} />
         )}
-        <text x={c} y={c - 4} textAnchor="middle" fontFamily="Cormorant Garamond, Georgia, serif" fontWeight={500} fontSize={size * 0.205} fill="#F0EDE8">
+        <text x={c} y={c - 3} textAnchor="middle" fontFamily="Georgia, serif" fontWeight={400} fontSize={size * 0.19} fill="#F0EDE8">
           {pct}%
         </text>
-        <text x={c} y={c + 20} textAnchor="middle" fontFamily="Inter, sans-serif" fontSize={size * 0.06} letterSpacing="0.15em" fill="rgba(255,255,255,0.4)">
+        <text x={c} y={c + 16} textAnchor="middle" fontSize={size * 0.075} letterSpacing="0.1em" fill="rgba(255,255,255,0.4)">
           PROTECTED
         </text>
       </svg>
@@ -1118,10 +1132,10 @@ allMilestonesRaw.forEach((m, i) => {
 
   function LegendRow({ swatch, label, value }: { swatch: string; label: string; value: number }) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0' }}>
-        <div style={{ width: 9, height: 9, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
-        <span style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.55)', flex: 1 }}>{label}</span>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12.5, color: '#F0EDE8' }}>{fmt(value)}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', flex: 1 }}>{label}</span>
+        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#F0EDE8' }}>{fmt(value)}</span>
       </div>
     )
   }
@@ -1144,25 +1158,21 @@ allMilestonesRaw.forEach((m, i) => {
   // duration caption underneath, matching the reference screenshot.
   function ScenarioBreakdownRow({ label, value, maxValue, durationYears }: { label: string; value: number; maxValue: number; durationYears?: number | null }) {
     const barPct = maxValue > 0 ? Math.max(2, Math.round((value / maxValue) * 100)) : 0
-    const { swatch, gradient } = CATEGORY_COLORS[label] || DEFAULT_CATEGORY_COLOR
+    const { swatch } = CATEGORY_COLORS[label] || DEFAULT_CATEGORY_COLOR
     return (
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <span style={{ fontSize: 13.5, color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0, display: 'inline-block' }} />
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: swatch, flexShrink: 0, display: 'inline-block' }} />
             {label}
           </span>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13.5, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
         </div>
-        <div style={{ height: 9, borderRadius: 99, background: 'rgba(255,255,255,0.06)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
-          <div style={{
-            width: `${barPct}%`, height: '100%', borderRadius: 99,
-            background: gradient,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 3px rgba(0,0,0,0.35)',
-          }} />
+        <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99 }}>
+          <div style={{ width: `${barPct}%`, height: '100%', background: swatch, borderRadius: 99 }} />
         </div>
         {durationYears != null && durationYears > 0 && (
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 7 }}>{durationYears} yrs</div>
+          <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.3)', marginTop: 5 }}>{durationYears} yrs</div>
         )}
       </div>
     )
@@ -1230,7 +1240,7 @@ allMilestonesRaw.forEach((m, i) => {
             No need identified yet.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36, alignItems: 'start' }}>
             {/* Left: dial + shortfall + legend */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
@@ -1254,7 +1264,7 @@ allMilestonesRaw.forEach((m, i) => {
                 </div>
               )}
 
-              <div style={{ marginTop: 'auto', paddingTop: 8, width: '100%' }}>
+              <div style={{ marginTop: 12, paddingTop: 8, width: '100%', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                 <LegendRow swatch="#c8a96e" label="Insurance" value={breakdown.existingCoverage} />
                 <LegendRow swatch="#7FC47F" label="Assets" value={breakdown.assetMitigation} />
               </div>
@@ -1276,7 +1286,7 @@ allMilestonesRaw.forEach((m, i) => {
                   />
                 ))}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.09)', fontSize: 14, fontWeight: 600, color: '#F0EDE8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.09)', fontSize: 14, fontWeight: 600, color: '#F0EDE8' }}>
                 <span>Total need</span>
                 <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
               </div>
