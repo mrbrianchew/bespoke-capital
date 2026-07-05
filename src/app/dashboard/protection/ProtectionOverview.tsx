@@ -95,6 +95,36 @@ function fmtShort(n: number): string {
   return `$${Math.round(n).toLocaleString()}`
 }
 
+// Milestone icons — lucide path data (GraduationCap / Home / Palmtree), drawn
+// as raw SVG paths so the chart's SVG coordinate space needs no lucide import.
+// Same three icons ProtectionDisplay uses. Names now live in the hover
+// tooltip; these render as small markers along the top of the chart.
+const MILESTONE_ICON_PATHS: Record<string, string[]> = {
+  grad: ['M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z', 'M22 10v6', 'M6 12.5V16a6 3 0 0 0 12 0v-3.5'],
+  home: ['m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 22V12h6v10'],
+  palm: ['M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4', 'M13 7.14A5.82 5.82 0 0 1 16.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3', 'M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35', 'M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14'],
+}
+
+// Icon centered at the origin, sized `size` px, for placement via a translate()
+// wrapper inside the chart SVG. Stroke units are pre-scale (lucide draws at 24px).
+function MilestoneIconAtOrigin({ icon, size, color }: { icon: string; size: number; color: string }) {
+  const s = size / 24
+  return (
+    <g transform={`translate(${-size / 2},${-size / 2}) scale(${s})`} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      {(MILESTONE_ICON_PATHS[icon] || []).map((d, i) => <path key={i} d={d} />)}
+    </g>
+  )
+}
+
+// Inline 15px icon for the tooltip milestone banner.
+function MilestoneIconInline({ icon, color }: { icon: string; color: string }) {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flex: '0 0 15px' }}>
+      {(MILESTONE_ICON_PATHS[icon] || []).map((d, i) => <path key={i} d={d} />)}
+    </svg>
+  )
+}
+
 function toSGD(val: number, p: Policy): number {
   return p.isUSD ? val * (p.fxRate || 1.35) : val
 }
@@ -686,6 +716,7 @@ function CoverageChart({
   data,
   type,
   floor,
+  assetMitigation,
   accentColor,
   currentAge,
   milestones,
@@ -694,6 +725,7 @@ function CoverageChart({
   data: typeof chartData
   type: 'dtpd' | 'ci'
   floor: number
+  assetMitigation: number
   accentColor: string
   currentAge: number
   milestones: { uniAges: { age: number; label: string }[]; mortEndAge: number | null; retireAge: number }
@@ -701,10 +733,12 @@ function CoverageChart({
 }) {
   const [hovered, setHovered] = useState<{
     age: number
-    need: number
+    needAfter: number
     insurance: number
+    shortfall: number
     x: number
-    yShortfall: number
+    yDot: number
+    milestone: { label: string; icon: string; color: string } | null
   } | null>(null)
 
   if (!data.length) return null
@@ -721,16 +755,21 @@ function CoverageChart({
 
   const needKey = type === 'dtpd' ? 'dtpdNeed' : 'ciNeed'
   const insuranceKey = type === 'dtpd' ? 'dtpdHave' : 'ciHave'
-  // Coverage stack is Insurance only now — Asset mitigation removed per
-  // request. It's a single saved point-in-time figure with no growth/decay
-  // model, so stacking it on top of Insurance across a 50+ year timeline
-  // implied more precision than the data has. Still shown as a today
-  // snapshot on the scenario card above.
-  const stackAt = (d: any) => d[insuranceKey] || 0
 
-  // Find max value for Y-axis scaling
+  // Plotted quantity = the gross need net of Asset Mitigation, floored. The
+  // gross need (needKey) already declines with age and is anchored to the
+  // Strategic-Objectives maxCapitalRequired. Asset Mitigation is a flat
+  // today-snapshot figure (same one the frosted dial shows); subtracting it
+  // and re-flooring means the curve falls with age but pins at the survival
+  // floor once (gross need − assets) would drop below it — never to zero.
+  const needAfterAt = (d: any) => Math.max(floor, ((d as any)[needKey] || 0) - assetMitigation)
+  const insAt = (d: any) => (d as any)[insuranceKey] || 0
+
+  // Find max value for Y-axis scaling — scale to the plotted (floored,
+  // net-of-assets) need and existing insurance, not the gross need, so the
+  // curve uses the full chart height.
   const maxV = Math.max(
-    ...data.map(d => Math.max((d as any)[needKey], stackAt(d))),
+    ...data.map(d => Math.max(needAfterAt(d), insAt(d))),
     floor,
     100000
   )
@@ -760,24 +799,39 @@ function CoverageChart({
     return `${top} ${bot} Z`
   }
 
-  // Shortfall curve — max(0, Need − Insurance) at every age, plotted as one
-  // continuous area from the baseline. A raw "Needs" line (pinned to the
-  // Need value itself, colored black/needColor) used to run here — that's
-  // why the chart read as "still showing Needs instead of Shortfall": the
-  // line's height WAS the Need number, not the gap. Plotting the shortfall
-  // figure directly fixes that, and it never disappears — it just reads 0
-  // (flat along the baseline) whenever Insurance covers the Need, instead of
-  // segmenting/hiding for those years.
-  const shortfallPoints = data.map(d => ({
-    x: xP(d.age),
-    y: yP(Math.max(0, (d as any)[needKey] - stackAt(d))),
-  }))
-  const baselinePoints = data.map(d => ({ x: xP(d.age), y: PT + iH }))
-  const shortfallLinePath = linePath(shortfallPoints)
-  const shortfallAreaPath = areaPath(shortfallPoints, baselinePoints)
+  // Need-after-assets line — the floored, net-of-assets need at every age.
+  const needPoints = data.map(d => ({ x: xP(d.age), y: yP(needAfterAt(d)) }))
+  const needLinePath = linePath(needPoints)
+
+  // Shortfall band — the red fill between the need-after-assets line (top) and
+  // existing insurance (bottom), only where the need exceeds insurance. Using
+  // min(insurance, needAfter) as the bottom collapses the band to zero height
+  // in years insurance fully covers the (floored) need, so no red shows there.
+  const shortBottomPoints = data.map(d => ({ x: xP(d.age), y: yP(Math.min(insAt(d), needAfterAt(d))) }))
+  const shortfallAreaPath = areaPath(needPoints, shortBottomPoints)
 
   // Age labels (every 5 years)
   const ageLabels = data.filter(d => d.age % 5 === 0 || d.age === currentAge || d.age === 100)
+
+  // Milestone markers — icons only; names moved to the hover tooltip. Build the
+  // raw list (used for the tooltip banner lookup), then position and nudge the
+  // icons apart so they never collide along the top edge.
+  const milestoneRaw: { age: number; label: string; color: string; icon: string }[] = []
+  milestones.uniAges.forEach((m) => { milestoneRaw.push({ age: m.age, label: m.label, color: '#2D6A4F', icon: 'grad' }) })
+  if (milestones.mortEndAge) milestoneRaw.push({ age: milestones.mortEndAge, label: 'Mortgage paid', color: '#A8834A', icon: 'home' })
+  if (milestones.retireAge) milestoneRaw.push({ age: milestones.retireAge, label: 'Retirement', color: '#6B7B8D', icon: 'palm' })
+  milestoneRaw.sort((a, b) => a.age - b.age)
+
+  const MS_GAP = 26
+  const milestoneMarkers = milestoneRaw
+    .map(m => ({ ...m, x: xP(m.age) }))
+    .filter(m => m.x >= PL && m.x <= PL + iW)
+    .sort((a, b) => a.x - b.x)
+  for (let i = 1; i < milestoneMarkers.length; i++) {
+    if (milestoneMarkers[i].x < milestoneMarkers[i - 1].x + MS_GAP) {
+      milestoneMarkers[i].x = Math.min(PL + iW, milestoneMarkers[i - 1].x + MS_GAP)
+    }
+  }
 
   // Mouse interaction
   function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -790,53 +844,24 @@ function CoverageChart({
       const closest = data.reduce((prev, curr) =>
         Math.abs(curr.age - targetAge) < Math.abs(prev.age - targetAge) ? curr : prev
       )
+      const nAfter = needAfterAt(closest)
+      const ins = insAt(closest)
+      const ms = milestoneRaw.find(m => m.age === closest.age)
       setHovered({
         age: closest.age,
-        need: (closest as any)[needKey],
-        insurance: (closest as any)[insuranceKey] || 0,
+        needAfter: nAfter,
+        insurance: ins,
+        shortfall: Math.max(0, nAfter - ins),
         x: xP(closest.age),
-        yShortfall: yP(Math.max(0, (closest as any)[needKey] - stackAt(closest))),
+        yDot: yP(nAfter),
+        milestone: ms ? { label: ms.label, icon: ms.icon, color: ms.color } : null,
       })
     } else {
       setHovered(null)
     }
   }
 
- // Build milestone markers with tier assignment to prevent overlap
-const allMilestonesRaw: { age: number; label: string; color: string }[] = []
-
-milestones.uniAges.forEach((m) => {
-  allMilestonesRaw.push({ age: m.age, label: m.label, color: '#2D6A4F' })
-})
-if (milestones.mortEndAge) {
-  allMilestonesRaw.push({ age: milestones.mortEndAge, label: 'Mortgage paid', color: '#A8834A' })
-}
-if (milestones.retireAge) {
-  allMilestonesRaw.push({ age: milestones.retireAge, label: 'Retirement', color: '#6B7B8D' })
-}
-
-// Sort by age, then assign tiers based on proximity
-const MIN_GAP = 7
-allMilestonesRaw.sort((a, b) => a.age - b.age)
-const allMilestones: { age: number; label: string; color: string; tier: number; anchor: string }[] = []
-allMilestonesRaw.forEach((m, i) => {
-  if (i === 0) {
-    allMilestones.push({ ...m, tier: 0, anchor: 'middle' })
-  } else {
-    const prev = allMilestonesRaw[i - 1]
-    const prevTier = allMilestones[i - 1].tier
-    const gap = m.age - prev.age
-    if (gap <= 8) {
-      // Close enough that names could collide: push labels apart horizontally, stagger vertically
-      const newTier = gap <= 3 ? 0 : (prevTier + 1) % 3
-      allMilestones[i - 1] = { ...allMilestones[i - 1], anchor: 'end' }
-      allMilestones.push({ ...m, tier: newTier, anchor: 'start' })
-    } else {
-      allMilestones.push({ ...m, tier: 0, anchor: 'middle' })
-    }
-  }
-})
-
+  const needColor = '#2D5A4E'
   const insuranceColor = '#c8a96e'
   const shortfallColor = '#C0392B'
 
@@ -849,11 +874,15 @@ allMilestonesRaw.forEach((m, i) => {
         </div>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 16, height: 2, background: needColor, borderRadius: 2 }} />
+            <span style={{ fontSize: 10, color: '#9A9896' }}>Need after assets</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 12, height: 8, background: insuranceColor, opacity: 0.55, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Insurance</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 16, height: 2, background: shortfallColor }} />
+            <div style={{ width: 12, height: 8, background: shortfallColor, opacity: 0.45, borderRadius: 2 }} />
             <span style={{ fontSize: 10, color: '#9A9896' }}>Shortfall</span>
           </div>
         </div>
@@ -905,44 +934,41 @@ allMilestonesRaw.forEach((m, i) => {
           )
         })}
 
-        {/* Shortfall fill — continuous area under the shortfall curve (max(0,
-            Need − Insurance)), from the baseline. Reads as a flat zero
-            wherever Insurance covers the Need, so there's no visual gap. */}
-        <path d={shortfallAreaPath} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
+        {/* Shortfall band — red fill between the need-after-assets line and the
+            existing insurance, only where the (floored, net-of-assets) need
+            exceeds insurance. Collapses to zero height wherever insurance
+            covers the need, so no red shows there. */}
+        <path d={shortfallAreaPath} fill="rgba(192, 57, 43, 0.14)" stroke="none" />
 
-        {/* Shortfall line — one continuous curve, no breaks. Its height IS
-            the shortfall dollar amount (Need minus Insurance), not the raw
-            Need. It just runs flat along the baseline during years Insurance
-            fully covers the Need, rather than tracing the Need value. */}
-        <path d={shortfallLinePath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-        <path d={shortfallLinePath} stroke={shortfallColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Need-after-assets line — the gross need minus Asset Mitigation,
+            floored so it never falls below the survival floor (never zero).
+            Its height IS the capital to insure at that age; the gap down to
+            the insurance bars is the shortfall shaded above. */}
+        <path d={needLinePath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
+        <path d={needLinePath} stroke={needColor} strokeWidth="2.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
 
-        {/* Milestone markers - tiered to prevent label overlap */}
-{allMilestones.map((m, i) => {
-  const mx = xP(m.age)
-  if (mx < PL || mx > PL + iW) return null
-  // tier 0 = closest to chart, tier 1 = 22px higher, tier 2 = 44px higher
-  const tierOffset = m.tier * 22
-  const labelY = PT - 24 + tierOffset
-  const ageY   = PT - 13 + tierOffset
-  const dotY   = PT - 6  + tierOffset
-  return (
-    <g key={`ms-${i}`}>
-      {/* Vertical line from top of chart down */}
-      <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.25" />
-      {/* Connector from dot up to chart top */}
-      <line x1={mx} y1={dotY + 3} x2={mx} y2={PT} stroke={m.color} strokeWidth="0.5" opacity="0.2" />
-      <circle cx={mx} cy={dotY} r="2.5" fill={m.color} opacity="0.6" />
-      <text x={mx} y={labelY} fontSize="8.5" fill={m.color} textAnchor={m.anchor as any} fontFamily="Inter, sans-serif" fontWeight="500">
-        {m.label}
-      </text>
-      <text x={mx} y={ageY} fontSize="7.5" fill="#9A9896" textAnchor={m.anchor as any} fontFamily="Inter, sans-serif">
-        age {m.age}
-      </text>
-    </g>
-  )
-})}
+        {/* Milestone markers — icon + age only. Names surface in the hover
+            tooltip. Guide line drops from the true age; if the icon was nudged
+            to avoid a collision, a short connector links it back to the line. */}
+        {milestoneMarkers.map((m, i) => {
+          const gx = xP(m.age)
+          return (
+            <g key={`ms-${i}`}>
+              <line x1={gx} y1={PT} x2={gx} y2={PT + iH} stroke={m.color} strokeWidth="0.5" strokeDasharray="2,4" opacity="0.22" />
+              {Math.abs(m.x - gx) > 0.5 && (
+                <line x1={m.x} y1={PT - 12} x2={gx} y2={PT} stroke={m.color} strokeWidth="0.5" opacity="0.2" />
+              )}
+              <circle cx={m.x} cy={PT - 24} r="12" fill="#FDFCFA" stroke={m.color} strokeWidth="1" opacity="0.95" />
+              <g transform={`translate(${m.x},${PT - 24})`}>
+                <MilestoneIconAtOrigin icon={m.icon} size={14} color={m.color} />
+              </g>
+              <text x={m.x} y={PT - 4} fontSize="8" fill={m.color} textAnchor="middle" fontFamily="Inter, sans-serif" opacity="0.85">
+                age {m.age}
+              </text>
+            </g>
+          )
+        })}
 
         {/* Age labels */}
         {ageLabels.map(d => (
@@ -973,9 +999,9 @@ allMilestonesRaw.forEach((m, i) => {
           />
         )}
 
-        {/* Hover dot on shortfall line */}
+        {/* Hover dot on the need-after-assets line */}
         {hovered && (
-          <circle cx={hovered.x} cy={hovered.yShortfall} r="4" fill="#1C1A17" stroke="#FDFCFA" strokeWidth="2" />
+          <circle cx={hovered.x} cy={hovered.yDot} r="4" fill="#1C1A17" stroke="#FDFCFA" strokeWidth="2" />
         )}
       </svg>
 
@@ -998,13 +1024,21 @@ allMilestonesRaw.forEach((m, i) => {
             boxShadow: '0 12px 32px rgba(0,0,0,0.2)',
           }}
         >
+          {hovered.milestone && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, paddingBottom: 10, borderBottom: '0.5px solid rgba(255,255,255,0.14)' }}>
+              <MilestoneIconInline icon={hovered.milestone.icon} color={hovered.milestone.color} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{hovered.milestone.label}</span>
+            </div>
+          )}
           <div style={{ marginBottom: 12, color: accentColor, fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
             Age {hovered.age}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
-              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Needs</span>
-              <span style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 18, fontWeight: 300 }}>{fmt(hovered.need)}</span>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {hovered.milestone ? 'Amount needed' : 'Need after assets'}
+              </span>
+              <span style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 18, fontWeight: 300 }}>{fmt(hovered.needAfter)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 32 }}>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Insurance</span>
@@ -1012,17 +1046,15 @@ allMilestonesRaw.forEach((m, i) => {
             </div>
             <div style={{ paddingTop: 10, borderTop: '0.5px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', gap: 32 }}>
               <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {hovered.need > hovered.insurance ? 'Shortfall' : 'Surplus'}
+                {hovered.shortfall > 0 ? 'Shortfall' : 'Covered'}
               </span>
               <span style={{
                 fontFamily: 'Cormorant Garamond, Georgia, serif',
                 fontSize: 18,
                 fontWeight: 300,
-                color: hovered.need > hovered.insurance ? '#FF8A80' : '#A0D0B8',
+                color: hovered.shortfall > 0 ? '#FF8A80' : '#A0D0B8',
               }}>
-                {hovered.need > hovered.insurance
-                  ? fmt(hovered.need - hovered.insurance)
-                  : fmt(hovered.insurance - hovered.need)}
+                {hovered.shortfall > 0 ? fmt(hovered.shortfall) : '—'}
               </span>
             </div>
           </div>
@@ -1401,6 +1433,7 @@ allMilestonesRaw.forEach((m, i) => {
   data={chartData}
   type="dtpd"
   floor={aFloor}
+  assetMitigation={activeProfile?.dtpd.assetMitigation || 0}
   accentColor="#C4A464"
   currentAge={aAge}
   milestones={milestoneAges}
@@ -1484,6 +1517,7 @@ allMilestonesRaw.forEach((m, i) => {
   data={chartData}
   type="ci"
   floor={aFloor}
+  assetMitigation={activeProfile?.ci.assetMitigation || 0}
   accentColor="#2D6A4F"
   currentAge={aAge}
   milestones={milestoneAges}
