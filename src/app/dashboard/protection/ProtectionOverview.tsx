@@ -190,6 +190,40 @@ function mortBalanceAtAge(
   }, 0)
 }
 
+// CI's mortgage component — instalments due during the recovery window only,
+// not the full outstanding balance. Mirrors family dependency's own
+// windowing exactly (fdYears = min(ciWindow, yearsLeft)): flat while the
+// mortgage has more than `windowYears` left, tapering only as its own
+// payoff approaches, hitting $0 once paid off. Using the full balance here
+// (mortBalanceAtAge, same as DTPD) made CI's need decline smoothly for
+// years, in a way not related to when the mortgage actually gets paid off,
+// masking the flat-then-drop character the rest of the CI curve has.
+function mortInstalmentsAtAge(
+  atAge: number,
+  currentAge: number,
+  properties: any[],
+  windowYears: number
+): number {
+  const resolved = (properties || [])
+    .map(resolveMortgageFields)
+    .filter((m): m is { outstanding: number; rate: number; tenure: number } => m !== null)
+  return resolved.reduce((total: number, m) => {
+    const { outstanding, rate, tenure } = m
+    if (outstanding <= 0 || tenure <= 0) return total
+    const yearsElapsed = atAge - currentAge
+    const yearsLeftFull = Math.max(0, tenure - yearsElapsed)
+    const yearsLeft = Math.min(windowYears, yearsLeftFull)
+    if (yearsLeft <= 0) return total
+    if (rate === 0) return total + outstanding * (yearsLeft / tenure)
+    const monthlyRate = rate / 12
+    const totalMonths = tenure * 12
+    const monthlyPmt =
+      outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
+    const monthsLeft = yearsLeft * 12
+    return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
+  }, 0)
+}
+
 // Coverage maturity check — returns true if policy is still active at given age
 function policyActiveAtAge(p: Policy, age: number, currentAge: number): boolean {
   const mat = p.coverageMaturity
@@ -505,8 +539,12 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 
     const incomeComponent = ageFD
 
-    // Mortgage component (gradual slope)
-    const mortComponent = mortBalanceAtAge(age, currentAge, props)
+    // Mortgage component — instalments due during the recovery window only
+    // (min(ciWindow, yearsLeftOnMortgage)), not the full outstanding balance.
+    // See mortInstalmentsAtAge for why: the full balance amortizes smoothly
+    // over the mortgage's whole remaining term, which doesn't belong in a
+    // CI curve that's otherwise flat-then-drop.
+    const mortComponent = mortInstalmentsAtAge(age, currentAge, props, ciWindow)
 
    // Education component — sharp drop per child at their uni entry age
   let eduComponent = 0
