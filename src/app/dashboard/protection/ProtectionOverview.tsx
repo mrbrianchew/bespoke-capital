@@ -739,7 +739,7 @@ function CoverageChart({
     need: number
     insurance: number
     x: number
-    yNeed: number
+    yShortfall: number
   } | null>(null)
   const [hoveredMilestone, setHoveredMilestone] = useState<{
     x: number
@@ -803,34 +803,21 @@ function CoverageChart({
     return `${top} ${bot} Z`
   }
 
-  // Build shortfall segments — where Needs pokes above the Insurance stack.
-  // Each segment yields both a filled area AND its own top-boundary stroke
-  // (drawn in the shortfall color) — there's no longer a black "Needs" line
-  // spanning the whole age range; the boundary only appears where there
-  // actually is a shortfall to show.
-  const shortfallSegments: string[] = []
-  const shortfallBoundaryPaths: string[] = []
-  let segStart = -1
-  for (let i = 0; i < data.length; i++) {
-    const isShortfall = (data[i] as any)[needKey] > stackAt(data[i])
-    if (isShortfall && segStart === -1) {
-      segStart = i
-    } else if (!isShortfall && segStart !== -1) {
-      const seg = data.slice(segStart, i)
-      const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
-      const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
-      shortfallSegments.push(areaPath(top, bot))
-      shortfallBoundaryPaths.push(linePath(top))
-      segStart = -1
-    }
-  }
-  if (segStart !== -1) {
-    const seg = data.slice(segStart)
-    const top = seg.map(d => ({ x: xP(d.age), y: yP((d as any)[needKey]) }))
-    const bot = seg.map(d => ({ x: xP(d.age), y: yP(stackAt(d)) }))
-    shortfallSegments.push(areaPath(top, bot))
-    shortfallBoundaryPaths.push(linePath(top))
-  }
+  // Shortfall curve — max(0, Need − Insurance) at every age, plotted as one
+  // continuous area from the baseline. Two earlier attempts kept the line's
+  // height pinned to the raw Need value (just recolored, or only drawn
+  // during gap years) — the height itself was still the Need number, and
+  // hiding the line for fully-covered years produced a visible break.
+  // Plotting the actual shortfall figure fixes both: the y-position now IS
+  // the shortfall amount, and it never disappears — it just reads 0 (flat
+  // along the baseline) whenever Insurance covers the Need.
+  const shortfallPoints = data.map(d => ({
+    x: xP(d.age),
+    y: yP(Math.max(0, (d as any)[needKey] - stackAt(d))),
+  }))
+  const baselinePoints = data.map(d => ({ x: xP(d.age), y: PT + iH }))
+  const shortfallLinePath = linePath(shortfallPoints)
+  const shortfallAreaPath = areaPath(shortfallPoints, baselinePoints)
 
   // Age labels (every 5 years)
   const ageLabels = data.filter(d => d.age % 5 === 0 || d.age === currentAge || d.age === 100)
@@ -851,7 +838,7 @@ function CoverageChart({
         need: (closest as any)[needKey],
         insurance: (closest as any)[insuranceKey] || 0,
         x: xP(closest.age),
-        yNeed: yP((closest as any)[needKey]),
+        yShortfall: yP(Math.max(0, (closest as any)[needKey] - stackAt(closest))),
       })
     } else {
       setHovered(null)
@@ -954,9 +941,16 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
         <line x1={PL} y1={PT} x2={PL} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
         <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#E8E5E0" strokeWidth="0.5" />
 
-        {/* Insurance coverage bars — one per age. Assets no longer stack on
-            top here (see stackAt note above); shown only as a today snapshot
-            on the scenario card. */}
+        {/* Shortfall fill — continuous area under the shortfall curve (max(0,
+            Need − Insurance)), from the baseline. Reads as a flat zero
+            wherever Insurance covers the Need, so there's no visual gap. */}
+        <path d={shortfallAreaPath} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
+
+        {/* Insurance coverage bars — drawn after the shortfall fill so they
+            stay visually distinct as their own layer even where both start
+            from the same baseline. Assets no longer stack on top here (see
+            stackAt note above); shown only as a today snapshot on the
+            scenario card. */}
         {data.map(d => {
           const insurance = (d as any)[insuranceKey] || 0
           if (insurance <= 0) return null
@@ -965,25 +959,17 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
           const baseY = PT + iH
           const insTopY = yP(insurance)
           return (
-            <rect key={`bar-${d.age}`} x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.5" rx="1.5" />
+            <rect key={`bar-${d.age}`} x={bx - barW / 2} y={insTopY} width={barW} height={Math.max(0, baseY - insTopY)} fill={insuranceColor} opacity="0.6" rx="1.5" />
           )
         })}
 
-        {/* Shortfall fill — where Needs pokes above the stack */}
-        {shortfallSegments.map((d, i) => (
-          <path key={`sf-${i}`} d={d} fill="rgba(192, 57, 43, 0.12)" stroke="none" />
-        ))}
-
-        {/* Shortfall boundary — a rouge stroke tracing the top edge of each
-            shortfall segment. Only drawn where there's an actual gap; a
-            fully-covered ("surplus") stretch shows no line at all, just the
-            insurance bars. Replaces the old always-on black "Needs" line. */}
-        {shortfallBoundaryPaths.map((d, i) => (
-          <g key={`sfline-${i}`}>
-            <path d={d} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
-            <path d={d} stroke={shortfallColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </g>
-        ))}
+        {/* Shortfall line — one continuous curve, no breaks. Its height IS
+            the shortfall dollar amount (Need minus Insurance), not the raw
+            Need — that's the actual fix for "still showing needs instead of
+            shortfall". It just runs flat along the baseline during years
+            Insurance fully covers the Need, rather than disappearing. */}
+        <path d={shortfallLinePath} stroke="#FDFCFA" strokeWidth="5" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <path d={shortfallLinePath} stroke={shortfallColor} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
 
         {/* Milestone markers — icon + age always visible; name + needed amount
@@ -1056,7 +1042,7 @@ const MILESTONE_ICONS: Record<MilestoneKind, React.ComponentType<any>> = {
 
         {/* Hover dot on need line */}
         {hovered && (
-          <circle cx={hovered.x} cy={hovered.yNeed} r="4" fill="#1C1A17" stroke="#FDFCFA" strokeWidth="2" />
+          <circle cx={hovered.x} cy={hovered.yShortfall} r="4" fill="#1C1A17" stroke="#FDFCFA" strokeWidth="2" />
         )}
       </svg>
 
