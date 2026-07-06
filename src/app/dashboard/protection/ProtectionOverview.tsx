@@ -737,9 +737,23 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const spouseRunwayMonths = spouseCIHave > 0 && spouseMonthlyExp > 0
     ? Math.round(spouseCIHave / spouseMonthlyExp) : 0
 
-  // Below floor check
-  const clientCIBelowFloor = clientCIHave < clientFloor
-  const spouseCIBelowFloor = spouseCIHave < spouseFloor
+  // Below floor check — uses the EVENTUAL, settled coverage level (once all
+  // term policies have expired and any multiplier boost on a whole-life
+  // policy has dropped off), not today's coverage. Term riders and
+  // multiplier boosts are temporary; what's left once they're gone is the
+  // real, lasting floor of protection for the rest of the person's life.
+  // Age 99 is comfortably past every term/multiplier end-age we've seen
+  // (e.g. Au Chi Hoi's 3× multiplier ends at 70), so it reads as the
+  // permanently-settled coverage level.
+  const clientCIHaveLifetime = getCIHaveAtAge(99, 'client', clientAge, activePolicies)
+  const spouseCIHaveLifetime = effectiveIsCouple ? getCIHaveAtAge(99, 'spouse', spouseAge, activePolicies) : 0
+  const clientCIBelowFloor = clientCIHaveLifetime < clientFloor
+  const spouseCIBelowFloor = spouseCIHaveLifetime < spouseFloor
+  // Shortfall against the floor once coverage has settled — the gap this
+  // priority action is actually about, distinct from today's point-in-time
+  // shortfall shown on the dial card above.
+  const clientCIFloorShortfall = Math.max(0, clientFloor - clientCIHaveLifetime)
+  const spouseCIFloorShortfall = Math.max(0, spouseFloor - spouseCIHaveLifetime)
 
   // ── Milestone ages (for chart annotations) ──────────────────────────────────
   const milestoneAges = useMemo(() => {
@@ -767,6 +781,12 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 }, [activePerson, clientAge, spouseAge, childUniEntryAges, children, properties, p1RetireAge, p2RetireAge])
 
   // ── Priority actions (dynamically ranked) ───────────────────────────────────
+  // Scoped to the active person only — no cross-references to the other
+  // person's plan. A cross-reference item used to appear here (sorted by
+  // gap size like everything else), which meant it could land at #1 and
+  // read like "the top priority is actually someone else's plan," confusing
+  // on a page that's otherwise entirely about the active person. The other
+  // person's own tab already has their own itemized list.
   const priorityActions = useMemo(() => {
     if (activePerson === 'client') {
       const actions = [
@@ -782,27 +802,16 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
           badgeC: '#9B1C1C',
         },
         {
-          gap: clientCIShortfall,
+          gap: clientCIFloorShortfall,
           n: 2,
           bg: '#FEF3C7',
           c: '#854F0B',
-          title: `Bring ${clientName}'s CI above the survival floor`,
-          body: `${fmt(clientCIHave)} CI coverage${clientCIBelowFloor ? ' — below the $300K minimum floor' : ''}. A diagnosis at any age without adequate CI is a financial crisis.`,
-          badge: `${fmt(clientCIShortfall)} shortfall${clientCIBelowFloor ? ' · below floor' : ''}`,
+          title: `Close ${clientName}'s CI gap`,
+          body: `${fmt(clientCIHave)} CI coverage today, but once term riders expire and any multiplier boost drops off, lasting coverage falls to ${fmt(clientCIHaveLifetime)}${clientCIBelowFloor ? ` — below the ${fmt(clientFloor)} survival floor` : ''}. A late-life diagnosis without that floor is still a financial crisis.`,
+          badge: `${fmt(clientCIFloorShortfall)} shortfall${clientCIBelowFloor ? ' · below floor later in life' : ''}`,
           badgeBg: '#FEF3C7',
           badgeC: '#854F0B',
         },
-        ...(effectiveIsCouple ? [{
-          gap: spouseDTPDShortfall + spouseCIShortfall,
-          n: 3,
-          bg: '#F5F3EE',
-          c: '#888',
-          title: `Address ${spouseName}'s protection`,
-          body: `${spouseName}'s ${fmt(spouseDTPDShortfall)} D/TPD and ${fmt(spouseCIShortfall)} CI gaps are often the most overlooked in a couple plan.`,
-          badge: `${fmt(spouseDTPDShortfall + spouseCIShortfall)} combined`,
-          badgeBg: '#F5F3EE',
-          badgeC: '#5F5E5A',
-        }] : []),
       ]
       return actions.sort((a, b) => b.gap - a.gap).map((a, i) => ({ ...a, n: i + 1 }))
     } else {
@@ -819,34 +828,23 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
           badgeC: '#9B1C1C',
         },
         {
-          gap: spouseCIShortfall,
+          gap: spouseCIFloorShortfall,
           n: 2,
           bg: '#FEF3C7',
           c: '#854F0B',
-          title: `Bring ${spouseName}'s CI above the survival floor`,
-          body: `${fmt(spouseCIHave)} CI coverage${spouseCIBelowFloor ? ' — below the $300K minimum floor' : ''}. Only ${spouseRunwayMonths} months of family runway.`,
-          badge: `${fmt(spouseCIShortfall)} shortfall${spouseCIBelowFloor ? ' · below floor' : ''}`,
+          title: `Close ${spouseName}'s CI gap`,
+          body: `${fmt(spouseCIHave)} CI coverage today, but once term riders expire and any multiplier boost drops off, lasting coverage falls to ${fmt(spouseCIHaveLifetime)}${spouseCIBelowFloor ? ` — below the ${fmt(spouseFloor)} survival floor` : ''}. Only ${spouseRunwayMonths} months of family runway today.`,
+          badge: `${fmt(spouseCIFloorShortfall)} shortfall${spouseCIBelowFloor ? ' · below floor later in life' : ''}`,
           badgeBg: '#FEF3C7',
           badgeC: '#854F0B',
-        },
-        {
-          gap: clientCIShortfall,
-          n: 3,
-          bg: '#F5F3EE',
-          c: '#888',
-          title: `Also review ${clientName}'s CI coverage`,
-          body: `${clientName}'s CI of ${fmt(clientCIHave)}${clientCIBelowFloor ? ' also sits below the floor' : ''}. Addressing both together is more efficient.`,
-          badge: `${fmt(clientCIShortfall)} · ${clientCIBelowFloor ? 'below floor' : 'review recommended'}`,
-          badgeBg: '#F5F3EE',
-          badgeC: '#5F5E5A',
         },
       ]
       return actions.sort((a, b) => b.gap - a.gap).map((a, i) => ({ ...a, n: i + 1 }))
     }
-  }, [activePerson, clientName, spouseName, clientDTPDShortfall, clientCIShortfall,
-      spouseDTPDShortfall, spouseCIShortfall, clientDTPDHave, clientCIHave,
-      spouseDTPDHave, spouseCIHave, clientCIBelowFloor, spouseCIBelowFloor,
-      clientFloor, spouseFloor, clientRunwayMonths, spouseRunwayMonths, effectiveIsCouple])
+  }, [activePerson, clientName, spouseName, clientDTPDShortfall, clientCIFloorShortfall,
+      spouseDTPDShortfall, spouseCIFloorShortfall, clientDTPDHave, clientCIHave, clientCIHaveLifetime,
+      spouseDTPDHave, spouseCIHave, spouseCIHaveLifetime, clientCIBelowFloor, spouseCIBelowFloor,
+      clientFloor, spouseFloor, spouseRunwayMonths, aDTPDNeed, spouseDTPDNeed])
 
   // ── Chart rendering ──────────────────────────────────────────────────────────
 function CoverageChart({
