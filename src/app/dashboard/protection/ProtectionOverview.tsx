@@ -681,27 +681,50 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   const aRetireAge = activePerson === 'client' ? p1RetireAge : p2RetireAge
   const aFloor = activePerson === 'client' ? clientFloor : spouseFloor
   const aFloorDetail = activePerson === 'client' ? clientFloorDetail : spouseFloorDetail
-  const aDTPDNeed = activePerson === 'client' ? clientDTPD : spouseDTPD
-  const aCINeed = activePerson === 'client' ? clientCI : spouseCI
+  const clientProfile = protectionSnapshot?.client
+  const spouseProfile = protectionSnapshot?.spouse
 
-  // Current have values (at current age)
-  const clientDTPDHave = getDTPDHaveAtAge(clientAge, 'client', clientAge, activePolicies)
-  const clientCIHave = getCIHaveAtAge(clientAge, 'client', clientAge, activePolicies)
-  const spouseDTPDHave = effectiveIsCouple ? getDTPDHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies) : 0
-  const spouseCIHave = effectiveIsCouple ? getCIHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies) : 0
+  // "Needed" (gross) figures — prefer the correct, saved snapshot value
+  // (protectionSnapshot.client/spouse.dtpd/ci.maxCapitalRequired) over the
+  // clientDTPD/spouseDTPD props, which read ff.p1_dtpd_gross at the wrong
+  // path (missing the ff.protection. prefix protectionSnapshot itself uses)
+  // and so silently fell through to a much cruder local fallback formula —
+  // no education component, and it double-subtracted CPF+property against
+  // Asset Mitigation, the same bug already fixed in this file's own chart
+  // calc. That's why this panel showed a different "needed" figure than the
+  // dial card above it for the same person.
+  const clientDTPDNeed = clientProfile ? clientProfile.dtpd.maxCapitalRequired : clientDTPD
+  const clientCINeed = clientProfile ? clientProfile.ci.maxCapitalRequired : clientCI
+  const spouseDTPDNeed = spouseProfile ? spouseProfile.dtpd.maxCapitalRequired : spouseDTPD
+  const spouseCINeed = spouseProfile ? spouseProfile.ci.maxCapitalRequired : spouseCI
+
+  const aDTPDNeed = activePerson === 'client' ? clientDTPDNeed : spouseDTPDNeed
+  const aCINeed = activePerson === 'client' ? clientCINeed : spouseCINeed
+
+  // "Have" (existing coverage) — prefer the snapshot's own existingCoverage,
+  // the same figure the dial card's legend already displays, so this panel
+  // can never show different insurance numbers than the dial above it.
+  const clientDTPDHave = clientProfile ? clientProfile.dtpd.existingCoverage : getDTPDHaveAtAge(clientAge, 'client', clientAge, activePolicies)
+  const clientCIHave = clientProfile ? clientProfile.ci.existingCoverage : getCIHaveAtAge(clientAge, 'client', clientAge, activePolicies)
+  const spouseDTPDHave = effectiveIsCouple ? (spouseProfile ? spouseProfile.dtpd.existingCoverage : getDTPDHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies)) : 0
+  const spouseCIHave = effectiveIsCouple ? (spouseProfile ? spouseProfile.ci.existingCoverage : getCIHaveAtAge(spouseAge, 'spouse', spouseAge, activePolicies)) : 0
 
   const aDTPDHave = activePerson === 'client' ? clientDTPDHave : spouseDTPDHave
   const aCIHave = activePerson === 'client' ? clientCIHave : spouseCIHave
 
-  const clientDTPDShortfall = Math.max(0, clientDTPD - clientDTPDHave)
-  const clientCIShortfall = Math.max(0, clientCI - clientCIHave)
-  const spouseDTPDShortfall = effectiveIsCouple ? Math.max(0, spouseDTPD - spouseDTPDHave) : 0
-  const spouseCIShortfall = effectiveIsCouple ? Math.max(0, spouseCI - spouseCIHave) : 0
+  // Shortfalls — prefer the snapshot's own asset-netted shortfall (identical
+  // to what the dial card shows) over max(0, need − insurance), which never
+  // subtracted Asset Mitigation at all and so overstated every gap here by
+  // the full asset amount.
+  const clientDTPDShortfall = clientProfile ? clientProfile.dtpd.shortfall : Math.max(0, clientDTPDNeed - clientDTPDHave)
+  const clientCIShortfall = clientProfile ? clientProfile.ci.shortfall : Math.max(0, clientCINeed - clientCIHave)
+  const spouseDTPDShortfall = effectiveIsCouple ? (spouseProfile ? spouseProfile.dtpd.shortfall : Math.max(0, spouseDTPDNeed - spouseDTPDHave)) : 0
+  const spouseCIShortfall = effectiveIsCouple ? (spouseProfile ? spouseProfile.ci.shortfall : Math.max(0, spouseCINeed - spouseCIHave)) : 0
 
-  const clientDTPDPct = clientDTPD > 0 ? Math.round(Math.min(clientDTPDHave, clientDTPD) / clientDTPD * 100) : 0
-  const clientCIPct = clientCI > 0 ? Math.round(Math.min(clientCIHave, clientCI) / clientCI * 100) : 0
-  const spouseDTPDPct = spouseDTPD > 0 ? Math.round(Math.min(spouseDTPDHave, spouseDTPD) / spouseDTPD * 100) : 0
-  const spouseCIPct = spouseCI > 0 ? Math.round(Math.min(spouseCIHave, spouseCI) / spouseCI * 100) : 0
+  const clientDTPDPct = clientDTPDNeed > 0 ? Math.round(Math.min(clientDTPDHave, clientDTPDNeed) / clientDTPDNeed * 100) : 0
+  const clientCIPct = clientCINeed > 0 ? Math.round(Math.min(clientCIHave, clientCINeed) / clientCINeed * 100) : 0
+  const spouseDTPDPct = spouseDTPDNeed > 0 ? Math.round(Math.min(spouseDTPDHave, spouseDTPDNeed) / spouseDTPDNeed * 100) : 0
+  const spouseCIPct = spouseCINeed > 0 ? Math.round(Math.min(spouseCIHave, spouseCINeed) / spouseCINeed * 100) : 0
 
   const aTotalShortfall = (activePerson === 'client' ? clientDTPDShortfall + clientCIShortfall : spouseDTPDShortfall + spouseCIShortfall)
   const combinedShortfall = clientDTPDShortfall + clientCIShortfall + spouseDTPDShortfall + spouseCIShortfall
@@ -790,7 +813,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
           bg: '#FEE2E2',
           c: '#C0392B',
           title: `Close ${spouseName}'s D/TPD gap`,
-          body: `${fmt(spouseDTPD)} needed. Only ${fmt(spouseDTPDHave)} secured today. Often the most overlooked gap.`,
+          body: `${fmt(spouseDTPDNeed)} needed. Only ${fmt(spouseDTPDHave)} secured today. Often the most overlooked gap.`,
           badge: `${fmt(spouseDTPDShortfall)} shortfall`,
           badgeBg: '#FEE2E2',
           badgeC: '#9B1C1C',
