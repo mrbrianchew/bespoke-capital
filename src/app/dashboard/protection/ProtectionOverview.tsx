@@ -802,16 +802,27 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
           badgeC: '#9B1C1C',
         },
         {
-          gap: clientCIFloorShortfall,
+          gap: clientCIShortfall,
           n: 2,
+          bg: '#FEE2E2',
+          c: '#C0392B',
+          title: `Close ${clientName}'s CI gap`,
+          body: `${fmt(aCINeed)} needed for your family. ${fmt(clientCIHave)} secured today.`,
+          badge: `${fmt(clientCIShortfall)} shortfall`,
+          badgeBg: '#FEE2E2',
+          badgeC: '#9B1C1C',
+        },
+        ...(clientCIBelowFloor ? [{
+          gap: clientCIFloorShortfall,
+          n: 3,
           bg: '#FEF3C7',
           c: '#854F0B',
-          title: `Close ${clientName}'s CI gap`,
-          body: `${fmt(clientCIHave)} CI coverage today, but once term riders expire and any multiplier boost drops off, lasting coverage falls to ${fmt(clientCIHaveLifetime)}${clientCIBelowFloor ? ` — below the ${fmt(clientFloor)} survival floor` : ''}. A late-life diagnosis without that floor is still a financial crisis.`,
-          badge: `${fmt(clientCIFloorShortfall)} shortfall${clientCIBelowFloor ? ' · below floor later in life' : ''}`,
+          title: `Close ${clientName}'s Floor / Basic Lifetime Coverage gap`,
+          body: `${fmt(clientCIHave)} CI coverage today, but once term riders expire and any multiplier boost drops off, lasting coverage falls to ${fmt(clientCIHaveLifetime)} — below the ${fmt(clientFloor)} survival floor. A late-life diagnosis without that floor is still a financial crisis.`,
+          badge: `${fmt(clientCIFloorShortfall)} shortfall · below floor later in life`,
           badgeBg: '#FEF3C7',
           badgeC: '#854F0B',
-        },
+        }] : []),
       ]
       return actions.sort((a, b) => b.gap - a.gap).map((a, i) => ({ ...a, n: i + 1 }))
     } else {
@@ -828,23 +839,34 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
           badgeC: '#9B1C1C',
         },
         {
-          gap: spouseCIFloorShortfall,
+          gap: spouseCIShortfall,
           n: 2,
+          bg: '#FEE2E2',
+          c: '#C0392B',
+          title: `Close ${spouseName}'s CI gap`,
+          body: `${fmt(spouseCINeed)} needed. Only ${fmt(spouseCIHave)} secured today.`,
+          badge: `${fmt(spouseCIShortfall)} shortfall`,
+          badgeBg: '#FEE2E2',
+          badgeC: '#9B1C1C',
+        },
+        ...(spouseCIBelowFloor ? [{
+          gap: spouseCIFloorShortfall,
+          n: 3,
           bg: '#FEF3C7',
           c: '#854F0B',
-          title: `Close ${spouseName}'s CI gap`,
-          body: `${fmt(spouseCIHave)} CI coverage today, but once term riders expire and any multiplier boost drops off, lasting coverage falls to ${fmt(spouseCIHaveLifetime)}${spouseCIBelowFloor ? ` — below the ${fmt(spouseFloor)} survival floor` : ''}. Only ${spouseRunwayMonths} months of family runway today.`,
-          badge: `${fmt(spouseCIFloorShortfall)} shortfall${spouseCIBelowFloor ? ' · below floor later in life' : ''}`,
+          title: `Close ${spouseName}'s Floor / Basic Lifetime Coverage gap`,
+          body: `${fmt(spouseCIHave)} CI coverage today, but once term riders expire and any multiplier boost drops off, lasting coverage falls to ${fmt(spouseCIHaveLifetime)} — below the ${fmt(spouseFloor)} survival floor. Only ${spouseRunwayMonths} months of family runway today.`,
+          badge: `${fmt(spouseCIFloorShortfall)} shortfall · below floor later in life`,
           badgeBg: '#FEF3C7',
           badgeC: '#854F0B',
-        },
+        }] : []),
       ]
       return actions.sort((a, b) => b.gap - a.gap).map((a, i) => ({ ...a, n: i + 1 }))
     }
-  }, [activePerson, clientName, spouseName, clientDTPDShortfall, clientCIFloorShortfall,
-      spouseDTPDShortfall, spouseCIFloorShortfall, clientDTPDHave, clientCIHave, clientCIHaveLifetime,
+  }, [activePerson, clientName, spouseName, clientDTPDShortfall, clientCIShortfall, clientCIFloorShortfall,
+      spouseDTPDShortfall, spouseCIShortfall, spouseCIFloorShortfall, clientDTPDHave, clientCIHave, clientCIHaveLifetime,
       spouseDTPDHave, spouseCIHave, spouseCIHaveLifetime, clientCIBelowFloor, spouseCIBelowFloor,
-      clientFloor, spouseFloor, spouseRunwayMonths, aDTPDNeed, spouseDTPDNeed])
+      clientFloor, spouseFloor, spouseRunwayMonths, aDTPDNeed, aCINeed, spouseDTPDNeed, spouseCINeed])
 
   // ── Chart rendering ──────────────────────────────────────────────────────────
 function CoverageChart({
