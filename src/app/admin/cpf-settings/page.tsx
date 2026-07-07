@@ -38,7 +38,7 @@ export default function CpfSettingsPage() {
 
   async function loadData() {
     const { data, error: err } = await supabase
-      .from("cpf_settings").select("*").order("effective_year", { ascending: false }).limit(1).single()
+      .from("cpf_settings").select("*").order("effective_year", { ascending: false }).limit(1).maybeSingle()
     if (data) {
       setSettings(data)
       setForm({ ow_ceiling: String(data.ow_ceiling), aw_ceiling: String(data.aw_ceiling), effective_year: String(data.effective_year), notes: data.notes ?? "" })
