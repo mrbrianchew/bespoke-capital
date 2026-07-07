@@ -9,7 +9,7 @@ export async function getCpfSettings(): Promise<CpfCeilings> {
             .select("ow_ceiling, aw_ceiling")
             .order("effective_year", { ascending: false })
             .limit(1)
-            .single()
+            .maybeSingle()
 
       if (error || !data) {
               console.warn("[getCpfSettings] Falling back to defaults:", error?.message)
