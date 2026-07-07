@@ -6,6 +6,19 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Basic in-memory rate limiter (per server instance), keyed by token + IP.
+// Blocks rapid password-guessing against a share link.
+const attempts = new Map<string, number[]>()
+const WINDOW_MS = 60_000
+const MAX_ATTEMPTS = 10
+function tooManyAttempts(key: string): boolean {
+  const now = Date.now()
+  const recent = (attempts.get(key) || []).filter(t => now - t < WINDOW_MS)
+  recent.push(now)
+  attempts.set(key, recent)
+  return recent.length > MAX_ATTEMPTS
+}
+
 // GET — returns only hint + expiry status (no auth required, no sensitive data)
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const { data: share } = await supabaseAdmin
@@ -29,6 +42,11 @@ export async function GET(_req: Request, { params }: { params: { token: string }
 // POST — verifies password, returns client + policies (+ share type metadata)
 //        or, for financial plans, the frozen snapshot directly
 export async function POST(req: Request, { params }: { params: { token: string } }) {
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+  if (tooManyAttempts(`${params.token}:${ip}`)) {
+    return NextResponse.json({ error: 'too_many_attempts' }, { status: 429 })
+  }
+
   const { passwordHash } = await req.json()
 
   const { data: share } = await supabaseAdmin
