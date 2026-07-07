@@ -24,7 +24,7 @@ export default function AuthPage() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) { setError(error.message); setLoading(false); return }
       // Check approval status
-      const { data: adv } = await supabase.from('advisors').select('status').eq('id', data.user.id).single()
+      const { data: adv } = await supabase.from('advisors').select('status').eq('id', data.user.id).maybeSingle()
       if (!adv || adv.status !== 'approved') {
         await supabase.auth.signOut()
         setError('Your account is awaiting approval. You will be notified once approved.')
