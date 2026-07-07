@@ -14,7 +14,7 @@ export default function OnboardingPage() {
     // If already has a name in advisors table, skip onboarding
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { router.push('/auth'); return }
-      const { data } = await supabase.from('advisors').select('name').eq('id', user.id).single()
+      const { data } = await supabase.from('advisors').select('name').eq('id', user.id).maybeSingle()
       if (data?.name) router.push('/dashboard')
     })
   }, [])
