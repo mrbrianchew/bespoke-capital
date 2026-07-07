@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth'); return }
     setUser(user)
-    const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).single()
+    const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).maybeSingle()
     if (adv) setAdvisor(adv)
     const { data: cls } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
     if (cls) { setClients(cls); if (cls.length > 0) { const savedId = localStorage.getItem('selectedClientId'); const match = cls.find((c: any) => c.id === savedId); const selected = match || cls[0]; setActiveClient(selected); localStorage.setItem('selectedClientId', selected.id) } }
