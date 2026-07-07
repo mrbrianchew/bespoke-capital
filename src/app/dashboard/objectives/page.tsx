@@ -682,7 +682,7 @@ const { data: clientData } = await supabase
   .from('clients')
   .select('name, dob')
   .eq('id', id)
-  .single()
+  .maybeSingle()
 if (clientData) {
   setClientName(clientData.name || 'Client')
   setClientDOB(clientData.dob)
