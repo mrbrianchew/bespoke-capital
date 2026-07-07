@@ -184,7 +184,7 @@ export default function ReportPage() {
       const encoder = new TextEncoder()
       const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password.trim()))
       const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
-      const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(36)).join('').slice(0, 12)
+      const token = crypto.randomUUID().replace(/-/g, '')
       const { data: { user } } = await supabase.auth.getUser()
 
       const label = `Financial Plan — ${new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}`
