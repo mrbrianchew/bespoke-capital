@@ -204,6 +204,8 @@ function ProtectionPage() {
   const [showShareModal, setShowShareModal] = useState(false)
   const [sharePerson, setSharePerson] = useState<string>('client')
 const [shareLink, setShareLink] = useState('')
+const [shareToken, setShareToken] = useState('')
+const [revoking, setRevoking] = useState(false)
 const [shareExpiry, setShareExpiry] = useState<'7d'|'30d'|'permanent'>('30d')
 const [sharePassword, setSharePassword] = useState('')
 const [shareHint, setShareHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
@@ -217,6 +219,7 @@ const [psSharePassword, setPsSharePassword] = useState('')
 const [psShareHint, setPsShareHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
 const [psShareGenerating, setPsShareGenerating] = useState(false)
 const [psShareLink, setPsShareLink] = useState('')
+const [psShareToken, setPsShareToken] = useState('')
 const [psShareCopied, setPsShareCopied] = useState(false)
 // Status overrides for payment summary (policyId → label override)
 const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
@@ -643,7 +646,7 @@ async function handleGenerateShare() {
     const encoder = new TextEncoder()
     const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(sharePassword.trim()))
     const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(36)).join('').slice(0,12)
+    const token = crypto.randomUUID().replace(/-/g, '')
     let expiresAt: string|null = null
     if (shareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
     if (shareExpiry==='30d') expiresAt = new Date(Date.now()+30*24*3600*1000).toISOString()
@@ -657,6 +660,7 @@ async function handleGenerateShare() {
     })
     if (error) throw error
     setShareLink(`${window.location.origin}/share/${token}`)
+    setShareToken(token)
   } catch(e) {
     console.error('Share failed:', e)
   } finally {
@@ -671,7 +675,7 @@ async function handleGeneratePaymentShare() {
     const encoder = new TextEncoder()
     const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(psSharePassword.trim()))
     const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(36)).join('').slice(0,12)
+    const token = crypto.randomUUID().replace(/-/g, '')
     let expiresAt: string|null = null
     if (psShareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
     if (psShareExpiry==='30d') expiresAt = new Date(Date.now()+30*24*3600*1000).toISOString()
@@ -688,10 +692,27 @@ async function handleGeneratePaymentShare() {
     })
     if (error) throw error
     setPsShareLink(`${window.location.origin}/share/${token}`)
+    setPsShareToken(token)
   } catch(e) {
     console.error('Payment share failed:', e)
   } finally {
     setPsShareGenerating(false)
+  }
+}
+
+// Deletes a share row so its link stops working immediately.
+async function revokeShare(token: string, clear: () => void) {
+  if (!token) return
+  if (!confirm('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
+  setRevoking(true)
+  try {
+    const { error } = await supabase.from('client_shares').delete().eq('token', token)
+    if (error) throw error
+    clear()
+  } catch(e) {
+    console.error('Revoke failed:', e)
+  } finally {
+    setRevoking(false)
   }
 }
 
@@ -1107,6 +1128,10 @@ async function handleGeneratePaymentShare() {
               style={{padding:'8px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:12}}>
               Generate Another Link
             </button>
+            <button onClick={()=>revokeShare(psShareToken,()=>{setPsShareLink('');setPsSharePassword('');setPsShareToken('')})} disabled={revoking}
+              style={{padding:'8px',background:'none',border:'1px solid var(--rouge)',color:'var(--rouge)',cursor:'pointer',fontSize:12}}>
+              {revoking?'Revoking…':'Revoke This Link'}
+            </button>
           </>
         )}
       </div>
@@ -1192,6 +1217,10 @@ async function handleGeneratePaymentShare() {
             <button onClick={()=>{setShareLink('');setSharePassword('')}}
               style={{padding:'8px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:12}}>
               Generate Another Link
+            </button>
+            <button onClick={()=>revokeShare(shareToken,()=>{setShareLink('');setSharePassword('');setShareToken('')})} disabled={revoking}
+              style={{padding:'8px',background:'none',border:'1px solid var(--rouge)',color:'var(--rouge)',cursor:'pointer',fontSize:12}}>
+              {revoking?'Revoking…':'Revoke This Link'}
             </button>
           </>
         )}
