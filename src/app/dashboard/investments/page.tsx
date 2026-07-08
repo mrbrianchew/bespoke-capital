@@ -1105,9 +1105,11 @@ export default function CapitalMandatePage() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const [{ data: { user } }, { data: clients }] = await Promise.all([
+      supabase.auth.getUser(),
+      supabase.from('clients').select('*').order('created_at', { ascending: false }),
+    ])
     if (!user) { router.push('/auth'); return }
-    const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
     if (!clients?.length) { setLoading(false); return }
     const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]
     setClient(c); clientRef.current = c
