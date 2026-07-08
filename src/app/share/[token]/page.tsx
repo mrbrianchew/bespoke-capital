@@ -506,14 +506,10 @@ export default function SharePage({ params }: { params: { token: string } }) {
   }
 
   async function handleUnlock(pw: string) {
-    const encoder = new TextEncoder()
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(pw))
-    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
-
     const res = await fetch(`/api/share-data/${params.token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passwordHash: hashHex }),
+      body: JSON.stringify({ password: pw }),
     })
     if (res.status === 401) { setWrongPw(true); setTimeout(() => setWrongPw(false), 100); return }
     if (!res.ok) { setStage('notfound'); return }
