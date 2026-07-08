@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { fv } from '@/lib/calc'
+import { saveFactFindingSection } from '@/lib/factFindingSave'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -3375,13 +3376,7 @@ export default function RecommendationsPage() {
     setSaving(true)
     try {
       const payload = { ...d, updatedAt: new Date().toISOString() }
-      const { data: rows } = await supabase.from('fact_finding').select('id')
-        .eq('client_id', clientId).eq('section', 'strategic_recommendations_v2')
-      if (rows && rows.length > 0) {
-        await supabase.from('fact_finding').update({ data: payload }).eq('id', rows[0].id)
-      } else {
-        await supabase.from('fact_finding').insert({ client_id: clientId, section: 'strategic_recommendations_v2', data: payload })
-      }
+      await saveFactFindingSection(supabase, clientId, 'strategic_recommendations_v2', () => payload)
       setSaveOk(true); setTimeout(() => setSaveOk(false), 2000)
     } catch (e) { console.error('Save failed', e) }
     setSaving(false)
