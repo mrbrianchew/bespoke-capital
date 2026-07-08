@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { fv } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
+import { getUsdSgdRate } from '@/lib/fxRate'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -3056,6 +3057,10 @@ export default function RecommendationsPage() {
   async function loadAll(id: string) {
     try {
       setError(null)
+      // Fired now so it resolves concurrently with the queries below —
+      // cached/timeout-guarded, so it won't stall this function if the
+      // FX API is slow or down (see getUsdSgdRate for details).
+      const fxRatePromise = getUsdSgdRate()
       const [
         { data: ffRows },
         { data: cats },
@@ -3117,11 +3122,10 @@ export default function RecommendationsPage() {
       } else {
         setAccumulationCompanies(companiesList)
       }
-      // Fetch live USD→SGD rate
+      // Live USD→SGD rate — fired in parallel above, awaited here
       try {
-        const fxRes = await fetch('https://api.frankfurter.app/latest?from=USD&to=SGD')
-        const fxData = await fxRes.json()
-        if (fxData?.rates?.SGD) setUsdRate(fxData.rates.SGD)
+        const rate = await fxRatePromise
+        if (rate) setUsdRate(rate)
       } catch { /* keep fallback */ }
 
 
