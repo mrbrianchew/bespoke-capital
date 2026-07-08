@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef, useMemo, useCallback, Suspense } fr
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
+import { saveFactFindingSection } from '@/lib/factFindingSave'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
 
@@ -449,27 +450,10 @@ try {
     if (!id) { console.warn('saveData: no clientId'); return }
     setSaving(true)
     try {
-     const { data: rows, error: fetchError } = await supabase
-  .from('fact_finding')
-  .select('id, data')
-  .eq('client_id', id)
-  .eq('section', 'protection_portfolio')
-
-      if (fetchError) throw fetchError
-
-      if (rows && rows.length > 0) {
-        const existingData = rows[0].data || {}
-        const { error: updateError } = await supabase
-          .from('fact_finding')
-          .update({ data: { ...existingData, risk_management: data } })
-          .eq('id', rows[0].id)
-        if (updateError) throw updateError
-      } else {
-        const { error: insertError } = await supabase
-          .from('fact_finding')
-.insert({ client_id: id, section: 'protection_portfolio', data: { risk_management: data } })
-        if (insertError) throw insertError
-      }
+      await saveFactFindingSection(supabase, id, 'protection_portfolio', existing => ({
+        ...existing,
+        risk_management: data,
+      }))
     } catch (error) {
       console.error('Risk management save error:', error)
       setSaveError(true)
