@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+
+const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
 interface UniCost {
   id: string
@@ -24,6 +27,8 @@ const DEFAULTS: UniCost[] = [
 ]
 
 export default function UniCostsAdminPage() {
+  const router = useRouter()
+  const [checking, setChecking] = useState(true)
   const [rows, setRows] = useState<UniCost[]>(DEFAULTS)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editVals, setEditVals] = useState<{ annual_tuition: number; annual_living: number; notes: string }>({ annual_tuition: 0, annual_living: 0, notes: '' })
@@ -31,6 +36,15 @@ export default function UniCostsAdminPage() {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState('')
   const supabase = createClient()
+
+  useEffect(() => {
+    async function check() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || user.id !== CREATOR_ID) { router.replace('/dashboard'); return }
+      setChecking(false)
+    }
+    check()
+  }, [])
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
@@ -48,7 +62,7 @@ export default function UniCostsAdminPage() {
     } catch { /* use defaults */ } finally { setLoading(false) }
   }, [supabase])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { if (!checking) loadData() }, [checking, loadData])
 
   const saveRow = async (id: string) => {
     setSaving(true)
@@ -86,6 +100,8 @@ export default function UniCostsAdminPage() {
   const th: React.CSSProperties = { padding: '11px 16px', textAlign: 'left', fontSize: '8.5px', fontFamily: 'DM Mono, monospace', letterSpacing: '0.12em', color: 'rgba(245,243,238,0.55)', textTransform: 'uppercase', fontWeight: 400, borderBottom: '1px solid rgba(200,169,110,0.15)', whiteSpace: 'nowrap' }
   const monoR: React.CSSProperties = { fontSize: '13px', fontFamily: 'DM Mono, monospace', color: '#1a1a1a', textAlign: 'right', display: 'block' }
   const inp: React.CSSProperties = { border: 'none', borderBottom: '1.5px solid #c8a96e', background: 'transparent', fontSize: '12px', fontFamily: 'DM Mono, monospace', color: '#1a1a1a', padding: '2px 0', outline: 'none', textAlign: 'right', width: '100%' }
+
+  if (checking) return null
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f5f3ee', fontFamily: 'Inter, sans-serif' }}>
