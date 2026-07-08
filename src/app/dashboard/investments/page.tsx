@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { Chart, registerables } from 'chart.js'
 import MonthInput from '@/components/MonthInput'
 Chart.register(...registerables)
@@ -1276,12 +1277,7 @@ export default function CapitalMandatePage() {
       chartSeries: chartSeriesRef.current || undefined,
       portfolioXIRR: portfolioXIRRRef.current,
     }
-    const { data: rows } = await supabase.from('fact_finding').select('id').eq('client_id', c.id).eq('section', 'capital_mandate')
-    if (rows && rows.length > 0) {
-      await supabase.from('fact_finding').update({ data: dataToSave }).eq('id', rows[0].id)
-    } else {
-      await supabase.from('fact_finding').insert({ client_id: c.id, section: 'capital_mandate', data: dataToSave })
-    }
+    await saveFactFindingSection(supabase, c.id, 'capital_mandate', () => dataToSave)
   }
 
   async function saveVehicle(item: FundingVehicle) {
