@@ -1157,23 +1157,27 @@ function FactFindingPage() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const [
+      { data: { user } },
+      { data: cfgRow },
+      { data: clients },
+    ] = await Promise.all([
+      supabase.auth.getUser(),
+      supabase.from('config').select('value').eq('key', 'cpf_rates').maybeSingle(),
+      supabase.from('clients').select('*').order('created_at', { ascending: false }),
+    ])
     if (!user) { router.push('/auth'); return }
-    const { data: cfgRow } = await supabase.from('config').select('value').eq('key', 'cpf_rates').maybeSingle()
     if (cfgRow?.value) setCpfConfig(cfgRow.value as CpfConfig)
-    const { data: clients } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
     if (!clients || clients.length === 0) { setLoading(false); return }
     const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]; setClient(c)
-    const { data: fam } = await supabase.from('family_members').select('*').eq('client_id', c.id)
+
+    const [{ data: fam }, { data: financialsRow }] = await Promise.all([
+      supabase.from('family_members').select('*').eq('client_id', c.id),
+      // Only load the 'financials' section data
+      supabase.from('fact_finding').select('data').eq('client_id', c.id).eq('section', 'financials').maybeSingle(),
+    ])
     const sp = fam?.find((f: FamilyMember) => f.relationship === 'Spouse')
     if (sp) setSpouse(sp)
- // Only load the 'financials' section data
-const { data: financialsRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', c.id)
-  .eq('section', 'financials')
-  .maybeSingle()
 
 if (financialsRow?.data) {
   console.log('Loaded properties from Supabase:', financialsRow.data.properties)
