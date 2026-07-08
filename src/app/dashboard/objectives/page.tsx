@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
@@ -825,16 +826,6 @@ if (clientData) {
     person: string; benefitTerm: string
   }>) {
     if (!clientId) return
-    // Load current portfolio
-    const { data: rows } = await supabase
-      .from('fact_finding')
-      .select('data')
-      .eq('client_id', clientId)
-      .eq('section', 'protection_portfolio')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-    const existing = rows?.[0]?.data ?? {}
-    const existingPolicies: any[] = existing?.risk_management?.policies ?? []
     const resolvedPerson = (() => {
       const raw = policy.person ?? 'client'
       if (raw === 'client' || raw === 'spouse') return raw
@@ -861,11 +852,13 @@ if (clientData) {
       ...policyRest,
       person: resolvedPerson,
     }
-    const updatedPolicies = [...existingPolicies, newPolicy]
-    await supabase.from('fact_finding').upsert(
-      { client_id: clientId, section: 'protection_portfolio', data: { ...existing, risk_management: { ...(existing.risk_management ?? {}), policies: updatedPolicies } }, updated_at: new Date().toISOString() },
-      { onConflict: 'client_id,section' }
-    )
+    await saveFactFindingSection(supabase, clientId, 'protection_portfolio', existing => ({
+      ...existing,
+      risk_management: {
+        ...(existing.risk_management ?? {}),
+        policies: [...(existing.risk_management?.policies ?? []), newPolicy],
+      },
+    }))
     return newPolicy.id
   }
 
