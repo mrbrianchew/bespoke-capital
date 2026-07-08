@@ -1,15 +1,25 @@
 'use client'
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
 import { ExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import { CapitalFundSnapshot } from '@/lib/capitalFundSnapshot'
 import { ActionPlanSnapshot } from '@/lib/actionPlanSnapshot'
 import OverviewDisplay from './OverviewDisplay'
-import ProtectionDisplay from './ProtectionDisplay'
-import ExecutiveWealthSummaryDisplay from './ExecutiveWealthSummaryDisplay'
-import CapitalFundDisplay from './CapitalFundDisplay'
-import ActionPlanDisplay from './ActionPlanDisplay'
+
+// These tabs are loaded on demand — only one tab is ever visible at a
+// time, so there's no reason to ship the other four (plus chart.js, in
+// the capital fund tab's case) in the initial page bundle. The Overview
+// tab stays a normal import since it's the default active tab and needs
+// to be ready immediately.
+const TabLoading = () => (
+  <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink3)', fontSize: 13 }}>Loading…</div>
+)
+const ProtectionDisplay = dynamic(() => import('./ProtectionDisplay'), { loading: TabLoading, ssr: false })
+const ExecutiveWealthSummaryDisplay = dynamic(() => import('./ExecutiveWealthSummaryDisplay'), { loading: TabLoading, ssr: false })
+const CapitalFundDisplay = dynamic(() => import('./CapitalFundDisplay'), { loading: TabLoading, ssr: false })
+const ActionPlanDisplay = dynamic(() => import('./ActionPlanDisplay'), { loading: TabLoading, ssr: false })
 
 export interface PlanSnapshot {
   clientName: string
