@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import DateInput from '@/components/DateInput'
 import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
+import { saveFactFindingSection } from '@/lib/factFindingSave'
 
 interface OtherIncomeItem { label: string; amount: number }
 interface CustomAssetItem { label: string; amount: number; amount2?: number; notes?: string }
@@ -1232,41 +1233,16 @@ data.annual_surplus = annualSurplus
     
     // ADDED: Check what properties we're saving
     console.log('Saving properties:', data.properties)
-    
-    const { data: existing } = await supabase
-      .from('fact_finding')
-      .select('id')
-      .eq('client_id', client.id)
-      .eq('section', 'financials')
-      .maybeSingle()
-    
-    let error = null
-    
-    if (existing) {
-      const { error: updateError } = await supabase
-        .from('fact_finding')
-        .update({ 
-          data: data, 
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', existing.id)
-      error = updateError
-      // ADDED: Check if update worked
-      console.log('Update result:', error ? 'Failed' : 'Success')
-    } else {
-      const { error: insertError } = await supabase
-        .from('fact_finding')
-        .insert({ 
-          client_id: client.id, 
-          section: 'financials', 
-          data: data, 
-          updated_at: new Date().toISOString() 
-        })
-      error = insertError
-      // ADDED: Check if insert worked
-      console.log('Insert result:', error ? 'Failed' : 'Success')
+
+    let error: any = null
+    try {
+      await saveFactFindingSection(supabase, client.id, 'financials', () => data)
+      console.log('Save result: Success')
+    } catch (saveError) {
+      error = saveError
+      console.log('Save result: Failed', saveError)
     }
-    
+
     setSaving(false)
     
     if (error) {
