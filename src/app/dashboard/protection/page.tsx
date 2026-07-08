@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
+import { getUsdSgdRate } from '@/lib/fxRate'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
 
@@ -1991,9 +1992,7 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   async function fetchFxRate() {
     setFxLoading(true)
     try {
-      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=SGD')
-      const data = await res.json()
-      const rate = data?.rates?.SGD
+      const rate = await getUsdSgdRate()
       if (rate) { f('fxRate', Math.round(rate * 10000) / 10000); setFxFetched(true) }
     } catch { /* silent — user can type manually */ }
     finally { setFxLoading(false) }
