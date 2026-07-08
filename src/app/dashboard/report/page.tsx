@@ -181,9 +181,13 @@ export default function ReportPage() {
     setSaving(true)
     setError('')
     try {
-      const encoder = new TextEncoder()
-      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password.trim()))
-      const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+      const hashRes = await fetch('/api/hash-share-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: password.trim() }),
+      })
+      if (!hashRes.ok) throw new Error('Password hashing failed')
+      const { hash: hashHex } = await hashRes.json()
       const token = crypto.randomUUID().replace(/-/g, '')
       const { data: { user } } = await supabase.auth.getUser()
 
