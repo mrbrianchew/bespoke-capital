@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { hashSharePassword, verifySharePassword } from '@/lib/sharePassword'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,7 +48,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
     return NextResponse.json({ error: 'too_many_attempts' }, { status: 429 })
   }
 
-  const { passwordHash } = await req.json()
+  const { password } = await req.json()
 
   const { data: share } = await supabaseAdmin
     .from('client_shares').select('*').eq('token', params.token).maybeSingle()
@@ -55,8 +56,14 @@ export async function POST(req: Request, { params }: { params: { token: string }
   if (share) {
     if (share.expires_at && new Date(share.expires_at) < new Date())
       return NextResponse.json({ error: 'expired' }, { status: 410 })
-    if (passwordHash !== share.password_hash)
-      return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
+    const { ok, legacy } = await verifySharePassword(password, share.password_hash)
+    if (!ok) return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
+    if (legacy) {
+      // Now that we have the plaintext, upgrade this row to a bcrypt hash
+      // so future verifications no longer rely on the weaker legacy format.
+      const upgraded = await hashSharePassword(password)
+      await supabaseAdmin.from('client_shares').update({ password_hash: upgraded }).eq('token', params.token)
+    }
 
     const { data: client } = await supabaseAdmin
       .from('clients').select('name,age,dob').eq('id', share.client_id).maybeSingle()
@@ -124,8 +131,12 @@ export async function POST(req: Request, { params }: { params: { token: string }
 
   if (!plan) return NextResponse.json({ error: 'not_found' }, { status: 404 })
   if (plan.status === 'archived') return NextResponse.json({ error: 'not_found' }, { status: 404 })
-  if (passwordHash !== plan.password_hash)
-    return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
+  const { ok, legacy } = await verifySharePassword(password, plan.password_hash)
+  if (!ok) return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
+  if (legacy) {
+    const upgraded = await hashSharePassword(password)
+    await supabaseAdmin.from('financial_plans').update({ password_hash: upgraded }).eq('share_token', params.token)
+  }
 
   return NextResponse.json({
     shareType: 'financial_plan',
