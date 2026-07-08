@@ -643,9 +643,13 @@ async function handleGenerateShare() {
   if (!sharePassword.trim()) return
   setShareGenerating(true)
   try {
-    const encoder = new TextEncoder()
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(sharePassword.trim()))
-    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
+    const hashRes = await fetch('/api/hash-share-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: sharePassword.trim() }),
+    })
+    if (!hashRes.ok) throw new Error('Password hashing failed')
+    const { hash: hashHex } = await hashRes.json()
     const token = crypto.randomUUID().replace(/-/g, '')
     let expiresAt: string|null = null
     if (shareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
@@ -672,9 +676,13 @@ async function handleGeneratePaymentShare() {
   if (!psSharePassword.trim() || psShareIncluded.length === 0) return
   setPsShareGenerating(true)
   try {
-    const encoder = new TextEncoder()
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(psSharePassword.trim()))
-    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('')
+    const hashRes = await fetch('/api/hash-share-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: psSharePassword.trim() }),
+    })
+    if (!hashRes.ok) throw new Error('Password hashing failed')
+    const { hash: hashHex } = await hashRes.json()
     const token = crypto.randomUUID().replace(/-/g, '')
     let expiresAt: string|null = null
     if (psShareExpiry==='7d') expiresAt = new Date(Date.now()+7*24*3600*1000).toISOString()
