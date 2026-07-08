@@ -591,12 +591,26 @@ const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   console.log('🚀 loadData started for client ID:', id)
   setLoading(true)
   // Load BOTH financials and protection_needs data
-  const { data: ffRows } = await supabase
-    .from('fact_finding')
-    .select('*')
-    .eq('client_id', id)
-  .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement', 'education', 'estate'])
-    
+  const [
+    { data: ffRows },
+    { data: clientData },
+    { data: familyData },
+    { data: comps },
+    { data: prods },
+    { data: cats },
+  ] = await Promise.all([
+    supabase
+      .from('fact_finding')
+      .select('*')
+      .eq('client_id', id)
+      .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement', 'education', 'estate']),
+    supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
+    supabase.from('family_members').select('*').eq('client_id', id),
+    supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
+    supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
+    supabase.from('ins_categories').select('id, code').order('sort_order'),
+  ])
+
   if (ffRows && ffRows.length > 0) {
   const merged: FactFinding = { client_id: id }
   
@@ -679,21 +693,12 @@ setP(prev => ({
 }))
   }
     // Load client name and DOB
-const { data: clientData } = await supabase
-  .from('clients')
-  .select('name, dob')
-  .eq('id', id)
-  .maybeSingle()
 if (clientData) {
   setClientName(clientData.name || 'Client')
   setClientDOB(clientData.dob)
 }
     // Load family members - spouse name + children
-   const { data: familyData } = await supabase
-  .from('family_members')
-  .select('*')
-  .eq('client_id', id)
-    if (familyData) {
+   if (familyData) {
   const spouse = familyData.find((f: any) => f.relationship === 'Spouse')
   if (spouse) {
   setSpouseName(spouse.name || 'Spouse')
@@ -707,11 +712,6 @@ if (clientData) {
 }
 
     // Load insurance reference data
-    const [{ data: comps }, { data: prods }, { data: cats }] = await Promise.all([
-      supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
-      supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
-      supabase.from('ins_categories').select('id, code').order('sort_order'),
-    ])
     if (comps) setInsCompanies(comps)
     if (prods) setInsProducts(prods)
     if (cats)  setInsCategories(cats)
