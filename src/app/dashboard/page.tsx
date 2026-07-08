@@ -86,12 +86,12 @@ export default function ExecutiveSummaryPage() {
 
   async function load() {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/auth'); return }
-
     const savedId = localStorage.getItem('selectedClientId')
-    const { data: clients } = await supabase
-      .from('clients').select('*').order('created_at', { ascending: false })
+    const [{ data: { user } }, { data: clients }] = await Promise.all([
+      supabase.auth.getUser(),
+      supabase.from('clients').select('*').order('created_at', { ascending: false }),
+    ])
+    if (!user) { router.push('/auth'); return }
     if (!clients || clients.length === 0) { setLoading(false); return }
 
     const c = clients.find((x: any) => x.id === savedId) || clients[0]
