@@ -260,68 +260,44 @@ const [hiddenPolicies, setHiddenPolicies] = useState<Record<string, boolean>>({}
     if (comps)  setRefCompanies(comps)
     if (prods)  setRefProducts(prods)
 
-    // Client info
-    const { data: client } = await supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle()
+    // Client info + all fact_finding sections needed for this page — none
+    // of these depend on each other's results, so fetch them together
+    // instead of one at a time.
+    const [
+      { data: client },
+      { data: financialsRow },
+      { data: portfolioRow },
+      { data: needsRow },
+      { data: educationRow },
+      { data: retirementRow },
+      { data: objectivesRow },
+      { data: accumulationRow },
+    ] = await Promise.all([
+      supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle(),
+      // Get financials data (income, expenses, assets, properties)
+      supabase
+        .from('fact_finding')
+        .select('data')
+        .eq('client_id', id)
+        .eq('section', 'financials')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .then(r => ({ data: r.data?.[0] ?? null, error: r.error })),
+      // Get protection portfolio (existing policies)
+      supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'protection_portfolio').maybeSingle(),
+      supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'protection_needs').maybeSingle(),
+      supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'education').maybeSingle(),
+      supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'retirement').maybeSingle(),
+      // Get objectives section — needed to read couple/individual mode
+      supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'objectives').maybeSingle(),
+      supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'accumulation').maybeSingle(),
+    ])
     if (client) {
       setClientName(client.name)
       if (client.dob) setClientAge(new Date().getFullYear() - new Date(client.dob).getFullYear())
       else if (client.age) setClientAge(Number(client.age))
     }
 
-// Get financials data (income, expenses, assets, properties)
-const { data: financialsRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'financials')
-  .order('updated_at', { ascending: false })
-  .limit(1)
-  .then(r => ({ data: r.data?.[0] ?? null, error: r.error }))
-
-// Get protection portfolio (existing policies)
-// Get protection portfolio (existing policies)
-const { data: portfolioRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'protection_portfolio')
-  .maybeSingle()
-
-const { data: needsRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'protection_needs')
-  .maybeSingle()
-
-const { data: educationRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'education')
-  .maybeSingle()
-
-const { data: retirementRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'retirement')
-  .maybeSingle()
-
-// Get objectives section — needed to read couple/individual mode
-const { data: objectivesRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'objectives')
-  .maybeSingle()
-
-const { data: accumulationRow } = await supabase
-  .from('fact_finding')
-  .select('data')
-  .eq('client_id', id)
-  .eq('section', 'accumulation')
-  .maybeSingle()
 
 // Inside loadAll function, after merging data:
 const retData = (retirementRow?.data as any)?.ret || retirementRow?.data || {}
