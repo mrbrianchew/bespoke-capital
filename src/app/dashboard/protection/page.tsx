@@ -970,6 +970,15 @@ async function revokeShare(token: string, clear: () => void) {
             if (next[id]) delete next[id]; else next[id] = true
             return next
           })}
+          onReorder={(draggedId, targetId) => {
+            const arr = [...rmData.policies]
+            const fromIdx = arr.findIndex(p => p.id === draggedId)
+            const toIdx = arr.findIndex(p => p.id === targetId)
+            if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return
+            const [moved] = arr.splice(fromIdx, 1)
+            arr.splice(toIdx, 0, moved)
+            updateRm({ ...rmData, policies: arr })
+          }}
           onShare={() => {
             // Pre-populate included persons with all unique resolved person keys
             const las = Array.from(new Set(
@@ -2750,7 +2759,7 @@ const PAYMENT_STATUS_OPTS = [
   { label: 'Single Premium',   color: '#888',    bg: '#F5F5F5' },
 ]
 
-function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOverrides, onStatusOverride, hiddenPolicies, onToggleHidden, onShare }: {
+function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOverrides, onStatusOverride, hiddenPolicies, onToggleHidden, onShare, onReorder }: {
   allPolicies: Policy[]
   clientName: string
   spouseName: string
@@ -2760,10 +2769,13 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
   hiddenPolicies: Record<string, boolean>
   onToggleHidden: (id: string) => void
   onShare: () => void
+  onReorder: (draggedId: string, targetId: string) => void
 }) {
   const COL_CARD_BG = '#FFFFFF'
   const COL_BORDER  = 'rgba(0,0,0,0.06)'
   const [editingStatusId, setEditingStatusId] = useState<string|null>(null)
+  const [dragId, setDragId] = useState<string|null>(null)
+  const [dragOverId, setDragOverId] = useState<string|null>(null)
 
   // Build display name for a resolved person key, falling back to the policy's frozen
   // lifeAssured snapshot only if the key no longer resolves against the current family list
@@ -2866,6 +2878,7 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
                   <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                     <thead>
                       <tr>
+                        <th style={headStyle(28)}></th>
                         <th style={headStyle(110)}>Policy No</th>
                         <th style={headStyle()}>Product Name</th>
                         <th style={headStyle(110)}>Renewal Date</th>
@@ -2890,7 +2903,7 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
                         if (isHidden) {
                           return (
                             <tr key={p.id} style={{ background: '#F8F8F8' }}>
-                              <td colSpan={8} style={{ padding: '7px 12px', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                              <td colSpan={9} style={{ padding: '7px 12px', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                   <span style={{ fontSize: 11, color: '#BBB', fontStyle: 'italic', flex: 1 }}>
                                     {p.productName || p.companyName || '—'}{p.policyNo ? ` · ${p.policyNo}` : ''} — hidden from share
@@ -2906,7 +2919,24 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
                         }
 
                         return (
-                          <tr key={p.id} style={{ background: rowBg }}>
+                          <tr key={p.id}
+                            draggable
+                            onDragStart={() => setDragId(p.id)}
+                            onDragOver={(e) => { e.preventDefault(); if (dragOverId !== p.id) setDragOverId(p.id) }}
+                            onDragLeave={() => setDragOverId(prev => prev === p.id ? null : prev)}
+                            onDrop={(e) => {
+                              e.preventDefault()
+                              if (dragId && dragId !== p.id) onReorder(dragId, p.id)
+                              setDragId(null); setDragOverId(null)
+                            }}
+                            onDragEnd={() => { setDragId(null); setDragOverId(null) }}
+                            style={{
+                              background: dragId === p.id ? '#F3EFE6' : rowBg,
+                              boxShadow: dragOverId === p.id && dragId !== p.id ? 'inset 0 2px 0 0 #c8a96e' : undefined,
+                            }}>
+                            <td style={{ ...colStyle(28), cursor: 'grab', color: '#CCC', fontSize: 13, textAlign: 'center' }} title="Drag to reorder">
+                              ⋮⋮
+                            </td>
                             <td style={{ ...colStyle(110), fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#555' }}>
                               {p.policyNo || '—'}
                             </td>
