@@ -33,6 +33,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [activeClient, setActiveClient] = useState<any>(null)
   const [showClientDrop, setShowClientDrop] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
+  const [clientSearch, setClientSearch] = useState('')
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -45,7 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setUser(user)
     const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).maybeSingle()
     if (adv) setAdvisor(adv)
-    const { data: cls } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
+    const { data: cls } = await supabase.from('clients').select('*').order('name', { ascending: true })
     if (cls) { setClients(cls); if (cls.length > 0) { const savedId = localStorage.getItem('selectedClientId'); const match = cls.find((c: any) => c.id === savedId); const selected = match || cls[0]; setActiveClient(selected); localStorage.setItem('selectedClientId', selected.id) } }
   }
 
@@ -75,12 +76,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const initials = (name: string) => name?.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
   const activeTab = NAV.find(n => pathname === n.href || (n.id !== 'overview' && pathname.startsWith(n.href)))?.id || 'overview'
+  const filteredClients = clients
+    .filter(c => c.name?.toLowerCase().includes(clientSearch.trim().toLowerCase()))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--cream)' }}>
       <aside className="sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0" style={{ width: 240, background: 'white', borderRight: '1px solid var(--line)' }}>
         <div className="px-6 py-7" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>Bespoke Heartwork</div>
+          <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>{advisor?.firm || 'Bespoke Heartwork'}</div>
 <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
         </div>
         <div className="relative px-3 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -101,9 +105,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ) : (<span className="text-sm" style={{ color: 'var(--ink3)' }}>Select client…</span>)}
           </button>
           {showClientDrop && (
-            <div className="absolute left-3 right-3 top-full mt-1 z-50 overflow-hidden shadow-lg" style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 6 }}>
-              {clients.map(c => (
-                <button key={c.id} onClick={() => { setActiveClient(c); localStorage.setItem('selectedClientId', c.id); window.location.reload(); setShowClientDrop(false) }}
+            <div className="absolute left-3 right-3 top-full mt-1 z-50 shadow-lg" style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 6 }}>
+              <div className="px-2 py-2" style={{ borderBottom: '1px solid var(--line)' }}>
+                <input autoFocus type="text" value={clientSearch} onChange={e => setClientSearch(e.target.value)}
+                  placeholder="Search clients…" className="w-full px-2.5 py-1.5 text-sm outline-none"
+                  style={{ background: 'var(--cream)', border: '1px solid var(--line)', borderRadius: 4, color: 'var(--ink)' }} />
+              </div>
+              <div style={{ maxHeight: 168, overflowY: 'auto' }}>
+              {filteredClients.length === 0 && (
+                <div className="px-3 py-3 text-sm" style={{ color: 'var(--ink3)' }}>No clients found</div>
+              )}
+              {filteredClients.map(c => (
+                <button key={c.id} onClick={() => { setActiveClient(c); localStorage.setItem('selectedClientId', c.id); window.location.reload(); setShowClientDrop(false); setClientSearch('') }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors"
                   style={{ background: activeClient?.id === c.id ? 'var(--gold-l)' : 'transparent', borderLeft: activeClient?.id === c.id ? '2px solid var(--gold)' : '2px solid transparent' }}
                   onMouseEnter={e => { if (activeClient?.id !== c.id) (e.currentTarget as HTMLElement).style.background = 'var(--cream)' }}
@@ -116,8 +129,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   {activeClient?.id === c.id && <span className="ml-auto text-xs" style={{ color: 'var(--gold)' }}>✓</span>}
                 </button>
               ))}
+              </div>
               <div style={{ borderTop: '1px solid var(--line)', padding: '8px' }}>
-                <button onClick={() => { setShowClientModal(true); setShowClientDrop(false) }}
+                <button onClick={() => { setShowClientModal(true); setShowClientDrop(false); setClientSearch('') }}
                   className="w-full text-left text-xs px-2 py-2 transition-colors" style={{ color: 'var(--ink3)' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
@@ -155,7 +169,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto" style={{ background: 'var(--cream)' }}>{children}</main>
-      {showClientDrop && (<div className="fixed inset-0 z-40" onClick={() => setShowClientDrop(false)} />)}
+      {showClientDrop && (<div className="fixed inset-0 z-40" onClick={() => { setShowClientDrop(false); setClientSearch('') }} />)}
       {showClientModal && (
         <AddClientModal
           userId={user?.id}
