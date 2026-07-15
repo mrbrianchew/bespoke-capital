@@ -27,7 +27,11 @@ export default function AuthPage() {
       const { data: adv } = await supabase.from('advisors').select('status').eq('id', data.user.id).maybeSingle()
       if (!adv || adv.status !== 'approved') {
         await supabase.auth.signOut()
-        setError('Your account is awaiting approval. You will be notified once approved.')
+        setError(
+          adv?.status === 'suspended'
+            ? 'Your account has been suspended. Contact your administrator for access.'
+            : 'Your account is awaiting approval. You will be notified once approved.'
+        )
         setLoading(false)
         return
       }
