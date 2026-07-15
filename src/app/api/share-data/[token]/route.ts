@@ -23,21 +23,36 @@ function tooManyAttempts(key: string): boolean {
 // GET — returns only hint + expiry status (no auth required, no sensitive data)
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const { data: share } = await supabaseAdmin
-    .from('client_shares').select('password_hint,expires_at').eq('token', params.token).maybeSingle()
+    .from('client_shares').select('password_hint,expires_at,client_id').eq('token', params.token).maybeSingle()
   if (share) {
     const expired = share.expires_at ? new Date(share.expires_at) < new Date() : false
-    return NextResponse.json({ hint: share.password_hint || '', expired })
+    const firm = await resolveFirmForClient(share.client_id)
+    return NextResponse.json({ hint: share.password_hint || '', expired, firm })
   }
 
   // Not a client_shares token — check financial_plans
   const { data: plan } = await supabaseAdmin
-    .from('financial_plans').select('password_hint,status').eq('share_token', params.token).maybeSingle()
+    .from('financial_plans').select('password_hint,status,created_by').eq('share_token', params.token).maybeSingle()
   if (plan) {
     if (plan.status === 'archived') return NextResponse.json({ error: 'not_found' }, { status: 404 })
-    return NextResponse.json({ hint: plan.password_hint || '', expired: false })
+    const firm = await resolveFirmForAdvisor(plan.created_by)
+    return NextResponse.json({ hint: plan.password_hint || '', expired: false, firm })
   }
 
   return NextResponse.json({ error: 'not_found' }, { status: 404 })
+}
+
+// Resolves an advisor's firm name via a client's advisor_id. Never throws —
+// falls back to null so the frontend can apply its own default branding.
+async function resolveFirmForClient(clientId: string | null | undefined): Promise<string | null> {
+  if (!clientId) return null
+  const { data: client } = await supabaseAdmin.from('clients').select('advisor_id').eq('id', clientId).maybeSingle()
+  return resolveFirmForAdvisor(client?.advisor_id)
+}
+async function resolveFirmForAdvisor(advisorId: string | null | undefined): Promise<string | null> {
+  if (!advisorId) return null
+  const { data: advisor } = await supabaseAdmin.from('advisors').select('firm').eq('id', advisorId).maybeSingle()
+  return advisor?.firm || null
 }
 
 // POST — verifies password, returns client + policies (+ share type metadata)
@@ -66,7 +81,11 @@ export async function POST(req: Request, { params }: { params: { token: string }
     }
 
     const { data: client } = await supabaseAdmin
-      .from('clients').select('name,age,dob').eq('id', share.client_id).maybeSingle()
+      .from('clients').select('name,age,dob,advisor_id').eq('id', share.client_id).maybeSingle()
+
+    const { data: advisor } = client?.advisor_id
+      ? await supabaseAdmin.from('advisors').select('name,firm').eq('id', client.advisor_id).maybeSingle()
+      : { data: null }
 
     const { data: row } = await supabaseAdmin
       .from('fact_finding').select('data')
@@ -122,6 +141,8 @@ export async function POST(req: Request, { params }: { params: { token: string }
       includedPersons,
       personLabels,
       statusOverrides: shareType === 'payment_summary' ? statusOverrides : undefined,
+      advisorName: advisor?.name || null,
+      firmName: advisor?.firm || null,
     })
   }
 
@@ -138,9 +159,15 @@ export async function POST(req: Request, { params }: { params: { token: string }
     await supabaseAdmin.from('financial_plans').update({ password_hash: upgraded }).eq('share_token', params.token)
   }
 
+  const { data: planAdvisor } = plan.created_by
+    ? await supabaseAdmin.from('advisors').select('name,firm').eq('id', plan.created_by).maybeSingle()
+    : { data: null }
+
   return NextResponse.json({
     shareType: 'financial_plan',
     label: plan.label,
     snapshot: plan.snapshot_data,
+    advisorName: planAdvisor?.name || null,
+    firmName: planAdvisor?.firm || null,
   })
 }
