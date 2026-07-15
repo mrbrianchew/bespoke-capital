@@ -76,7 +76,7 @@ export default function AuthPage() {
                   <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="e.g. Sarah Tan" className="w-full px-4 py-3 text-sm outline-none" style={{ background: 'white', border: '1px solid var(--line)', color: 'var(--ink)' }} />
                 </div>
                 <div>
-                  <label className="block text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Company / Firm</label>
+                  <label className="block text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Firm/Team Name</label>
                   <input type="text" value={firm} onChange={e => setFirm(e.target.value)} placeholder="e.g. Financial Planning Advisory" className="w-full px-4 py-3 text-sm outline-none" style={{ background: 'white', border: '1px solid var(--line)', color: 'var(--ink)' }} />
                 </div>
               </>
