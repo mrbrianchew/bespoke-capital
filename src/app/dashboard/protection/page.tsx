@@ -3114,7 +3114,9 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               textTransform: 'uppercase',
               color: '#8B8B8B',
               marginBottom: 10,
-              fontWeight: 500
+              fontWeight: 500,
+              lineHeight: 1.4,
+              minHeight: 28
             }}>{kpi.label}</div>
             <div style={{
               fontFamily: 'system-ui, -apple-system, sans-serif',
