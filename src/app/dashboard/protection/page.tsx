@@ -3044,7 +3044,12 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   const totTPD   = lifePols.reduce((s,p)=>s+_toSGD((p.baseTPD||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totAdvCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseAdvCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
   const totEarCI = lifePols.reduce((s,p)=>s+_toSGD((p.baseEarlyCI||0)*(p.multiplier>1?p.multiplier:1),p),0)
-  const totPrem  = policies.reduce((s,p)=>s+_annualPrem(p),0)
+  // Split the single lumped premium figure into "Annual Premium" (protection —
+  // Medical, LTC, General, Core Protection) and "Annual Savings/Investments"
+  // (Wealth Accumulation / Endowment), same _annualPrem logic, just filtered
+  // by category so the two don't get shown as one intimidating number.
+  const totPremProtection = policies.filter(p=>p.categoryCode!=='endowment').reduce((s,p)=>s+_annualPrem(p),0)
+  const totSavings         = policies.filter(p=>p.categoryCode==='endowment').reduce((s,p)=>s+_annualPrem(p),0)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
   const W=560, H=170, PL=50, PR=12, PT=20, PB=18
@@ -3074,13 +3079,14 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
     <div style={{marginBottom: 24}}>
       
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap: 12, marginBottom: 16}}>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap: 12, marginBottom: 16}}>
         {[
           {label:'Death Benefit', value:totDeath, accent:COL_D},
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Total Annual Premium', value:totPrem, accent:'#A8834A', highlight: true, isPremium: true},
+          {label:'Annual Premium', value:totPremProtection, accent:'#A8834A', highlight: true, isPremium: true},
+          {label:'Annual Savings/Investments', value:totSavings, accent:'#2D5A4E', highlight: true, isPremium: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
             background: COL_CARD_BG,
