@@ -1674,16 +1674,37 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
     }
   }
   
-  // Whether a policy currently has premium being paid (excludes Paid-up/Premium Holiday)
-  function isPaying(p: Policy) {
-    return p.status !== 'Paid-up' && p.status !== 'Premium Holiday'
-  }
-  
   // Helper to convert benefit to SGD for subtotal
   function toSGDValue(val: number, p: Policy) {
     return p.isUSD ? val * (p.fxRate || 1.35) : val
   }
   
+  // Annualized Medisave/Cash — same frequency/status logic as _sub() above,
+  // split by column instead of combined, so Medical/LTC/General subtotals
+  // annualize the same way Core Protection's premium subtotal already does.
+  function _subMedisave(p: Policy) {
+    if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
+    const ms = p.premiumMedisave || 0
+    switch (p.frequency) {
+      case 'Semi-Annual': return ms*2
+      case 'Quarterly':   return ms*4
+      case 'Monthly':     return ms*12
+      case 'Single':      return 0
+      default:            return ms
+    }
+  }
+  function _subCash(p: Policy) {
+    if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
+    const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+    switch (p.frequency) {
+      case 'Semi-Annual': return cash*2
+      case 'Quarterly':   return cash*4
+      case 'Monthly':     return cash*12
+      case 'Single':      return 0
+      default:            return cash
+    }
+  }
+
   const sub = policies.reduce((s,p)=>s+_sub(p),0)
 
   // Detect category — all policies in this table share the same category
@@ -1763,10 +1784,10 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmtPremium(policies.filter(isPaying).reduce((s,p)=>s+(p.premiumMedisave||0),0))}
+              {fmtPremium(policies.reduce((s,p)=>s+_subMedisave(p),0))}
             </div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmtPremium(policies.filter(isPaying).reduce((s,p)=>s+(p.premiumCash||0),0))}
+              {fmtPremium(policies.reduce((s,p)=>s+_subCash(p),0))}
             </div>
             <div />
             <div />
@@ -1776,7 +1797,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
-              {fmtPremium(policies.filter(isPaying).reduce((s,p)=>s+(p.premiumCash||0),0))}
+              {fmtPremium(policies.reduce((s,p)=>s+_subCash(p),0))}
             </div>
             <div />
             <div />
