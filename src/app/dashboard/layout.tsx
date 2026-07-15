@@ -161,11 +161,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}
         <div className="px-6 py-4" style={{ borderTop: '1px solid var(--line)' }}>
           <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>{advisor?.name || user?.email}</div>
-          <button onClick={signOut} className="text-xs transition-colors" style={{ color: 'var(--ink3)' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--rouge)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard/profile" className="text-xs transition-colors"
+              style={{ color: pathname === '/dashboard/profile' ? 'var(--gold-tag)' : 'var(--ink3)' }}
+              onMouseEnter={e => { if (pathname !== '/dashboard/profile') (e.currentTarget as HTMLElement).style.color = 'var(--gold)' }}
+              onMouseLeave={e => { if (pathname !== '/dashboard/profile') (e.currentTarget as HTMLElement).style.color = 'var(--ink3)' }}>
+              My Profile
+            </Link>
+            <button onClick={signOut} className="text-xs transition-colors" style={{ color: 'var(--ink3)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--rouge)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto" style={{ background: 'var(--cream)' }}>{children}</main>
