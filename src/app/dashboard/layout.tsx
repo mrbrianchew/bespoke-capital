@@ -30,6 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [user, setUser] = useState<any>(null)
   const [advisor, setAdvisor] = useState<any>(null)
   const [clients, setClients] = useState<any[]>([])
+  const [spouseNames, setSpouseNames] = useState<Record<string, string>>({})
   const [activeClient, setActiveClient] = useState<any>(null)
   const [showClientDrop, setShowClientDrop] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
@@ -47,7 +48,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).maybeSingle()
     if (adv) setAdvisor(adv)
     const { data: cls } = await supabase.from('clients').select('*').order('name', { ascending: true })
-    if (cls) { setClients(cls); if (cls.length > 0) { const savedId = localStorage.getItem('selectedClientId'); const match = cls.find((c: any) => c.id === savedId); const selected = match || cls[0]; setActiveClient(selected); localStorage.setItem('selectedClientId', selected.id) } }
+    if (cls) {
+      setClients(cls)
+      if (cls.length > 0) { const savedId = localStorage.getItem('selectedClientId'); const match = cls.find((c: any) => c.id === savedId); const selected = match || cls[0]; setActiveClient(selected); localStorage.setItem('selectedClientId', selected.id) }
+      const clientIds = cls.map((c: any) => c.id)
+      if (clientIds.length > 0) {
+        const { data: spouses } = await supabase.from('family_members').select('client_id, name').eq('relationship', 'Spouse').in('client_id', clientIds)
+        if (spouses) {
+          const map: Record<string, string> = {}
+          spouses.forEach((s: any) => { if (s.name) map[s.client_id] = s.name })
+          setSpouseNames(map)
+        }
+      }
+    }
   }
 
   async function deleteClient(clientId: string) {
@@ -77,7 +90,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const initials = (name: string) => name?.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
   const activeTab = NAV.find(n => pathname === n.href || (n.id !== 'overview' && pathname.startsWith(n.href)))?.id || 'overview'
   const filteredClients = clients
-    .filter(c => c.name?.toLowerCase().includes(clientSearch.trim().toLowerCase()))
+    .filter(c => {
+      const q = clientSearch.trim().toLowerCase()
+      if (!q) return true
+      const nameMatch = c.name?.toLowerCase().includes(q)
+      const spouseMatch = spouseNames[c.id]?.toLowerCase().includes(q)
+      return nameMatch || spouseMatch
+    })
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   return (
@@ -124,7 +143,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <div className="w-7 h-7 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: activeClient?.id === c.id ? 'var(--gold)' : 'var(--ink2)' }}>{initials(c.name)}</div>
                   <div>
                     <div className="text-sm font-medium" style={{ color: activeClient?.id === c.id ? 'var(--gold-tag)' : 'var(--ink)' }}>{c.name}</div><button onClick={e => { e.stopPropagation(); deleteClient(c.id) }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#C0392B', cursor: 'pointer', fontSize: 13, padding: '0 6px' }}>✕</button>
-                    <div className="text-xs" style={{ color: 'var(--ink3)' }}>Age {getAge(c.dob) ?? c.age ?? '?'}</div>
+                    <div className="text-xs" style={{ color: 'var(--ink3)' }}>
+                      Age {getAge(c.dob) ?? c.age ?? '?'}
+                      {spouseNames[c.id] && (
+                        <span> · Spouse: {spouseNames[c.id]}</span>
+                      )}
+                    </div>
                   </div>
                   {activeClient?.id === c.id && <span className="ml-auto text-xs" style={{ color: 'var(--gold)' }}>✓</span>}
                 </button>
