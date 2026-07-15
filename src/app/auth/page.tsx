@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 export default function AuthPage() {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -14,6 +14,23 @@ export default function AuthPage() {
   const [message, setMessage] = useState('')
   const router = useRouter()
   const supabase = createClient()
+
+  async function handleResetRequest(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setMessage('')
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    })
+    setLoading(false)
+    // Generic message regardless of outcome — don't reveal whether the email is registered.
+    if (error && error.status && error.status >= 500) {
+      setError('Something went wrong sending the reset email. Please try again.')
+      return
+    }
+    setMessage('If an account exists for that email, a password reset link has been sent.')
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -69,9 +86,26 @@ export default function AuthPage() {
       <div className="flex-1 flex items-center justify-center p-12">
         <div className="w-full max-w-md">
           <div className="mb-8">
-            <h1 className="font-serif text-3xl font-light mb-2" style={{ color: 'var(--ink)' }}>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
-            <p className="text-sm" style={{ color: 'var(--ink3)' }}>{mode === 'login' ? 'Sign in to your advisor account' : 'Set up your advisor profile'}</p>
+            <h1 className="font-serif text-3xl font-light mb-2" style={{ color: 'var(--ink)' }}>
+              {mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset your password'}
+            </h1>
+            <p className="text-sm" style={{ color: 'var(--ink3)' }}>
+              {mode === 'login' ? 'Sign in to your advisor account' : mode === 'signup' ? 'Set up your advisor profile' : "Enter your email and we'll send you a reset link"}
+            </p>
           </div>
+          {mode === 'reset' ? (
+            <form onSubmit={handleResetRequest} className="space-y-4">
+              <div>
+                <label className="block text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com" className="w-full px-4 py-3 text-sm outline-none" style={{ background: 'white', border: '1px solid var(--line)', color: 'var(--ink)' }} />
+              </div>
+              {error && <div className="px-4 py-3 text-sm" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)', borderLeft: '2px solid var(--rouge)' }}>{error}</div>}
+              {message && <div className="px-4 py-3 text-sm" style={{ background: 'var(--emerald-l)', color: 'var(--emerald)', borderLeft: '2px solid var(--emerald)' }}>{message}</div>}
+              <button type="submit" disabled={loading} className="w-full py-3 text-sm font-semibold tracking-widest uppercase" style={{ background: loading ? 'var(--ink2)' : 'var(--ink)', color: 'white' }}>
+                {loading ? 'Please wait…' : 'Send Reset Link'}
+              </button>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'signup' && (
               <>
@@ -90,7 +124,14 @@ export default function AuthPage() {
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com" className="w-full px-4 py-3 text-sm outline-none" style={{ background: 'white', border: '1px solid var(--line)', color: 'var(--ink)' }} />
             </div>
             <div>
-              <label className="block text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Password</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)' }}>Password</label>
+                {mode === 'login' && (
+                  <button type="button" onClick={() => { setMode('reset'); setError(''); setMessage('') }} className="text-xs" style={{ color: 'var(--gold)' }}>
+                    Forgot password?
+                  </button>
+                )}
+              </div>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" className="w-full px-4 py-3 text-sm outline-none" style={{ background: 'white', border: '1px solid var(--line)', color: 'var(--ink)' }} />
             </div>
             {error && <div className="px-4 py-3 text-sm" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)', borderLeft: '2px solid var(--rouge)' }}>{error}</div>}
@@ -99,10 +140,17 @@ export default function AuthPage() {
               {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
             </button>
           </form>
+          )}
           <div className="mt-6 text-center">
-            <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setMessage('') }} className="text-sm" style={{ color: 'var(--ink3)' }}>
-              {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-            </button>
+            {mode === 'reset' ? (
+              <button onClick={() => { setMode('login'); setError(''); setMessage('') }} className="text-sm" style={{ color: 'var(--ink3)' }}>
+                Back to sign in
+              </button>
+            ) : (
+              <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setMessage('') }} className="text-sm" style={{ color: 'var(--ink3)' }}>
+                {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+              </button>
+            )}
           </div>
         </div>
       </div>
