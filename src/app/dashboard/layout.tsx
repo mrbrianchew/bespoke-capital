@@ -82,7 +82,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (remaining.length > 0) {
         setActiveClient(remaining[0])
         localStorage.setItem('selectedClientId', remaining[0].id)
-        window.location.reload()
       } else {
         localStorage.removeItem('selectedClientId')
         setActiveClient(null)
@@ -143,7 +142,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="px-3 py-3 text-sm" style={{ color: 'var(--ink3)' }}>No clients found</div>
               )}
               {filteredClients.map(c => (
-                <button key={c.id} onClick={() => { setActiveClient(c); localStorage.setItem('selectedClientId', c.id); window.location.reload(); setShowClientDrop(false); setClientSearch('') }}
+                <button key={c.id} onClick={() => { setActiveClient(c); localStorage.setItem('selectedClientId', c.id); setShowClientDrop(false); setClientSearch('') }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors"
                   style={{ background: activeClient?.id === c.id ? 'var(--gold-l)' : 'transparent', borderLeft: activeClient?.id === c.id ? '2px solid var(--gold)' : '2px solid transparent' }}
                   onMouseEnter={e => { if (activeClient?.id !== c.id) (e.currentTarget as HTMLElement).style.background = 'var(--cream)' }}
@@ -208,7 +207,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--cream)' }}>{children}</main>
+      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--cream)' }}>
+        <div key={activeClient?.id || 'no-client'} className="contents">{children}</div>
+      </main>
       {showClientDrop && (<div className="fixed inset-0 z-40" onClick={() => { setShowClientDrop(false); setClientSearch('') }} />)}
       {showClientModal && (
         <AddClientModal
