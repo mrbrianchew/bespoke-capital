@@ -116,6 +116,13 @@ interface ProtectionData {
   ciIncludeLivingExpenses?: boolean
   ciIncludeMortgageCI?: boolean
   ciIncludeEducationCI?: boolean
+  // CI Living Expenses mode override — defaults to 'auto' (follow Family Dependency
+  // tab's fdModeClient/fdModeSpouse + expenseCoverPctClient/Spouse). Set to 'own' or
+  // 'combined' to override independently of the D/TPD Family Dependency settings.
+  ciFdModeClient?: 'auto' | 'own' | 'combined'
+  ciFdModeSpouse?: 'auto' | 'own' | 'combined'
+  ciExpenseCoverPctClient?: number
+  ciExpenseCoverPctSpouse?: number
   existingLifeCoverClient?: number; existingLifeCoverSpouse?: number
   existingCICoverClient?: number; existingCICoverSpouse?: number
   disabilityIncomeClient?: number; disabilityIncomeSpouse?: number
@@ -1177,8 +1184,17 @@ const coverageTerm = (() => {
     }
 
     // ── Expenses Replacement (default) ───────────────────────────────────────
-    const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
-    const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
+    // Defaults to 'auto' — follows the Family Dependency tab's mode/% — but can be
+    // overridden per-person to 'own' or 'combined' independently of D/TPD settings.
+    const ciFdOverride = who === 'client' ? (p.ciFdModeClient ?? 'auto') : (p.ciFdModeSpouse ?? 'auto')
+    const fdMode = ciFdOverride === 'auto'
+      ? (who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined'))
+      : ciFdOverride
+    const coverPct = ciFdOverride === 'auto'
+      ? (who === 'client' ? clientCoverPct : spouseCoverPct)
+      : (who === 'client'
+          ? (p.ciExpenseCoverPctClient ?? defaultClientPct) / 100
+          : (p.ciExpenseCoverPctSpouse ?? defaultSpousePct) / 100)
     const fdBase = fdMode === 'own'
       ? (who === 'client' ? annExpClient : annExpSpouse)
       : annExpTotal * coverPct
@@ -1823,6 +1839,8 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             ciClient={ciClient} ciSpouse={ciSpouse}
             children={children}
             inflation={inflation}
+            annExpClient={annExpClient} annExpSpouse={annExpSpouse}
+            defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
           />
         )}
         {wpTab === 5 && (
@@ -2709,26 +2727,32 @@ function CIAmountInput({ label, value, onChange, note }: { label: string; value:
   )
 }
 
-function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children, inflation }: {
+function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children, inflation, annExpClient, annExpSpouse, defaultClientPct, defaultSpousePct }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
   mortgages: MortgageProperty[]
   ciClient: CalcResult; ciSpouse: CalcResult
   children: FamilyMember[]
   inflation: number
+  annExpClient: number; annExpSpouse: number
+  defaultClientPct: number; defaultSpousePct: number
 }) {
+  const annExpTotal = annExpClient + annExpSpouse
   // Local, isolated copy of the per-child CI education calc — mirrors the one
   // in WealthProtectionSection but kept separate so this tab's display math
   // never depends on that component's internal closures.
-  function calcEducationForChildCI(child: { id: string; age?: number; date_of_birth?: string; gender?: string }): number {
+  // Returns the client/spouse split separately — previously this collapsed both
+  // into one combined figure, which read as a single ambiguous number under two
+  // separate percentage sliders. Each person's own contribution is now shown
+  // against their own slider.
+  function calcEducationForChildCI(child: { id: string; age?: number; date_of_birth?: string; gender?: string }): { client: number; spouse: number; total: number } {
     const eduKids = p.educationChildren ?? []
     const ec = eduKids.find(e => e.childId === child.id)
-    if (!ec) return 0
-    if (ec.ciIncluded === false) return 0
+    if (!ec || ec.ciIncluded === false) return { client: 0, spouse: 0, total: 0 }
     const childAge = child.age ?? getAge(child.date_of_birth)
     const defaultEntryAge = child.gender === 'Male' ? 21 : 19
     const uniEntryAge = ec.uniEntryAge ?? defaultEntryAge
-    if (childAge >= uniEntryAge) return 0
+    if (childAge >= uniEntryAge) return { client: 0, spouse: 0, total: 0 }
     const yearsToUni = Math.max(0, uniEntryAge - childAge)
     const uniInfo = UNI_COST_DEFAULTS[ec.uniType ?? 'sg_local']
     const baseTuition = ec.annualTuition ?? uniInfo.annual_tuition
@@ -2736,9 +2760,12 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
     const dur = ec.courseDuration ?? uniInfo.default_duration ?? 4
     const fvTuition = baseTuition * Math.pow(1.05, yearsToUni) * dur
     const fvLiving = baseLiving * Math.pow(1 + inflation, yearsToUni) * dur
+    const fvTotal = fvTuition + fvLiving
     const clientPct = !isCouple ? 1 : (ec.ciCoverPctClient ?? 50) / 100
     const spousePct = isCouple ? (ec.ciCoverPctSpouse ?? 50) / 100 : 0
-    return (fvTuition + fvLiving) * (clientPct + spousePct)
+    const client = fvTotal * clientPct
+    const spouse = fvTotal * spousePct
+    return { client, spouse, total: client + spouse }
   }
 
   const ciMode = p.ciCalcMode ?? 'expenses'
@@ -2815,6 +2842,60 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                   </div>
                   {on && (
                     <>
+                      {isCouple && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
+                          {([
+                            { who: 'client' as const, name: clientName, modeKey: 'ciFdModeClient' as const, pctKey: 'ciExpenseCoverPctClient' as const, defaultPct: defaultClientPct, annExp: annExpClient, fdMode: p.fdModeClient ?? 'combined', fdPct: p.expenseCoverPctClient ?? defaultClientPct },
+                            { who: 'spouse' as const, name: spouseName, modeKey: 'ciFdModeSpouse' as const, pctKey: 'ciExpenseCoverPctSpouse' as const, defaultPct: defaultSpousePct, annExp: annExpSpouse, fdMode: p.fdModeSpouse ?? 'combined', fdPct: p.expenseCoverPctSpouse ?? defaultSpousePct },
+                          ]).map(({ who, name, modeKey, pctKey, defaultPct, annExp, fdMode, fdPct }) => {
+                            const override = p[modeKey] ?? 'auto'
+                            const pctVal = p[pctKey] ?? defaultPct
+                            return (
+                              <div key={who} style={{ padding: '12px 14px', background: '#fff', borderRadius: 6, border: '1px solid #E8E4DC' }}>
+                                <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 10 }}>{name}</div>
+                                <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                                  {([
+                                    { key: 'auto', label: `Auto (${fdMode === 'own' ? 'Own' : `${fdPct.toFixed(0)}% Combined`})` },
+                                    { key: 'own', label: 'Own Expenses Only' },
+                                    { key: 'combined', label: 'Combined Expenses' },
+                                  ] as const).map(opt => (
+                                    <button key={opt.key} onClick={() => updateP({ [modeKey]: opt.key })}
+                                      style={{ padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
+                                        background: override === opt.key ? '#1C1A17' : '#F5F0E8',
+                                        color: override === opt.key ? '#fff' : '#1C1A17',
+                                        border: '1px solid #E8E4DC', borderRadius: 4, cursor: 'pointer' }}>
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {override === 'auto' && (
+                                  <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+                                    Following the Family Dependency tab's setting for {name}.
+                                  </div>
+                                )}
+                                {override === 'own' && (
+                                  <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>
+                                    Covers <span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(annExp)}/yr</span> — {name}'s own expenses only.
+                                  </div>
+                                )}
+                                {override === 'combined' && (
+                                  <div>
+                                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', marginBottom: 8 }}>
+                                      % of combined household expenses (<span style={{ fontFamily: 'DM Mono, monospace', color: '#1C1A17' }}>{fmt(annExpTotal)}/yr</span>) to cover:
+                                    </div>
+                                    <PersonSlider
+                                      label={`${pctVal.toFixed(0)}% = ${fmt(annExpTotal * pctVal / 100)}/yr`}
+                                      value={pctVal}
+                                      onChange={v => updateP({ [pctKey]: v })}
+                                      color="#A8834A"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                       <CICoverageWindowSlider ciYears={ciYears} label="Recovery Window" description="Number of years expenses need to be covered" onUpdate={v => updateP({ ciYears: v })} />
                       <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={ciClient.fd} spouseVal={ciSpouse.fd} color="#A8834A" />
                     </>
@@ -2915,13 +2996,21 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                                   <>
                                     {isCouple ? (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
-                                        <PersonSlider label={clientName} value={ec?.ciCoverPctClient ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
-                                        <PersonSlider label={spouseName} value={ec?.ciCoverPctSpouse ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctSpouse: v })} color="#2D5A4E" unit="%" />
+                                        <div>
+                                          <PersonSlider label={clientName} value={ec?.ciCoverPctClient ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#2D5A4E', textAlign: 'right', marginTop: 2 }}>{fmt(amount.client)}</div>
+                                        </div>
+                                        <div>
+                                          <PersonSlider label={spouseName} value={ec?.ciCoverPctSpouse ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctSpouse: v })} color="#2D5A4E" unit="%" />
+                                          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#2D5A4E', textAlign: 'right', marginTop: 2 }}>{fmt(amount.spouse)}</div>
+                                        </div>
                                       </div>
                                     ) : (
-                                      <PersonSlider label="Coverage %" value={ec?.ciCoverPctClient ?? 100} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                      <>
+                                        <PersonSlider label="Coverage %" value={ec?.ciCoverPctClient ?? 100} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E', textAlign: 'right', marginTop: 4 }}>{fmt(amount.client)}</div>
+                                      </>
                                     )}
-                                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E', textAlign: 'right', marginTop: 4 }}>{fmt(amount)}</div>
                                   </>
                                 )}
                               </div>
@@ -3091,13 +3180,21 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
                                   <>
                                     {isCouple ? (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
-                                        <PersonSlider label={clientName} value={ec?.ciCoverPctClient ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
-                                        <PersonSlider label={spouseName} value={ec?.ciCoverPctSpouse ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctSpouse: v })} color="#2D5A4E" unit="%" />
+                                        <div>
+                                          <PersonSlider label={clientName} value={ec?.ciCoverPctClient ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#2D5A4E', textAlign: 'right', marginTop: 2 }}>{fmt(amount.client)}</div>
+                                        </div>
+                                        <div>
+                                          <PersonSlider label={spouseName} value={ec?.ciCoverPctSpouse ?? 50} onChange={v => updateChildCI(c.id, { ciCoverPctSpouse: v })} color="#2D5A4E" unit="%" />
+                                          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#2D5A4E', textAlign: 'right', marginTop: 2 }}>{fmt(amount.spouse)}</div>
+                                        </div>
                                       </div>
                                     ) : (
-                                      <PersonSlider label="Coverage %" value={ec?.ciCoverPctClient ?? 100} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                      <>
+                                        <PersonSlider label="Coverage %" value={ec?.ciCoverPctClient ?? 100} onChange={v => updateChildCI(c.id, { ciCoverPctClient: v })} color="#2D5A4E" unit="%" />
+                                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E', textAlign: 'right', marginTop: 4 }}>{fmt(amount.client)}</div>
+                                      </>
                                     )}
-                                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#2D5A4E', textAlign: 'right', marginTop: 4 }}>{fmt(amount)}</div>
                                   </>
                                 )}
                               </div>
