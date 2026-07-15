@@ -608,11 +608,21 @@ export default function SharePage({ params }: { params: { token: string } }) {
       const start = new Date(p.inceptionDate)
       if (isNaN(start.getTime())) return null
       const today = new Date()
-      const freqMs: Record<string, number> = { Annual: 365.25, 'Semi-Annual': 182.625, Quarterly: 91.3125, Monthly: 30.4375 }
-      const ms = (freqMs[p.frequency] || 365.25) * 24 * 60 * 60 * 1000
+
+      // Was: anchored every frequency to "this calendar year's month/day",
+      // wrong for Monthly/Quarterly/Semi-Annual (see protection/page.tsx for
+      // full explanation). Fix: step forward from inception in calendar-month
+      // increments per the policy's actual frequency.
+      const periodMonths: Record<string, number> = { Annual: 12, 'Semi-Annual': 6, Quarterly: 3, Monthly: 1 }
+      const months = periodMonths[p.frequency] || 12
+      const periodAgo = new Date(today)
+      periodAgo.setMonth(periodAgo.getMonth() - months)
+      const monthsElapsed = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth())
+      const jump = Math.max(0, Math.floor(monthsElapsed / months) - 2)
       let next = new Date(start)
-      next.setFullYear(today.getFullYear())
-      while (next < new Date(today.getTime() - ms)) next = new Date(next.getTime() + ms)
+      next.setMonth(next.getMonth() + jump * months)
+      let guard = 0
+      while (next.getTime() < periodAgo.getTime() && guard++ < 1000) next.setMonth(next.getMonth() + months)
       return next
     }
     const getStatus = (p: Policy): { label: string; color: string; bg: string } => {
