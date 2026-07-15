@@ -44,9 +44,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   async function checkAuth() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth'); return }
-    setUser(user)
     const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).maybeSingle()
-    if (adv) setAdvisor(adv)
+    // Re-check approval status on every load, not just at login — otherwise a
+    // suspended advisor with an existing session keeps full access until it
+    // expires. This also covers advisors who never got approved in the first place.
+    if (!adv || adv.status !== 'approved') {
+      await supabase.auth.signOut()
+      router.push('/auth')
+      return
+    }
+    setUser(user)
+    setAdvisor(adv)
     const { data: cls } = await supabase.from('clients').select('*').order('name', { ascending: true })
     if (cls) {
       setClients(cls)
