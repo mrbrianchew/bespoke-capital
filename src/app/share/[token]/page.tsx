@@ -56,7 +56,7 @@ const td: React.CSSProperties = {
   padding:'10px 12px',verticalAlign:'top',fontSize:11,color:'#1C1A17',
 }
 
-function PasswordGate({ hint, onUnlock, wrongPw }: { hint: string; onUnlock: (pw: string) => void; wrongPw?: boolean }) {
+function PasswordGate({ hint, onUnlock, wrongPw, firm }: { hint: string; onUnlock: (pw: string) => void; wrongPw?: boolean; firm: string }) {
   const [pw, setPw] = useState('')
   const [localError, setLocalError] = useState(false)
 
@@ -72,7 +72,7 @@ function PasswordGate({ hint, onUnlock, wrongPw }: { hint: string; onUnlock: (pw
     <div style={{minHeight:'100vh',background:'#1C1A17',display:'flex',alignItems:'center',justifyContent:'center',padding:24,fontFamily:'Inter,sans-serif'}}>
       <div style={{width:'100%',maxWidth:420}}>
         <div style={{textAlign:'center',marginBottom:40}}>
-          <div style={{fontSize:11,letterSpacing:'0.2em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:12}}>Bespoke Capital</div>
+          <div style={{fontSize:11,letterSpacing:'0.2em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:12}}>{firm}</div>
           <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:300,color:'#F0EDE8',marginBottom:8}}>Protected Document</div>
           <div style={{width:40,height:1,background:'#A8834A',margin:'0 auto'}}/>
         </div>
@@ -491,6 +491,8 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [includedPersons, setIncludedPersons] = useState<string[]>([])
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
   const [personLabels, setPersonLabels] = useState<Record<string, string>>({})
+  const [advisorName, setAdvisorName] = useState('')
+  const [firmName, setFirmName] = useState('Bespoke Heartwork')
   const year = new Date().getFullYear()
   const page1Ref = useRef<HTMLDivElement>(null)
 
@@ -502,6 +504,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
     const data = await res.json()
     if (data.expired) { setStage('expired'); return }
     setHint(data.hint || '')
+    if (data.firm) setFirmName(data.firm)
     setStage('gate')
   }
 
@@ -520,16 +523,20 @@ export default function SharePage({ params }: { params: { token: string } }) {
       setShareType('financial_plan')
       setPlanSnapshot(responseData.snapshot)
       setPlanLabel(responseData.label || '')
+      if (responseData.advisorName) setAdvisorName(responseData.advisorName)
+      if (responseData.firmName) setFirmName(responseData.firmName)
       setStage('unlocked')
       return
     }
 
-    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels } = responseData
+    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels, advisorName: aName, firmName: fName } = responseData
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
       else if (client.age) setClientAge(Number(client.age))
     }
+    if (aName) setAdvisorName(aName)
+    if (fName) setFirmName(fName)
     const st: 'portfolio'|'payment_summary' = sType === 'payment_summary' ? 'payment_summary' : 'portfolio'
     setShareType(st)
     setIncludedPersons(iPersons || [])
@@ -578,7 +585,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   if (stage==='expired') return (
     <div style={darkBg}>
       <div style={{textAlign:'center'}}>
-        <div style={{fontSize:11,letterSpacing:'0.2em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:12}}>Bespoke Capital</div>
+        <div style={{fontSize:11,letterSpacing:'0.2em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:12}}>{firmName}</div>
         <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:300,color:'#F0EDE8',marginBottom:12}}>Link Expired</div>
         <div style={{fontSize:13,color:'rgba(255,255,255,0.4)',maxWidth:320,lineHeight:1.6}}>This document link has expired. Please contact your financial advisor for a new link.</div>
       </div>
@@ -586,7 +593,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   )
 
   if (stage==='gate') return (
-    <PasswordGate hint={hint} onUnlock={handleUnlock} wrongPw={wrongPw}/>
+    <PasswordGate hint={hint} onUnlock={handleUnlock} wrongPw={wrongPw} firm={firmName}/>
   )
 
   // ── FINANCIAL PLAN SHARE VIEW ──────────────────────────────────────────────
@@ -699,7 +706,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
         {/* Sticky nav */}
         <div className="no-print" style={{ position:'sticky', top:0, zIndex:100, background:'#1C1A17', padding:'10px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-            <div style={{ fontSize:10, letterSpacing:'0.15em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', flexShrink:0 }}>Bespoke Capital</div>
+            <div style={{ fontSize:10, letterSpacing:'0.15em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', flexShrink:0 }}>{firmName}</div>
             <div className="ps-nav-title" style={{ width:1, height:14, background:'rgba(255,255,255,0.15)', flexShrink:0 }} />
             <div className="ps-nav-title" style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:15, fontWeight:300, color:'#F0EDE8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
               Payment Summary {year} — {clientName}
@@ -712,7 +719,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
         {/* Hero */}
         <div className="ps-hero" style={{ background:'#1C1A17', padding:'24px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div>
-            <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', marginBottom:6 }}>Bespoke Capital · Wealth Protection</div>
+            <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', marginBottom:6 }}>{firmName} · Wealth Protection</div>
             <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:24, fontWeight:300, color:'#F0EDE8' }}>Payment Summary {year}</div>
             <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:18, fontWeight:300, color:'rgba(240,237,232,0.7)', marginTop:2 }}>{clientName}</div>
           </div>
@@ -810,8 +817,8 @@ export default function SharePage({ params }: { params: { token: string } }) {
         </div>
         {/* Footer */}
         <div className="ps-footer" style={{ background:'#1C1A17', padding:'20px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)' }}>This document is confidential and prepared solely for {clientName}. © {year} Bespoke Capital.</div>
-          <div style={{ fontSize:10, color:'rgba(168,131,74,0.6)' }}>Chew Zhiquan Brian · Bespoke Capital</div>
+          <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)' }}>This document is confidential and prepared solely for {clientName}. © {year} {firmName}.</div>
+          <div style={{ fontSize:10, color:'rgba(168,131,74,0.6)' }}>{advisorName ? `${advisorName} · ${firmName}` : firmName}</div>
         </div>
       </div>
     )
@@ -907,7 +914,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       {/* Sticky nav */}
      <div className="no-print" style={{position:'sticky',top:0,zIndex:100,background:'#1C1A17',padding:'10px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div style={{display:'flex',alignItems:'center',gap:12,minWidth:0}}>
-          <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',flexShrink:0}}>Bespoke Capital</div>
+          <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',flexShrink:0}}>{firmName}</div>
           <div className="pf-nav-title" style={{width:1,height:14,background:'rgba(255,255,255,0.15)',flexShrink:0}}/>
           <div className="pf-nav-title" style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,fontWeight:300,color:'#F0EDE8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
             Portfolio Summary {year} — {clientName}
@@ -926,9 +933,9 @@ export default function SharePage({ params }: { params: { token: string } }) {
       <div ref={page1Ref}>
         <div className="pf-hero" style={hero('')}>
           <div>
-            <div style={{fontSize:10,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:6}}>Bespoke Capital · Wealth Protection</div>
+            <div style={{fontSize:10,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:6}}>{firmName} · Wealth Protection</div>
             <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:300,color:'#F0EDE8'}}>Portfolio Summary {year} — {clientName}</div>
-            <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginTop:4}}>Prepared by Chew Zhiquan Brian</div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginTop:4}}>{advisorName ? `Prepared by ${advisorName}` : ''}</div>
           </div>
           <div className="pf-hero-prem" style={{textAlign:'right'}}>
             <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginBottom:2}}>Total Annual Premium</div>
@@ -969,10 +976,10 @@ export default function SharePage({ params }: { params: { token: string } }) {
             <div key={cat.code} className="print-break-before">
               <div className="pf-hero" style={hero('')}>
                 <div>
-                  <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>Bespoke Capital · Wealth Protection</div>
+                  <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>{firmName} · Wealth Protection</div>
                   <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>{cat.label} · {clientName}</div>
                 </div>
-                <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>Prepared by Chew Zhiquan Brian</div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{advisorName ? `Prepared by ${advisorName}` : ''}</div>
               </div>
               <div className="pf-body" style={pageBody}>
                 <CatSection cat={cat}/>
@@ -984,9 +991,9 @@ export default function SharePage({ params }: { params: { token: string } }) {
       {/* Footer */}
       <div className="pf-footer" style={{background:'#1C1A17',padding:'20px 40px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>
-          This document is confidential and prepared solely for {clientName}. © {year} Bespoke Capital.
+          This document is confidential and prepared solely for {clientName}. © {year} {firmName}.
         </div>
-        <div style={{fontSize:10,color:'rgba(168,131,74,0.6)'}}>Chew Zhiquan Brian · Bespoke Capital</div>
+        <div style={{fontSize:10,color:'rgba(168,131,74,0.6)'}}>{advisorName ? `${advisorName} · ${firmName}` : firmName}</div>
       </div>
     </div>
   )
