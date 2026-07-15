@@ -2630,19 +2630,31 @@ function computeRenewalDate(p: Policy): Date | null {
   const start = new Date(p.inceptionDate)
   if (isNaN(start.getTime())) return null
   const today = new Date()
-  let next = new Date(start)
-  // Advance to this year first
-  next.setFullYear(today.getFullYear())
-  // If already passed this year, move to next cycle
-  const freqMs: Record<string, number> = {
-    Annual: 365.25, 'Semi-Annual': 182.625, Quarterly: 91.3125, Monthly: 30.4375,
+
+  // Was: anchored every frequency to "this calendar year's month/day" then
+  // nudged forward with a day-count approximation. That's correct for
+  // Annual (one cycle/year) but wrong for Monthly/Quarterly/Semi-Annual —
+  // it could land months away from the real due date (e.g. a Monthly GIRO
+  // policy due in 7 days would show as not due for another 5 months).
+  // Fix: step forward from inception in true calendar-month increments
+  // (no day-count drift over decades-old policies), landing on the first
+  // occurrence not more than one full cycle behind today — same rule as
+  // before, generalized to every frequency instead of just Annual.
+  const periodMonths: Record<string, number> = {
+    Annual: 12, 'Semi-Annual': 6, Quarterly: 3, Monthly: 1,
   }
-  const days = freqMs[p.frequency] || 365.25
-  const ms = days * 24 * 60 * 60 * 1000
-  // If this year's date is more than (days) in the past, advance
-  while (next < new Date(today.getTime() - ms)) next = new Date(next.getTime() + ms)
-  // Wind forward until we find next upcoming or recently-passed date
-  while (next < new Date(today.getTime() - ms)) next = new Date(next.getTime() + ms)
+  const months = periodMonths[p.frequency] || 12
+  const periodAgo = new Date(today)
+  periodAgo.setMonth(periodAgo.getMonth() - months)
+
+  // Fast-forward close to today (avoids looping hundreds of times for old
+  // monthly policies), then a short correction loop to land exactly.
+  const monthsElapsed = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth())
+  const jump = Math.max(0, Math.floor(monthsElapsed / months) - 2)
+  let next = new Date(start)
+  next.setMonth(next.getMonth() + jump * months)
+  let guard = 0
+  while (next.getTime() < periodAgo.getTime() && guard++ < 1000) next.setMonth(next.getMonth() + months)
   return next
 }
 
