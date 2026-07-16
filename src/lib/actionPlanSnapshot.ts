@@ -244,6 +244,13 @@ export interface ActionPlanSnapshot {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
+// Premiums must be exact (to the cent), never rounded to whole dollars —
+// Math.round() on a premium silently changes what the client actually pays.
+// Use this instead of Math.round() for any premium/contribution money field.
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100
+}
+
 function replacedTotal(list: any[]): number {
   return (list || []).reduce((s, p) => s + (p.annualPremium || 0), 0)
 }
@@ -259,7 +266,7 @@ function mapReplacedPolicies(list: any[]): ActionPlanReplacedPolicy[] {
   return (list || []).map((p: any) => ({
     policyName: p.policyName || 'Existing policy',
     companyName: p.companyName || '',
-    annualPremium: Math.round(p.annualPremium || 0),
+    annualPremium: round2(p.annualPremium || 0),
     deathBenefit: Math.round(p.deathBenefit || 0),
     tpdBenefit: Math.round(p.tpdBenefit || 0),
     ciBenefit: Math.round(p.advCiBenefit || 0),
@@ -485,10 +492,10 @@ function mapMedical(list: any[]): ProtectionActionItem[] {
       productName: r.productName || r.briefCoverage || 'Medical plan',
       insurer: r.insurer || '',
       coverageDescription: r.briefCoverage === 'Other' ? (r.briefCoverageOther || '') : (r.briefCoverage || ''),
-      annualPremiumCash: Math.round(cash),
-      annualPremiumMedisave: Math.round(medisave),
-      annualPremiumTotal: Math.round(cash + medisave),
-      cashImpactDelta: Math.round(cashImpactDelta),
+      annualPremiumCash: round2(cash),
+      annualPremiumMedisave: round2(medisave),
+      annualPremiumTotal: round2(cash + medisave),
+      cashImpactDelta: round2(cashImpactDelta),
       deathBenefit: 0,
       tpdBenefit: 0,
       ciBenefit: 0,
@@ -501,7 +508,7 @@ function mapMedical(list: any[]): ProtectionActionItem[] {
       limitations: r.limitations || '',
       rationale: r.rationale || '',
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
-      replacedAnnualPremiumTotal: Math.round(replacedTotal(r.replacedPolicies)),
+      replacedAnnualPremiumTotal: round2(replacedTotal(r.replacedPolicies)),
       dtpdContribution: 0,
       ciContribution: 0,
     }
@@ -534,10 +541,10 @@ function mapProt(category: 'ltc' | 'core' | 'general', categoryLabel: string, li
       productName: r.productName || r.coverageType || `${categoryLabel} plan`,
       insurer: r.insurer || '',
       coverageDescription: r.coverageType || '',
-      annualPremiumCash: Math.round(cash),
-      annualPremiumMedisave: Math.round(medisave),
-      annualPremiumTotal: Math.round(cash + medisave),
-      cashImpactDelta: Math.round(cashImpactDelta),
+      annualPremiumCash: round2(cash),
+      annualPremiumMedisave: round2(medisave),
+      annualPremiumTotal: round2(cash + medisave),
+      cashImpactDelta: round2(cashImpactDelta),
       deathBenefit: Math.round(r.deathBenefit || 0),
       tpdBenefit: Math.round(r.tpdBenefit || 0),
       ciBenefit: Math.round(r.advCiBenefit || 0),
@@ -550,7 +557,7 @@ function mapProt(category: 'ltc' | 'core' | 'general', categoryLabel: string, li
       limitations: r.limitations || '',
       rationale: r.rationale || '',
       replacedPolicies: mapReplacedPolicies(r.replacedPolicies),
-      replacedAnnualPremiumTotal: Math.round(replacedTotal(r.replacedPolicies)),
+      replacedAnnualPremiumTotal: round2(replacedTotal(r.replacedPolicies)),
       // Overwritten below (buildPerson) for Core Protection items once the
       // household's dtpdTape/ciTape are known — 0 here is just the default
       // for LTC/General, which never draw from either tape.
