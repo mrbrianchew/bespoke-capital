@@ -27,6 +27,18 @@ function fmtSigned(n: number): string {
   return (n < 0 ? '–' : '') + '$' + Math.round(Math.abs(n)).toLocaleString('en-SG')
 }
 
+// Premiums must show the exact figure a client pays, cents included — never
+// rounded to whole dollars like the general-purpose fmt() above.
+function fmtExact(n: number): string {
+  if (!n || isNaN(n)) return '$0.00'
+  return '$' + n.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtExactSigned(n: number): string {
+  if (!n || isNaN(n)) return '$0.00'
+  return (n < 0 ? '–' : '') + '$' + Math.abs(n).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const CATEGORY_META: Record<ProtectionActionCategory, { icon: LucideIcon; color: string }> = {
   medical: { icon: Stethoscope, color: '#7A9CBF' },
   ltc: { icon: HeartPulse, color: '#9B7BAA' },
@@ -146,6 +158,7 @@ interface OverviewRow {
   tag: string
   isTopup: boolean
   previousAmount: number
+  isExact: boolean
 }
 
 function protectionToRow(i: ProtectionActionItem): OverviewRow {
@@ -158,6 +171,7 @@ function protectionToRow(i: ProtectionActionItem): OverviewRow {
     tag: i.mode === 'replacement' ? `Replacing ${i.replacedPolicies.length} polic${i.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New',
     isTopup: false,
     previousAmount: 0,
+    isExact: true,
   }
 }
 
@@ -183,6 +197,7 @@ function accumulationToRow(i: AccumulationActionItem): OverviewRow {
         : (i.mode === 'replacement' ? 'Replacing' : (isLumpSumOnly ? 'New — lump sum' : 'New'))),
     isTopup: i.mode === 'topup',
     previousAmount: i.previousAnnualContribution,
+    isExact: false,
   }
 }
 
@@ -200,10 +215,10 @@ function OverviewProductRow({ row }: { row: OverviewRow }) {
           </span>
           <div style={{ textAlign: 'right' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 5 }}>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{fmt(row.previousAmount)}</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)', textDecoration: 'line-through' }}>{row.isExact ? fmtExact(row.previousAmount) : fmt(row.previousAmount)}</span>
               <span style={{ fontSize: 11, color: 'var(--ink3)' }}>→</span>
             </div>
-            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{fmt(row.amount)}{row.amountSuffix}</div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)' }}>{row.isExact ? fmtExact(row.amount) : fmt(row.amount)}{row.amountSuffix}</div>
           </div>
         </div>
       ) : (
@@ -211,7 +226,7 @@ function OverviewProductRow({ row }: { row: OverviewRow }) {
           <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink3)', background: 'var(--cream2)', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}>
             {row.tag}
           </span>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{fmt(row.amount)}{row.amountSuffix}</div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: 'var(--ink)', textAlign: 'right' }}>{row.isExact ? fmtExact(row.amount) : fmt(row.amount)}{row.amountSuffix}</div>
         </div>
       )}
     </div>
@@ -447,13 +462,13 @@ function ProtectionItemCard({ item, dtpdTape, ciTape }: { item: ProtectionAction
           <div style={{ fontSize: 11, color: 'var(--ink3)' }}>{subtitle}</div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'var(--ink)' }}>{fmt(item.annualPremiumTotal)}/yr</div>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 15, color: 'var(--ink)' }}>{fmtExact(item.annualPremiumTotal)}/yr</div>
           {item.annualPremiumMedisave > 0 && (
-            <div style={{ fontSize: 10, color: 'var(--ink3)' }}>incl. {fmt(item.annualPremiumMedisave)} via Medisave</div>
+            <div style={{ fontSize: 10, color: 'var(--ink3)' }}>incl. {fmtExact(item.annualPremiumMedisave)} via Medisave</div>
           )}
           {monthlyDelta !== 0 && (
             <div style={{ fontSize: 10, color: monthlyDelta > 0 ? 'var(--rouge)' : 'var(--emerald)', marginTop: 2 }}>
-              {fmtSigned(monthlyDelta)}/mo cashflow
+              {fmtExactSigned(monthlyDelta)}/mo cashflow
             </div>
           )}
         </div>
@@ -509,7 +524,7 @@ function ProtectionItemCard({ item, dtpdTape, ciTape }: { item: ProtectionAction
           <div style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--rouge)', marginBottom: 6 }}>Replacing</div>
           {item.replacedPolicies.map((p, i) => (
             <div key={i} style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: i < item.replacedPolicies.length - 1 ? 4 : 0 }}>
-              {p.policyName}{p.companyName ? ` — ${p.companyName}` : ''} · was {fmt(p.annualPremium)}/yr
+              {p.policyName}{p.companyName ? ` — ${p.companyName}` : ''} · was {fmtExact(p.annualPremium)}/yr
             </div>
           ))}
         </div>
