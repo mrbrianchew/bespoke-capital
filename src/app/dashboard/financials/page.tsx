@@ -952,12 +952,14 @@ function AssetRow({ label, value, value2, onChange, onChange2, isCouple, note, o
   return (
     <div className="flex items-center py-2 text-xs gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
       <div style={{ width: 220, flexShrink: 0, color: 'var(--ink2)' }}>{label}</div>
-      {onNoteChange && (
+      {onNoteChange ? (
         <input type="text" value={note || ''} onChange={e => onNoteChange(e.target.value)} placeholder="Add a note"
           className="flex-1 text-xs outline-none italic"
           style={{ minWidth: 0, border: 'none', borderBottom: '1px dashed var(--line)', background: 'transparent', color: 'var(--ink2)', padding: '4px 2px' }}
           onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--gold)')}
           onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--line)')} />
+      ) : (
+        <div className="flex-1" style={{ minWidth: 0 }} />
       )}
       <div className="relative" style={{ width: 118 }}>
         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
