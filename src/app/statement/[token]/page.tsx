@@ -83,8 +83,8 @@ function SubtotalStrip({ label, value }: { label: string; value: number }) {
   )
 }
 
-function PasswordGate({ hint, firm, year, onUnlock, error, busy }: {
-  hint: string; firm: string; year: number | null
+function PasswordGate({ hint, firm, year, personName, onUnlock, error, busy }: {
+  hint: string; firm: string; year: number | null; personName: string
   onUnlock: (pw: string) => void; error: string; busy: boolean
 }) {
   const [pw, setPw] = useState('')
@@ -94,7 +94,7 @@ function PasswordGate({ hint, firm, year, onUnlock, error, busy }: {
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{ fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(168,131,74,0.7)', marginBottom: 12 }}>{firm}</div>
           <div style={{ fontFamily: 'Cormorant Garamond,Georgia,serif', fontSize: 28, fontWeight: 300, color: '#F0EDE8', marginBottom: 8 }}>
-            {year ? `Your ${year} Financial Statement` : 'Financial Statement'}
+            {year ? `${personName ? personName + '\u2019s ' : ''}${year} Financial Statement` : 'Financial Statement'}
           </div>
           <div style={{ width: 40, height: 1, background: '#A8834A', margin: '0 auto' }} />
         </div>
@@ -145,6 +145,7 @@ export default function StatementPage() {
 
   const [phase, setPhase] = useState<Phase>('loading')
   const [firm, setFirm] = useState('Bespoke Capital')
+  const [personName, setPersonName] = useState('')
   const [hint, setHint] = useState('')
   const [year, setYear] = useState<number | null>(null)
   const [status, setStatus] = useState<'draft' | 'submitted'>('draft')
@@ -183,6 +184,7 @@ export default function StatementPage() {
       .then(({ ok, j }) => {
         if (!ok) { setPhase('notfound'); return }
         if (j.firm) setFirm(j.firm)
+        if (j.personName) setPersonName(j.personName)
         setHint(j.hint || '')
         setYear(j.year ?? null)
         if (j.expired) { setPhase('expired'); return }
@@ -208,13 +210,14 @@ export default function StatementPage() {
       }
       passwordRef.current = pw
       if (j.firm) setFirm(j.firm)
+      if (j.personName) setPersonName(j.personName)
       setYear(j.year ?? null)
       setStatus(j.status === 'submitted' ? 'submitted' : 'draft')
       setSubmittedAt(j.submittedAt || null)
       const base = emptyStatementData()
       const incoming = (j.data && typeof j.data === 'object') ? j.data : {}
       setData({ ...base, ...incoming, income: { ...base.income, ...(incoming.income || {}) } })
-      setName(j.clientName || '')
+      setName(j.clientName || j.personName || '')
       setOccupation(j.clientOccupation || '')
       setPhase('form')
     } catch {
@@ -316,7 +319,7 @@ export default function StatementPage() {
   if (phase === 'loading') return <CenteredNotice firm={firm} title="Loading…" body="Preparing your financial statement." />
   if (phase === 'notfound') return <CenteredNotice firm={firm} title="Link Not Found" body="This link is invalid or has been removed. Please check with your advisor for a new link." />
   if (phase === 'expired') return <CenteredNotice firm={firm} title="Link Expired" body="This link has expired. Please contact your advisor to request a new one." />
-  if (phase === 'gate') return <PasswordGate hint={hint} firm={firm} year={year} onUnlock={unlock} error={pwError} busy={unlocking} />
+  if (phase === 'gate') return <PasswordGate hint={hint} firm={firm} year={year} personName={personName} onUnlock={unlock} error={pwError} busy={unlocking} />
 
   const locked = status === 'submitted'
   const isSimple = data.expense_mode === 'simple'
@@ -333,7 +336,7 @@ export default function StatementPage() {
       <div className="st-wrap">
         <div className="st-hero">
           <div className="eyebrow">Financial Statement</div>
-          <h1>Your {year} Financial Snapshot</h1>
+          <h1>{personName ? `${personName}\u2019s ${year} Financial Snapshot` : `Your ${year} Financial Snapshot`}</h1>
           {!locked && <p>Fill in your income, expenses, assets and liabilities below. Save your progress and return anytime — nothing is final until you submit.</p>}
         </div>
 
