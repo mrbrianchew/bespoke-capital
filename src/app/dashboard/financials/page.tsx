@@ -2267,7 +2267,9 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         {activeSection === 'snapshots' && (
           <SnapshotsTab
             clientId={client.id}
-            clientName={client.name}
+            clientName={clientName}
+            spouseName={spouseName}
+            isCouple={isCouple}
             onDataChanged={load}
           />
         )}
