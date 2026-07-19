@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import DateInput from '@/components/DateInput'
 import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
+import SnapshotsTab from './SnapshotsTab'
 
 interface OtherIncomeItem { label: string; amount: number }
 interface CustomAssetItem { label: string; amount: number; amount2?: number; notes?: string }
@@ -275,6 +276,7 @@ const SECTIONS = [
   { id: 'risk',        label: 'Risk Profile',icon: '◎' },
   { id: 'health',      label: 'Health',      icon: '⊞' },
   { id: 'notes',       label: 'Notes',       icon: '⊡' },
+  { id: 'snapshots',   label: 'Snapshots',   icon: '◈' },
 ]
 
 function Lbl({ children }: { children: React.ReactNode }) {
@@ -2258,6 +2260,14 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               ))}
             </div>
           </div>
+        )}
+
+        {activeSection === 'snapshots' && (
+          <SnapshotsTab
+            clientId={client.id}
+            clientName={client.name}
+            onDataChanged={load}
+          />
         )}
       </div>
     </div>
