@@ -87,6 +87,15 @@ interface FactFinding {
   d_custom_financial?: CustomExpenseItem[]; d_custom_household?: CustomExpenseItem[]
   d_custom_personal?: CustomExpenseItem[]; d_custom_children?: CustomExpenseItem[]
   d_custom_lifestyle?: CustomExpenseItem[]
+  d_mortgage_cpf_note?: string; d_mortgage_cash_note?: string; d_vehicle_repay_note?: string
+  d_personal_loan_repay_note?: string; d_rental_expense_note?: string; d_income_tax_note?: string
+  d_insurance_note?: string; d_regular_savings_note?: string
+  d_conservancy_note?: string; d_utilities_note?: string; d_family_food_note?: string
+  d_maid_note?: string; d_other_household_note?: string
+  d_personal_food_note?: string; d_transport_note?: string; d_car_petrol_note?: string; d_car_insurance_note?: string
+  d_childcare_note?: string; d_school_fees_note?: string; d_school_transport_note?: string
+  d_allowance_children_note?: string; d_other_children_note?: string
+  d_holidays_note?: string; d_hobbies_note?: string; d_allowance_parents_note?: string; d_others_lifestyle_note?: string
   a_savings?: number; a_fixed_deposit?: number
   a2_savings?: number; a2_fixed_deposit?: number
   a_cpf_oa?: number; a_cpf_sa?: number; a_cpf_ma?: number; a_cpf_ra?: number
@@ -112,6 +121,8 @@ interface FactFinding {
   l_study_loan?: number; l_personal_loan?: number; l_renovation_lt?: number
   l2_study_loan?: number; l2_personal_loan?: number; l2_renovation_lt?: number
   l_lt_custom?: CustomAssetItem[]; l_st_custom?: CustomAssetItem[]
+  l_credit_card_note?: string; l_business_loan_note?: string; l_renovation_st_note?: string
+  l_car_loan_note?: string; l_study_loan_note?: string; l_personal_loan_note?: string; l_renovation_lt_note?: string
   mortgages?: MortgageProperty[]
   properties?: PropertyItem[]
   advisor_notes?: string
@@ -1671,7 +1682,8 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                           <div className="px-5 py-2">
                             {isCouple && (
                               <div className="flex items-center gap-2 py-2 mb-1" style={{ borderBottom: '2px solid var(--line2)' }}>
-                                <div className="flex-1 text-xs" style={{ color: 'var(--ink3)' }}>Item</div>
+                                <div className="text-xs" style={{ width: 190, flexShrink: 0, color: 'var(--ink3)' }}>Item</div>
+                                <div className="flex-1 text-xs" style={{ color: 'var(--ink3)' }}>Note</div>
                                 <div className="text-xs font-medium text-center" style={{ width: 118, color: 'var(--gold-tag)' }}>{clientName}</div>
                                 <div className="text-xs font-medium text-center" style={{ width: 118, color: '#4A7C9E' }}>{spouseName}</div>
                                 <div className="text-xs font-medium text-center" style={{ width: 90, color: 'var(--ink2)' }}>Combined/yr</div>
@@ -1680,12 +1692,19 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                             )}
                             {group.keys.map((k, i) => {
                               const k2 = group.keys2[i]
+                              const noteKey = `${k}_note` as keyof FactFinding
                               const v1 = (ff[k as keyof FactFinding] as number) || 0
                               const v2 = isCouple ? ((ff[k2 as keyof FactFinding] as number) || 0) : 0
                               const vSum = v1 + v2
                               return (
                                 <div key={k} className="flex items-center py-2 gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
-                                  <div className="flex-1 text-xs" style={{ color: 'var(--ink2)' }}>{group.labels[i]}</div>
+                                  <div className="text-xs" style={{ width: 190, flexShrink: 0, color: 'var(--ink2)' }}>{group.labels[i]}</div>
+                                  <input type="text" value={(ff[noteKey] as string) || ''} placeholder="Add a note"
+                                    onChange={e => upd(noteKey, e.target.value)}
+                                    className="flex-1 text-xs outline-none italic"
+                                    style={{ minWidth: 0, border: 'none', borderBottom: '1px dashed var(--line)', background: 'transparent', color: 'var(--ink2)', padding: '4px 2px' }}
+                                    onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--gold)')}
+                                    onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--line)')} />
                                   <DetInput value={v1||undefined} onChange={v=>upd(k as keyof FactFinding,n(v))} />
                                   {isCouple && <DetInput value={v2||undefined} onChange={v=>upd(k2 as keyof FactFinding,n(v))} accentColor="#4A7C9E" />}
                                   {isCouple
@@ -1702,10 +1721,16 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                                 <div key={`cx-${i}`} className="flex items-center py-2 gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
                                   <input type="text" value={item.label} placeholder="Custom expense"
                                     onChange={e=>{const u=[...customItems];u[i]={...u[i],label:e.target.value};upd(group.customKey,u)}}
-                                    className="flex-1 px-2 py-1.5 text-xs outline-none"
-                                    style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
+                                    className="text-xs outline-none"
+                                    style={{ width: 190, flexShrink: 0, border:'1px solid var(--line)',background:'white',color:'var(--ink)', padding: '6px 8px' }}
                                     onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
                                     onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
+                                  <input type="text" value={item.notes || ''} placeholder="Add a note"
+                                    onChange={e=>{const u=[...customItems];u[i]={...u[i],notes:e.target.value};upd(group.customKey,u)}}
+                                    className="flex-1 text-xs outline-none italic"
+                                    style={{ minWidth: 0, border: 'none', borderBottom: '1px dashed var(--line)', background: 'transparent', color: 'var(--ink2)', padding: '6px 2px' }}
+                                    onFocus={e => (e.currentTarget.style.borderBottomColor = 'var(--gold)')}
+                                    onBlur={e => (e.currentTarget.style.borderBottomColor = 'var(--line)')} />
                                   <DetInput value={item.amount||undefined} onChange={v=>{const u=[...customItems];u[i]={...u[i],amount:n(v)};upd(group.customKey,u)}} />
                                   {isCouple && <DetInput value={item.amount2||undefined} onChange={v=>{const u=[...customItems];u[i]={...u[i],amount2:n(v)};upd(group.customKey,u)}} accentColor="#4A7C9E" />}
                                   {isCouple
@@ -2050,16 +2075,16 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
               <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
-                {assetRow('Credit Card / Credit Line', 'l_credit_card', 'l2_credit_card')}
-                {assetRow('Business Loan', 'l_business_loan', 'l2_business_loan')}
-                {assetRow('Renovation Loan', 'l_renovation_st', 'l2_renovation_st')}
+                {assetRow('Credit Card / Credit Line', 'l_credit_card', 'l2_credit_card', 'l_credit_card_note')}
+                {assetRow('Business Loan', 'l_business_loan', 'l2_business_loan', 'l_business_loan_note')}
+                {assetRow('Renovation Loan', 'l_renovation_st', 'l2_renovation_st', 'l_renovation_st_note')}
                 <CustomRows items={ff.l_st_custom || []} onChange={v => upd('l_st_custom', v)} placeholder="e.g. Personal Line of Credit" isCouple={isCouple} />
               </AssetBlock>
               <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
-                {assetRow('Car / Motor Vehicle Loan', 'l_car_loan', 'l2_car_loan')}
-                {assetRow('Study Loan', 'l_study_loan', 'l2_study_loan')}
-                {assetRow('Personal Loan', 'l_personal_loan', 'l2_personal_loan')}
-                {assetRow('Renovation Loan', 'l_renovation_lt', 'l2_renovation_lt')}
+                {assetRow('Car / Motor Vehicle Loan', 'l_car_loan', 'l2_car_loan', 'l_car_loan_note')}
+                {assetRow('Study Loan', 'l_study_loan', 'l2_study_loan', 'l_study_loan_note')}
+                {assetRow('Personal Loan', 'l_personal_loan', 'l2_personal_loan', 'l_personal_loan_note')}
+                {assetRow('Renovation Loan', 'l_renovation_lt', 'l2_renovation_lt', 'l_renovation_lt_note')}
                 <CustomRows items={ff.l_lt_custom || []} onChange={v => upd('l_lt_custom', v)} placeholder="e.g. BNPL, Other Loan" isCouple={isCouple} />
               </AssetBlock>
               {/* Mortgage Liabilities — pulled from Properties tab */}
