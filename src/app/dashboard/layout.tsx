@@ -44,7 +44,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   async function checkAuth() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/auth'); return }
-    const { data: adv } = await supabase.from('advisors').select('*').eq('id', user.id).maybeSingle()
+    // advisors and clients both depend only on the authenticated user (RLS
+    // scopes clients to the requesting advisor), not on each other — fire
+    // them together instead of waiting for the approval check to resolve
+    // first. If the advisor turns out not to be approved we just discard
+    // the clients result below; the query itself is harmless.
+    const [{ data: adv }, { data: cls }] = await Promise.all([
+      supabase.from('advisors').select('*').eq('id', user.id).maybeSingle(),
+      supabase.from('clients').select('*').order('name', { ascending: true }),
+    ])
     // Re-check approval status on every load, not just at login — otherwise a
     // suspended advisor with an existing session keeps full access until it
     // expires. This also covers advisors who never got approved in the first place.
@@ -55,7 +63,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     setUser(user)
     setAdvisor(adv)
-    const { data: cls } = await supabase.from('clients').select('*').order('name', { ascending: true })
     if (cls) {
       setClients(cls)
       if (cls.length > 0) { const savedId = localStorage.getItem('selectedClientId'); const match = cls.find((c: any) => c.id === savedId); const selected = match || cls[0]; setActiveClient(selected); localStorage.setItem('selectedClientId', selected.id) }
