@@ -36,6 +36,16 @@ async function resolveFirmForClient(clientId: string | null | undefined): Promis
   return advisor?.firm || null
 }
 
+async function resolvePersonName(clientId: string | null | undefined, person: string): Promise<string> {
+  if (!clientId) return person === 'spouse' ? 'Spouse' : 'Client'
+  if (person === 'spouse') {
+    const { data: fam } = await supabaseAdmin.from('family_members').select('name').eq('client_id', clientId).eq('relationship', 'Spouse').maybeSingle()
+    return fam?.name || 'Spouse'
+  }
+  const { data: client } = await supabaseAdmin.from('clients').select('name').eq('id', clientId).maybeSingle()
+  return client?.name || 'Client'
+}
+
 function isExpired(expiresAt: string | null): boolean {
   return expiresAt ? new Date(expiresAt) < new Date() : false
 }
@@ -44,16 +54,19 @@ function isExpired(expiresAt: string | null): boolean {
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const { data: stmt } = await supabaseAdmin
     .from('financial_statements')
-    .select('password_hint,expires_at,year,status,client_id')
+    .select('password_hint,expires_at,year,status,client_id,person')
     .eq('token', params.token)
     .maybeSingle()
   if (!stmt) return NextResponse.json({ error: 'not_found' }, { status: 404 })
   const firm = await resolveFirmForClient(stmt.client_id)
+  const personName = await resolvePersonName(stmt.client_id, stmt.person)
   return NextResponse.json({
     hint: stmt.password_hint || '',
     expired: isExpired(stmt.expires_at),
     year: stmt.year,
     status: stmt.status,
+    person: stmt.person,
+    personName,
     firm,
   })
 }
@@ -83,6 +96,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
   if (!ok) return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
 
   const firm = await resolveFirmForClient(stmt.client_id)
+  const personName = await resolvePersonName(stmt.client_id, stmt.person)
 
   if (action === 'unlock') {
     return NextResponse.json({
@@ -92,6 +106,8 @@ export async function POST(req: Request, { params }: { params: { token: string }
       clientName: stmt.client_name || '',
       clientOccupation: stmt.client_occupation || '',
       submittedAt: stmt.submitted_at,
+      person: stmt.person,
+      personName,
       firm,
     })
   }
