@@ -190,11 +190,12 @@ function extractPrevious(existing: any, patch: ApplyPatch) {
 
 // ---------- Component ----------
 
-export default function SnapshotsTab({ clientId, clientName, spouseName, isCouple, onDataChanged }: {
+export default function SnapshotsTab({ clientId, clientName, spouseName, isCouple, userId, onDataChanged }: {
   clientId: string
   clientName: string
   spouseName?: string
   isCouple?: boolean
+  userId?: string
   onDataChanged: () => void | Promise<void>
 }) {
   const supabase = useMemo(() => createClient(), [])
@@ -330,11 +331,10 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
         .select('data').eq('client_id', clientId).eq('section', 'financials').maybeSingle()
       const previous = extractPrevious(ffRow?.data, patch)
 
-      const { data: userRes } = await supabase.auth.getUser()
       const { error: logError } = await supabase.from('financial_statement_apply_log').insert({
         statement_id: row.id, client_id: clientId, section,
         previous_value: previous, applied_value: patch,
-        applied_by: userRes?.user?.id || null,
+        applied_by: userId || null,
       })
       if (logError) throw logError
 

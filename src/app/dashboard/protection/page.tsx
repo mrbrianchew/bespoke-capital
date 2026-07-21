@@ -7,6 +7,7 @@ import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { getUsdSgdRate } from '@/lib/fxRate'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
@@ -161,6 +162,7 @@ export default function ProtectionPageWrapper() {
 
 function ProtectionPage() {
   const supabase = createClient()
+  const { activeClient, authLoading } = useDashboard()
   const [error, setError] = useState<string | null>(null)
 
   // Client / family
@@ -228,9 +230,9 @@ const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({
 // Hidden policies for payment summary (policyId → true)
 const [hiddenPolicies, setHiddenPolicies] = useState<Record<string, boolean>>({})
   useEffect(() => {
-    const id = localStorage.getItem('selectedClientId')
-    if (id) { setClientId(id); clientIdRef.current = id }
-  }, [])
+    if (authLoading) return
+    if (activeClient) { setClientId(activeClient.id); clientIdRef.current = activeClient.id }
+  }, [authLoading, activeClient?.id])
 
   useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
 
@@ -265,7 +267,6 @@ const [hiddenPolicies, setHiddenPolicies] = useState<Record<string, boolean>>({}
     // of these depend on each other's results, so fetch them together
     // instead of one at a time.
     const [
-      { data: client },
       { data: financialsRow },
       { data: portfolioRow },
       { data: needsRow },
@@ -274,7 +275,6 @@ const [hiddenPolicies, setHiddenPolicies] = useState<Record<string, boolean>>({}
       { data: objectivesRow },
       { data: accumulationRow },
     ] = await Promise.all([
-      supabase.from('clients').select('name, age, dob').eq('id', id).maybeSingle(),
       // Get financials data (income, expenses, assets, properties)
       supabase
         .from('fact_finding')
@@ -293,6 +293,10 @@ const [hiddenPolicies, setHiddenPolicies] = useState<Record<string, boolean>>({}
       supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'objectives').maybeSingle(),
       supabase.from('fact_finding').select('data').eq('client_id', id).eq('section', 'accumulation').maybeSingle(),
     ])
+    // activeClient is context-cached (fetched once in the layout) — only
+    // use it if it still matches the client we're loading for, to guard
+    // against a stale closure during rapid client switching.
+    const client = activeClient && activeClient.id === id ? activeClient : null
     if (client) {
       setClientName(client.name)
       if (client.dob) setClientAge(new Date().getFullYear() - new Date(client.dob).getFullYear())

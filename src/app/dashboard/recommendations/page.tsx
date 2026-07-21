@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { fv } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { getUsdSgdRate } from '@/lib/fxRate'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -2993,6 +2994,7 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
 
 export default function RecommendationsPage() {
   const supabase = createClient()
+  const { activeClient, authLoading } = useDashboard()
   const [clientId, setClientId]   = useState<string | null>(null)
   const [clientName, setClientName] = useState('Client')
   const [data, setData]           = useState<RecPageData>(EMPTY)
@@ -3048,9 +3050,9 @@ export default function RecommendationsPage() {
   const [showCombinedImpact, setShowCombinedImpact] = useState(false)
 
   useEffect(() => {
-    const id = localStorage.getItem('selectedClientId')
-    if (id) setClientId(id)
-  }, [])
+    if (authLoading) return
+    if (activeClient) setClientId(activeClient.id)
+  }, [authLoading, activeClient?.id])
 
   useEffect(() => { if (clientId) loadAll(clientId) }, [clientId])
 
@@ -3069,7 +3071,6 @@ export default function RecommendationsPage() {
         { data: productsRaw },
         { data: familyRows },
         { data: medisaveBandsRaw },
-        { data: clientRow },
       ] = await Promise.all([
         supabase.from('fact_finding').select('section,data').eq('client_id', id)
           .in('section', ['financials', 'protection_portfolio', 'capital_mandate', 'retirement', 'education', 'strategic_recommendations_v2']),
@@ -3079,8 +3080,11 @@ export default function RecommendationsPage() {
         supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
         supabase.from('family_members').select('*').eq('client_id', id),
         supabase.from('medisave_withdrawal_limits').select('*').order('sort_order', { ascending: true }),
-        supabase.from('clients').select('id,name,dob,gender').eq('id', id).maybeSingle(),
       ])
+      // activeClient is context-cached (fetched once in the layout) — only
+      // use it here if it still matches the client we're loading for, to
+      // guard against a stale closure during rapid client switching.
+      const clientRow = activeClient && activeClient.id === id ? activeClient : null
 
       // Reference data
       const companiesList = (companiesRaw || []).map((c: any) => ({ id: c.id, category_id: c.category_id, name: c.name }))

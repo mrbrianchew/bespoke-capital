@@ -7,6 +7,7 @@ import { buildExecutiveWealthSummarySnapshot, ExecutiveWealthSummarySnapshot } f
 import { buildCapitalFundSnapshot, CapitalFundSnapshot } from '@/lib/capitalFundSnapshot'
 import { buildActionPlanSnapshot, ActionPlanSnapshot } from '@/lib/actionPlanSnapshot'
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 type FrameworkOverrideMap = Partial<Record<FrameworkRowKey, FrameworkRowStatus>>
 
@@ -28,6 +29,7 @@ function applyFrameworkOverrides(
 
 export default function ReportPage() {
   const supabase = createClient()
+  const { user, activeClient, authLoading } = useDashboard()
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('')
   const [spouseName, setSpouseName] = useState('')
@@ -56,12 +58,13 @@ export default function ReportPage() {
   const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
-    const id = localStorage.getItem('selectedClientId')
-    if (!id) { setError('No client selected. Pick a client from the dashboard first.'); setLoading(false); return }
+    if (authLoading) return
+    if (!activeClient) { setError('No client selected. Pick a client from the dashboard first.'); setLoading(false); return }
+    const id = activeClient.id
     setClientId(id)
     load(id)
     loadPastPlans(id)
-  }, [])
+  }, [authLoading, activeClient?.id])
 
   async function loadPastPlans(id: string) {
     const { data } = await supabase
@@ -75,11 +78,14 @@ export default function ReportPage() {
   async function load(id: string) {
     setLoading(true)
     setError('')
-    const [{ data: client }, { data: family }, { data: ffRows }] = await Promise.all([
-      supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
+    const [{ data: family }, { data: ffRows }] = await Promise.all([
       supabase.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', id),
       supabase.from('fact_finding').select('section, data').eq('client_id', id).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement', 'accumulation', 'education', 'capital_mandate', 'strategic_recommendations_v2']),
     ])
+    // activeClient is context-cached (fetched once in the layout) — only use
+    // it if it still matches the client we're loading for, to guard against
+    // a stale closure during rapid client switching.
+    const client = activeClient && activeClient.id === id ? activeClient : null
     if (!client) { setError('Client not found.'); setLoading(false); return }
     setClientName(client.name)
 
@@ -189,7 +195,6 @@ export default function ReportPage() {
       if (!hashRes.ok) throw new Error('Password hashing failed')
       const { hash: hashHex } = await hashRes.json()
       const token = crypto.randomUUID().replace(/-/g, '')
-      const { data: { user } } = await supabase.auth.getUser()
 
       const label = `Financial Plan — ${new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}`
 

@@ -1,9 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 import DateInput from '@/components/DateInput'
+import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -27,56 +28,24 @@ const NAV = [
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null)
-  const [advisor, setAdvisor] = useState<any>(null)
-  const [clients, setClients] = useState<any[]>([])
-  const [spouseNames, setSpouseNames] = useState<Record<string, string>>({})
-  const [activeClient, setActiveClient] = useState<any>(null)
+  return (
+    <DashboardProvider>
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </DashboardProvider>
+  )
+}
+
+function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
+  const {
+    user, advisor, clients, activeClient, spouseNames,
+    setActiveClient, setClients,
+  } = useDashboard()
   const [showClientDrop, setShowClientDrop] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-
-  useEffect(() => { checkAuth() }, [])
-
-  async function checkAuth() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/auth'); return }
-    // advisors and clients both depend only on the authenticated user (RLS
-    // scopes clients to the requesting advisor), not on each other — fire
-    // them together instead of waiting for the approval check to resolve
-    // first. If the advisor turns out not to be approved we just discard
-    // the clients result below; the query itself is harmless.
-    const [{ data: adv }, { data: cls }] = await Promise.all([
-      supabase.from('advisors').select('*').eq('id', user.id).maybeSingle(),
-      supabase.from('clients').select('*').order('name', { ascending: true }),
-    ])
-    // Re-check approval status on every load, not just at login — otherwise a
-    // suspended advisor with an existing session keeps full access until it
-    // expires. This also covers advisors who never got approved in the first place.
-    if (!adv || adv.status !== 'approved') {
-      await supabase.auth.signOut()
-      router.push('/auth')
-      return
-    }
-    setUser(user)
-    setAdvisor(adv)
-    if (cls) {
-      setClients(cls)
-      if (cls.length > 0) { const savedId = localStorage.getItem('selectedClientId'); const match = cls.find((c: any) => c.id === savedId); const selected = match || cls[0]; setActiveClient(selected); localStorage.setItem('selectedClientId', selected.id) }
-      const clientIds = cls.map((c: any) => c.id)
-      if (clientIds.length > 0) {
-        const { data: spouses } = await supabase.from('family_members').select('client_id, name').eq('relationship', 'Spouse').in('client_id', clientIds)
-        if (spouses) {
-          const map: Record<string, string> = {}
-          spouses.forEach((s: any) => { if (s.name) map[s.client_id] = s.name })
-          setSpouseNames(map)
-        }
-      }
-    }
-  }
 
   async function deleteClient(clientId: string) {
     if (!confirm('Delete this client? This cannot be undone.')) return

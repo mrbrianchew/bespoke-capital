@@ -1,12 +1,13 @@
 'use client'
 
 import React, { useEffect, useState, useCallback, Suspense, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import DateInput from '@/components/DateInput'
 import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import SnapshotsTab from './SnapshotsTab'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 interface OtherIncomeItem { label: string; amount: number }
 interface CustomAssetItem { label: string; amount: number; amount2?: number; notes?: string }
@@ -1160,31 +1161,27 @@ function FactFindingPage() {
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
+  const { user, activeClient, authLoading } = useDashboard()
 
   useEffect(() => {
     const tab = searchParams.get('tab')
     if (tab) setActiveSection(tab)
   }, [searchParams])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (authLoading) return
+    if (!activeClient) { setLoading(false); return }
+    load()
+  }, [authLoading, activeClient?.id])
 
   async function load() {
-    const [
-      { data: { user } },
-      { data: cfgRow },
-      { data: clients },
-    ] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase.from('config').select('value').eq('key', 'cpf_rates').maybeSingle(),
-      supabase.from('clients').select('*').order('created_at', { ascending: false }),
-    ])
-    if (!user) { router.push('/auth'); return }
+    if (!activeClient) return
+    const c = activeClient
+    const { data: cfgRow } = await supabase.from('config').select('value').eq('key', 'cpf_rates').maybeSingle()
     if (cfgRow?.value) setCpfConfig(cfgRow.value as CpfConfig)
-    if (!clients || clients.length === 0) { setLoading(false); return }
-    const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]; setClient(c)
+    setClient(c as unknown as Client)
 
     const [{ data: fam }, { data: financialsRow }] = await Promise.all([
       supabase.from('family_members').select('*').eq('client_id', c.id),
@@ -2295,6 +2292,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
             clientName={clientName}
             spouseName={spouseName}
             isCouple={isCouple}
+            userId={user?.id}
             onDataChanged={load}
           />
         )}

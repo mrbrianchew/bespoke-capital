@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
+import { useDashboard } from '@/contexts/DashboardContext'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
 import EducationSection, { EducationData, DEFAULT_EDUCATION_DATA } from './EducationSection'
@@ -481,6 +482,7 @@ function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYea
 
 function ObjectivesPageInner() {
   const supabase = createClient()
+  const { activeClient, authLoading } = useDashboard()
   const { uniCosts: _uniCosts } = useUniCosts()
   UNI_COST_DEFAULTS = _uniCosts
   const [clientId, setClientId] = useState<string | null>(null)
@@ -564,35 +566,12 @@ const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // ─── LOAD DATA ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    // Try localStorage first, fall back to auth-based lookup
-    const id = localStorage.getItem('selectedClientId')
-    if (id) {
-      setClientId(id)
-      loadData(id)
-    } else {
-      // Fall back: get most recent client for this advisor
-      loadDataFromAuth()
-    }
-  }, [])
-
-  async function loadDataFromAuth() {
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data: clients } = await supabase
-      .from('clients')
-      .select('id')
-      .order('created_at', { ascending: false })
-      .limit(1)
-    if (clients && clients.length > 0) {
-      const id = clients[0].id
-      setClientId(id)
-      localStorage.setItem('selectedClientId', id)
-      loadData(id)
-    } else {
-      setLoading(false)
-    }
-  }
+    if (authLoading) return
+    if (!activeClient) { setLoading(false); return }
+    setClientId(activeClient.id)
+    localStorage.setItem('selectedClientId', activeClient.id)
+    loadData(activeClient.id)
+  }, [authLoading, activeClient?.id])
 
   async function loadData(id: string) {
   console.log('🚀 loadData started for client ID:', id)
@@ -600,7 +579,6 @@ const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Load BOTH financials and protection_needs data
   const [
     { data: ffRows },
-    { data: clientData },
     { data: familyData },
     { data: comps },
     { data: prods },
@@ -611,7 +589,6 @@ const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
       .select('*')
       .eq('client_id', id)
       .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement', 'education', 'estate']),
-    supabase.from('clients').select('name, dob').eq('id', id).maybeSingle(),
     supabase.from('family_members').select('*').eq('client_id', id),
     supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
     supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
@@ -700,9 +677,9 @@ setP(prev => ({
 }))
   }
     // Load client name and DOB
-if (clientData) {
-  setClientName(clientData.name || 'Client')
-  setClientDOB(clientData.dob)
+if (activeClient) {
+  setClientName(activeClient.name || 'Client')
+  setClientDOB(activeClient.dob || undefined)
 }
     // Load family members - spouse name + children
    if (familyData) {

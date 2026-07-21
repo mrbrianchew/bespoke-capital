@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useDashboard } from '@/contexts/DashboardContext'
 import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { Chart, registerables } from 'chart.js'
@@ -1042,8 +1042,8 @@ function vehicleIcon(t: VehicleType) {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function CapitalMandatePage() {
-  const router = useRouter()
   const supabase = createClient()
+  const { activeClient, authLoading } = useDashboard()
 
   const [loading, setLoading] = useState(true)
   const [client, setClient] = useState<any>(null)
@@ -1102,16 +1102,13 @@ export default function CapitalMandatePage() {
     return retirementAge
   }, [planMode, retirementAge, spouseRetirementAge, clientAge, spouseAge])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (authLoading) return
+    if (!activeClient) { setLoading(false); return }
+    load(activeClient)
+  }, [authLoading, activeClient?.id])
 
-  async function load() {
-    const [{ data: { user } }, { data: clients }] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase.from('clients').select('*').order('created_at', { ascending: false }),
-    ])
-    if (!user) { router.push('/auth'); return }
-    if (!clients?.length) { setLoading(false); return }
-    const c = clients.find((x: any) => x.id === localStorage.getItem('selectedClientId')) || clients[0]
+  async function load(c: any) {
     setClient(c); clientRef.current = c
 
     const [{ data: rows }, { data: familyMembers }] = await Promise.all([

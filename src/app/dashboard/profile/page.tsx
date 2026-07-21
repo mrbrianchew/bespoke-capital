@@ -1,45 +1,46 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 export default function ProfilePage() {
+  const { user, advisor, authLoading, setAdvisor } = useDashboard()
   const [name, setName] = useState('')
   const [firm, setFirm] = useState('')
   const [email, setEmail] = useState('')
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const supabase = createClient()
 
-  useEffect(() => { load() }, [])
-
-  async function load() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data } = await supabase.from('advisors').select('name,firm,email').eq('id', user.id).maybeSingle()
-    if (data) { setName(data.name || ''); setFirm(data.firm || ''); setEmail(data.email || user.email || '') }
-    setLoading(false)
-  }
+  useEffect(() => {
+    if (authLoading) return
+    if (advisor) {
+      setName(advisor.name || '')
+      setFirm(advisor.firm || '')
+      setEmail(advisor.email || user?.email || '')
+    }
+  }, [authLoading, advisor, user])
 
   async function save() {
     if (!name.trim()) { setError('Name is required'); return }
+    if (!user) { return }
     setError('')
     setSaved(false)
     setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSaving(false); return }
+    const updateFields = { name: name.trim(), firm: firm.trim() || null }
     const { error: err } = await supabase
       .from('advisors')
-      .update({ name: name.trim(), firm: firm.trim() || null })
+      .update(updateFields)
       .eq('id', user.id)
     setSaving(false)
     if (err) { setError(err.message); return }
+    setAdvisor(prev => (prev ? { ...prev, ...updateFields } : prev))
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
-  if (loading) return <div className="px-8 py-10 text-sm" style={{ color: 'var(--ink3)' }}>Loading…</div>
+  if (authLoading) return <div className="px-8 py-10 text-sm" style={{ color: 'var(--ink3)' }}>Loading…</div>
 
   return (
     <div className="max-w-lg mx-auto px-8 py-10">

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { calcAnnualTakeHome, amortisedOutstanding } from '@/lib/calc'
 import DateInput from '@/components/DateInput'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -81,20 +82,16 @@ export default function ExecutiveSummaryPage() {
   const [editingMember, setEditingMember] = useState<any>(null)
   const router = useRouter()
   const supabase = createClient()
+  const { activeClient, authLoading, updateActiveClientFields } = useDashboard()
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (authLoading) return
+    if (!activeClient) { setLoading(false); return }
+    load(activeClient)
+  }, [authLoading, activeClient?.id])
 
-  async function load() {
+  async function load(c: any) {
     setLoading(true)
-    const savedId = localStorage.getItem('selectedClientId')
-    const [{ data: { user } }, { data: clients }] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase.from('clients').select('*').order('created_at', { ascending: false }),
-    ])
-    if (!user) { router.push('/auth'); return }
-    if (!clients || clients.length === 0) { setLoading(false); return }
-
-    const c = clients.find((x: any) => x.id === savedId) || clients[0]
     setClient(c)
 
     const [{ data: family }, { data: ffRows }] = await Promise.all([
@@ -135,6 +132,7 @@ export default function ExecutiveSummaryPage() {
       .eq('id', client.id)
     if (error) throw error
     setClient((prev: any) => ({ ...prev, ...updateFields }))
+    updateActiveClientFields(updateFields)
   } catch (error: any) {
     alert(`Failed to update client: ${error.message || 'Unknown error'}`)
   } finally {
