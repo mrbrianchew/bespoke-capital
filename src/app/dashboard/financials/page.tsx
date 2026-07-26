@@ -29,8 +29,9 @@ interface PropertyItem {
   propertyType?: PropertyType
   isPrimaryResidence?: boolean
   ownershipType?: OwnershipType
-  ownershipSplit?: string  // e.g. "60/40"
-  attributedOwner?: 'Client' | 'Spouse'  // Joint Tenancy only — which individual view (Assets/Liabilities toggle) this counts under. Unset = Combined only.
+  ownershipSplit?: string  // legacy free-text split e.g. "60/40" — superseded by ownershipSplitPct, kept only to derive initial slider position for old data
+  attributedOwner?: 'Client' | 'Spouse'  // legacy — superseded by ownershipSplitPct, kept only to derive initial slider position for old data
+  ownershipSplitPct?: number  // 0-100, % attributed to Client (100-x to Spouse). Drives Joint Tenancy and Tenancy-in-Common individual-view attribution via slider.
   propertyValue?: number   // current market value; if blank, purchasePrice is used
   purchasePrice?: number   // fallback when propertyValue is not known
   // Mortgage — Original Loan (for amortization calc)
@@ -603,6 +604,19 @@ function PropertyPortfolioBlock({
   const upd = (id: string, key: keyof PropertyItem, val: unknown) =>
     onChange(properties.map(p => p.id === id ? { ...p, [key]: val } : p))
 
+  const deriveSplitPct = (prop: PropertyItem): number => {
+    if (typeof prop.ownershipSplitPct === 'number') return prop.ownershipSplitPct
+    if (prop.ownershipSplit) {
+      const parts = prop.ownershipSplit.split('/').map(s => parseFloat(s.trim()))
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && (parts[0] + parts[1]) > 0) {
+        return Math.round((parts[0] / (parts[0] + parts[1])) * 100)
+      }
+    }
+    if (prop.attributedOwner === 'Client') return 100
+    if (prop.attributedOwner === 'Spouse') return 0
+    return 50
+  }
+
   const remove = (id: string) => onChange(properties.filter(p => p.id !== id))
 
 const addProperty = () => {
@@ -679,7 +693,7 @@ const addProperty = () => {
                   {effectivePropertyValue ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Value: {fmt(effectivePropertyValue)}</span> : null}
                   {effectiveOutstanding ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Loan: {fmt(effectiveOutstanding)}{amortizedBalance ? ' (est.)' : ''}{prop.interestRate ? ' · ' + prop.interestRate + '% ' + (prop.loanType || '') : ''}</span> : null}
                   {loanEndYear ? <span className="text-xs" style={{ color: 'var(--ink3)' }}>Ends {loanEndYear}{mortgageEndAge ? ` · Age ${mortgageEndAge}${mortgageEndAge2 ? `/${mortgageEndAge2}` : ''}` : ''}</span> : null}
-                  {prop.ownershipType && <span className="text-xs" style={{ color: 'var(--ink3)' }}>{prop.ownershipType}{prop.ownershipType === 'Tenancy-in-Common' && prop.ownershipSplit ? ' ' + prop.ownershipSplit : ''}</span>}
+                  {prop.ownershipType && <span className="text-xs" style={{ color: 'var(--ink3)' }}>{prop.ownershipType}{isCouple && (prop.ownershipType === 'Tenancy-in-Common' || prop.ownershipType === 'Joint Tenancy') ? ` · ${deriveSplitPct(prop)}/${100 - deriveSplitPct(prop)}` : ''}</span>}
                 </div>
               </div>
               <span className="text-xs" style={{ color: 'var(--ink3)' }}>{isOpen ? '▲' : '▼'}</span>
@@ -781,41 +795,31 @@ const addProperty = () => {
                         <option value="Tenancy-in-Common">Tenancy-in-Common</option>
                       </select>
                     </div>
-                    {prop.ownershipType === 'Tenancy-in-Common' && (
-                      <div>
-                        <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Ownership Split (e.g. 60/40)</div>
-                        <input value={prop.ownershipSplit || ''} onChange={e => upd(prop.id, 'ownershipSplit', e.target.value)}
-                          placeholder="60/40" className="w-full text-xs px-2 py-1.5 outline-none"
-                          style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
-                          onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
-                          onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
-                      </div>
-                    )}
-                    {isCouple && prop.ownershipType === 'Joint Tenancy' && (
-                      <div style={{ position: 'relative', zIndex: 10 }}>
-                        <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Attribute to (for individual views)</div>
-                        <select
-                          value={prop.attributedOwner || ''}
-                          onChange={(e) => {
-                            e.stopPropagation()
-                            upd(prop.id, 'attributedOwner', e.target.value || undefined)
-                          }}
-                          className="w-full text-xs px-2 py-1.5 outline-none"
-                          style={{
-                            border: '1px solid var(--line)',
-                            background: 'white',
-                            color: prop.attributedOwner ? 'var(--ink)' : 'var(--ink3)',
-                            cursor: 'pointer',
-                            pointerEvents: 'auto'
-                          }}
-                        >
-                          <option value="">Show under Combined only</option>
-                          <option value="Client">Attribute to {clientName || 'Client'}</option>
-                          <option value="Spouse">Attribute to {spouseName || 'Spouse'}</option>
-                        </select>
-                      </div>
-                    )}
                   </div>
+                  {isCouple && (prop.ownershipType === 'Joint Tenancy' || prop.ownershipType === 'Tenancy-in-Common') && (() => {
+                    const pct = deriveSplitPct(prop)
+                    return (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-medium" style={{ color: 'var(--gold-tag)' }}>{clientName || 'Client'} — {pct}%</span>
+                          <span className="text-xs font-medium" style={{ color: '#4A7C9E' }}>{spouseName || 'Spouse'} — {100 - pct}%</span>
+                        </div>
+                        <input
+                          type="range" min={0} max={100} step={1} value={pct}
+                          onChange={e => {
+                            e.stopPropagation()
+                            upd(prop.id, 'ownershipSplitPct', parseInt(e.target.value))
+                          }}
+                          onClick={e => e.stopPropagation()}
+                          className="w-full"
+                          style={{ accentColor: 'var(--gold)' }}
+                        />
+                        <div className="flex justify-between mt-0.5" style={{ fontSize: 9, color: 'var(--ink3)' }}>
+                          <span>100% {clientName || 'Client'}</span><span>50 / 50</span><span>100% {spouseName || 'Spouse'}</span>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* Mortgage */}
