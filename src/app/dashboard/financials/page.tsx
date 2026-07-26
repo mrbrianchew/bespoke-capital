@@ -8,6 +8,7 @@ import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import SnapshotsTab from './SnapshotsTab'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { Users } from 'lucide-react'
 
 interface OtherIncomeItem { label: string; amount: number }
 interface CustomAssetItem { label: string; amount: number; amount2?: number; notes?: string }
@@ -49,6 +50,41 @@ interface PropertyItem {
   remainingTenure?: number  // years
   monthlyRepayment?: number  // auto-calculated via PMT
   notes?: string
+}
+
+function ViewModeToggle({ viewMode, setViewMode, clientName, spouseName }: {
+  viewMode: 'combined' | 'client' | 'spouse'
+  setViewMode: (v: 'combined' | 'client' | 'spouse') => void
+  clientName: string
+  spouseName: string
+}) {
+  const clientInitial = (clientName || 'C').trim().charAt(0).toUpperCase()
+  const spouseInitial = (spouseName || 'S').trim().charAt(0).toUpperCase()
+  const btnStyle = (id: 'combined' | 'client' | 'spouse') => ({
+    border: viewMode === id ? '1.5px solid var(--gold)' : '1px solid var(--line)',
+    background: viewMode === id ? 'var(--gold-l)' : 'white',
+    cursor: 'pointer' as const,
+  })
+  return (
+    <div className="flex gap-1">
+      <button title="Combined" onClick={() => setViewMode('combined')}
+        className="flex-1 py-2 flex items-center justify-center" style={btnStyle('combined')}>
+        <Users size={16} strokeWidth={1.5} color={viewMode === 'combined' ? 'var(--gold-tag)' : 'var(--ink2)'} />
+      </button>
+      <button title={clientName} onClick={() => setViewMode('client')}
+        className="flex-1 py-1.5 flex items-center justify-center" style={btnStyle('client')}>
+        <span style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--gold)', color: 'var(--gold-tag)', fontFamily: 'var(--font-cormorant), Georgia, serif', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {clientInitial}
+        </span>
+      </button>
+      <button title={spouseName} onClick={() => setViewMode('spouse')}
+        className="flex-1 py-1.5 flex items-center justify-center" style={btnStyle('spouse')}>
+        <span style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #4A7C9E', color: '#2C5674', fontFamily: 'var(--font-cormorant), Georgia, serif', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {spouseInitial}
+        </span>
+      </button>
+    </div>
+  )
 }
 
 interface PersonData {
@@ -1875,16 +1911,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
 
               <div className="space-y-4">
-                {isCouple && (
-                  <div className="flex gap-1">
-                    {([['combined','Combined'],['client',clientName],['spouse',spouseName]] as const).map(([id,label]) => (
-                      <button key={id} onClick={() => setViewMode(id)} className="flex-1 text-xs font-medium py-2"
-                        style={{ border: viewMode === id ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: viewMode === id ? 'var(--gold-l)' : 'white', color: viewMode === id ? 'var(--gold-tag)' : 'var(--ink2)' }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {isCouple && <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} clientName={clientName} spouseName={spouseName} />}
                 <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                   <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Cash Flow{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
                   <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -2069,16 +2096,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
-              {isCouple && (
-                <div className="flex gap-1">
-                  {([['combined','Combined'],['client',clientName],['spouse',spouseName]] as const).map(([id,label]) => (
-                    <button key={id} onClick={() => setViewMode(id)} className="flex-1 text-xs font-medium py-2"
-                      style={{ border: viewMode === id ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: viewMode === id ? 'var(--gold-l)' : 'white', color: viewMode === id ? 'var(--gold-tag)' : 'var(--ink2)' }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {isCouple && <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} clientName={clientName} spouseName={spouseName} />}
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Total Assets{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
                 {[
@@ -2251,16 +2269,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
-              {isCouple && (
-                <div className="flex gap-1">
-                  {([['combined','Combined'],['client',clientName],['spouse',spouseName]] as const).map(([id,label]) => (
-                    <button key={id} onClick={() => setViewMode(id)} className="flex-1 text-xs font-medium py-2"
-                      style={{ border: viewMode === id ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: viewMode === id ? 'var(--gold-l)' : 'white', color: viewMode === id ? 'var(--gold-tag)' : 'var(--ink2)' }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {isCouple && <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} clientName={clientName} spouseName={spouseName} />}
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Liability Breakdown{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
                 <LiabilityDonut items={[
