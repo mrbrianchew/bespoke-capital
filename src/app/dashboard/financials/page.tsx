@@ -1910,6 +1910,16 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                                 + Add Row
                               </button>
                             </div>
+                            {isCouple && (
+                              <div className="flex items-center gap-2" style={{ paddingTop: 10, marginTop: 4, borderTop: '1.5px solid var(--gold)' }}>
+                                <div style={{ width: 190, flexShrink: 0 }} />
+                                <div className="flex-1 text-xs font-medium" style={{ color: 'var(--ink)' }}>Sub-total</div>
+                                <div className="text-xs text-right font-semibold" style={{ width: 118, color: 'var(--gold-tag)' }}>{fmt(g1)}</div>
+                                <div className="text-xs text-right font-semibold" style={{ width: 118, color: '#2C5674' }}>{fmt(g2)}</div>
+                                <div className="text-xs text-right font-bold" style={{ width: 90, color: group.color }}>{fmt(gSum)}</div>
+                                <div style={{ width: 28 }} />
+                              </div>
+                            )}
                           </div>
                         </div>
                       )
