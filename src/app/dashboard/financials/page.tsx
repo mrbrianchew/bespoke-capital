@@ -30,6 +30,7 @@ interface PropertyItem {
   isPrimaryResidence?: boolean
   ownershipType?: OwnershipType
   ownershipSplit?: string  // e.g. "60/40"
+  attributedOwner?: 'Client' | 'Spouse'  // Joint Tenancy only — which individual view (Assets/Liabilities toggle) this counts under. Unset = Combined only.
   propertyValue?: number   // current market value; if blank, purchasePrice is used
   purchasePrice?: number   // fallback when propertyValue is not known
   // Mortgage — Original Loan (for amortization calc)
@@ -788,6 +789,30 @@ const addProperty = () => {
                           style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
                           onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
                           onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+                      </div>
+                    )}
+                    {isCouple && prop.ownershipType === 'Joint Tenancy' && (
+                      <div style={{ position: 'relative', zIndex: 10 }}>
+                        <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Attribute to (for individual views)</div>
+                        <select
+                          value={prop.attributedOwner || ''}
+                          onChange={(e) => {
+                            e.stopPropagation()
+                            upd(prop.id, 'attributedOwner', e.target.value || undefined)
+                          }}
+                          className="w-full text-xs px-2 py-1.5 outline-none"
+                          style={{
+                            border: '1px solid var(--line)',
+                            background: 'white',
+                            color: prop.attributedOwner ? 'var(--ink)' : 'var(--ink3)',
+                            cursor: 'pointer',
+                            pointerEvents: 'auto'
+                          }}
+                        >
+                          <option value="">Show under Combined only</option>
+                          <option value="Client">Attribute to {clientName || 'Client'}</option>
+                          <option value="Spouse">Attribute to {spouseName || 'Spouse'}</option>
+                        </select>
                       </div>
                     )}
                   </div>
