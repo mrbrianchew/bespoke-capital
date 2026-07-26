@@ -59,6 +59,23 @@ interface PersonData {
   smoker?: boolean; pre_existing?: string
 }
 
+// Client ownership share (0-100) used to split a property's value/mortgage between Client and Spouse
+// for the individual Combined/Client/Spouse view toggle. 100 = fully Client, 0 = fully Spouse.
+function getClientSharePct(prop: PropertyItem): number {
+  if (prop.ownershipType === 'Client Only') return 100
+  if (prop.ownershipType === 'Spouse Only') return 0
+  if (typeof prop.ownershipSplitPct === 'number') return prop.ownershipSplitPct
+  if (prop.ownershipSplit) {
+    const parts = prop.ownershipSplit.split('/').map(s => parseFloat(s.trim()))
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && (parts[0] + parts[1]) > 0) {
+      return Math.round((parts[0] / (parts[0] + parts[1])) * 100)
+    }
+  }
+  if (prop.attributedOwner === 'Client') return 100
+  if (prop.attributedOwner === 'Spouse') return 0
+  return 50
+}
+
 interface FactFinding {
   client_id: string; mode?: 'single' | 'couple'; person1?: PersonData; person2?: PersonData
   expense_mode?: 'simple' | 'detailed'
@@ -604,18 +621,7 @@ function PropertyPortfolioBlock({
   const upd = (id: string, key: keyof PropertyItem, val: unknown) =>
     onChange(properties.map(p => p.id === id ? { ...p, [key]: val } : p))
 
-  const deriveSplitPct = (prop: PropertyItem): number => {
-    if (typeof prop.ownershipSplitPct === 'number') return prop.ownershipSplitPct
-    if (prop.ownershipSplit) {
-      const parts = prop.ownershipSplit.split('/').map(s => parseFloat(s.trim()))
-      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && (parts[0] + parts[1]) > 0) {
-        return Math.round((parts[0] / (parts[0] + parts[1])) * 100)
-      }
-    }
-    if (prop.attributedOwner === 'Client') return 100
-    if (prop.attributedOwner === 'Spouse') return 0
-    return 50
-  }
+  const deriveSplitPct = getClientSharePct
 
   const remove = (id: string) => onChange(properties.filter(p => p.id !== id))
 
@@ -1186,6 +1192,7 @@ function FactFindingPage() {
   const [ff, setFf] = useState<FactFinding | null>(null)
   const [cpfConfig, setCpfConfig] = useState<CpfConfig>(DEFAULT_CPF_CONFIG)
   const [activeSection, setActiveSection] = useState('income')
+  const [viewMode, setViewMode] = useState<'combined' | 'client' | 'spouse'>('combined')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -1415,6 +1422,26 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
   const annGross2 = isCouple ? (p2.gross_monthly || 0) * 12 + (p2.gross_bonus || 0) : 0
   const moGrossTotal = (annGross1 + annGross2) / 12
 
+  // ---- Per-person cash flow, for the Combined/Client/Spouse view toggle ----
+  const annExpNoCpf1 = nonCpfCats.reduce((s, cat) => s + getAnn1(cat), 0)
+  const annExpNoCpf2 = nonCpfCats.reduce((s, cat) => s + getAnn2(cat), 0)
+  const moExpNoCpf1 = annExpNoCpf1 / 12
+  const moExpNoCpf2 = annExpNoCpf2 / 12
+  const annCpfOaTotal1 = getAnn1(cpfOaCat)
+  const annCpfOaTotal2 = getAnn2(cpfOaCat)
+  const annExpAll1 = EXP_CATEGORIES.reduce((s, cat) => s + getAnn1(cat), 0)
+  const annExpAll2 = EXP_CATEGORIES.reduce((s, cat) => s + getAnn2(cat), 0)
+  const vMoTotal = viewMode === 'client' ? mo1 : viewMode === 'spouse' ? mo2 : moTotal
+  const vAnTotal = viewMode === 'client' ? an1 : viewMode === 'spouse' ? an2 : anTotal
+  const vMoExpNoCpf = viewMode === 'client' ? moExpNoCpf1 : viewMode === 'spouse' ? moExpNoCpf2 : moExpNoCpf
+  const vAnnExpNoCpf = viewMode === 'client' ? annExpNoCpf1 : viewMode === 'spouse' ? annExpNoCpf2 : annExpNoCpf
+  const vAnnCpfOaTotal = viewMode === 'client' ? annCpfOaTotal1 : viewMode === 'spouse' ? annCpfOaTotal2 : annCpfOaTotal
+  const vAnnExpAll = viewMode === 'client' ? annExpAll1 : viewMode === 'spouse' ? annExpAll2 : annExpAll
+  const vCpfOaInflow = viewMode === 'client' ? cpf1.oa : viewMode === 'spouse' ? (cpf2?.oa || 0) : cpf1.oa + (cpf2?.oa || 0)
+  const vMoGrossTotal = viewMode === 'client' ? annGross1 / 12 : viewMode === 'spouse' ? annGross2 / 12 : moGrossTotal
+  const getAnnSumView = (cat: typeof EXP_CATEGORIES[0]) =>
+    viewMode === 'client' ? getAnn1(cat) : viewMode === 'spouse' ? getAnn2(cat) : getAnnSum(cat)
+
   const DETAILED_GROUPS = [
     { id: 'financial', title: 'Financial Obligations', color: '#E08080', hint: 'Income tax, insurance, regular savings/investments',
       keys: ['d_mortgage_cpf','d_mortgage_cash','d_vehicle_repay','d_personal_loan_repay','d_rental_expense','d_income_tax','d_insurance','d_regular_savings'],
@@ -1497,6 +1524,68 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
   const ltCustom = (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount || 0) + (isCouple ? (i.amount2 || 0) : 0), 0)
   const ltTotal = (ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustom+(isCouple?((ff.l2_car_loan||0)+(ff.l2_study_loan||0)+(ff.l2_personal_loan||0)+(ff.l2_renovation_lt||0)):0)
   const totalLiab = stTotal + ltTotal + mortgageLiabTotal; const netWorth = totalAssets - totalLiab
+
+  // ---- Per-person (Client / Spouse) breakdowns for the Combined/Client/Spouse view toggle ----
+  const cashCustomC = (ff.a_cash_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
+  const cashCustomS = isCouple ? (ff.a_cash_custom || []).reduce((s, i) => s + (i.amount2 || 0), 0) : 0
+  const cashTotalC = (ff.a_savings||0)+(ff.a_fixed_deposit||0)+cashCustomC
+  const cashTotalS = isCouple ? ((ff.a2_savings||0)+(ff.a2_fixed_deposit||0)+cashCustomS) : 0
+  const investedCustomC = (ff.a_invested_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
+  const investedCustomS = isCouple ? (ff.a_invested_custom || []).reduce((s, i) => s + (i.amount2 || 0), 0) : 0
+  const investedTotalC = cpfItems.reduce((s,v)=>s+v,0) + investedStd.reduce((s,v)=>s+v,0) + investedCustomC
+  const investedTotalS = isCouple ? (cpfItems2.reduce((s,v)=>s+v,0) + investedStd2.reduce((s,v)=>s+v,0) + investedCustomS) : 0
+  const personalCustomC = (ff.a_personal_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
+  const personalCustomS = isCouple ? (ff.a_personal_custom || []).reduce((s, i) => s + (i.amount2 || 0), 0) : 0
+  const personalTotalC = (ff.a_vehicles||0)+(ff.a_club||0)+personalCustomC
+  const personalTotalS = isCouple ? ((ff.a2_vehicles||0)+(ff.a2_club||0)+personalCustomS) : 0
+  const primaryResTotalC = primaryResProps.reduce((s, p) => s + (p.propertyValue || p.purchasePrice || 0) * (getClientSharePct(p) / 100), 0)
+  const primaryResTotalS = primaryResProps.reduce((s, p) => s + (p.propertyValue || p.purchasePrice || 0) * (1 - getClientSharePct(p) / 100), 0)
+  const investmentPropTotalC = investmentProps.reduce((s, p) => s + (p.propertyValue || p.purchasePrice || 0) * (getClientSharePct(p) / 100), 0)
+  const investmentPropTotalS = investmentProps.reduce((s, p) => s + (p.propertyValue || p.purchasePrice || 0) * (1 - getClientSharePct(p) / 100), 0)
+  const mortgageLiabTotalC = allProperties.reduce((s, p) => {
+    const eff = p.outstanding || (p.initialLoanAmount && p.initialTenure && p.loanStartDate
+      ? calcOutstandingBalance(p.initialLoanAmount, p.interestRate || 0, p.initialTenure, p.loanStartDate) : 0)
+    return s + (eff || 0) * (getClientSharePct(p) / 100)
+  }, 0)
+  const mortgageLiabTotalS = allProperties.reduce((s, p) => {
+    const eff = p.outstanding || (p.initialLoanAmount && p.initialTenure && p.loanStartDate
+      ? calcOutstandingBalance(p.initialLoanAmount, p.interestRate || 0, p.initialTenure, p.loanStartDate) : 0)
+    return s + (eff || 0) * (1 - getClientSharePct(p) / 100)
+  }, 0)
+  const totalAssetsC = cashTotalC + investedTotalC + personalTotalC + investmentPropTotalC + primaryResTotalC
+  const totalAssetsS = cashTotalS + investedTotalS + personalTotalS + investmentPropTotalS + primaryResTotalS
+  const stCustomC = (ff.l_st_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
+  const stCustomS = isCouple ? (ff.l_st_custom || []).reduce((s, i) => s + (i.amount2 || 0), 0) : 0
+  const stTotalC = (ff.l_credit_card||0)+(ff.l_business_loan||0)+(ff.l_renovation_st||0)+stCustomC
+  const stTotalS = isCouple ? ((ff.l2_credit_card||0)+(ff.l2_business_loan||0)+(ff.l2_renovation_st||0)+stCustomS) : 0
+  const ltCustomC = (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
+  const ltCustomS = isCouple ? (ff.l_lt_custom || []).reduce((s, i) => s + (i.amount2 || 0), 0) : 0
+  const ltTotalC = (ff.l_car_loan||0)+(ff.l_study_loan||0)+(ff.l_personal_loan||0)+(ff.l_renovation_lt||0)+ltCustomC
+  const ltTotalS = isCouple ? ((ff.l2_car_loan||0)+(ff.l2_study_loan||0)+(ff.l2_personal_loan||0)+(ff.l2_renovation_lt||0)+ltCustomS) : 0
+  const totalLiabC = stTotalC + ltTotalC + mortgageLiabTotalC
+  const totalLiabS = stTotalS + ltTotalS + mortgageLiabTotalS
+  const netWorthC = totalAssetsC - totalLiabC
+  const netWorthS = totalAssetsS - totalLiabS
+  // Active view's figures — what the right-side panels actually render
+  const vCashTotal = viewMode === 'client' ? cashTotalC : viewMode === 'spouse' ? cashTotalS : cashTotal
+  const vInvestedTotal = viewMode === 'client' ? investedTotalC : viewMode === 'spouse' ? investedTotalS : investedTotal
+  const vPersonalTotal = viewMode === 'client' ? personalTotalC : viewMode === 'spouse' ? personalTotalS : personalTotal
+  const vPrimaryResTotal = viewMode === 'client' ? primaryResTotalC : viewMode === 'spouse' ? primaryResTotalS : primaryResTotal
+  const vInvestmentPropTotal = viewMode === 'client' ? investmentPropTotalC : viewMode === 'spouse' ? investmentPropTotalS : investmentPropTotal
+  const vTotalAssets = viewMode === 'client' ? totalAssetsC : viewMode === 'spouse' ? totalAssetsS : totalAssets
+  const vStTotal = viewMode === 'client' ? stTotalC : viewMode === 'spouse' ? stTotalS : stTotal
+  const vLtTotal = viewMode === 'client' ? ltTotalC : viewMode === 'spouse' ? ltTotalS : ltTotal
+  const vMortgageLiabTotal = viewMode === 'client' ? mortgageLiabTotalC : viewMode === 'spouse' ? mortgageLiabTotalS : mortgageLiabTotal
+  const vTotalLiab = viewMode === 'client' ? totalLiabC : viewMode === 'spouse' ? totalLiabS : totalLiab
+  const vNetWorth = viewMode === 'client' ? netWorthC : viewMode === 'spouse' ? netWorthS : netWorth
+  const vCreditCard = viewMode === 'client' ? (ff.l_credit_card||0) : viewMode === 'spouse' ? (ff.l2_credit_card||0) : (ff.l_credit_card||0)+(ff.l2_credit_card||0)
+  const vCarLoan = viewMode === 'client' ? (ff.l_car_loan||0) : viewMode === 'spouse' ? (ff.l2_car_loan||0) : (ff.l_car_loan||0)+(ff.l2_car_loan||0)
+  const vPersonalLoan = viewMode === 'client' ? (ff.l_personal_loan||0) : viewMode === 'spouse' ? (ff.l2_personal_loan||0) : (ff.l_personal_loan||0)+(ff.l2_personal_loan||0)
+  const vStudyLoan = viewMode === 'client' ? (ff.l_study_loan||0) : viewMode === 'spouse' ? (ff.l2_study_loan||0) : (ff.l_study_loan||0)+(ff.l2_study_loan||0)
+  const vOthersLiab = viewMode === 'client' ? ((ff.l_business_loan||0)+(ff.l_renovation_st||0)+(ff.l_renovation_lt||0)+ltCustomC+stCustomC)
+    : viewMode === 'spouse' ? ((ff.l2_business_loan||0)+(ff.l2_renovation_st||0)+(ff.l2_renovation_lt||0)+ltCustomS+stCustomS)
+    : ((ff.l_business_loan||0)+(ff.l_renovation_st||0)+(ff.l_renovation_lt||0)+ltCustom+stCustom)
+
   const RISK_COLORS: Record<string, string> = { Conservative: 'var(--emerald)', Moderate: '#C4A464', Balanced: '#4A7C9E', Growth: '#7A6AAA', Aggressive: 'var(--rouge)' }
   const assetRow = (label: string, key: keyof FactFinding, key2?: keyof FactFinding, noteKey?: keyof FactFinding) => <AssetRow key={label} label={label} value={ff[key] as number} onChange={v => upd(key, n(v))} value2={key2 ? ff[key2] as number : undefined} onChange2={key2 ? v => upd(key2, n(v)) : undefined} isCouple={isCouple} note={noteKey ? ff[noteKey] as string : undefined} onNoteChange={noteKey ? v => upd(noteKey, v) : undefined} />
   const clientName = client.name; const spouseName = spouse?.name || 'Spouse'
@@ -1786,45 +1875,55 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
 
               <div className="space-y-4">
+                {isCouple && (
+                  <div className="flex gap-1">
+                    {([['combined','Combined'],['client',clientName],['spouse',spouseName]] as const).map(([id,label]) => (
+                      <button key={id} onClick={() => setViewMode(id)} className="flex-1 text-xs font-medium py-2"
+                        style={{ border: viewMode === id ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: viewMode === id ? 'var(--gold-l)' : 'white', color: viewMode === id ? 'var(--gold-tag)' : 'var(--ink2)' }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Cash Flow</div>
+                  <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Cash Flow{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
                   <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <span style={{ color: 'var(--ink3)' }}>Total Income/mo</span>
-                    <span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(moTotal)}</span>
+                    <span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(vMoTotal)}</span>
                   </div>
                   <div className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <span style={{ color: 'var(--ink3)' }}>Total Expenses/mo</span>
-                    <span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(moExpNoCpf)}</span>
+                    <span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(vMoExpNoCpf)}</span>
                   </div>
-                  {annCpfOaTotal > 0 && (<>
+                  {vAnnCpfOaTotal > 0 && (<>
                     <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                       <span style={{ color: '#5A8A6A' }}>CPF OA Outflow/mo</span>
-                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>−{fmt(annCpfOaTotal/12)}</span>
+                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>−{fmt(vAnnCpfOaTotal/12)}</span>
                     </div>
                     <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                       <span style={{ color: '#5A8A6A' }}>CPF OA Inflow/mo</span>
-                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>+{fmt(cpf1.oa+(cpf2?.oa||0))}</span>
+                      <span style={{ color: '#5A8A6A', fontWeight: 500 }}>+{fmt(vCpfOaInflow)}</span>
                     </div>
                   </>)}
                   <div className="flex items-center justify-between pt-3 mb-2">
                     <span className="text-xs" style={{ color: 'var(--ink2)' }}>Surplus / Deficit</span>
-                    <span className="font-serif text-xl" style={{ color: moTotal-moExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
-                      {moTotal-moExpNoCpf>=0?'+':'−'}{fmt(Math.abs(moTotal-moExpNoCpf))}/mo
+                    <span className="font-serif text-xl" style={{ color: vMoTotal-vMoExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
+                      {vMoTotal-vMoExpNoCpf>=0?'+':'−'}{fmt(Math.abs(vMoTotal-vMoExpNoCpf))}/mo
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs" style={{ color: 'var(--ink2)' }}>Annual surplus</span>
-                    <span className="font-serif text-base" style={{ color: anTotal-annExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
-                      {anTotal-annExpNoCpf>=0?'+':'−'}{fmt(Math.abs(anTotal-annExpNoCpf))}/yr
+                    <span className="font-serif text-base" style={{ color: vAnTotal-vAnnExpNoCpf>=0?'var(--emerald)':'var(--rouge)' }}>
+                      {vAnTotal-vAnnExpNoCpf>=0?'+':'−'}{fmt(Math.abs(vAnTotal-vAnnExpNoCpf))}/yr
                     </span>
                   </div>
-                  {moTotal > 0 && (
+                  {vMoTotal > 0 && (
                     <div className="mt-3">
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
-                        <div className="h-full rounded-full" style={{ width:`${Math.min((moExpNoCpf/moTotal)*100,100)}%`, background: moExpNoCpf/moTotal>0.9?'var(--rouge)':moExpNoCpf/moTotal>0.7?'#C4A464':'var(--emerald)' }} />
+                        <div className="h-full rounded-full" style={{ width:`${Math.min((vMoExpNoCpf/vMoTotal)*100,100)}%`, background: vMoExpNoCpf/vMoTotal>0.9?'var(--rouge)':vMoExpNoCpf/vMoTotal>0.7?'#C4A464':'var(--emerald)' }} />
                       </div>
                       <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--ink3)' }}>
-                        <span>Expense ratio</span><span>{pct(moExpNoCpf,moTotal)}%</span>
+                        <span>Expense ratio</span><span>{pct(vMoExpNoCpf,vMoTotal)}%</span>
                       </div>
                     </div>
                   )}
@@ -1834,8 +1933,8 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                   <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--ink3)' }}>vs Singapore Average</div>
                   <div className="text-xs mb-4" style={{ color: 'var(--ink3)' }}>% of gross income (DOS HES benchmark)</div>
                   {EXP_CATEGORIES.map(cat => {
-                    const moAmt = getAnnSum(cat) / 12
-                    const actualPct = moGrossTotal > 0 ? (moAmt / moGrossTotal) * 100 : 0
+                    const moAmt = getAnnSumView(cat) / 12
+                    const actualPct = vMoGrossTotal > 0 ? (moAmt / vMoGrossTotal) * 100 : 0
                     const benchPct = BENCHMARKS_PCT[cat.id] ?? 5
                     const over = actualPct > benchPct
                     const barW = Math.min((actualPct / (benchPct * 2)) * 100, 100)
@@ -1865,7 +1964,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 <div style={{ background: 'white', border: '1px solid var(--line)', padding: '16px 20px' }}>
                   <div className="text-xs tracking-widest uppercase mb-2" style={{ color: 'var(--ink3)' }}>Annual Breakdown</div>
                   {EXP_CATEGORIES.map(cat => {
-                    const annAmt = getAnnSum(cat); if (!annAmt) return null
+                    const annAmt = getAnnSumView(cat); if (!annAmt) return null
                     const isCpfOa = cat.id === 'cpf_oa'
                     return (
                       <div key={cat.id} className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -1880,16 +1979,16 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                   })}
                   <div className="flex justify-between pt-2 text-xs" style={{ borderTop: '1px solid var(--line)', marginTop: 4 }}>
                     <span style={{ color: 'var(--ink3)' }}>Cash Expenses</span>
-                    <span style={{ color: 'var(--rouge)', fontWeight: 600 }}>{fmt(annExpNoCpf)}</span>
+                    <span style={{ color: 'var(--rouge)', fontWeight: 600 }}>{fmt(vAnnExpNoCpf)}</span>
                   </div>
-                  {annCpfOaTotal > 0 && (
+                  {vAnnCpfOaTotal > 0 && (
                     <div className="flex justify-between pt-1 text-xs">
                       <span style={{ color: '#5A8A6A' }}>+ CPF OA</span>
-                      <span style={{ color: '#5A8A6A', fontWeight: 600 }}>{fmt(annCpfOaTotal)}</span>
+                      <span style={{ color: '#5A8A6A', fontWeight: 600 }}>{fmt(vAnnCpfOaTotal)}</span>
                     </div>
                   )}
                   <div className="flex justify-between pt-2 font-semibold text-sm" style={{ borderTop: '1px solid var(--line)', marginTop: 4, color: 'var(--ink)' }}>
-                    <span>Total Annual</span><span>{fmt(annExpAll)}</span>
+                    <span>Total Annual</span><span>{fmt(vAnnExpAll)}</span>
                   </div>
                 </div>
               </div>
@@ -1970,29 +2069,39 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
+              {isCouple && (
+                <div className="flex gap-1">
+                  {([['combined','Combined'],['client',clientName],['spouse',spouseName]] as const).map(([id,label]) => (
+                    <button key={id} onClick={() => setViewMode(id)} className="flex-1 text-xs font-medium py-2"
+                      style={{ border: viewMode === id ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: viewMode === id ? 'var(--gold-l)' : 'white', color: viewMode === id ? 'var(--gold-tag)' : 'var(--ink2)' }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Total Assets</div>
+                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Total Assets{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
                 {[
-                  {label:'Cash / Near Cash',val:cashTotal,color:'var(--emerald)'},
-                  {label:'Invested Assets',val:investedTotal,color:'#4A7C9E'},
-                  {label:'Investment Properties',val:investmentPropTotal,color:'var(--gold-tag)'},
-                  {label:'Primary Residence',val:primaryResTotal,color:'#9A7C5A'},
-                  {label:'Personal Use',val:personalTotal,color:'#C4A464'},
+                  {label:'Cash / Near Cash',val:vCashTotal,color:'var(--emerald)'},
+                  {label:'Invested Assets',val:vInvestedTotal,color:'#4A7C9E'},
+                  {label:'Investment Properties',val:vInvestmentPropTotal,color:'var(--gold-tag)'},
+                  {label:'Primary Residence',val:vPrimaryResTotal,color:'#9A7C5A'},
+                  {label:'Personal Use',val:vPersonalTotal,color:'#C4A464'},
                 ].filter(r=>r.val>0).map(r=>(
                   <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: r.color }}></div><span style={{ color: 'var(--ink2)' }}>{r.label}</span></div>
                     <span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
                   </div>
                 ))}
-                <div className="flex justify-between pt-3 font-semibold text-sm" style={{ color: 'var(--emerald)' }}><span>Total Assets</span><span>{fmt(totalAssets)}</span></div>
+                <div className="flex justify-between pt-3 font-semibold text-sm" style={{ color: 'var(--emerald)' }}><span>Total Assets</span><span>{fmt(vTotalAssets)}</span></div>
               </div>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Net Worth</div>
-                <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Assets</span><span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(totalAssets)}</span></div>
-                <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Liabilities</span><span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(totalLiab)}</span></div>
-                <div className="flex justify-between pt-3 font-serif text-2xl" style={{ color: netWorth>=0?'var(--emerald)':'var(--rouge)' }}>
+                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Net Worth{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
+                <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Assets</span><span style={{ color: 'var(--emerald)', fontWeight: 500 }}>{fmt(vTotalAssets)}</span></div>
+                <div className="flex justify-between py-1.5 text-xs" style={{ borderBottom: '1px solid var(--line)' }}><span style={{ color: 'var(--ink2)' }}>Total Liabilities</span><span style={{ color: 'var(--rouge)', fontWeight: 500 }}>{fmt(vTotalLiab)}</span></div>
+                <div className="flex justify-between pt-3 font-serif text-2xl" style={{ color: vNetWorth>=0?'var(--emerald)':'var(--rouge)' }}>
                   <span className="text-sm font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Worth</span>
-                  <span>{netWorth>=0?'':'−'}{fmt(Math.abs(netWorth))}</span>
+                  <span>{vNetWorth>=0?'':'−'}{fmt(Math.abs(vNetWorth))}</span>
                 </div>
               </div>
             </div>
@@ -2142,41 +2251,51 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
             </div>
             <div className="space-y-4" style={{ position: 'sticky', top: 24 }}>
+              {isCouple && (
+                <div className="flex gap-1">
+                  {([['combined','Combined'],['client',clientName],['spouse',spouseName]] as const).map(([id,label]) => (
+                    <button key={id} onClick={() => setViewMode(id)} className="flex-1 text-xs font-medium py-2"
+                      style={{ border: viewMode === id ? '1.5px solid var(--gold)' : '1px solid var(--line)', background: viewMode === id ? 'var(--gold-l)' : 'white', color: viewMode === id ? 'var(--gold-tag)' : 'var(--ink2)' }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Liability Breakdown</div>
+                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Liability Breakdown{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
                 <LiabilityDonut items={[
-                  { label: 'Mortgages', val: mortgageLiabTotal, color: '#E08080' },
-                  { label: 'Car Loan', val: ff.l_car_loan||0, color: '#C4A464' },
-                  { label: 'Credit Card', val: ff.l_credit_card||0, color: '#7A6AAA' },
-                  { label: 'Personal Loan', val: ff.l_personal_loan||0, color: '#4A7C9E' },
-                  { label: 'Study Loan', val: ff.l_study_loan||0, color: 'var(--emerald)' },
-                  { label: 'Others', val: (ff.l_business_loan||0)+(ff.l_renovation_st||0)+(ff.l_renovation_lt||0)+ltCustom+stCustom, color: '#9A9690' },
+                  { label: 'Mortgages', val: vMortgageLiabTotal, color: '#E08080' },
+                  { label: 'Car Loan', val: vCarLoan, color: '#C4A464' },
+                  { label: 'Credit Card', val: vCreditCard, color: '#7A6AAA' },
+                  { label: 'Personal Loan', val: vPersonalLoan, color: '#4A7C9E' },
+                  { label: 'Study Loan', val: vStudyLoan, color: 'var(--emerald)' },
+                  { label: 'Others', val: vOthersLiab, color: '#9A9690' },
                 ]} />
               </div>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
-                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Summary</div>
-                {[{label:'Short Term (<5yr)',val:stTotal,color:'var(--rouge)'},{label:'Long Term (>5yr)',val:ltTotal,color:'#8A5E3A'}].map(r=>(
+                <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Summary{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
+                {[{label:'Short Term (<5yr)',val:vStTotal,color:'var(--rouge)'},{label:'Long Term (>5yr)',val:vLtTotal,color:'#8A5E3A'}].map(r=>(
                   <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <span style={{ color: 'var(--ink2)' }}>{r.label}</span><span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
                   </div>
                 ))}
                 <div className="flex justify-between pt-3 font-semibold text-sm mb-4" style={{ color: 'var(--rouge)', borderBottom: '1px solid var(--line)', paddingBottom: 12 }}>
-                  <span>Total Liabilities</span><span>{fmt(totalLiab)}</span>
+                  <span>Total Liabilities</span><span>{fmt(vTotalLiab)}</span>
                 </div>
-                {totalAssets > 0 && (<>
+                {vTotalAssets > 0 && (<>
                   <div className="text-xs mb-2" style={{ color: 'var(--ink3)' }}>Debt-to-Asset Ratio</div>
                   <div className="h-2.5 rounded-full overflow-hidden mb-1" style={{ background: 'var(--line)' }}>
-                    <div className="h-full rounded-full transition-all" style={{ width:`${Math.min(pct(totalLiab,totalAssets),100)}%`, background: totalLiab/totalAssets>0.5?'var(--rouge)':totalLiab/totalAssets>0.3?'#C4A464':'var(--emerald)' }} />
+                    <div className="h-full rounded-full transition-all" style={{ width:`${Math.min(pct(vTotalLiab,vTotalAssets),100)}%`, background: vTotalLiab/vTotalAssets>0.5?'var(--rouge)':vTotalLiab/vTotalAssets>0.3?'#C4A464':'var(--emerald)' }} />
                   </div>
                   <div className="flex justify-between text-xs" style={{ color: 'var(--ink3)' }}>
-                    <span>{pct(totalLiab,totalAssets)}% of assets</span>
-                    <span style={{ color: totalLiab/totalAssets>0.5?'var(--rouge)':totalLiab/totalAssets>0.3?'#C4A464':'var(--emerald)' }}>
-                      {totalLiab/totalAssets>0.5?'High':totalLiab/totalAssets>0.3?'Moderate':'Healthy'}
+                    <span>{pct(vTotalLiab,vTotalAssets)}% of assets</span>
+                    <span style={{ color: vTotalLiab/vTotalAssets>0.5?'var(--rouge)':vTotalLiab/vTotalAssets>0.3?'#C4A464':'var(--emerald)' }}>
+                      {vTotalLiab/vTotalAssets>0.5?'High':vTotalLiab/vTotalAssets>0.3?'Moderate':'Healthy'}
                     </span>
                   </div>
-                  <div className="flex justify-between pt-3 font-serif text-xl mt-3" style={{ color: netWorth>=0?'var(--emerald)':'var(--rouge)', borderTop: '1px solid var(--line)' }}>
+                  <div className="flex justify-between pt-3 font-serif text-xl mt-3" style={{ color: vNetWorth>=0?'var(--emerald)':'var(--rouge)', borderTop: '1px solid var(--line)' }}>
                     <span className="text-sm font-sans font-medium" style={{ color: 'var(--ink)' }}>Net Worth</span>
-                    <span>{netWorth>=0?'':'−'}{fmt(Math.abs(netWorth))}</span>
+                    <span>{vNetWorth>=0?'':'−'}{fmt(Math.abs(vNetWorth))}</span>
                   </div>
                 </>)}
               </div>
