@@ -1071,8 +1071,8 @@ function AssetRow({ label, value, value2, onChange, onChange2, isCouple, note, o
   )
 }
 
-function AssetBlock({ title, color, total, children, isCouple, clientName, spouseName }: {
-  title: string; color: string; total: number; children: React.ReactNode
+function AssetBlock({ title, color, total, totalClient, totalSpouse, children, isCouple, clientName, spouseName }: {
+  title: string; color: string; total: number; totalClient?: number; totalSpouse?: number; children: React.ReactNode
   isCouple?: boolean; clientName?: string; spouseName?: string
 }) {
   return (
@@ -1091,6 +1091,14 @@ function AssetBlock({ title, color, total, children, isCouple, clientName, spous
           </div>
         )}
         {children}
+        {isCouple && (
+          <div className="flex items-center gap-2" style={{ paddingTop: 10, marginTop: 12, borderTop: '1.5px solid var(--gold)' }}>
+            <div className="flex-1 text-xs font-medium" style={{ color: 'var(--ink)' }}>Sub-total</div>
+            <div className="text-xs text-right font-semibold" style={{ width: 118, color: 'var(--gold-tag)' }}>{fmt(totalClient || 0)}</div>
+            <div className="text-xs text-right font-semibold" style={{ width: 118, color: '#2C5674' }}>{fmt(totalSpouse || 0)}</div>
+            <div className="text-xs text-right font-bold" style={{ width: 90, color }}>{fmt(total)}</div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -2027,12 +2035,12 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         {activeSection === 'assets' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
-              <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+              <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal} totalClient={cashTotalC} totalSpouse={cashTotalS} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Savings / Current Account(s)', 'a_savings', 'a2_savings', 'a_savings_note')}
                 {assetRow('Fixed Deposit(s)', 'a_fixed_deposit', 'a2_fixed_deposit', 'a_fixed_deposit_note')}
                 <CustomRows items={ff.a_cash_custom || []} onChange={v => upd('a_cash_custom', v)} placeholder="e.g. Singapore Savings Bonds" isCouple={isCouple} />
               </AssetBlock>
-              <AssetBlock title="INVESTED ASSET(S)" color="#4A7C9E" total={investedTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+              <AssetBlock title="INVESTED ASSET(S)" color="#4A7C9E" total={investedTotal} totalClient={investedTotalC} totalSpouse={investedTotalS} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('CPF Ordinary Account (OA)', 'a_cpf_oa', 'a2_cpf_oa', 'a_cpf_oa_note')}
                 {assetRow('CPF Special Account (SA)', 'a_cpf_sa', 'a2_cpf_sa', 'a_cpf_sa_note')}
                 {assetRow('CPF Medisave Account (MA)', 'a_cpf_ma', 'a2_cpf_ma', 'a_cpf_ma_note')}
@@ -2046,7 +2054,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                 {assetRow('Business Venture(s)', 'a_business', 'a2_business', 'a_business_note')}
                 <CustomRows items={ff.a_invested_custom || []} onChange={v => upd('a_invested_custom', v)} placeholder="e.g. Crypto, Wine Collection" isCouple={isCouple} />
               </AssetBlock>
-              <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+              <AssetBlock title="PERSONAL USE ASSET(S)" color="#C4A464" total={personalTotal} totalClient={personalTotalC} totalSpouse={personalTotalS} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Motor Vehicles (Cars, Bikes, Boats)', 'a_vehicles', 'a2_vehicles', 'a_vehicles_note')}
                 {assetRow('Club Membership', 'a_club', 'a2_club', 'a_club_note')}
                 <CustomRows items={ff.a_personal_custom || []} onChange={v => upd('a_personal_custom', v)} placeholder="e.g. Jewellery, Art" isCouple={isCouple} />
@@ -2227,13 +2235,13 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         {activeSection === 'liabilities' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
-              <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+              <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal} totalClient={stTotalC} totalSpouse={stTotalS} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Credit Card / Credit Line', 'l_credit_card', 'l2_credit_card', 'l_credit_card_note')}
                 {assetRow('Business Loan', 'l_business_loan', 'l2_business_loan', 'l_business_loan_note')}
                 {assetRow('Renovation Loan', 'l_renovation_st', 'l2_renovation_st', 'l_renovation_st_note')}
                 <CustomRows items={ff.l_st_custom || []} onChange={v => upd('l_st_custom', v)} placeholder="e.g. Personal Line of Credit" isCouple={isCouple} />
               </AssetBlock>
-              <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
+              <AssetBlock title="LONG TERM (>5 years)" color="#8A5E3A" total={ltTotal} totalClient={ltTotalC} totalSpouse={ltTotalS} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Car / Motor Vehicle Loan', 'l_car_loan', 'l2_car_loan', 'l_car_loan_note')}
                 {assetRow('Study Loan', 'l_study_loan', 'l2_study_loan', 'l_study_loan_note')}
                 {assetRow('Personal Loan', 'l_personal_loan', 'l2_personal_loan', 'l_personal_loan_note')}
