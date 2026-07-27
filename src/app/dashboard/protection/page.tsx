@@ -13,7 +13,7 @@ import { useDashboard } from '@/contexts/DashboardContext'
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
 interface InsPolicyType { id: number; category_id: number; code: string; name: string }
 interface InsCompany    { id: number; category_id: number; name: string }
-interface InsProduct    { id: number; category_id: number; company_id: number; name: string }
+interface InsProduct    { id: number; category_id: number; company_id: number; name: string; default_remarks?: string | null }
 // ─── Policy record ────────────────────────────────────────────────────────────
 interface Policy {
   id: string
@@ -2085,6 +2085,27 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const ltcProductName = (form.productName || '').trim().toLowerCase();
   const isStandardLTC = isLTC && ['careshield life', 'eldershield 300', 'eldershield 400'].includes(ltcProductName);
 
+  // Remarks auto-generate — only for Medical & LTC, pulls the selected
+  // product's default_remarks from Admin, falls back to "Provides {briefDescription}"
+  // for Medical when no default is set. Always editable after.
+  function generateRemarks() {
+    const selProd = filtProds.find(pr => pr.name === form.productName);
+    let generated = '';
+    if (selProd?.default_remarks && selProd.default_remarks.trim()) {
+      generated = selProd.default_remarks.trim();
+    } else if (isMedical) {
+      if (!form.briefDescription) { alert('Select a Brief Description first.'); return; }
+      generated = `Provides ${form.briefDescription}`;
+    } else {
+      alert('No default remarks set for this product yet. Add one in Admin → Insurance Reference Data.');
+      return;
+    }
+    if (form.remarks && form.remarks.trim() && form.remarks.trim() !== generated) {
+      if (!confirm('This will replace your current Remarks text. Continue?')) return;
+    }
+    f('remarks', generated);
+  }
+
   const riderDescOptions = [
     "Coverage for Deductibles, subject to 5% Co-Insurance",
     "Coverage for Deductibles, subject to 10% Co-Insurance",
@@ -2573,7 +2594,15 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               </select>
             </div>
             <div>
-              <label style={lbl}>Remarks</label>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:5}}>
+                <label style={{...lbl,marginBottom:0}}>Remarks</label>
+                {(isMedical || isLTC) && (
+                  <button type="button" onClick={generateRemarks}
+                    style={{fontSize:11,padding:'3px 10px',border:'1px solid var(--gold)',background:'none',color:'var(--gold)',cursor:'pointer',fontFamily:'inherit'}}>
+                    ✨ Generate
+                  </button>
+                )}
+              </div>
               <textarea 
                 value={form.remarks} 
                 onChange={e=>f('remarks',e.target.value)} 
