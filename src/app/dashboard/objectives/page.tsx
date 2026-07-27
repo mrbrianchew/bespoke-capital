@@ -1448,7 +1448,7 @@ useEffect(() => {
       </div>
 
       {/* MAIN LAYOUT */}
-      <div style={{ display: 'grid', gridTemplateColumns: sidebarOpen ? '1fr 260px' : '1fr 20px', gap: 0, minHeight: 'calc(100vh - 140px)', transition: 'grid-template-columns 0.25s ease' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: sidebarOpen ? '1fr 320px' : '1fr 20px', gap: 0, minHeight: 'calc(100vh - 140px)', transition: 'grid-template-columns 0.25s ease' }}>
 
         {/* LEFT: CONTENT */}
         <div style={{ padding: '32px 40px', borderRight: '1px solid #E8E4DC' }}>
@@ -1595,7 +1595,7 @@ useEffect(() => {
           </button>
 
           {sidebarOpen && (
-            <div style={{ padding: '32px 24px', width: 260, overflowY: 'auto' }}>
+            <div style={{ padding: '32px 24px', width: 320, overflowY: 'auto' }}>
               <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
                 Coverage Summary
               </p>
@@ -4080,7 +4080,7 @@ function SidebarRow({ label, value, color }: { label: string; value: number; col
 
 function MiniBreakdown({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ textAlign: 'center' }}>
+    <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
       <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
       <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#1C1A17' }}>{fmt(value)}</div>
     </div>
