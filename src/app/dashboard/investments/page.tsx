@@ -1136,7 +1136,7 @@ export default function CapitalMandatePage() {
     setClientAge(age); setSpouseAge(sage); setClientName(cName); setSpouseName(sName)
 
     const protData = by['protection_needs']?.protection
-    const hasSpouse = !!(fin?.spouse?.firstName || fin?.spouse?.age)
+    const hasSpouse = !!(fin?.spouse?.firstName || fin?.spouse?.age || spouseMember)
     const mode: PlanMode = (protData?.planType === 'couple' || hasSpouse) ? 'couple' : 'individual'
     setPlanMode(mode)
     setActivePerson(mode === 'couple' ? 'combined' : 'client')
