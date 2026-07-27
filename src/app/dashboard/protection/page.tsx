@@ -2068,11 +2068,13 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
     }));
     setIsOtherBenefitTerm(false);
     setIsOtherPayoutTerm(false);
+    setIsOtherProduct(false);
     setPremMatMode('preset');
     setCovMatMode('preset');
   }
   const onCompChange=(name:string)=>{
     setForm(prev=>({...prev,companyName:name,productName:''}))
+    setIsOtherProduct(false)
   }
 
   const isMedical  = form.categoryCode==='medical'
@@ -2081,6 +2083,13 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const isEndow    = form.categoryCode==='endowment'
   const isGeneral  = form.categoryCode==='general'
   const isRider    = form.policyTypeCode?.toLowerCase() === 'rider'
+
+  // Product Name "Other (type manually)" — mirrors the isOtherRiderDesc pattern
+  // below: a separate flag decouples the <select> from the free-text value so
+  // typing doesn't collapse the manual input on the first keystroke.
+  const [isOtherProduct, setIsOtherProduct] = useState(() => {
+    return !!policy.productName && !filtProds.some(p => p.name === policy.productName);
+  });
 
   const ltcProductName = (form.productName || '').trim().toLowerCase();
   const isStandardLTC = isLTC && ['careshield life', 'eldershield 300', 'eldershield 400'].includes(ltcProductName);
@@ -2245,7 +2254,18 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           <div>
             <label style={lbl}>Product Name</label>
             {hasProducts && filtProds.length > 0 ? (
-              <select value={form.productName} onChange={e=>f('productName',e.target.value)} style={s}>
+              <select
+                value={isOtherProduct ? '__other' : form.productName}
+                onChange={e => {
+                  if (e.target.value === '__other') {
+                    setIsOtherProduct(true);
+                    f('productName', '');
+                  } else {
+                    setIsOtherProduct(false);
+                    f('productName', e.target.value);
+                  }
+                }}
+                style={s}>
                 <option value="">Select…</option>
                 {filtProds.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
                 <option value="__other">Other (type manually)</option>
@@ -2253,8 +2273,8 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
             ) : (
               <input type="text" value={form.productName} onChange={e=>f('productName',e.target.value)} placeholder="e.g. MyWholeLife Plan" style={inp}/>
             )}
-            {form.productName==='__other' && (
-              <input type="text" placeholder="Enter product name" onChange={e=>f('productName',e.target.value)} style={{...inp,marginTop:6}}/>
+            {isOtherProduct && (
+              <input type="text" value={form.productName} onChange={e=>f('productName',e.target.value)} placeholder="Enter product name" style={{...inp,marginTop:6}}/>
             )}
           </div>
                     {/* ── USD Policy Toggle (Life only) ── */}
