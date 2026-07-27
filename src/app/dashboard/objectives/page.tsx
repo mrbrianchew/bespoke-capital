@@ -1617,24 +1617,6 @@ useEffect(() => {
 
           {sidebarOpen && (
             <div style={{ padding: '32px 24px', width: 320, overflowY: 'auto' }}>
-              <div style={{ marginBottom: 28 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em', margin: 0 }}>
-                    Session Notes
-                  </p>
-                  {sessionNotesSaved && (
-                    <span style={{ fontFamily: 'Inter', fontSize: 10, color: '#888' }}>Saved</span>
-                  )}
-                </div>
-                <textarea
-                  rows={6}
-                  value={sessionNotes}
-                  onChange={e => { setSessionNotes(e.target.value); scheduleSessionNotesSave(e.target.value) }}
-                  placeholder="Notes for this client conversation — stays visible across every tab…"
-                  style={{ width: '100%', background: '#fff', border: '1px solid #E8E4DC', borderRadius: 10, padding: '12px 14px', fontFamily: 'Inter', fontSize: 13, color: '#1C1A17', resize: 'vertical', lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
-                />
-              </div>
-
               <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
                 Coverage Summary
               </p>
@@ -1658,6 +1640,25 @@ useEffect(() => {
                 <ExistingCoverInputs
                   p={p} updateP={updateP} isCouple={isCouple}
                   clientName={clientName} spouseName={spouseName}
+                />
+              </div>
+
+              {/* Session notes — pinned below, visible across every tab */}
+              <div style={{ marginTop: 28 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em', margin: 0 }}>
+                    Session Notes
+                  </p>
+                  {sessionNotesSaved && (
+                    <span style={{ fontFamily: 'Inter', fontSize: 10, color: '#888' }}>Saved</span>
+                  )}
+                </div>
+                <textarea
+                  rows={6}
+                  value={sessionNotes}
+                  onChange={e => { setSessionNotes(e.target.value); scheduleSessionNotesSave(e.target.value) }}
+                  placeholder="Notes for this client conversation — stays visible across every tab…"
+                  style={{ width: '100%', background: '#fff', border: '1px solid #E8E4DC', borderRadius: 10, padding: '12px 14px', fontFamily: 'Inter', fontSize: 13, color: '#1C1A17', resize: 'vertical', lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
             </div>
