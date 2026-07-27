@@ -8,7 +8,7 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 interface Category   { id: number; code: string; name: string; sort_order: number }
 interface PolicyType { id: number; category_id: number; code: string; name: string; sort_order: number }
 interface Company    { id: number; category_id: number; name: string; sort_order: number; active: boolean }
-interface Product    { id: number; category_id: number; company_id: number; name: string; sort_order: number; active: boolean }
+interface Product    { id: number; category_id: number; company_id: number; name: string; sort_order: number; active: boolean; default_remarks?: string | null }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
@@ -168,9 +168,9 @@ export default function InsuranceAdminPage() {
               onSave={async (item) => {
                 setSaving(true)
                 if (item.id) {
-                  await supabase.from('ins_products').update({ name: item.name, company_id: item.company_id, sort_order: item.sort_order, active: item.active }).eq('id', item.id)
+                  await supabase.from('ins_products').update({ name: item.name, company_id: item.company_id, sort_order: item.sort_order, active: item.active, default_remarks: item.default_remarks ?? null }).eq('id', item.id)
                 } else {
-                  await supabase.from('ins_products').insert({ category_id: activeCat, company_id: item.company_id, name: item.name, sort_order: item.sort_order || 99, active: true })
+                  await supabase.from('ins_products').insert({ category_id: activeCat, company_id: item.company_id, name: item.name, sort_order: item.sort_order || 99, active: true, default_remarks: item.default_remarks ?? null })
                 }
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
@@ -310,22 +310,33 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
   onToggle: (id: number, active: boolean) => void
   saving: boolean
 }) {
-  const [editing,     setEditing]     = useState<number | null>(null)
-  const [editVal,     setEditVal]     = useState('')
-  const [editCompany, setEditCompany] = useState<number>(0)
-  const [filterComp,  setFilterComp]  = useState<number | 'all'>('all')
-  const [selCompany,  setSelCompany]  = useState<number>(companies[0]?.id || 0)
+  const [editing,      setEditing]      = useState<number | null>(null)
+  const [editVal,      setEditVal]      = useState('')
+  const [editCompany,  setEditCompany]  = useState<number>(0)
+  const [editRemarks,  setEditRemarks]  = useState('')
+  const [filterComp,   setFilterComp]   = useState<number | 'all'>('all')
+  const [selCompany,   setSelCompany]   = useState<number>(companies[0]?.id || 0)
+  const [showAddRemarks, setShowAddRemarks] = useState(false)
   const newRef = useRef<HTMLInputElement>(null)
+  const newRemarksRef = useRef<HTMLTextAreaElement>(null)
 
   function doAdd() {
     const val = newRef.current?.value.trim()
     if (!val || !selCompany) return
-    onSave({ category_id: categoryId, company_id: selCompany, name: val, sort_order: 99, active: true })
+    onSave({ category_id: categoryId, company_id: selCompany, name: val, sort_order: 99, active: true, default_remarks: newRemarksRef.current?.value.trim() || null })
     if (newRef.current) newRef.current.value = ''
+    if (newRemarksRef.current) newRemarksRef.current.value = ''
+    setShowAddRemarks(false)
+  }
+
+  function saveEdit(p: Product) {
+    onSave({ ...p, name: editVal, company_id: editCompany, default_remarks: editRemarks.trim() || null })
+    setEditing(null)
   }
 
   const visible = filterComp === 'all' ? items : items.filter(p => p.company_id === filterComp)
   const compName = (id: number) => companies.find(c => c.id === id)?.name || '—'
+  const remarksBox: React.CSSProperties = { width: '100%', padding: '7px 10px', border: '1px solid #E0DDD6', borderRadius: 5, fontSize: 12, color: '#1A1816', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif', resize: 'vertical', minHeight: 60, boxSizing: 'border-box' }
 
   return (
     <div style={S.card}>
@@ -341,42 +352,67 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
         </div>
       </div>
       {visible.map((p, i) => (
-        <div key={p.id} style={{ ...S.row, background: i % 2 === 0 ? 'white' : '#FAFAF8', opacity: p.active ? 1 : 0.5 }}>
+        <div key={p.id} style={{ background: i % 2 === 0 ? 'white' : '#FAFAF8', opacity: p.active ? 1 : 0.5, borderBottom: '0.5px solid #F0EDE8' }}>
           {editing === p.id ? (
-            <>
-              <select value={editCompany} onChange={e => setEditCompany(Number(e.target.value))}
-                style={{ ...S.inp, flex: '0 0 160px' }}>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <input value={editVal} onChange={e => setEditVal(e.target.value)} style={S.inp}
-                onKeyDown={e => { if (e.key === 'Enter') { onSave({ ...p, name: editVal, company_id: editCompany }); setEditing(null) } if (e.key === 'Escape') setEditing(null) }} autoFocus />
-              <button onClick={() => { onSave({ ...p, name: editVal, company_id: editCompany }); setEditing(null) }} style={{ ...S.btn, ...S.save }} disabled={saving}>Save</button>
-              <button onClick={() => setEditing(null)} style={{ ...S.btn, ...S.cancel }}>Cancel</button>
-            </>
+            <div style={{ padding: '10px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <select value={editCompany} onChange={e => setEditCompany(Number(e.target.value))}
+                  style={{ ...S.inp, flex: '0 0 160px' }}>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <input value={editVal} onChange={e => setEditVal(e.target.value)} style={S.inp} autoFocus />
+                <button onClick={() => saveEdit(p)} style={{ ...S.btn, ...S.save }} disabled={saving}>Save</button>
+                <button onClick={() => setEditing(null)} style={{ ...S.btn, ...S.cancel }}>Cancel</button>
+              </div>
+              <div>
+                <label style={S.label}>Default Remarks — used by the Generate button on the policy form</label>
+                <textarea value={editRemarks} onChange={e => setEditRemarks(e.target.value)}
+                  placeholder="e.g. is a Long Term Disability Care Insurance by CPF to provide Monthly Income of $600 per month…"
+                  style={remarksBox} />
+              </div>
+            </div>
           ) : (
             <>
-              <span style={{ fontSize: 11, color: '#9A9690', width: 140, flexShrink: 0 }}>{compName(p.company_id)}</span>
-              <span style={{ flex: 1, fontSize: 13, color: '#1A1816' }}>{p.name}</span>
-              <span style={S.badge(p.active)}>{p.active ? 'Active' : 'Hidden'}</span>
-              <button onClick={() => onToggle(p.id, !p.active)} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740', fontSize: 11 }}>
-                {p.active ? 'Hide' : 'Show'}
-              </button>
-              <button onClick={() => { setEditing(p.id); setEditVal(p.name); setEditCompany(p.company_id) }} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740' }}>Edit</button>
-              <button onClick={() => onDelete(p.id)} style={S.del}>✕</button>
+              <div style={{ ...S.row, borderBottom: 'none' }}>
+                <span style={{ fontSize: 11, color: '#9A9690', width: 140, flexShrink: 0 }}>{compName(p.company_id)}</span>
+                <span style={{ flex: 1, fontSize: 13, color: '#1A1816' }}>{p.name}</span>
+                <span style={S.badge(p.active)}>{p.active ? 'Active' : 'Hidden'}</span>
+                <button onClick={() => onToggle(p.id, !p.active)} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740', fontSize: 11 }}>
+                  {p.active ? 'Hide' : 'Show'}
+                </button>
+                <button onClick={() => { setEditing(p.id); setEditVal(p.name); setEditCompany(p.company_id); setEditRemarks(p.default_remarks || '') }} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740' }}>Edit</button>
+                <button onClick={() => onDelete(p.id)} style={S.del}>✕</button>
+              </div>
+              {p.default_remarks && (
+                <div style={{ padding: '0 22px 10px 182px', fontSize: 11, color: '#9A9690', fontStyle: 'italic', lineHeight: 1.4 }}>
+                  “{p.default_remarks}”
+                </div>
+              )}
             </>
           )}
         </div>
       ))}
-      <div style={{ ...S.addRow, gap: 8 }}>
-        <select value={selCompany} onChange={e => setSelCompany(Number(e.target.value))}
-          style={{ ...S.inp, flex: '0 0 160px', background: 'white' }}>
-          <option value={0}>Select company…</option>
-          {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <input ref={newRef} placeholder="New product name…"
-          style={{ ...S.inp, background: 'white' }}
-          onKeyDown={e => { if (e.key === 'Enter') doAdd() }} />
-        <button onClick={doAdd} style={{ ...S.btn, ...S.save }} disabled={saving || !selCompany}>+ Add</button>
+      <div style={{ ...S.addRow, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <select value={selCompany} onChange={e => setSelCompany(Number(e.target.value))}
+            style={{ ...S.inp, flex: '0 0 160px', background: 'white' }}>
+            <option value={0}>Select company…</option>
+            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input ref={newRef} placeholder="New product name…"
+            style={{ ...S.inp, background: 'white' }}
+            onKeyDown={e => { if (e.key === 'Enter' && !showAddRemarks) doAdd() }} />
+          <button onClick={() => setShowAddRemarks(v => !v)} type="button" style={{ ...S.btn, background: 'white', border: '1px solid #E0DDD6', color: '#4A4740', fontSize: 11 }}>
+            {showAddRemarks ? 'Hide Remarks' : '+ Remarks'}
+          </button>
+          <button onClick={doAdd} style={{ ...S.btn, ...S.save }} disabled={saving || !selCompany}>+ Add</button>
+        </div>
+        {showAddRemarks && (
+          <div>
+            <label style={S.label}>Default Remarks (optional) — used by the Generate button on the policy form</label>
+            <textarea ref={newRemarksRef} placeholder="e.g. provides coverage for Outpatient Cancer Treatment and Services…" style={{ ...remarksBox, background: 'white' }} />
+          </div>
+        )}
       </div>
     </div>
   )
