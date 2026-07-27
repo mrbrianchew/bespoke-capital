@@ -173,6 +173,12 @@ function ProtectionPage() {
   const [spouseName, setSpouseName] = useState('Spouse')
   const [spouseAge,  setSpouseAge]  = useState(38)
   const [isCouple,   setIsCouple]   = useState(false)
+  // Whether a spouse record exists at all (Family Members or person2 data),
+  // independent of the Individual/Couple plan-type toggle on Objectives.
+  // isCouple still gates needs-analysis scope (DTPD/CI, Overview, Payment
+  // Summary); hasSpouseOnFile gates the Portfolio tab so entered spouse
+  // policies are never hidden by a plan-type choice.
+  const [hasSpouseOnFile, setHasSpouseOnFile] = useState(false)
   const [children,   setChildren]   = useState<any[]>([])
   const [ffData,     setFfData]     = useState<any>(null)
   // Richer per-category breakdown (familyDependency/mortgage/education/asset
@@ -352,15 +358,19 @@ const isIndividualMode =
   merged.protection?.planType === 'individual'
 
 // Spouse: try person2 first, then family_members table
+// Name/age/hasSpouseOnFile are populated regardless of isIndividualMode so the
+// Portfolio tab can always show spouse data that's been entered; isCouple
+// (which drives needs-analysis scope) stays gated by the explicit toggle.
 const p2 = merged.person2
-if (p2?.name && !isIndividualMode) {
-  setSpouseName(p2.name); setIsCouple(true)
+if (p2?.name) {
+  setSpouseName(p2.name); setHasSpouseOnFile(true)
+  if (!isIndividualMode) setIsCouple(true)
   if (p2.age) setSpouseAge(Number(p2.age))
   else if (p2.dob) setSpouseAge(new Date().getFullYear() - new Date(p2.dob).getFullYear())
-} else if (merged.mode === 'couple' && !isIndividualMode) {
-  setIsCouple(true)
+} else if (merged.mode === 'couple') {
+  if (!isIndividualMode) setIsCouple(true)
   const sn = merged.spouse_name || merged.spouseName || ''
-  if (sn) setSpouseName(sn)
+  if (sn) { setSpouseName(sn); setHasSpouseOnFile(true) }
 }
 
 // Children: try family_members table first (most reliable), then merged JSON
@@ -368,8 +378,9 @@ if (familyRows && familyRows.length > 0) {
   const spouse = familyRows.find((m: any) =>
     m.relationship?.toLowerCase() === 'spouse'
   )
-  if (spouse?.name && !merged.person2?.name && !isIndividualMode) {
-    setSpouseName(spouse.name); setIsCouple(true)
+  if (spouse?.name && !merged.person2?.name) {
+    setSpouseName(spouse.name); setHasSpouseOnFile(true)
+    if (!isIndividualMode) setIsCouple(true)
     if (spouse.age) setSpouseAge(Number(spouse.age))
     else if (spouse.dob) setSpouseAge(new Date().getFullYear() - new Date(spouse.dob).getFullYear())
   }
@@ -563,17 +574,19 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_gross   || 0) || localSpouseCI)  
   // People list for dropdowns
   const allPeople = [
     { key: 'client', label: clientName },
-    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
+    ...(hasSpouseOnFile ? [{ key: 'spouse', label: spouseName }] : []),
     ...children.map((c: any) => ({
       key: `child_${c.id || c.name}`,
       label: c.name || 'Child',
     })),
   ]
 
-  // Portfolio sections
+  // Portfolio sections — always includes spouse when on file, regardless of
+  // the Individual/Couple plan-type toggle, so entered spouse policies are
+  // never hidden. Needs-analysis (DTPD/CI above) still respects isCouple.
   const sections = [
     { key: 'client', label: clientName },
-    ...(isCouple ? [{ key: 'spouse', label: spouseName }] : []),
+    ...(hasSpouseOnFile ? [{ key: 'spouse', label: spouseName }] : []),
     ...(children.length > 0 ? [{
       key: 'dependents',
       label: 'Dependents',
