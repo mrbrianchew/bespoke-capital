@@ -577,6 +577,9 @@ const [edu, setEdu] = useState<EducationData>(DEFAULT_EDUCATION_DATA)
 const eduSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 const [estate, setEstate] = useState<EstateData>(DEFAULT_ESTATE_DATA)
 const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [sessionNotes, setSessionNotes] = useState('')
+  const [sessionNotesSaved, setSessionNotesSaved] = useState(false)
+  const sessionNotesSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [loading, setLoading] = useState(true)
   const [editModal, setEditModal] = useState<{ open: boolean; category: string }>({ open: false, category: '' })
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -613,7 +616,7 @@ const estateSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
       .from('fact_finding')
       .select('*')
       .eq('client_id', id)
-      .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement', 'education', 'estate']),
+      .in('section', ['financials', 'protection_needs', 'protection_portfolio', 'accumulation', 'retirement', 'education', 'estate', 'objectives_session_notes']),
     supabase.from('family_members').select('*').eq('client_id', id),
     supabase.from('ins_companies').select('*').eq('active', true).order('sort_order'),
     supabase.from('ins_products').select('*').eq('active', true).order('sort_order'),
@@ -648,6 +651,9 @@ if (eduRow?.data?.edu) setEdu((prev: EducationData) => ({ ...prev, ...eduRow.dat
 
 const estateRow = ffRows.find((r: any) => r.section === 'estate')
 if (estateRow?.data?.estate) setEstate((prev: EstateData) => ({ ...prev, ...estateRow.data.estate }))
+
+const sessionNotesRow = ffRows.find((r: any) => r.section === 'objectives_session_notes')
+setSessionNotes(sessionNotesRow?.data?.sessionNotes ?? '')
 
     // ── CHANGE 4: load saved assetOffsetEnabled/assetOffsetItems with safe defaults ──
     const protRow = ffRows.find((r: any) => r.section === 'protection_needs')
@@ -800,6 +806,21 @@ if (activeClient) {
   }, 800)
 }
     
+  function scheduleSessionNotesSave(updated: string) {
+    if (sessionNotesSaveTimer.current) clearTimeout(sessionNotesSaveTimer.current)
+    sessionNotesSaveTimer.current = setTimeout(async () => {
+      if (!clientId) return
+      await supabase
+        .from('fact_finding')
+        .upsert(
+          { client_id: clientId, section: 'objectives_session_notes', data: { sessionNotes: updated }, updated_at: new Date().toISOString() },
+          { onConflict: 'client_id,section' }
+        )
+      setSessionNotesSaved(true)
+      setTimeout(() => setSessionNotesSaved(false), 2000)
+    }, 800)
+  }
+
   // ─── AUTO-SAVE ─────────────────────────────────────────────────────────────
 
   const scheduleSave = useCallback((updated: ProtectionData) => {
@@ -1596,6 +1617,24 @@ useEffect(() => {
 
           {sidebarOpen && (
             <div style={{ padding: '32px 24px', width: 320, overflowY: 'auto' }}>
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <p className="text-xs tracking-widest uppercase" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em', margin: 0 }}>
+                    Session Notes
+                  </p>
+                  {sessionNotesSaved && (
+                    <span style={{ fontFamily: 'Inter', fontSize: 10, color: '#888' }}>Saved</span>
+                  )}
+                </div>
+                <textarea
+                  rows={6}
+                  value={sessionNotes}
+                  onChange={e => { setSessionNotes(e.target.value); scheduleSessionNotesSave(e.target.value) }}
+                  placeholder="Notes for this client conversation — stays visible across every tab…"
+                  style={{ width: '100%', background: '#fff', border: '1px solid #E8E4DC', borderRadius: 10, padding: '12px 14px', fontFamily: 'Inter', fontSize: 13, color: '#1C1A17', resize: 'vertical', lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
               <p className="text-xs tracking-widest uppercase mb-4" style={{ color: '#A8834A', fontFamily: 'Inter', letterSpacing: '0.12em' }}>
                 Coverage Summary
               </p>
