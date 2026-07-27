@@ -1137,7 +1137,12 @@ export default function CapitalMandatePage() {
 
     const protData = by['protection_needs']?.protection
     const hasSpouse = !!(fin?.spouse?.firstName || fin?.spouse?.age || spouseMember)
-    const mode: PlanMode = (protData?.planType === 'couple' || hasSpouse) ? 'couple' : 'individual'
+    // Explicit 'individual' selection (set on Objectives page) always wins, even if a
+    // spouse exists in Family Members — matches precedence used on the Protection page.
+    // Spouse presence is only a fallback when no planType has been explicitly chosen.
+    const mode: PlanMode = protData?.planType === 'individual'
+      ? 'individual'
+      : (protData?.planType === 'couple' || hasSpouse) ? 'couple' : 'individual'
     setPlanMode(mode)
     setActivePerson(mode === 'couple' ? 'combined' : 'client')
 
