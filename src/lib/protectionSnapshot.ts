@@ -113,18 +113,29 @@ export interface ProtectionSnapshot {
 }
 
 const DETAILED_EXPENSE_MAP: Record<string, string[]> = {
-  financial: ['d_rental_expense', 'd_income_tax', 'd_regular_savings', 'd_insurance'],
+  financial: ['d_vehicle_repay', 'd_personal_loan_repay', 'd_rental_expense', 'd_income_tax', 'd_regular_savings', 'd_insurance'],
   household: ['d_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household'],
   personal: ['d_personal_food', 'd_transport', 'd_car_petrol', 'd_car_insurance'],
   children: ['d_childcare', 'd_school_fees', 'd_school_transport', 'd_allowance_children', 'd_other_children'],
   lifestyle: ['d_holidays', 'd_hobbies', 'd_allowance_parents', 'd_others_lifestyle'],
 }
 
+// Custom "+Add Row" line items (Financial Profile, Detailed mode) live in separate arrays,
+// not as fixed fields — DETAILED_EXPENSE_MAP above can't see them. No per-item sub-toggle
+// exists for these (unlike fixed keys) — they're always included when the category is on.
+const DETAILED_EXPENSE_CUSTOM_KEY: Record<string, string> = {
+  financial: 'd_custom_financial',
+  household: 'd_custom_household',
+  personal: 'd_custom_personal',
+  children: 'd_custom_children',
+  lifestyle: 'd_custom_lifestyle',
+}
+
 function getDetailedCategoryTotal(ff: Record<string, any>, category: string, prefix: 'client' | 'spouse', subItems: Record<string, boolean>): number {
   const sp = prefix === 'spouse' ? 'd2_' : 'd_'
   const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
   const keys = DETAILED_EXPENSE_MAP[category] || []
-  return keys.reduce((sum, k) => {
+  let sum = keys.reduce((sum, k) => {
     const personKey = k + perPersonKey
     if (personKey in subItems) {
       if (subItems[personKey] === false) return sum
@@ -133,6 +144,12 @@ function getDetailedCategoryTotal(ff: Record<string, any>, category: string, pre
     }
     return sum + ((ff[k.replace('d_', sp)] as number) ?? 0)
   }, 0)
+  const customKey = DETAILED_EXPENSE_CUSTOM_KEY[category]
+  if (customKey) {
+    const items = (ff[customKey] as any[]) ?? []
+    sum += items.reduce((s, i) => s + ((prefix === 'spouse' ? i.amount2 : i.amount) ?? 0), 0)
+  }
+  return sum
 }
 
 // Exported so ProtectionOverview's chart-shape calculation can reuse the
