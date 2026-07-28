@@ -273,7 +273,7 @@ export default function ReportPage() {
 
         {!loading && !error && plan && (
           <>
-            <FinancialPlanView plan={plan} editable onFrameworkOverrideChange={handleFrameworkOverrideChange} onActiveTabChange={setActiveReportTab} />
+            <FinancialPlanView plan={plan} editable onFrameworkOverrideChange={handleFrameworkOverrideChange} onActiveTabChange={setActiveReportTab} initialTab={activeReportTab} />
 
             <details style={{ marginTop: 16 }}>
               <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink3)' }}>View raw plan data</summary>
