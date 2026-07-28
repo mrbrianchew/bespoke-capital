@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { OverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { ProtectionSnapshot, FrameworkRowKey, FrameworkRowStatus } from '@/lib/protectionSnapshot'
@@ -60,14 +60,24 @@ function PersonCard({ label, name, age, color }: { label: string; name: string; 
 }
 
 export default function FinancialPlanView({
-  plan, editable, onFrameworkOverrideChange, onActiveTabChange,
+  plan, editable, onFrameworkOverrideChange, onActiveTabChange, initialTab,
 }: {
   plan: PlanSnapshot
   editable?: boolean
   onFrameworkOverrideChange?: (who: 'client' | 'spouse', key: FrameworkRowKey, value: FrameworkRowStatus | undefined) => void
   onActiveTabChange?: (tabId: string) => void
+  // Remembered tab from the parent (e.g. from useClientTabState). The
+  // parent resolves this asynchronously (localStorage read gated on the
+  // active client loading), so it typically arrives a render or two after
+  // mount — the effect below picks it up whenever it changes, not just on
+  // initial mount, which also means switching client while this stays
+  // mounted correctly re-syncs to the new client's remembered tab.
+  initialTab?: string
 }) {
-  const [active, setActive] = useState('overview')
+  const [active, setActive] = useState(initialTab || 'overview')
+  useEffect(() => {
+    if (initialTab) setActive(initialTab)
+  }, [initialTab])
   function selectTab(id: string) {
     setActive(id)
     onActiveTabChange?.(id)
