@@ -8,6 +8,7 @@ import { getUsdSgdRate } from '@/lib/fxRate'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useClientTabState } from '@/hooks/useClientTabState'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
@@ -202,8 +203,11 @@ function ProtectionPage() {
 
   // UI state
   const searchParams = useSearchParams()
-  const [activeTab, setActiveTab] = useState<'overview'|'portfolio'|'payment_summary'>(() =>
-    searchParams.get('tab') === 'portfolio' ? 'portfolio' : 'overview'
+  const urlTab = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useClientTabState<'overview'|'portfolio'|'payment_summary'>(
+    'protection.activeTab',
+    'overview',
+    urlTab === 'portfolio' ? 'portfolio' : null
   )
   const [overviewPerson,  setOverviewPerson]  = useState<'client'|'spouse'>('client')
   const [portfolioPerson, setPortfolioPerson] = useState<string>('client')
