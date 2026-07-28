@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useClientTabState } from '@/hooks/useClientTabState'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
 import EducationSection, { EducationData, DEFAULT_EDUCATION_DATA } from './EducationSection'
@@ -558,11 +559,11 @@ function ObjectivesPageInner() {
   const [children, setChildren] = useState<FamilyMember[]>([])
   const [allFamilyMembers, setAllFamilyMembers] = useState<FamilyMember[]>([])
   const searchParams = useSearchParams()
-  const [activeSection, setActiveSection] = useState(() => {
-    const t = searchParams.get('tab')
-    const n = t !== null ? parseInt(t, 10) : 0
-    return isNaN(n) ? 0 : Math.min(Math.max(n, 0), 4)
-  })
+  const urlTabRaw = searchParams.get('tab')
+  const urlSection = urlTabRaw !== null
+    ? Math.min(Math.max(Number.isNaN(parseInt(urlTabRaw, 10)) ? 0 : parseInt(urlTabRaw, 10), 0), 4)
+    : null
+  const [activeSection, setActiveSection] = useClientTabState<number>('objectives.activeSection', 0, urlSection)
   const [acc, setAcc] = useState<AccumulationData>({
     inflationRate: 3,
     returnRate: 5,
