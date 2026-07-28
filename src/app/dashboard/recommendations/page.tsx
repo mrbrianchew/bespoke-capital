@@ -5,6 +5,7 @@ import { fv } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { getUsdSgdRate } from '@/lib/fxRate'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useClientTabState } from '@/hooks/useClientTabState'
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -3020,7 +3021,7 @@ export default function RecommendationsPage() {
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
 
   // Person tabs
-  const [activePerson, setActivePerson] = useState<string>('client')
+  const [activePerson, setActivePerson] = useClientTabState<string>('recommendations.activePerson', 'client')
   const [showSidebar, setShowSidebar]   = useState(false)
   const [personTabs, setPersonTabs] = useState<{ key: string; label: string; age: number }[]>([
     { key: 'client', label: 'Client', age: 35 }
