@@ -8,6 +8,7 @@ import { buildCapitalFundSnapshot, CapitalFundSnapshot } from '@/lib/capitalFund
 import { buildActionPlanSnapshot, ActionPlanSnapshot } from '@/lib/actionPlanSnapshot'
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useClientTabState } from '@/hooks/useClientTabState'
 
 type FrameworkOverrideMap = Partial<Record<FrameworkRowKey, FrameworkRowStatus>>
 
@@ -53,7 +54,7 @@ export default function ReportPage() {
   const [saving, setSaving] = useState(false)
   const [savedLink, setSavedLink] = useState('')
   const [directives, setDirectives] = useState<{ title: string; body: string }[]>([])
-  const [activeReportTab, setActiveReportTab] = useState('overview')
+  const [activeReportTab, setActiveReportTab] = useClientTabState<string>('report.activeReportTab', 'overview')
   const [pastPlans, setPastPlans] = useState<{ id: string; label: string; created_at: string; share_token: string; status: string | null }[]>([])
   const [showArchived, setShowArchived] = useState(false)
 
