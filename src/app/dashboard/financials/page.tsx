@@ -8,6 +8,7 @@ import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import SnapshotsTab from './SnapshotsTab'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useClientTabState } from '@/hooks/useClientTabState'
 import { Users } from 'lucide-react'
 
 interface OtherIncomeItem { label: string; amount: number }
@@ -1235,8 +1236,8 @@ function FactFindingPage() {
   const [spouse, setSpouse] = useState<FamilyMember | null>(null)
   const [ff, setFf] = useState<FactFinding | null>(null)
   const [cpfConfig, setCpfConfig] = useState<CpfConfig>(DEFAULT_CPF_CONFIG)
-  const [activeSection, setActiveSection] = useState('income')
-  const [viewMode, setViewMode] = useState<'combined' | 'client' | 'spouse'>('combined')
+  const [activeSection, setActiveSection] = useClientTabState<string>('financials.activeSection', 'income')
+  const [viewMode, setViewMode] = useClientTabState<'combined' | 'client' | 'spouse'>('financials.viewMode', 'combined')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
