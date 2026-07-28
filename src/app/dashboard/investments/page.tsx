@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useClientTabState } from '@/hooks/useClientTabState'
 import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { Chart, registerables } from 'chart.js'
@@ -1063,8 +1064,8 @@ export default function CapitalMandatePage() {
   const [postRetirementReturn, setPostRetirementReturn] = useState(3)
   const [retirementInflation, setRetirementInflation] = useState(3)
 
-  const [planMode, setPlanMode] = useState<PlanMode>('individual')
-  const [activePerson, setActivePerson] = useState<ActivePerson>('client')
+  const [planMode, setPlanMode] = useClientTabState<PlanMode>('investments.planMode', 'individual')
+  const [activePerson, setActivePerson] = useClientTabState<ActivePerson>('investments.activePerson', 'client')
 
   const [goals, setGoals] = useState<CapitalGoal[]>([])
   const [customGoalModal, setCustomGoalModal] = useState(false)
