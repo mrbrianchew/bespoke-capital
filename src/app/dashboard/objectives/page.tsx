@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { getDetailedCategoryTotal, getDetailedTotal } from '@/lib/protectionSnapshot'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
@@ -256,55 +257,9 @@ function getAge(dob?: string): number {
   return Math.max(0, new Date().getFullYear() - birth.getFullYear())
 }
 
-function getDetailedCategoryTotal(ff: FactFinding, category: string, prefix: 'client' | 'spouse', subItems?: Record<string, boolean>): number {
-  const sp = prefix === 'spouse' ? 'd2_' : 'd_'
-  const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
-  const keys = DETAILED_EXPENSE_MAP[category] || []
-  let sum = keys.reduce((sum, k) => {
-    if (subItems) {
-      const personKey = k + perPersonKey
-      if (personKey in subItems) {
-        if (subItems[personKey] === false) return sum
-      } else {
-        if (subItems[k] === false) return sum
-      }
-    }
-    return sum + (ff[k.replace('d_', sp)] as number || 0)
-  }, 0)
-  const customKey = DETAILED_EXPENSE_CUSTOM_KEY[category]
-  if (customKey) {
-    const items = (ff[customKey] as any[]) || []
-    sum += items.reduce((s, i) => s + ((prefix === 'spouse' ? i.amount2 : i.amount) || 0), 0)
-  }
-  return sum
-}
-
-function getDetailedTotal(ff: FactFinding, categories: Record<string, boolean>, subItems: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
-  const sp = prefix === 'spouse' ? 'd2_' : 'd_'
-  const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
-  let total = 0
-  Object.entries(categories).forEach(([cat, enabled]) => {
-    if (!enabled) return
-    DETAILED_EXPENSE_MAP[cat]?.forEach(key => {
-      // Check per-person toggle first (key_c or key_s), fall back to shared toggle (key)
-      const personKey = key + perPersonKey
-      if (personKey in subItems) {
-        if (subItems[personKey] === false) return
-      } else {
-        if (subItems[key] === false) return
-      }
-      total += (ff[key.replace('d_', sp)] as number || 0)
-    })
-    // Custom "+Add Row" items — no sub-toggle, always included when the category is enabled
-    const customKey = DETAILED_EXPENSE_CUSTOM_KEY[cat]
-    if (customKey) {
-      const items = (ff[customKey] as any[]) || []
-      total += items.reduce((s, i) => s + ((prefix === 'spouse' ? i.amount2 : i.amount) || 0), 0)
-    }
-  })
-  return total
-}
-
+// getDetailedCategoryTotal / getDetailedTotal moved to src/lib/protectionSnapshot.ts —
+// this used to be a separate copy of the same logic that could (and did) drift out of
+// sync with the live Protection page's version. Now imported below instead.
 function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
   const p = prefix === 'spouse' ? 's2_' : 's_'
   let total = 0

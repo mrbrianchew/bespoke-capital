@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType, getDetailedTotal, getSimpleCategoryTotal } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType, getDetailedTotal, getDetailedCategoryTotal, getSimpleCategoryTotal } from '@/lib/protectionSnapshot'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Policy {
@@ -422,13 +422,17 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     const ciWindow = Number(ff.protection?.ciYears) || 5
   // Floor expenses = Household & Living + Personal only
     // (Financial obligations, children, lifestyle excluded — bare minimum during CI in retirement)
+    // Uses the same shared getDetailedCategoryTotal() the DTPD need calc uses (see
+    // src/lib/protectionSnapshot.ts), rather than its own copy of the field-summing logic —
+    // this used to read the raw d_/d2_ fields directly, crediting shared household bills
+    // (conservancy, utilities, maid, other household) entirely to whichever person's column
+    // an advisor happened to type them into. Now split 50/50 like everywhere else that reads
+    // these fields.
     const p1RetirementExp = ff.expense_mode === 'detailed'
-      ? (Number(ff.d_conservancy)||0)+(Number(ff.d_utilities)||0)+(Number(ff.d_family_food)||0)+(Number(ff.d_maid)||0)+(Number(ff.d_other_household)||0)
-        +(Number(ff.d_personal_food)||0)+(Number(ff.d_transport)||0)+(Number(ff.d_car_petrol)||0)+(Number(ff.d_car_insurance)||0)
+      ? getDetailedCategoryTotal(ff, 'household', 'client', {}) + getDetailedCategoryTotal(ff, 'personal', 'client', {})
       : (Number(ff.s_household)||0)+(Number(ff.s_personal)||0)
     const p2RetirementExp = ff.expense_mode === 'detailed'
-      ? (Number(ff.d2_conservancy)||0)+(Number(ff.d2_utilities)||0)+(Number(ff.d2_family_food)||0)+(Number(ff.d2_maid)||0)+(Number(ff.d2_other_household)||0)
-        +(Number(ff.d2_personal_food)||0)+(Number(ff.d2_transport)||0)+(Number(ff.d2_car_petrol)||0)+(Number(ff.d2_car_insurance)||0)
+      ? getDetailedCategoryTotal(ff, 'household', 'spouse', {}) + getDetailedCategoryTotal(ff, 'personal', 'spouse', {})
       : (Number(ff.s2_household)||0)+(Number(ff.s2_personal)||0)
     const effectiveExp = person === 'client'
       ? (p1RetirementExp > 0 ? p1RetirementExp : p1AnnExp)
