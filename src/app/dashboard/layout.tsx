@@ -1,10 +1,11 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 import DateInput from '@/components/DateInput'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
+import { useClientTabState } from '@/hooks/useClientTabState'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -17,7 +18,7 @@ function getAge(dob: string | null | undefined): number | null {
   return Math.max(0, new Date().getFullYear() - birth.getFullYear())
 }
 
-const NAV = [
+const NAV_PLANNING = [
   { href: '/dashboard', label: 'Executive Summary', icon: '⊞', id: 'overview' },
   { href: '/dashboard/financials', label: 'Financial Profile', icon: '◎', id: 'factfinding' },
   { href: '/dashboard/objectives', label: 'Strategic Objectives', icon: '◉', id: 'objectives' },
@@ -26,6 +27,44 @@ const NAV = [
   { href: '/dashboard/recommendations', label: 'Strategic Recommendations', icon: '◇', id: 'recommendations' },
   { href: '/dashboard/report', label: 'Financial Report', icon: '⊡', id: 'report' },
 ]
+
+const NAV_SERVICING = [
+  { href: '/dashboard/servicing/claims', label: 'Claims', icon: '⚑', id: 'claims' },
+]
+
+type NavGroupId = 'planning' | 'servicing'
+
+const NAV_GROUPS_ALL: { id: NavGroupId; label: string; items: typeof NAV_PLANNING; betaFlag?: string }[] = [
+  { id: 'planning', label: 'Financial Planning', items: NAV_PLANNING },
+  { id: 'servicing', label: 'Client Servicing', items: NAV_SERVICING, betaFlag: 'servicing' },
+]
+
+// Groups gated by betaFlag only render for advisors whose beta_features
+// array (advisors.beta_features, jsonb) includes that flag. Ungated groups
+// (Financial Planning) are always visible. This is how staged rollout works
+// going forward: build behind a flag, then flip it on per-advisor in the DB —
+// no redeploy needed to grant access.
+function visibleNavGroups(betaFeatures: string[] | null | undefined) {
+  const flags = Array.isArray(betaFeatures) ? betaFeatures : []
+  return NAV_GROUPS_ALL.filter(g => !g.betaFlag || flags.includes(g.betaFlag))
+}
+
+// Matches overview's exact-match rule (no accidental prefix matches on '/dashboard')
+// vs. every other item, which also matches nested routes under it.
+function navItemMatches(item: { href: string; id: string }, pathname: string): boolean {
+  return pathname === item.href || (item.id !== 'overview' && pathname.startsWith(item.href))
+}
+
+// Which group the current route belongs to, if any, among the groups this
+// advisor can currently see. Pages outside all visible groups (e.g.
+// /dashboard/profile, /admin) return null so the last-remembered group stays
+// expanded instead of being overridden.
+function routeGroupFor(groups: ReturnType<typeof visibleNavGroups>, pathname: string): NavGroupId | null {
+  for (const group of groups) {
+    if (group.items.some(item => navItemMatches(item, pathname))) return group.id
+  }
+  return null
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -46,6 +85,18 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
+
+  const [expandedGroup, setExpandedGroup] = useClientTabState<NavGroupId>('navGroup', 'planning')
+  const visibleGroups = visibleNavGroups(advisor?.beta_features)
+
+  // Route wins over whatever was last expanded whenever the current page
+  // belongs to a visible group. On pages outside all visible groups (profile,
+  // admin), the remembered value from useClientTabState is left alone.
+  useEffect(() => {
+    const routeGroup = routeGroupFor(visibleGroups, pathname)
+    if (routeGroup && routeGroup !== expandedGroup) setExpandedGroup(routeGroup)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, advisor?.beta_features])
 
   async function deleteClient(clientId: string) {
     if (!confirm('Delete this client? This cannot be undone.')) return
@@ -71,7 +122,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   }
 
   const initials = (name: string) => name?.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?'
-  const activeTab = NAV.find(n => pathname === n.href || (n.id !== 'overview' && pathname.startsWith(n.href)))?.id || 'overview'
+  const activeTab = visibleGroups.flatMap(g => g.items).find(n => navItemMatches(n, pathname))?.id || 'overview'
   const filteredClients = clients
     .filter(c => {
       const q = clientSearch.trim().toLowerCase()
@@ -149,14 +200,40 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           )}
         </div>
         <nav className="flex-1 px-3 py-2">
-          {NAV.map(item => (
-            <Link key={item.id} href={item.href}
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all mb-0.5 text-sm"
-              style={{ color: activeTab === item.id ? 'var(--gold-tag)' : 'var(--ink3)', background: activeTab === item.id ? 'var(--gold-l)' : 'transparent', fontWeight: activeTab === item.id ? 500 : 400 }}>
-              <span className="text-base w-4 text-center">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
+          {visibleGroups.length === 1 ? (
+            visibleGroups[0].items.map(item => (
+              <Link key={item.id} href={item.href}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all mb-0.5 text-sm"
+                style={{ color: activeTab === item.id ? 'var(--gold-tag)' : 'var(--ink3)', background: activeTab === item.id ? 'var(--gold-l)' : 'transparent', fontWeight: activeTab === item.id ? 500 : 400 }}>
+                <span className="text-base w-4 text-center">{item.icon}</span>
+                {item.label}
+              </Link>
+            ))
+          ) : visibleGroups.map(group => {
+            const isOpen = expandedGroup === group.id
+            return (
+              <div key={group.id} className="mb-1">
+                <button onClick={() => setExpandedGroup(group.id)}
+                  className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded transition-colors text-left"
+                  style={{ color: 'var(--ink3)' }}>
+                  <span className="text-xs tracking-widest uppercase font-medium">{group.label}</span>
+                  <span className="text-xs transition-transform" style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>⌄</span>
+                </button>
+                {isOpen && (
+                  <div className="mt-0.5">
+                    {group.items.map(item => (
+                      <Link key={item.id} href={item.href}
+                        className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all mb-0.5 text-sm"
+                        style={{ color: activeTab === item.id ? 'var(--gold-tag)' : 'var(--ink3)', background: activeTab === item.id ? 'var(--gold-l)' : 'transparent', fontWeight: activeTab === item.id ? 500 : 400 }}>
+                        <span className="text-base w-4 text-center">{item.icon}</span>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </nav>
         {user?.id === process.env.NEXT_PUBLIC_CREATOR_ID && (
           <div className="px-3 py-3" style={{ borderTop: '1px solid var(--line)' }}>

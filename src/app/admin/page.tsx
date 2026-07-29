@@ -151,6 +151,17 @@ function RegisteredAdvisorsCard() {
     setActionId(null)
   }
 
+  async function handleToggleFeature(id: string, feature: string, enabled: boolean) {
+    setActionId(id)
+    const res = await fetch('/api/toggle-extra-feature', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, feature, enabled }),
+    })
+    const data = await res.json()
+    if (res.ok) setAdvisors(prev => prev.map(a => a.id === id ? { ...a, beta_features: data.beta_features } : a))
+    setActionId(null)
+  }
+
   return (
     <div style={{ gridColumn: '1 / -1', background: 'white', border: '0.5px solid #E0DDD6', borderRadius: 12, padding: '1.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -173,6 +184,7 @@ function RegisteredAdvisorsCard() {
                 <th style={{ padding: '8px', fontWeight: 500 }}>Email</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Firm</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Status</th>
+                <th style={{ padding: '8px', fontWeight: 500 }}>Servicing (Beta)</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Joined</th>
                 <th style={{ padding: '8px 0 8px 8px', fontWeight: 500 }}>Actions</th>
               </tr>
@@ -187,6 +199,17 @@ function RegisteredAdvisorsCard() {
                     <td style={{ padding: '10px 8px', color: '#4A4740' }}>{a.email}</td>
                     <td style={{ padding: '10px 8px', color: '#4A4740' }}>{a.firm || '—'}</td>
                     <td style={{ padding: '10px 8px' }}><StatusBadge status={a.status} /></td>
+                    <td style={{ padding: '10px 8px' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', cursor: busy ? 'default' : 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={Array.isArray(a.beta_features) && a.beta_features.includes('servicing')}
+                          disabled={busy}
+                          onChange={e => handleToggleFeature(a.id, 'servicing', e.target.checked)}
+                          style={{ width: 16, height: 16, accentColor: '#2D5A4E', cursor: busy ? 'default' : 'pointer' }}
+                        />
+                      </label>
+                    </td>
                     <td style={{ padding: '10px 8px', color: '#9A9690', fontFamily: 'DM Mono, monospace' }}>
                       {a.created_at ? new Date(a.created_at).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                     </td>
