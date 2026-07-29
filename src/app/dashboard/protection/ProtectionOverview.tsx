@@ -1302,7 +1302,7 @@ function CoverageChart({
   // brand gold for any unrecognized label.
   const CATEGORY_COLORS: Record<string, { swatch: string; gradient: string }> = {
     'Family living':   { swatch: '#c8a96e', gradient: 'linear-gradient(180deg, #ddbb80 0%, #c8a96e 55%, #a3813f 100%)' },
-    'Mortgage':        { swatch: '#5B92BE', gradient: 'linear-gradient(180deg, #8fb8dc 0%, #5B92BE 55%, #3f6a8f 100%)' },
+    'Mortgage / Debts': { swatch: '#5B92BE', gradient: 'linear-gradient(180deg, #8fb8dc 0%, #5B92BE 55%, #3f6a8f 100%)' },
     'Education':       { swatch: '#8B78B0', gradient: 'linear-gradient(180deg, #b3a3d1 0%, #8B78B0 55%, #665783 100%)' },
     'Medical buffer':  { swatch: '#C97B5D', gradient: 'linear-gradient(180deg, #e3a487 0%, #C97B5D 55%, #9a5940 100%)' },
     'Recovery buffer': { swatch: '#4F9A82', gradient: 'linear-gradient(180deg, #7fc4ab 0%, #4F9A82 55%, #366b5a 100%)' },
@@ -1561,7 +1561,7 @@ function CoverageChart({
               breakdown={activeProfile.dtpd}
               rows={[
                 { label: 'Family living', value: activeProfile.dtpd.familyDependency, milestoneType: 'retirement' },
-                { label: 'Mortgage', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
+                { label: 'Mortgage / Debts', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
                 { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
               ]}
               timeline={activeProfile.dtpdTimeline}
@@ -1642,7 +1642,7 @@ function CoverageChart({
               breakdown={activeProfile.ci}
               rows={[
                 { label: 'Family living', value: activeProfile.ci.familyDependency },
-                { label: 'Mortgage', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
+                { label: 'Mortgage / Debts', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
                 { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education' },
                 { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
                 { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer },
