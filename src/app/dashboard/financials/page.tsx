@@ -2302,7 +2302,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
               <div style={{ background: 'white', border: '1px solid var(--line)', padding: '20px 24px' }}>
                 <div className="text-xs tracking-widest uppercase mb-3" style={{ color: 'var(--ink3)' }}>Summary{viewMode !== 'combined' && (viewMode === 'client' ? ` — ${clientName}` : ` — ${spouseName}`)}</div>
-                {[{label:'Short Term (<5yr)',val:vStTotal,color:'var(--rouge)'},{label:'Long Term (>5yr)',val:vLtTotal,color:'#8A5E3A'}].map(r=>(
+                {[{label:'Short Term (<5yr)',val:vStTotal,color:'var(--rouge)'},{label:'Long Term (>5yr)',val:vLtTotal+vMortgageLiabTotal,color:'#8A5E3A'}].map(r=>(
                   <div key={r.label} className="flex justify-between py-2 text-xs" style={{ borderBottom: '1px solid var(--line)' }}>
                     <span style={{ color: 'var(--ink2)' }}>{r.label}</span><span style={{ color: r.color, fontWeight: 500 }}>{fmt(r.val)}</span>
                   </div>
