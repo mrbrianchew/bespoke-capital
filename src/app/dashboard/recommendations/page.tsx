@@ -146,6 +146,12 @@ interface MedicalRider {
   insurer: string
   productName: string
   annualPremium: number
+  briefCoverage: string
+  briefCoverageOther: string
+}
+
+function newRider(): MedicalRider {
+  return { insurer: '', productName: '', annualPremium: 0, briefCoverage: '', briefCoverageOther: '' }
 }
 
 type MedCoverageMode = 'main_only' | 'main_rider' | 'rider_only' | 'international'
@@ -163,8 +169,8 @@ interface MedicalRec {
   premiumMedisave: number
   premiumCash: number
   premiumTerm: string
-  // Rider (shown when coverageMode includes rider)
-  rider: MedicalRider
+  // Riders (shown when coverageMode includes rider) — max 2
+  riders: MedicalRider[]
   // Text
   benefits: string
   limitations: string
@@ -289,6 +295,31 @@ function normalizeRecPageData(d: RecPageData): RecPageData {
     for (const key of Object.keys(byPerson || {})) out[key] = (byPerson[key] || []).map(withRationale)
     return out
   }
+  // Migrate old single `rider` object (pre-multi-rider) into the new `riders`
+  // array so previously saved medical recs don't crash on load.
+  const normMedical = (byPerson: Record<string, any[]>): Record<string, MedicalRec[]> => {
+    const out: Record<string, MedicalRec[]> = {}
+    for (const key of Object.keys(byPerson || {})) {
+      out[key] = (byPerson[key] || []).map((r: any) => {
+        const rec = withRationale(r)
+        if (Array.isArray(rec.riders)) return rec
+        const legacy = rec.rider
+        const riders: MedicalRider[] = legacy && (legacy.insurer || legacy.productName || legacy.annualPremium)
+          ? [{
+              insurer: legacy.insurer || '', productName: legacy.productName || '',
+              annualPremium: legacy.annualPremium || 0,
+              // Old shape stored rider coverage in the shared briefCoverage field —
+              // carry it over only if it matches a rider option (not a main-plan one).
+              briefCoverage: BRIEF_COVERAGE_RIDER.includes(rec.briefCoverage) ? rec.briefCoverage : '',
+              briefCoverageOther: BRIEF_COVERAGE_RIDER.includes(rec.briefCoverage) ? (rec.briefCoverageOther || '') : '',
+            }]
+          : [newRider()]
+        const { rider, ...rest } = rec
+        return { ...rest, riders }
+      })
+    }
+    return out
+  }
   const accByPerson: Record<string, AccRec[]> = {}
   for (const key of Object.keys(d.accumulationByPerson || {})) {
     accByPerson[key] = (d.accumulationByPerson[key] || []).map(r => ({
@@ -298,7 +329,7 @@ function normalizeRecPageData(d: RecPageData): RecPageData {
     }))
   }
   return {
-    medicalByPerson: normByPerson(d.medicalByPerson),
+    medicalByPerson: normMedical(d.medicalByPerson),
     ltcByPerson: normByPerson(d.ltcByPerson),
     expenseByPerson: normByPerson(d.expenseByPerson),
     generalByPerson: normByPerson(d.generalByPerson),
@@ -1230,7 +1261,17 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
 }) {
   const [showImpact, setShowImpact] = useState(false)
   function upd<K extends keyof MedicalRec>(k: K, v: MedicalRec[K]) { onChange({ ...rec, [k]: v }) }
-  function updRider<K extends keyof MedicalRider>(k: K, v: MedicalRider[K]) { onChange({ ...rec, rider: { ...rec.rider, [k]: v } }) }
+  function updRider<K extends keyof MedicalRider>(idx: number, k: K, v: MedicalRider[K]) {
+    const riders = rec.riders.map((r, i) => i === idx ? { ...r, [k]: v } : r)
+    onChange({ ...rec, riders })
+  }
+  function addRider() {
+    if (rec.riders.length >= 2) return
+    onChange({ ...rec, riders: [...rec.riders, newRider()] })
+  }
+  function removeRider(idx: number) {
+    onChange({ ...rec, riders: rec.riders.filter((_, i) => i !== idx) })
+  }
 
   const msLimit = medisaveLimitFromBands(personAge, medisaveBands)
   const totalMainPremium = (rec.premiumMedisave || 0) + (rec.premiumCash || 0)
@@ -1264,9 +1305,12 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
 
   const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
 
-  // Rider products filtered by rider insurer
-  const riderComp = medicalCompanies.find(c => c.name === (rec.rider?.insurer || ''))
-  const riderProducts = riderComp ? products.filter(p => p.company_id === riderComp.id) : []
+  // Rider products filtered by that rider's insurer
+  function riderProductsFor(insurer: string) {
+    const comp = medicalCompanies.find(c => c.name === insurer)
+    return comp ? products.filter(p => p.company_id === comp.id) : []
+  }
+  const totalRiderPremium = rec.riders.reduce((s, r) => s + (r.annualPremium || 0), 0)
 
   function togglePolicy(pol: typeof existingPolicies[0]) {
     const exists = rec.replacedPolicies.find(p => p.policyId === pol.id)
@@ -1395,49 +1439,64 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
           )
         })()}
 
-        {/* Rider section */}
+        {/* Rider section — up to 2 independent riders */}
         {hasRider && (
-          <div style={{ padding: '0 16px 16px' }}>
-            <div style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
-              <div style={{ ...S.lbl, marginBottom: 10 }}>Rider details</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
-                <div>
-                  <label style={S.lbl}>Rider insurer</label>
-                  <select style={S.inp} value={rec.rider?.insurer || ''}
-                    onChange={e => onChange({ ...rec, rider: { ...rec.rider, insurer: e.target.value, productName: '' } })}>
-                    <option value="">Select insurer…</option>
-                    {medicalCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
+          <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {rec.riders.map((rider, idx) => {
+              const riderProducts = riderProductsFor(rider.insurer)
+              return (
+                <div key={idx} style={{ background: 'var(--cream)', borderRadius: 8, padding: 14, border: '1px solid var(--cream3)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={S.lbl}>Rider {idx + 1} details</div>
+                    {rec.riders.length > 1 && (
+                      <button onClick={() => removeRider(idx)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px solid var(--cream3)', background: 'transparent', color: '#9B1C1C' }}>Remove rider</button>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 12px' }}>
+                    <div>
+                      <label style={S.lbl}>Rider insurer</label>
+                      <select style={S.inp} value={rider.insurer}
+                        onChange={e => updRider(idx, 'insurer', e.target.value)}>
+                        <option value="">Select insurer…</option>
+                        {medicalCompanies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.lbl}>Rider product</label>
+                      <select style={S.inp} value={rider.productName}
+                        onChange={e => updRider(idx, 'productName', e.target.value)}
+                        disabled={!rider.insurer}>
+                        <option value="">{rider.insurer ? 'Select product…' : 'Select insurer first'}</option>
+                        {riderProducts.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={S.lbl}>Rider annual premium (S$)</label>
+                      <input type="number" style={S.inp} value={rider.annualPremium || ''} placeholder="0"
+                        onChange={e => updRider(idx, 'annualPremium', Number(e.target.value))} />
+                    </div>
+                  </div>
+                  {/* Rider brief coverage — independent field per rider */}
+                  <div style={{ marginTop: 10 }}>
+                    <label style={S.lbl}>Rider coverage</label>
+                    <select style={S.inp} value={rider.briefCoverage}
+                      onChange={e => updRider(idx, 'briefCoverage', e.target.value)}>
+                      <option value="">Select rider coverage…</option>
+                      {BRIEF_COVERAGE_RIDER.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    {rider.briefCoverage === 'Other' && (
+                      <input style={{ ...S.inp, marginTop: 8 }} value={rider.briefCoverageOther}
+                        onChange={e => updRider(idx, 'briefCoverageOther', e.target.value)} placeholder="Describe rider coverage…" />
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label style={S.lbl}>Rider product</label>
-                  <select style={S.inp} value={rec.rider?.productName || ''}
-                    onChange={e => updRider('productName', e.target.value)}
-                    disabled={!rec.rider?.insurer}>
-                    <option value="">{rec.rider?.insurer ? 'Select product…' : 'Select insurer first'}</option>
-                    {riderProducts.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={S.lbl}>Rider annual premium (S$)</label>
-                  <input type="number" style={S.inp} value={rec.rider?.annualPremium || ''} placeholder="0"
-                    onChange={e => updRider('annualPremium', Number(e.target.value))} />
-                </div>
-              </div>
-              {/* Rider brief coverage */}
-              <div style={{ marginTop: 10 }}>
-                <label style={S.lbl}>Rider coverage</label>
-                <select style={S.inp} value={rec.briefCoverage === '' || !BRIEF_COVERAGE_RIDER.includes(rec.briefCoverage) ? '' : rec.briefCoverage}
-                  onChange={e => onChange({ ...rec, briefCoverage: e.target.value, briefCoverageOther: e.target.value !== 'Other' ? '' : rec.briefCoverageOther })}>
-                  <option value="">Select rider coverage…</option>
-                  {BRIEF_COVERAGE_RIDER.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-                {rec.briefCoverage === 'Other' && (
-                  <input style={{ ...S.inp, marginTop: 8 }} value={rec.briefCoverageOther}
-                    onChange={e => upd('briefCoverageOther', e.target.value)} placeholder="Describe rider coverage…" />
-                )}
-              </div>
-            </div>
+              )
+            })}
+            {rec.riders.length < 2 && (
+              <button onClick={addRider} style={{ alignSelf: 'flex-start', fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: 'Inter', border: '1px dashed var(--cream3)', background: 'transparent', color: 'var(--ink2)' }}>
+                + Add another rider
+              </button>
+            )}
           </div>
         )}
 
@@ -1487,11 +1546,11 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
                 <div style={{ marginTop: 12 }}>
                   <CompareTable
                     replaced={rec.replacedPolicies}
-                    newPremium={totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
+                    newPremium={totalMainPremium + (hasRider ? totalRiderPremium : 0)}
                     newSA={0}
                     newCoverageType={rec.productName || COVERAGE_MODE_LABELS[rec.coverageMode]}
                     medicalMode={true}
-                    newCashPremium={rec.premiumCash + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
+                    newCashPremium={rec.premiumCash + (hasRider ? totalRiderPremium : 0)}
                   />
                 </div>
               )}
@@ -1525,7 +1584,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
             premiumCash: 0,
             coverageType: COVERAGE_MODE_LABELS[rec.coverageMode],
             policyTerm: 'Lifetime renewable',
-            annualPremium: totalMainPremium + (hasRider ? (rec.rider?.annualPremium || 0) : 0),
+            annualPremium: totalMainPremium + (hasRider ? totalRiderPremium : 0),
             baseDeathBenefit: 0, baseTpdBenefit: 0, baseAdvCiBenefit: 0, baseEarlyCiBenefit: 0,
             coverageMultiplier: 1, multiplierEnd: '', deathBenefit: 0, tpdBenefit: 0, advCiBenefit: 0, earlyCiBenefit: 0,
             interestRate: '', premiumWaiver: 'Nil', isUsdPolicy: false,
@@ -1534,7 +1593,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
           monthlyIncome={monthlyIncome}
           monthlyExpenses={monthlyExpenses}
           medicalMode={true}
-          medicalCashPremium={rec.premiumCash + (hasRider ? (rec.rider?.annualPremium || 0) : 0)}
+          medicalCashPremium={rec.premiumCash + (hasRider ? totalRiderPremium : 0)}
           medicalOldCashPremium={rec.replacedPolicies.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)}
           annualSurplusOverride={annualSurplusOverride}
           onClose={() => setShowImpact(false)}
@@ -2735,7 +2794,7 @@ function CashflowSidebar({ open, onClose, data, activePerson, annualSurplus, per
   // Medical — cash only (exclude Medisave)
   const medRecs = (data.medicalByPerson[activePerson] || []).filter(r => r.isChosen)
   medRecs.forEach(r => {
-    const newCash = r.premiumCash + (r.rider?.annualPremium || 0)
+    const newCash = r.premiumCash + r.riders.reduce((s, rd) => s + (rd.annualPremium || 0), 0)
     if (r.mode === 'replacement') {
       const oldCash = r.replacedPolicies.reduce((s, p) => s + (p.annualPremium - (p.premiumMedisave || 0)), 0)
       rows.push({ label: r.productName || r.briefCoverage || 'Medical plan', section: 'Medical Insurance', cashDelta: newCash - oldCash, mode: r.mode })
@@ -3403,7 +3462,7 @@ export default function RecommendationsPage() {
       insurer: '', productName: '', coverageMode: 'main_only',
       briefCoverage: '', briefCoverageOther: '',
       premiumMedisave: 0, premiumCash: 0, premiumTerm: 'Annual',
-      rider: { insurer: '', productName: '', annualPremium: 0 },
+      riders: [newRider()],
       benefits: '', limitations: '', rationale: '', replacedPolicies: [], isChosen: false,
     }
     handleChange({ ...data, medicalByPerson: { ...data.medicalByPerson, [person]: [...recs, rec] } })
