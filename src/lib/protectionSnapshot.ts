@@ -132,13 +132,15 @@ const DETAILED_EXPENSE_CUSTOM_KEY: Record<string, string> = {
 }
 
 // Household bills that are one real-world shared cost, not two independent
-// per-person figures — conservancy, utilities, maid, other household. Split
-// 50/50 between client and spouse regardless of which column an advisor
-// happened to enter the figure into, instead of crediting the whole bill to
-// one person and zero to the other. family_food is deliberately excluded:
-// client/spouse entries for it are genuinely independent figures in practice
-// (advisors enter different amounts for each), not a single shared bill.
-const SHARED_HOUSEHOLD_KEYS = ['d_conservancy', 'd_utilities', 'd_maid', 'd_other_household']
+// per-person figures — conservancy, utilities, family food & groceries, maid,
+// other household. Split 50/50 between client and spouse regardless of which
+// column an advisor happened to enter the figure into, instead of crediting
+// the whole bill to one person and zero to the other. (Originally family_food
+// was left out of this list on the assumption that two different non-zero
+// values meant it was deliberately independent — but the Financials UI groups
+// it under "Household & Living" with the identical per-person entry pattern
+// as the other four, so it belongs here too.)
+const SHARED_HOUSEHOLD_KEYS = ['d_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household']
 
 export function getDetailedCategoryTotal(ff: Record<string, any>, category: string, prefix: 'client' | 'spouse', subItems: Record<string, boolean>): number {
   const sp = prefix === 'spouse' ? 'd2_' : 'd_'
@@ -191,6 +193,71 @@ export function getSimpleCategoryTotal(ff: Record<string, any>, categories: Reco
     if (!enabled) return total
     return total + (catMap[cat] ?? []).reduce((s, k) => s + ((ff[k] as number) ?? 0), 0)
   }, 0)
+}
+
+export interface CIFloorDetail {
+  result: number
+  effectiveExp: number
+  windowStart: number
+  windowEnd: number
+  lifeExp: number
+  floorYears: number
+  isExpenseBinding: boolean
+  isOverride: boolean
+}
+
+// The CI survival floor: permanent minimum coverage for a late-life diagnosis
+// with no other assets — higher of $300K or basic household+personal expenses
+// inflated across the last floorYears of life expectancy. This used to be
+// duplicated three times (ProtectionOverview.tsx's own copy, and a third
+// inline version inside buildProtectionSnapshot below feeding the Report /
+// Action Plan pages) with no way to configure which expenses count. Now the
+// only copy, and reads floorSubItems/floorYears/floorOverride so an advisor
+// can adjust it per client from the Objectives page.
+export function getCIFloor(
+  ff: Record<string, any>,
+  p: Record<string, any>,
+  prefix: 'client' | 'spouse',
+  currentAge: number,
+  inflation: number,
+  fallbackAnnExp: number,
+): CIFloorDetail {
+  const lifeExp = Number(prefix === 'client' ? ff.client?.lifeExpectancy : ff.spouse?.lifeExpectancy) || 85
+  const floorYears = Number(p.floorYears) || Number(p.ciYears) || 5
+  const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
+  const override = prefix === 'client' ? p.floorOverrideClient : p.floorOverrideSpouse
+  const hasOverride = override != null && override > 0
+  const subItems = p.floorSubItems ?? {}
+
+  let effectiveExp: number
+  if (hasOverride) {
+    effectiveExp = Number(override)
+  } else if (isDetailed) {
+    const raw = getDetailedCategoryTotal(ff, 'household', prefix, subItems) + getDetailedCategoryTotal(ff, 'personal', prefix, subItems)
+    effectiveExp = raw > 0 ? raw : fallbackAnnExp
+  } else {
+    const sp = prefix === 'spouse' ? 's2_' : 's_'
+    const raw = (Number(ff[`${sp}household`]) || 0) + (Number(ff[`${sp}personal`]) || 0)
+    effectiveExp = raw > 0 ? raw : fallbackAnnExp
+  }
+
+  const windowStart = lifeExp - floorYears
+  let floorFromExpenses = 0
+  for (let age = windowStart; age < lifeExp; age++) {
+    const yearsFromNow = Math.max(0, age - currentAge)
+    floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
+  }
+  const result = Math.max(300000, floorFromExpenses)
+  return {
+    result,
+    effectiveExp,
+    windowStart,
+    windowEnd: lifeExp - 1,
+    lifeExp,
+    floorYears,
+    isExpenseBinding: floorFromExpenses > 300000,
+    isOverride: hasOverride,
+  }
 }
 
 function calcExistingLifeCover(policies: any[], who: 'client' | 'spouse'): number {
@@ -435,30 +502,13 @@ export function buildProtectionSnapshot(input: {
       }, 0)
   }
 
-  // Floor — mirrors getFloor() on the live page: higher of $300K or basic
-  // household+personal expenses inflated across the last ciYears of life.
+  // Floor — delegates to the shared getCIFloor() (src/lib/protectionSnapshot.ts),
+  // which is also what the live Protection page and Objectives page's floor
+  // settings use. This used to be its own third copy of the floor math with
+  // no way to configure it — now there's exactly one implementation.
   function getFloor(who: 'client' | 'spouse', currentAge: number): number {
-    const lifeExp = Number(who === 'client' ? ff.client?.lifeExpectancy : ff.spouse?.lifeExpectancy) || 85
-    const ciWindow = Number(p.ciYears) || 5
-    const p1RetirementExp = isDetailed
-      ? (Number(ff.d_conservancy) || 0) + (Number(ff.d_utilities) || 0) + (Number(ff.d_family_food) || 0) + (Number(ff.d_maid) || 0) + (Number(ff.d_other_household) || 0)
-        + (Number(ff.d_personal_food) || 0) + (Number(ff.d_transport) || 0) + (Number(ff.d_car_petrol) || 0) + (Number(ff.d_car_insurance) || 0)
-      : (Number(ff.s_household) || 0) + (Number(ff.s_personal) || 0)
-    const p2RetirementExp = isDetailed
-      ? (Number(ff.d2_conservancy) || 0) + (Number(ff.d2_utilities) || 0) + (Number(ff.d2_family_food) || 0) + (Number(ff.d2_maid) || 0) + (Number(ff.d2_other_household) || 0)
-        + (Number(ff.d2_personal_food) || 0) + (Number(ff.d2_transport) || 0) + (Number(ff.d2_car_petrol) || 0) + (Number(ff.d2_car_insurance) || 0)
-      : (Number(ff.s2_household) || 0) + (Number(ff.s2_personal) || 0)
     const annExp = who === 'client' ? annExpClient : annExpSpouse
-    const effectiveExp = who === 'client'
-      ? (p1RetirementExp > 0 ? p1RetirementExp : annExp)
-      : (p2RetirementExp > 0 ? p2RetirementExp : annExp)
-    const windowStart = lifeExp - ciWindow
-    let floorFromExpenses = 0
-    for (let age = windowStart; age < lifeExp; age++) {
-      const yearsFromNow = Math.max(0, age - currentAge)
-      floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
-    }
-    return Math.max(300000, floorFromExpenses)
+    return getCIFloor(ff, p, who, currentAge, inflation, annExp).result
   }
 
   // Per-child education fund (future-valued tuition + living, same defaults as

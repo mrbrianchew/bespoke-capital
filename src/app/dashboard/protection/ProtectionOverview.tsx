@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType, getDetailedTotal, getDetailedCategoryTotal, getSimpleCategoryTotal } from '@/lib/protectionSnapshot'
+import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType, getDetailedTotal, getSimpleCategoryTotal, getCIFloor } from '@/lib/protectionSnapshot'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Policy {
@@ -403,7 +403,10 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 }, [children, clientAge, spouseAge, activePerson, educationChildren])
 
   // ── Floor calculation ───────────────────────────────────────────────────────
-  // Floor = higher of ($300K) or (basic living expenses inflated to retirement/last milestone)
+  // Delegates to the shared getCIFloor() (src/lib/protectionSnapshot.ts) — the
+  // single implementation also used by buildProtectionSnapshot (Report / Action
+  // Plan pages) and the Objectives page's floor settings preview. Previously
+  // this was its own third copy with no way to configure it.
   function getFloorDetail(person: 'client' | 'spouse'): {
     result: number
     effectiveExp: number
@@ -414,47 +417,16 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     isExpenseBinding: boolean
   } {
     const currentAge = person === 'client' ? clientAge : spouseAge
-    const lifeExp = Number(
-      person === 'client'
-        ? ff.client?.lifeExpectancy
-        : ff.spouse?.lifeExpectancy
-    ) || 85
-    const ciWindow = Number(ff.protection?.ciYears) || 5
-  // Floor expenses = Household & Living + Personal only
-    // (Financial obligations, children, lifestyle excluded — bare minimum during CI in retirement)
-    // Uses the same shared getDetailedCategoryTotal() the DTPD need calc uses (see
-    // src/lib/protectionSnapshot.ts), rather than its own copy of the field-summing logic —
-    // this used to read the raw d_/d2_ fields directly, crediting shared household bills
-    // (conservancy, utilities, maid, other household) entirely to whichever person's column
-    // an advisor happened to type them into. Now split 50/50 like everywhere else that reads
-    // these fields.
-    const p1RetirementExp = ff.expense_mode === 'detailed'
-      ? getDetailedCategoryTotal(ff, 'household', 'client', {}) + getDetailedCategoryTotal(ff, 'personal', 'client', {})
-      : (Number(ff.s_household)||0)+(Number(ff.s_personal)||0)
-    const p2RetirementExp = ff.expense_mode === 'detailed'
-      ? getDetailedCategoryTotal(ff, 'household', 'spouse', {}) + getDetailedCategoryTotal(ff, 'personal', 'spouse', {})
-      : (Number(ff.s2_household)||0)+(Number(ff.s2_personal)||0)
-    const effectiveExp = person === 'client'
-      ? (p1RetirementExp > 0 ? p1RetirementExp : p1AnnExp)
-      : (p2RetirementExp > 0 ? p2RetirementExp : p2AnnExp)
-    // Window = last ciWindow years of life: from (lifeExp - ciWindow) to (lifeExp - 1)
-    // Sum of annual expenses inflated to each of those years
-    const windowStart = lifeExp - ciWindow  // age at start of window
-    let floorFromExpenses = 0
-    for (let age = windowStart; age < lifeExp; age++) {
-      const yearsFromNow = Math.max(0, age - currentAge)
-      floorFromExpenses += effectiveExp * Math.pow(1 + inflation, yearsFromNow)
-    }
-    const result = Math.max(300000, floorFromExpenses)
-    console.log('[FLOOR] ' + JSON.stringify({ person, lifeExp, ciWindow, effectiveExp, windowStart, floorFromExpenses, result }))
+    const fallbackAnnExp = person === 'client' ? p1AnnExp : p2AnnExp
+    const detail = getCIFloor(ff, ff.protection ?? {}, person, currentAge, inflation, fallbackAnnExp)
     return {
-      result,
-      effectiveExp,
-      windowStart,
-      windowEnd: lifeExp - 1,
-      lifeExp,
-      ciWindow,
-      isExpenseBinding: floorFromExpenses > 300000,
+      result: detail.result,
+      effectiveExp: detail.effectiveExp,
+      windowStart: detail.windowStart,
+      windowEnd: detail.windowEnd,
+      lifeExp: detail.lifeExp,
+      ciWindow: detail.floorYears,
+      isExpenseBinding: detail.isExpenseBinding,
     }
   }
 

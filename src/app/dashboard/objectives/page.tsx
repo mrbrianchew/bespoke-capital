@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import { useDashboard } from '@/contexts/DashboardContext'
-import { getDetailedCategoryTotal, getDetailedTotal } from '@/lib/protectionSnapshot'
+import { getDetailedCategoryTotal, getDetailedTotal, getCIFloor } from '@/lib/protectionSnapshot'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
@@ -163,6 +163,21 @@ interface ProtectionData {
   ciMedicalBufferClient?: number; ciMedicalBufferSpouse?: number
   ciIncludeRecoveryBuffer?: boolean
   ciRecoveryBufferClient?: number; ciRecoveryBufferSpouse?: number
+  // CI Survival Floor — the permanent, never-lapsing minimum coverage for a
+  // late-life diagnosis with no other assets. Independent of ciCalcMode.
+  // floorSubItems reuses the same key+'_c'/key+'_s' pattern as expenseSubItems
+  // (see DETAILED_EXPENSE_MAP / EditSubItemsModal) but under its own namespace
+  // so toggling a category out of the floor doesn't affect the D/TPD or CI
+  // expense-mode totals, and vice versa. All keys default to included (true)
+  // when absent, matching today's hardcoded behavior.
+  floorSubItems?: Record<string, boolean>
+  // Duration in years — deliberately separate from ciYears (Recovery Window),
+  // which is a different concept (CI recovery period, not floor duration).
+  // Falls back to ciYears only if never set, so existing clients see no change.
+  floorYears?: number
+  // Manual override — replaces the ticked-category calculation entirely when set.
+  floorOverrideClient?: number | null
+  floorOverrideSpouse?: number | null
 }
 
 interface MedDisEntry {
@@ -1434,6 +1449,8 @@ useEffect(() => {
               ff={ff} p={p} updateP={updateP}
               children={children} isCouple={isCouple}
               clientName={clientName} spouseName={spouseName}
+              clientAge={clientDOB ? getAge(clientDOB) : 35}
+              spouseAge={spouseDOB ? getAge(spouseDOB) : 35}
               annExpClient={annExpClient} annExpSpouse={annExpSpouse}
               coverageTerm={coverageTerm} youngestAge={youngestAge}
               dtpdClient={dtpdClient} dtpdSpouse={dtpdSpouse}
@@ -1642,6 +1659,7 @@ interface WPProps {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   children: FamilyMember[]; isCouple: boolean
   clientName: string; spouseName: string
+  clientAge: number; spouseAge: number
   annExpClient: number; annExpSpouse: number
   coverageTerm: number; youngestAge: number | null
   dtpdClient: CalcResult
@@ -1665,7 +1683,7 @@ interface WPProps {
 type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number; incomeReplacement?: number; medicalBuffer?: number; recoveryBuffer?: number }
 
 
-function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId, allFamilyMembers, insCompanies, insProducts, insCategories, addToPortfolio }: WPProps) {
+function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, clientAge, spouseAge, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId, allFamilyMembers, insCompanies, insProducts, insCategories, addToPortfolio }: WPProps) {
   const wpTab = p.wpSubTab ?? 0
   const cats = p.expenseCategories ?? { financial: true, household: true, personal: true, children: true, lifestyle: true }
   const isDetailed = (p.expenseMode ?? ff.expense_mode ?? 'simple') === 'detailed'
@@ -1833,6 +1851,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
           <CriticalIllnessTab
             ff={ff} p={p} updateP={updateP}
             isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            clientAge={clientAge} spouseAge={spouseAge}
             mortgages={mortgages}
             ciClient={ciClient} ciSpouse={ciSpouse}
             children={children}
@@ -2725,9 +2744,10 @@ function CIAmountInput({ label, value, onChange, note }: { label: string; value:
   )
 }
 
-function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, mortgages, ciClient, ciSpouse, children, inflation, annExpClient, annExpSpouse, defaultClientPct, defaultSpousePct }: {
+function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, clientAge, spouseAge, mortgages, ciClient, ciSpouse, children, inflation, annExpClient, annExpSpouse, defaultClientPct, defaultSpousePct }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
+  clientAge: number; spouseAge: number
   mortgages: MortgageProperty[]
   ciClient: CalcResult; ciSpouse: CalcResult
   children: FamilyMember[]
@@ -2770,6 +2790,25 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
   const ciYears = p.ciYears ?? 5
   const clientGrossMonthly = (ff.person1 as any)?.gross_monthly ?? 0
   const spouseGrossMonthly = (ff.person2 as any)?.gross_monthly ?? 0
+
+  // ── CI Survival Floor ──────────────────────────────────────────────────────
+  // Collapsed by default so a first-time advisor never has to touch this to get
+  // a correct number — every category defaults to included, matching today's
+  // hardcoded behavior. Only needs opening if someone deliberately wants to
+  // change what counts.
+  const [floorExpanded, setFloorExpanded] = useState(false)
+  const floorSubItems = p.floorSubItems ?? {}
+  const floorYears = p.floorYears ?? p.ciYears ?? 5
+  function isFloorIncluded(key: string, who: 'client' | 'spouse'): boolean {
+    return floorSubItems[key + (who === 'spouse' ? '_s' : '_c')] !== false
+  }
+  function toggleFloorItem(key: string, who: 'client' | 'spouse') {
+    const suffix = who === 'spouse' ? '_s' : '_c'
+    updateP({ floorSubItems: { ...floorSubItems, [key + suffix]: !isFloorIncluded(key, who) } })
+  }
+  const clientFloorDetail = getCIFloor(ff, p, 'client', clientAge, inflation, annExpClient)
+  const spouseFloorDetail = getCIFloor(ff, p, 'spouse', spouseAge, inflation, annExpSpouse)
+  const FLOOR_ITEM_KEYS = [...DETAILED_EXPENSE_MAP.household, ...DETAILED_EXPENSE_MAP.personal]
 
   const MODES = [
     { key: 'expenses', label: 'Expense Replacement' },
@@ -3237,6 +3276,101 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
             ) : (
               <CIAmountInput label="CI Amount" value={p.ciCustomAmountClient ?? 0} onChange={v => updateP({ ciCustomAmountClient: v })} />
             )}
+          </div>
+        )}
+      </SectionBlock>
+
+      {/* CI Survival Floor — permanent minimum, independent of ciMode above */}
+      <SectionBlock title="Critical Illness Survival Floor" color="#6B7280">
+        <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 16, lineHeight: 1.6 }}>
+          Permanent minimum coverage that never lapses — what {clientName} would need to survive if diagnosed with a late-stage critical illness with no other assets left. Applies no matter which calculation method is chosen above.
+        </p>
+
+        <div
+          onClick={() => setFloorExpanded(!floorExpanded)}
+          style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px', background: '#F5F0E8', borderRadius: 8, cursor: 'pointer', marginBottom: floorExpanded ? 12 : 0 }}
+        >
+          <span style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', flex: 1 }}>Survival floor settings</span>
+          <div style={{ textAlign: 'right' }}>
+            {isCouple && <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>}
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#6B7280' }}>{fmt(clientFloorDetail.result)}</div>
+          </div>
+          {isCouple && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
+              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#6B7280' }}>{fmt(spouseFloorDetail.result)}</div>
+            </div>
+          )}
+          <span style={{ fontSize: 11, fontFamily: 'Inter', color: '#A8834A', fontWeight: 500 }}>{floorExpanded ? 'Hide' : 'Edit'}</span>
+        </div>
+
+        {floorExpanded && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 90px 90px' : '1fr 90px', gap: 8, padding: '0 10px 8px', borderBottom: '1px solid #E8E4DC', marginBottom: 4 }}>
+              <div style={{ fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Item</div>
+              <div style={{ fontSize: 9, color: '#A8834A', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{clientName}</div>
+              {isCouple && <div style={{ fontSize: 9, color: '#2D5A4E', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>{spouseName}</div>}
+            </div>
+
+            {FLOOR_ITEM_KEYS.map(key => {
+              const shared = DETAILED_EXPENSE_MAP.household.includes(key)
+              const clientOn = isFloorIncluded(key, 'client')
+              const spouseOn = isFloorIncluded(key, 'spouse')
+              return (
+                <div key={key} style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 90px 90px' : '1fr 90px', gap: 8, padding: '9px 10px', borderBottom: '1px solid #F0EDE8', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{DETAILED_EXPENSE_LABELS[key]}</span>
+                    {shared && <span style={{ fontSize: 9, background: '#EDE3CE', color: '#8A6633', padding: '2px 6px', borderRadius: 4, marginLeft: 8, fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase' }}>Shared</span>}
+                  </div>
+                  <div onClick={() => toggleFloorItem(key, 'client')} style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', background: clientOn ? '#A8834A' : 'transparent', border: `1.5px solid ${clientOn ? '#A8834A' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {clientOn && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                    </div>
+                  </div>
+                  {isCouple && (
+                    <div onClick={() => toggleFloorItem(key, 'spouse')} style={{ display: 'flex', justifyContent: 'center' }}>
+                      <div style={{ width: 20, height: 20, borderRadius: 4, cursor: 'pointer', background: spouseOn ? '#2D5A4E' : 'transparent', border: `1.5px solid ${spouseOn ? '#2D5A4E' : '#ccc'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {spouseOn && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 10px' }}>
+              <div>
+                <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>Floor duration</div>
+                <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter' }}>Independent of the Recovery Window slider above</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="number" min={0.5} max={20} step={0.5} value={floorYears}
+                  onChange={e => updateP({ floorYears: parseFloat(e.target.value) || 5 })}
+                  style={{ width: 60, padding: '6px 8px', border: '1px solid #E8E4DC', borderRadius: 4, fontFamily: 'DM Mono, monospace', fontSize: 13, textAlign: 'right' }} />
+                <span style={{ fontSize: 12, color: '#888', fontFamily: 'Inter' }}>yrs</span>
+              </div>
+            </div>
+
+            <div style={{ display: isCouple ? 'grid' : 'block', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16, padding: '4px 10px 8px' }}>
+              <div style={{ border: '1px dashed #ccc', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 4 }}>{clientName} — override annual floor expense</div>
+                <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 8 }}>Replaces the ticked items above entirely, if filled in</div>
+                <input type="number" placeholder="0" value={p.floorOverrideClient ?? ''}
+                  onChange={e => updateP({ floorOverrideClient: e.target.value ? parseFloat(e.target.value) : null })}
+                  style={{ width: '100%', padding: '6px 10px', border: '1px solid #E8E4DC', borderRadius: 4, fontFamily: 'DM Mono, monospace', fontSize: 13, boxSizing: 'border-box' }} />
+              </div>
+              {isCouple && (
+                <div style={{ border: '1px dashed #ccc', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 11, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17', marginBottom: 4 }}>{spouseName} — override annual floor expense</div>
+                  <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 8 }}>Replaces the ticked items above entirely, if filled in</div>
+                  <input type="number" placeholder="0" value={p.floorOverrideSpouse ?? ''}
+                    onChange={e => updateP({ floorOverrideSpouse: e.target.value ? parseFloat(e.target.value) : null })}
+                    style={{ width: '100%', padding: '6px 10px', border: '1px solid #E8E4DC', borderRadius: 4, fontFamily: 'DM Mono, monospace', fontSize: 13, boxSizing: 'border-box' }} />
+                </div>
+              )}
+            </div>
+
+            <CIPreviewRow isCouple={isCouple} clientName={clientName} spouseName={spouseName} clientVal={clientFloorDetail.result} spouseVal={spouseFloorDetail.result} color="#6B7280" />
           </div>
         )}
       </SectionBlock>
