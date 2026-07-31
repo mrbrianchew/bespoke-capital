@@ -12,10 +12,10 @@ import { useClientTabState } from '@/hooks/useClientTabState'
 type RecMode    = 'new' | 'replacement' | 'topup'
 type ContribFreq = 'Monthly' | 'Annual' | 'Quarterly'
 type ProjMethod  = 'illustration' | 'rate'
-type RankLabel   = 'Recommended' | 'Alternative 1' | 'Alternative 2'
+type RankLabel   = 'Recommended' | 'Alternative 1' | 'Alternative 2' | 'Alternative 3' | 'Alternative 4' | 'Alternative 5' | 'Alternative 6' | 'Alternative 7' | 'Alternative 8' | 'Alternative 9'
 type ProtCategory = 'medical' | 'ltc' | 'expense' | 'general'
 
-const RANK_LABELS: RankLabel[] = ['Recommended', 'Alternative 1', 'Alternative 2']
+const RANK_LABELS: RankLabel[] = ['Recommended', 'Alternative 1', 'Alternative 2', 'Alternative 3', 'Alternative 4', 'Alternative 5', 'Alternative 6', 'Alternative 7', 'Alternative 8', 'Alternative 9']
 
 // Protection categories — maps to ins_categories codes
 const PROT_CATEGORIES: { key: ProtCategory; label: string; hint: string; color: string; dbCode: string }[] = [
@@ -3488,7 +3488,8 @@ export default function RecommendationsPage() {
   function addProtPerson(cat: ProtCategory, person: string) {
     if (cat === 'medical') return
     const recs = getProtRecs(cat, person)
-    if (recs.length >= 3) return
+    const cap = cat === 'expense' ? 10 : 3
+    if (recs.length >= cap) return
     const rec: ProtRec = {
       id: newId(), rank: RANK_LABELS[recs.length], mode: 'new',
       productName: '', insurer: '', coverageType: '', sumAssured: 0, monthlyBenefit: 0, benefitPaymentPeriod: '', benefitTerm: '', premiumMedisave: 0, premiumCash: 0, annualPremium: 0,
@@ -3780,7 +3781,8 @@ export default function RecommendationsPage() {
         {PROT_CATEGORIES.filter(cat => cat.key !== 'medical' && activeSections.includes(cat.key)).map(cat => {
           const catK = `${cat.key}ByPerson` as 'ltcByPerson'|'expenseByPerson'|'generalByPerson'
           const personRecs = data[catK][activePerson] || []
-          const canAddProt = personRecs.length < 3
+          const protCap = cat.key === 'expense' ? 10 : 3
+          const canAddProt = personRecs.length < protCap
           return (
             <div key={cat.key} style={{ marginBottom: 28 }}>
               {/* Section header */}
@@ -3795,7 +3797,7 @@ export default function RecommendationsPage() {
                   border: 'none', borderRadius: 6, padding: '5px 12px', fontFamily: 'Inter', fontSize: 11,
                   cursor: canAddProt ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 4,
                 }}>
-                  <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAddProt ? 'Add option' : 'Max 3'}
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>{canAddProt ? 'Add option' : `Max ${protCap}`}
                 </button>
               </div>
 
