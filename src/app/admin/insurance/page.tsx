@@ -383,8 +383,8 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
       {visible.map((p, i) => (
         <div key={p.id}
           draggable={reorderable && editing !== p.id}
-          onDragStart={() => { draggingId.current = p.id }}
-          onDragOver={e => { if (reorderable) { e.preventDefault(); if (dragOverId !== p.id) setDragOverId(p.id) } }}
+          onDragStart={e => { draggingId.current = p.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(p.id)) }}
+          onDragOver={e => { if (reorderable) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverId !== p.id) setDragOverId(p.id) } }}
           onDragLeave={() => { if (dragOverId === p.id) setDragOverId(null) }}
           onDrop={e => { if (reorderable) { e.preventDefault(); handleDrop(p.id) } }}
           onDragEnd={() => { draggingId.current = null; setDragOverId(null) }}
