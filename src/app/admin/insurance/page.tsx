@@ -183,6 +183,13 @@ export default function InsuranceAdminPage() {
                 await supabase.from('ins_products').update({ active }).eq('id', id)
                 await loadAll(); flash(active ? 'Enabled ✓' : 'Disabled')
               }}
+              onReorder={async (_companyId, orderedIds) => {
+                setSaving(true)
+                await Promise.all(orderedIds.map((id, idx) =>
+                  supabase.from('ins_products').update({ sort_order: idx + 1 }).eq('id', id)
+                ))
+                await loadAll(); setSaving(false); flash('Reordered ✓')
+              }}
               saving={saving}
             />
           )}
@@ -303,11 +310,12 @@ function CompaniesPanel({ categoryId, items, onSave, onDelete, onToggle, saving 
 }
 
 // ─── Products Panel (medical & ltc) ──────────────────────────────────────────
-function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggle, saving }: {
+function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggle, onReorder, saving }: {
   categoryId: number; companies: Company[]; items: Product[]
   onSave: (item: Partial<Product>) => void
   onDelete: (id: number) => void
   onToggle: (id: number, active: boolean) => void
+  onReorder: (companyId: number, orderedIds: number[]) => void
   saving: boolean
 }) {
   const [editing,      setEditing]      = useState<number | null>(null)
@@ -317,6 +325,8 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
   const [filterComp,   setFilterComp]   = useState<number | 'all'>('all')
   const [selCompany,   setSelCompany]   = useState<number>(companies[0]?.id || 0)
   const [showAddRemarks, setShowAddRemarks] = useState(false)
+  const [dragOverId,   setDragOverId]   = useState<number | null>(null)
+  const draggingId = useRef<number | null>(null)
   const newRef = useRef<HTMLInputElement>(null)
   const newRemarksRef = useRef<HTMLTextAreaElement>(null)
 
@@ -335,6 +345,20 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
   }
 
   const visible = filterComp === 'all' ? items : items.filter(p => p.company_id === filterComp)
+  const reorderable = filterComp !== 'all'
+
+  function handleDrop(targetId: number) {
+    setDragOverId(null)
+    const sourceId = draggingId.current
+    draggingId.current = null
+    if (!reorderable || !sourceId || sourceId === targetId) return
+    const ids = visible.map(p => p.id)
+    const from = ids.indexOf(sourceId)
+    const to = ids.indexOf(targetId)
+    if (from === -1 || to === -1) return
+    ids.splice(to, 0, ids.splice(from, 1)[0])
+    onReorder(filterComp as number, ids)
+  }
   const compName = (id: number) => companies.find(c => c.id === id)?.name || '—'
   const remarksBox: React.CSSProperties = { width: '100%', padding: '7px 10px', border: '1px solid #E0DDD6', borderRadius: 5, fontSize: 12, color: '#1A1816', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif', resize: 'vertical', minHeight: 60, boxSizing: 'border-box' }
 
@@ -351,8 +375,25 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
           </select>
         </div>
       </div>
+      {!reorderable && (
+        <div style={{ padding: '8px 22px', fontSize: 11, color: '#9A9690', fontStyle: 'italic', background: '#FAFAF8', borderBottom: '0.5px solid #F0EDE8' }}>
+          Filter to a single company above to drag-and-drop reorder its products.
+        </div>
+      )}
       {visible.map((p, i) => (
-        <div key={p.id} style={{ background: i % 2 === 0 ? 'white' : '#FAFAF8', opacity: p.active ? 1 : 0.5, borderBottom: '0.5px solid #F0EDE8' }}>
+        <div key={p.id}
+          draggable={reorderable && editing !== p.id}
+          onDragStart={() => { draggingId.current = p.id }}
+          onDragOver={e => { if (reorderable) { e.preventDefault(); if (dragOverId !== p.id) setDragOverId(p.id) } }}
+          onDragLeave={() => { if (dragOverId === p.id) setDragOverId(null) }}
+          onDrop={e => { if (reorderable) { e.preventDefault(); handleDrop(p.id) } }}
+          onDragEnd={() => { draggingId.current = null; setDragOverId(null) }}
+          style={{
+            background: i % 2 === 0 ? 'white' : '#FAFAF8',
+            opacity: p.active ? 1 : 0.5,
+            borderBottom: '0.5px solid #F0EDE8',
+            borderTop: dragOverId === p.id ? '2px solid #A8834A' : '2px solid transparent',
+          }}>
           {editing === p.id ? (
             <div style={{ padding: '10px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -374,6 +415,7 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
           ) : (
             <>
               <div style={{ ...S.row, borderBottom: 'none' }}>
+                <span style={{ fontSize: 13, color: reorderable ? '#B5B0A8' : '#E0DDD6', cursor: reorderable ? 'grab' : 'default', width: 14, flexShrink: 0, userSelect: 'none' }} title={reorderable ? 'Drag to reorder' : undefined}>⠿</span>
                 <span style={{ fontSize: 11, color: '#9A9690', width: 140, flexShrink: 0 }}>{compName(p.company_id)}</span>
                 <span style={{ flex: 1, fontSize: 13, color: '#1A1816' }}>{p.name}</span>
                 <span style={S.badge(p.active)}>{p.active ? 'Active' : 'Hidden'}</span>
@@ -384,7 +426,7 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
                 <button onClick={() => onDelete(p.id)} style={S.del}>✕</button>
               </div>
               {p.default_remarks && (
-                <div style={{ padding: '0 22px 10px 182px', fontSize: 11, color: '#9A9690', fontStyle: 'italic', lineHeight: 1.4 }}>
+                <div style={{ padding: '0 22px 10px 206px', fontSize: 11, color: '#9A9690', fontStyle: 'italic', lineHeight: 1.4 }}>
                   “{p.default_remarks}”
                 </div>
               )}
