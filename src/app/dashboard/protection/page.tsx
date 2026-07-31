@@ -9,6 +9,10 @@ import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
+import { GripVertical } from 'lucide-react'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 // ─── Reference types (loaded from DB) ────────────────────────────────────────
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
@@ -621,6 +625,24 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_gross   || 0) || localSpouseCI)  
     updateRm(next); setShowModal(false); setEditingPolicy(null)
   }
   function delPolicy(id: string) { updateRm({...rmData, policies: rmData.policies.filter(p=>p.id!==id)}) }
+
+  // Reorders policies within a single category+person bucket (drag-and-drop on the
+  // Portfolio tab). orderedIds is the full, newly-ordered id list for that bucket only —
+  // every other policy in rmData.policies keeps its existing array slot, so this cannot
+  // disturb ordering across categories/people, and the same array order is what reports
+  // consume (buildLifePolicies etc. filter+map without re-sorting).
+  function reorderPolicies(orderedIds: string[]) {
+    const idSet = new Set(orderedIds)
+    const byId = new Map(rmData.policies.filter(p=>idSet.has(p.id)).map(p=>[p.id,p]))
+    let cursor = 0
+    const next = rmData.policies.map(p => {
+      if (!idSet.has(p.id)) return p
+      const reordered = byId.get(orderedIds[cursor])
+      cursor++
+      return reordered || p
+    })
+    updateRm({...rmData, policies: next})
+  }
 async function handleGenerateShare() {
   if (!sharePassword.trim()) return
   setShareGenerating(true)
@@ -884,6 +906,7 @@ async function revokeShare(token: string, clear: () => void) {
                             catColors={CAT_COLORS}
                             onEdit={openEdit}
                             onDelete={delPolicy}
+                            onReorder={reorderPolicies}
                           />
                           
                           {/* Policy Remarks - Attached to table */}
@@ -1690,7 +1713,45 @@ function GapSection({title,dtpdNeed,ciNeed,lifeHave,ciHave,annualPremium}:{title
 }
 
 // ─── Policy Table ─────────────────────────────────────────────────────────────
-function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void}) {
+// Wraps a single policy row so it can be dragged to reorder within its category+person
+// bucket. When `disabled`, renders the same layout with a blank spacer instead of a
+// handle, so active and inactive (read-only) tables stay column-aligned.
+function SortablePolicyRow({id,cols,zebra,isLast,disabled,children}:{id:string;cols:string;zebra:boolean;isLast:boolean;disabled:boolean;children:React.ReactNode}) {
+  const {attributes,listeners,setNodeRef,transform,transition,isDragging} = useSortable({id,disabled})
+  return (
+    <div ref={setNodeRef} {...attributes} style={{
+      display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',
+      borderBottom:isLast?'none':'0.5px solid var(--line)',
+      background:isDragging?'#FDF6EC':(zebra?'white':'#FAFAF8'),
+      transform:CSS.Transform.toString(transform),transition,
+      opacity:isDragging?0.6:1,position:'relative',zIndex:isDragging?1:'auto',
+    }}>
+      <div className="no-print" {...(disabled?{}:listeners)} style={{
+        cursor:disabled?'default':'grab',color:'var(--ink3)',display:'flex',
+        alignItems:'center',justifyContent:'center',touchAction:'none',
+      }} title={disabled?undefined:'Drag to reorder'}>
+        {!disabled && <GripVertical size={13} strokeWidth={2}/>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void;onReorder?:(orderedIds:string[])=>void}) {
+  // Drag-to-reorder — only active when onReorder is supplied (inactive/terminated
+  // policy tables render read-only). Requires a small pointer-move threshold so a
+  // plain click on Edit/Delete doesn't get swallowed as a drag.
+  const dragEnabled = !!onReorder
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!onReorder || !over || active.id === over.id) return
+    const ids = policies.map(p=>p.id)
+    const oldIndex = ids.indexOf(String(active.id))
+    const newIndex = ids.indexOf(String(over.id))
+    if (oldIndex === -1 || newIndex === -1) return
+    onReorder(arrayMove(ids, oldIndex, newIndex))
+  }
   function _sub(p: Policy) {
     if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
     const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
@@ -1747,22 +1808,24 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
   if (isEssential) {
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
     // Grid: INSURER (1.2fr) | BRIEF DESC (1.5fr) | MEDISAVE (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-    const cols = hasMedisave
+    const cols = '28px ' + (hasMedisave
       ? '1.2fr 1.5fr 100px 100px 90px 160px 40px'
-      : '1.2fr 1.5fr 100px 90px 160px 40px'
+      : '1.2fr 1.5fr 100px 90px 160px 40px')
     const headers = hasMedisave
-      ? ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
-      : ['INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
+      ? ['', 'INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
+      : ['', 'INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-          {headers.map(h=>(
-            <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
+          {headers.map((h,hi)=>(
+            <div key={h||`h${hi}`} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
           ))}
         </div>
-        {policies.map((p,i)=>{
-          return (
-          <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={policies.map(p=>p.id)} strategy={verticalListSortingStrategy}>
+            {policies.map((p,i)=>{
+              return (
+              <SortablePolicyRow key={p.id} id={p.id} cols={cols} zebra={i%2===0} isLast={i===policies.length-1} disabled={!dragEnabled}>
             {/* Insurer · Plan · PH / Policy No */}
             <div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
@@ -1807,11 +1870,14 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
               <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
             </div>
-          </div>
+              </SortablePolicyRow>
         )})}
+          </SortableContext>
+        </DndContext>
         {/* Subtotal */}
         {hasMedisave ? (
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+            <div />
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
               {fmtPremium(policies.reduce((s,p)=>s+_subMedisave(p),0))}
@@ -1825,6 +1891,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
           </div>
         ) : (
           <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+            <div />
             <div style={{gridColumn:'span 2',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
               {fmtPremium(policies.reduce((s,p)=>s+_subCash(p),0))}
@@ -1840,21 +1907,23 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
     // ── Life layout (Core Protection) ───────────────────────────────────────────
   if (isLife) {
     // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-    const cols = '1.2fr 90px 90px 90px 90px 100px 90px 160px 40px'
+    const cols = '28px 1.2fr 90px 90px 90px 90px 100px 90px 160px 40px'
     return (
       <div style={{background:'white',border:'0.5px solid var(--line)'}}>
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-          {['INSURER · PLAN · PH / LA', 'DEATH', 'TPD', 'ADV CI', 'EARLY CI', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map(h=>(
-            <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
+          {['', 'INSURER · PLAN · PH / LA', 'DEATH', 'TPD', 'ADV CI', 'EARLY CI', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map((h,hi)=>(
+            <div key={h||`h${hi}`} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
           ))}
         </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={policies.map(p=>p.id)} strategy={verticalListSortingStrategy}>
         {policies.map((p,i)=>{
           const deathBen = getMultipliedBenefit(p, 'death')
           const tpdBen = getMultipliedBenefit(p, 'tpd')
           const advCIBen = getMultipliedBenefit(p, 'advCI')
           const earlyCIBen = getMultipliedBenefit(p, 'earlyCI')
           return(
-            <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+            <SortablePolicyRow key={p.id} id={p.id} cols={cols} zebra={i%2===0} isLast={i===policies.length-1} disabled={!dragEnabled}>
               <div>
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
@@ -1926,11 +1995,14 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
                 <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
                 <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
               </div>
-            </div>
+            </SortablePolicyRow>
           )
         })}
+          </SortableContext>
+        </DndContext>
         {/* Subtotal - with benefit totals */}
         <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
+          <div />
           <div style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
           <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>
             {fmt(policies.reduce((s,p)=>s+toSGDValue(getMultipliedBenefit(p,'death'),p),0))}
@@ -1953,18 +2025,20 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
 
   // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
   // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-  const cols = '1.2fr 100px 100px 90px 160px 40px'
+  const cols = '28px 1.2fr 100px 100px 90px 160px 40px'
   return (
     <div style={{background:'white',border:'0.5px solid var(--line)'}}>
       <div style={{display:'grid',gridTemplateColumns:cols,padding:'8px 18px',borderBottom:'1px solid var(--line)',background:'#FAFAF8'}}>
-        {['INSURER · PLAN · PH / LA', 'DEATH BENEFIT', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map(h=>(
-          <div key={h} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
+        {['', 'INSURER · PLAN · PH / LA', 'DEATH BENEFIT', 'PREMIUM', 'FREQ / MODE', 'DATES', ''].map((h,hi)=>(
+          <div key={h||`h${hi}`} style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>{h}</div>
         ))}
       </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={policies.map(p=>p.id)} strategy={verticalListSortingStrategy}>
       {policies.map((p,i)=>{
         const mainBen = p.baseDeath || p.baseAdvCI || p.monthlyBenefit || p.sumAssured
         return(
-          <div key={p.id} style={{display:'grid',gridTemplateColumns:cols,padding:'12px 18px',alignItems:'center',borderBottom:i<policies.length-1?'0.5px solid var(--line)':'none',background:i%2===0?'white':'#FAFAF8'}}>
+          <SortablePolicyRow key={p.id} id={p.id} cols={cols} zebra={i%2===0} isLast={i===policies.length-1} disabled={!dragEnabled}>
             <div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <span style={{fontSize:12,fontWeight:500,color:'var(--ink)'}}>{p.companyName||'—'}{p.productName?` · ${p.productName}`:''}</span>
@@ -2010,12 +2084,15 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete}:{policies:Pol
               <button onClick={()=>onEdit(p)} style={{fontSize:11,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Edit">✎</button>
               <button onClick={()=>onDelete(p.id)} style={{fontSize:11,color:'#C0392B',background:'none',border:'none',cursor:'pointer',padding:'2px 4px'}} title="Delete">✕</button>
             </div>
-          </div>
+          </SortablePolicyRow>
         )
       })}
+        </SortableContext>
+      </DndContext>
       {/* Subtotal */}
       <div style={{display:'grid',gridTemplateColumns:cols,padding:'10px 18px',borderTop:'1px solid var(--line)',background:'#F8F7F4'}}>
-        <div style={{gridColumn:'1/3',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
+        <div />
+        <div style={{gridColumn:'2/4',fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)'}}>Subtotal</div>
         <div style={{fontFamily:'DM Mono,monospace',fontSize:12,fontWeight:600,color:'var(--ink)'}}>{fmtPremium(sub)}</div>
         <div/><div/><div/>
       </div>
