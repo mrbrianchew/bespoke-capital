@@ -265,6 +265,9 @@ export default function AdminPage() {
 
   return (
     <div style={{ maxWidth: 800, margin: "0 auto", padding: "2.5rem 2rem", fontFamily: "Inter, sans-serif" }}>
+      <Link href="/dashboard" style={{ display: "inline-block", fontSize: 12, color: "#9A9690", marginBottom: 16, textDecoration: "none" }}>
+        ← Back to Dashboard
+      </Link>
       <div style={{ marginBottom: 40 }}>
         <p style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "#9A9690", margin: "0 0 6px" }}>Creator</p>
         <h1 style={{ fontSize: 30, fontFamily: "Cormorant Garamond, serif", fontWeight: 600, color: "#1A1816", margin: "0 0 8px", lineHeight: 1.2 }}>Admin Hub</h1>
