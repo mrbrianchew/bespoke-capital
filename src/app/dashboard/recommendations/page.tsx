@@ -202,7 +202,7 @@ function medisaveLimitFromBands(age: number, bands: MedisaveBand[]): number {
   return 900
 }
 
-interface InsProduct { id: number; company_id: number; category_id: number; name: string }
+interface InsProduct { id: number; company_id: number; category_id: number; name: string; policy_type_id?: number | null }
 
 const BRIEF_COVERAGE_MAIN: string[] = [
   'As-Charged — Private Hospital',
@@ -1244,7 +1244,7 @@ const COVERAGE_MODE_LABELS: Record<MedCoverageMode, string> = {
 }
 
 function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDelete, onChoose,
-  existingPolicies, medicalCompanies, products, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
+  existingPolicies, medicalCompanies, products, policyTypes, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
   rec: MedicalRec
   personAge: number
   personName: string
@@ -1255,6 +1255,7 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
   existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string }[]
   medicalCompanies: { id: number; name: string }[]
   products: InsProduct[]
+  policyTypes: { id: number; category_id: number; name: string }[]
   monthlyIncome: number
   monthlyExpenses: number
   annualSurplusOverride?: number
@@ -1284,8 +1285,21 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
     : rec.coverageMode === 'international' ? ['International As-Charged', 'Other']
     : BRIEF_COVERAGE_MAIN
 
-  // Products filtered by insurer (main)
+  // Products filtered by insurer (main) — and, once tagged in Admin Hub, by
+  // Main vs Rider policy type. Untyped products (policy_type_id null) stay
+  // visible everywhere until Brian tags them, so nothing disappears on deploy.
   const selComp = medicalCompanies.find(c => c.name === rec.insurer)
+  const mainTypeId  = policyTypes.find(t => t.name.toLowerCase() === 'main')?.id
+  const riderTypeId = policyTypes.find(t => t.name.toLowerCase() === 'rider')?.id
+  function byType(list: InsProduct[], typeId?: number) {
+    if (!typeId) return list
+    return list.filter(p => p.policy_type_id == null || p.policy_type_id === typeId)
+  }
+  // Top-level product slot: Main plan for main_only/main_rider, the rider
+  // itself for rider_only, unfiltered for international (no type for that).
+  const topSlotTypeId = rec.coverageMode === 'rider_only' ? riderTypeId
+    : rec.coverageMode === 'international' ? undefined
+    : mainTypeId
   // Only show medical policies for this person in replacement picker
   // lifeAssured may be stored as first name only ("Andy Au") while personName is full name ("Au Chi Hoi")
   // Match if any word in lifeAssured appears in personName, or personName contains lifeAssured, or vice versa
@@ -1303,12 +1317,13 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
     p.categoryCode === 'medical' && personMatch(p.lifeAssured, personName)
   )
 
-  const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
+  const filteredProducts = selComp ? byType(products.filter(p => p.company_id === selComp.id), topSlotTypeId) : []
 
-  // Rider products filtered by that rider's insurer
+  // Rider products filtered by that rider's insurer, and by Rider type
   function riderProductsFor(insurer: string) {
     const comp = medicalCompanies.find(c => c.name === insurer)
-    return comp ? products.filter(p => p.company_id === comp.id) : []
+    const list = comp ? products.filter(p => p.company_id === comp.id) : []
+    return byType(list, riderTypeId)
   }
   const totalRiderPremium = rec.riders.reduce((s, r) => s + (r.annualPremium || 0), 0)
 
@@ -1649,7 +1664,9 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
     onChange({ ...rec, annualPremium: total, premiumMedisave: ms, premiumCash: cash })
   }
 
-  // Products filtered by selected insurer
+  // Products filtered by selected insurer. Coverage type (LTC / LTC Supp /
+  // Disability Income) is its own field and doesn't filter the product list —
+  // LTC cascade is Coverage Type -> Company, not per-product tagging.
   const selComp = ltcCompanies.find(c => c.name === rec.insurer)
   const filteredProducts = selComp ? products.filter(p => p.company_id === selComp.id) : []
 
@@ -3077,6 +3094,7 @@ export default function RecommendationsPage() {
   const [clientAgeState, setClientAgeState] = useState<number>(35)
   const [medisaveBands, setMedisaveBands] = useState<MedisaveBand[]>([])
   const [products, setProducts]   = useState<InsProduct[]>([])
+  const [policyTypesRaw, setPolicyTypesRaw] = useState<{ id: number; category_id: number; name: string }[]>([])
   const [coverageMap, setCoverageMap] = useState<Record<ProtCategory, string[]>>(COVERAGE_BY_CATEGORY)
 
   // Person tabs
@@ -3150,7 +3168,8 @@ export default function RecommendationsPage() {
       const companiesList = (companiesRaw || []).map((c: any) => ({ id: c.id, category_id: c.category_id, name: c.name }))
       setCompanies(companiesList)
       setInsurers(companiesList.map(c => c.name))
-      setProducts((productsRaw || []).map((p: any) => ({ id: p.id, company_id: p.company_id, category_id: p.category_id, name: p.name })))
+      setProducts((productsRaw || []).map((p: any) => ({ id: p.id, company_id: p.company_id, category_id: p.category_id, name: p.name, policy_type_id: p.policy_type_id ?? null })))
+      setPolicyTypesRaw((policyTypes || []).map((t: any) => ({ id: t.id, category_id: t.category_id, name: t.name })))
       // Medical-only insurers: filter by ins_categories code='medical'
       const medCat = (cats || []).find((c: any) => c.code === 'medical')
       if (medCat) {
@@ -3767,6 +3786,7 @@ export default function RecommendationsPage() {
                     existingPolicies={existingPolicies}
                     medicalCompanies={medicalCompanies}
                     products={products}
+                    policyTypes={policyTypesRaw}
                     monthlyIncome={monthlyIncome}
                     monthlyExpenses={monthlyExpenses}
                   />

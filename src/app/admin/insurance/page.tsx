@@ -8,7 +8,7 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 interface Category   { id: number; code: string; name: string; sort_order: number }
 interface PolicyType { id: number; category_id: number; code: string; name: string; sort_order: number }
 interface Company    { id: number; category_id: number; name: string; sort_order: number; active: boolean }
-interface Product    { id: number; category_id: number; company_id: number; name: string; sort_order: number; active: boolean; default_remarks?: string | null }
+interface Product    { id: number; category_id: number; company_id: number; name: string; sort_order: number; active: boolean; default_remarks?: string | null; policy_type_id?: number | null }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
@@ -164,13 +164,14 @@ export default function InsuranceAdminPage() {
             <ProductsPanel
               categoryId={activeCat!}
               companies={filtCompanies.filter(c => c.active)}
+              policyTypes={cat?.code === 'medical' ? filtTypes : []}
               items={products.filter(p => p.category_id === activeCat)}
               onSave={async (item) => {
                 setSaving(true)
                 if (item.id) {
-                  await supabase.from('ins_products').update({ name: item.name, company_id: item.company_id, sort_order: item.sort_order, active: item.active, default_remarks: item.default_remarks ?? null }).eq('id', item.id)
+                  await supabase.from('ins_products').update({ name: item.name, company_id: item.company_id, sort_order: item.sort_order, active: item.active, default_remarks: item.default_remarks ?? null, policy_type_id: item.policy_type_id ?? null }).eq('id', item.id)
                 } else {
-                  await supabase.from('ins_products').insert({ category_id: activeCat, company_id: item.company_id, name: item.name, sort_order: item.sort_order || 99, active: true, default_remarks: item.default_remarks ?? null })
+                  await supabase.from('ins_products').insert({ category_id: activeCat, company_id: item.company_id, name: item.name, sort_order: item.sort_order || 99, active: true, default_remarks: item.default_remarks ?? null, policy_type_id: item.policy_type_id ?? null })
                 }
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
@@ -310,8 +311,8 @@ function CompaniesPanel({ categoryId, items, onSave, onDelete, onToggle, saving 
 }
 
 // ─── Products Panel (medical & ltc) ──────────────────────────────────────────
-function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggle, onReorder, saving }: {
-  categoryId: number; companies: Company[]; items: Product[]
+function ProductsPanel({ categoryId, companies, policyTypes, items, onSave, onDelete, onToggle, onReorder, saving }: {
+  categoryId: number; companies: Company[]; policyTypes: PolicyType[]; items: Product[]
   onSave: (item: Partial<Product>) => void
   onDelete: (id: number) => void
   onToggle: (id: number, active: boolean) => void
@@ -321,46 +322,124 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
   const [editing,      setEditing]      = useState<number | null>(null)
   const [editVal,      setEditVal]      = useState('')
   const [editCompany,  setEditCompany]  = useState<number>(0)
+  const [editType,     setEditType]     = useState<number>(0)
   const [editRemarks,  setEditRemarks]  = useState('')
   const [filterComp,   setFilterComp]   = useState<number | 'all'>('all')
   const [selCompany,   setSelCompany]   = useState<number>(companies[0]?.id || 0)
+  const [selType,      setSelType]      = useState<number>(0)
   const [showAddRemarks, setShowAddRemarks] = useState(false)
   const [dragOverId,   setDragOverId]   = useState<number | null>(null)
   const draggingId = useRef<number | null>(null)
+  const draggingGroupId = useRef<number | null>(null)
   const newRef = useRef<HTMLInputElement>(null)
   const newRemarksRef = useRef<HTMLTextAreaElement>(null)
 
   function doAdd() {
     const val = newRef.current?.value.trim()
     if (!val || !selCompany) return
-    onSave({ category_id: categoryId, company_id: selCompany, name: val, sort_order: 99, active: true, default_remarks: newRemarksRef.current?.value.trim() || null })
+    onSave({ category_id: categoryId, company_id: selCompany, name: val, sort_order: 99, active: true, default_remarks: newRemarksRef.current?.value.trim() || null, policy_type_id: selType || null })
     if (newRef.current) newRef.current.value = ''
     if (newRemarksRef.current) newRemarksRef.current.value = ''
     setShowAddRemarks(false)
   }
 
   function saveEdit(p: Product) {
-    onSave({ ...p, name: editVal, company_id: editCompany, default_remarks: editRemarks.trim() || null })
+    onSave({ ...p, name: editVal, company_id: editCompany, default_remarks: editRemarks.trim() || null, policy_type_id: editType || null })
     setEditing(null)
   }
 
   const visible = filterComp === 'all' ? items : items.filter(p => p.company_id === filterComp)
-  const reorderable = filterComp !== 'all'
+  const compName = (id: number) => companies.find(c => c.id === id)?.name || '—'
+  const typeName = (id?: number | null) => policyTypes.find(t => t.id === id)?.name || null
+  const remarksBox: React.CSSProperties = { width: '100%', padding: '7px 10px', border: '1px solid #E0DDD6', borderRadius: 5, fontSize: 12, color: '#1A1816', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif', resize: 'vertical', minHeight: 60, boxSizing: 'border-box' }
 
-  function handleDrop(targetId: number) {
+  // Reordering is always scoped to one company (sort_order resets per company),
+  // so dragging is grouped by company even in the "all companies" view — you just
+  // can't drag a row from one company's group into another's.
+  function handleDrop(groupCompanyId: number, groupIds: number[], targetId: number) {
     setDragOverId(null)
     const sourceId = draggingId.current
+    const sourceGroup = draggingGroupId.current
     draggingId.current = null
-    if (!reorderable || !sourceId || sourceId === targetId) return
-    const ids = visible.map(p => p.id)
+    draggingGroupId.current = null
+    if (!sourceId || sourceId === targetId || sourceGroup !== groupCompanyId) return
+    const ids = [...groupIds]
     const from = ids.indexOf(sourceId)
     const to = ids.indexOf(targetId)
     if (from === -1 || to === -1) return
     ids.splice(to, 0, ids.splice(from, 1)[0])
-    onReorder(filterComp as number, ids)
+    onReorder(groupCompanyId, ids)
   }
-  const compName = (id: number) => companies.find(c => c.id === id)?.name || '—'
-  const remarksBox: React.CSSProperties = { width: '100%', padding: '7px 10px', border: '1px solid #E0DDD6', borderRadius: 5, fontSize: 12, color: '#1A1816', background: 'white', outline: 'none', fontFamily: 'Inter, sans-serif', resize: 'vertical', minHeight: 60, boxSizing: 'border-box' }
+
+  function renderRow(p: Product, i: number, groupCompanyId: number, groupIds: number[], showCompanyCol: boolean) {
+    const tName = typeName(p.policy_type_id)
+    return (
+      <div key={p.id}
+        draggable={editing !== p.id}
+        onDragStart={e => { draggingId.current = p.id; draggingGroupId.current = groupCompanyId; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(p.id)) }}
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverId !== p.id) setDragOverId(p.id) }}
+        onDragLeave={() => { if (dragOverId === p.id) setDragOverId(null) }}
+        onDrop={e => { e.preventDefault(); handleDrop(groupCompanyId, groupIds, p.id) }}
+        onDragEnd={() => { draggingId.current = null; draggingGroupId.current = null; setDragOverId(null) }}
+        style={{
+          background: i % 2 === 0 ? 'white' : '#FAFAF8',
+          opacity: p.active ? 1 : 0.5,
+          borderBottom: '0.5px solid #F0EDE8',
+          borderTop: dragOverId === p.id ? '2px solid #A8834A' : '2px solid transparent',
+        }}>
+        {editing === p.id ? (
+          <div style={{ padding: '10px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <select value={editCompany} onChange={e => setEditCompany(Number(e.target.value))}
+                style={{ ...S.inp, flex: '0 0 150px' }}>
+                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {policyTypes.length > 0 && (
+                <select value={editType} onChange={e => setEditType(Number(e.target.value))}
+                  style={{ ...S.inp, flex: '0 0 130px' }}>
+                  <option value={0}>No type</option>
+                  {policyTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+              <input value={editVal} onChange={e => setEditVal(e.target.value)} style={S.inp} autoFocus />
+              <button onClick={() => saveEdit(p)} style={{ ...S.btn, ...S.save }} disabled={saving}>Save</button>
+              <button onClick={() => setEditing(null)} style={{ ...S.btn, ...S.cancel }}>Cancel</button>
+            </div>
+            <div>
+              <label style={S.label}>Default Remarks — used by the Generate button on the policy form</label>
+              <textarea value={editRemarks} onChange={e => setEditRemarks(e.target.value)}
+                placeholder="e.g. is a Long Term Disability Care Insurance by CPF to provide Monthly Income of $600 per month…"
+                style={remarksBox} />
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ ...S.row, borderBottom: 'none' }}>
+              <span style={{ fontSize: 13, color: '#B5B0A8', cursor: 'grab', width: 14, flexShrink: 0, userSelect: 'none' }} title="Drag to reorder within this company">⠿</span>
+              {showCompanyCol && <span style={{ fontSize: 11, color: '#9A9690', width: 110, flexShrink: 0 }}>{compName(p.company_id)}</span>}
+              <span style={{ flex: 1, fontSize: 13, color: '#1A1816' }}>{p.name}</span>
+              {tName ? (
+                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: '#F5EFE3', color: '#A8834A', fontWeight: 600 }}>{tName}</span>
+              ) : policyTypes.length > 0 ? (
+                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: '#FEF3E7', color: '#B5732A', fontWeight: 600 }}>No type</span>
+              ) : null}
+              <span style={S.badge(p.active)}>{p.active ? 'Active' : 'Hidden'}</span>
+              <button onClick={() => onToggle(p.id, !p.active)} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740', fontSize: 11 }}>
+                {p.active ? 'Hide' : 'Show'}
+              </button>
+              <button onClick={() => { setEditing(p.id); setEditVal(p.name); setEditCompany(p.company_id); setEditType(p.policy_type_id || 0); setEditRemarks(p.default_remarks || '') }} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740' }}>Edit</button>
+              <button onClick={() => onDelete(p.id)} style={S.del}>✕</button>
+            </div>
+            {p.default_remarks && (
+              <div style={{ padding: `0 22px 10px ${showCompanyCol ? 178 : 68}px`, fontSize: 11, color: '#9A9690', fontStyle: 'italic', lineHeight: 1.4 }}>
+                “{p.default_remarks}”
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={S.card}>
@@ -375,72 +454,36 @@ function ProductsPanel({ categoryId, companies, items, onSave, onDelete, onToggl
           </select>
         </div>
       </div>
-      {!reorderable && (
-        <div style={{ padding: '8px 22px', fontSize: 11, color: '#9A9690', fontStyle: 'italic', background: '#FAFAF8', borderBottom: '0.5px solid #F0EDE8' }}>
-          Filter to a single company above to drag-and-drop reorder its products.
-        </div>
-      )}
-      {visible.map((p, i) => (
-        <div key={p.id}
-          draggable={reorderable && editing !== p.id}
-          onDragStart={e => { draggingId.current = p.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(p.id)) }}
-          onDragOver={e => { if (reorderable) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverId !== p.id) setDragOverId(p.id) } }}
-          onDragLeave={() => { if (dragOverId === p.id) setDragOverId(null) }}
-          onDrop={e => { if (reorderable) { e.preventDefault(); handleDrop(p.id) } }}
-          onDragEnd={() => { draggingId.current = null; setDragOverId(null) }}
-          style={{
-            background: i % 2 === 0 ? 'white' : '#FAFAF8',
-            opacity: p.active ? 1 : 0.5,
-            borderBottom: '0.5px solid #F0EDE8',
-            borderTop: dragOverId === p.id ? '2px solid #A8834A' : '2px solid transparent',
-          }}>
-          {editing === p.id ? (
-            <div style={{ padding: '10px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <select value={editCompany} onChange={e => setEditCompany(Number(e.target.value))}
-                  style={{ ...S.inp, flex: '0 0 160px' }}>
-                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <input value={editVal} onChange={e => setEditVal(e.target.value)} style={S.inp} autoFocus />
-                <button onClick={() => saveEdit(p)} style={{ ...S.btn, ...S.save }} disabled={saving}>Save</button>
-                <button onClick={() => setEditing(null)} style={{ ...S.btn, ...S.cancel }}>Cancel</button>
+
+      {filterComp === 'all'
+        ? companies.map(c => {
+            const group = items.filter(p => p.company_id === c.id)
+            if (group.length === 0) return null
+            const groupIds = group.map(p => p.id)
+            return (
+              <div key={c.id}>
+                <div style={{ padding: '6px 22px', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#9A9690', background: '#F5F3EE', fontWeight: 600 }}>{c.name}</div>
+                {group.map((p, i) => renderRow(p, i, c.id, groupIds, false))}
               </div>
-              <div>
-                <label style={S.label}>Default Remarks — used by the Generate button on the policy form</label>
-                <textarea value={editRemarks} onChange={e => setEditRemarks(e.target.value)}
-                  placeholder="e.g. is a Long Term Disability Care Insurance by CPF to provide Monthly Income of $600 per month…"
-                  style={remarksBox} />
-              </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ ...S.row, borderBottom: 'none' }}>
-                <span style={{ fontSize: 13, color: reorderable ? '#B5B0A8' : '#E0DDD6', cursor: reorderable ? 'grab' : 'default', width: 14, flexShrink: 0, userSelect: 'none' }} title={reorderable ? 'Drag to reorder' : undefined}>⠿</span>
-                <span style={{ fontSize: 11, color: '#9A9690', width: 140, flexShrink: 0 }}>{compName(p.company_id)}</span>
-                <span style={{ flex: 1, fontSize: 13, color: '#1A1816' }}>{p.name}</span>
-                <span style={S.badge(p.active)}>{p.active ? 'Active' : 'Hidden'}</span>
-                <button onClick={() => onToggle(p.id, !p.active)} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740', fontSize: 11 }}>
-                  {p.active ? 'Hide' : 'Show'}
-                </button>
-                <button onClick={() => { setEditing(p.id); setEditVal(p.name); setEditCompany(p.company_id); setEditRemarks(p.default_remarks || '') }} style={{ ...S.btn, background: '#F5F3EE', color: '#4A4740' }}>Edit</button>
-                <button onClick={() => onDelete(p.id)} style={S.del}>✕</button>
-              </div>
-              {p.default_remarks && (
-                <div style={{ padding: '0 22px 10px 206px', fontSize: 11, color: '#9A9690', fontStyle: 'italic', lineHeight: 1.4 }}>
-                  “{p.default_remarks}”
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      ))}
+            )
+          })
+        : visible.map((p, i) => renderRow(p, i, filterComp as number, visible.map(x => x.id), false))
+      }
+
       <div style={{ ...S.addRow, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <select value={selCompany} onChange={e => setSelCompany(Number(e.target.value))}
-            style={{ ...S.inp, flex: '0 0 160px', background: 'white' }}>
+            style={{ ...S.inp, flex: '0 0 150px', background: 'white' }}>
             <option value={0}>Select company…</option>
             {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+          {policyTypes.length > 0 && (
+            <select value={selType} onChange={e => setSelType(Number(e.target.value))}
+              style={{ ...S.inp, flex: '0 0 130px', background: 'white' }}>
+              <option value={0}>No type</option>
+              {policyTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          )}
           <input ref={newRef} placeholder="New product name…"
             style={{ ...S.inp, background: 'white' }}
             onKeyDown={e => { if (e.key === 'Enter' && !showAddRemarks) doAdd() }} />

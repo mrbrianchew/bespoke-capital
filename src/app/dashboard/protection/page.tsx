@@ -18,7 +18,7 @@ import { CSS } from '@dnd-kit/utilities'
 interface InsCategory   { id: number; code: string; name: string; sort_order: number }
 interface InsPolicyType { id: number; category_id: number; code: string; name: string }
 interface InsCompany    { id: number; category_id: number; name: string }
-interface InsProduct    { id: number; category_id: number; company_id: number; name: string; default_remarks?: string | null }
+interface InsProduct    { id: number; category_id: number; company_id: number; name: string; default_remarks?: string | null; policy_type_id?: number | null }
 // ─── Policy record ────────────────────────────────────────────────────────────
 interface Policy {
   id: string
@@ -2145,7 +2145,13 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
   const selComp   = filtComps.find(co=>co.name===form.companyName)
   // Products only for medical and ltc — others are manual
   const hasProducts = ['medical','ltc'].includes(form.categoryCode)
-  const filtProds = selComp && hasProducts ? products.filter(pr=>pr.company_id===selComp.id) : []
+  // Policy Type filtering (once tagged in Admin Hub) only applies to Medical —
+  // LTC's cascade is Coverage Type -> Company; there's no per-product type tag
+  // for LTC. Untyped Medical products stay visible until tagged.
+  const selType = form.categoryCode === 'medical' ? filtTypes.find(t => t.name === form.policyTypeCode) : undefined
+  const filtProds = selComp && hasProducts
+    ? products.filter(pr => pr.company_id === selComp.id && (!selType || pr.policy_type_id == null || pr.policy_type_id === selType.id))
+    : []
 
   // When category changes, reset downstream
   const onCatChange=(code:string)=>{
