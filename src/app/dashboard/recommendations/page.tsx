@@ -1243,16 +1243,17 @@ const COVERAGE_MODE_LABELS: Record<MedCoverageMode, string> = {
   international:'International Medical Plan',
 }
 
-function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDelete, onChoose,
+function MedicalCard({ rec, personAge, personName, personKey, medisaveBands, onChange, onDelete, onChoose,
   existingPolicies, medicalCompanies, products, policyTypes, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
   rec: MedicalRec
   personAge: number
   personName: string
+  personKey: string
   medisaveBands: MedisaveBand[]
   onChange: (r: MedicalRec) => void
   onDelete: () => void
   onChoose: () => void
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; person: string }[]
   medicalCompanies: { id: number; name: string }[]
   products: InsProduct[]
   policyTypes: { id: number; category_id: number; name: string }[]
@@ -1300,21 +1301,12 @@ function MedicalCard({ rec, personAge, personName, medisaveBands, onChange, onDe
   const topSlotTypeId = rec.coverageMode === 'rider_only' ? riderTypeId
     : rec.coverageMode === 'international' ? undefined
     : mainTypeId
-  // Only show medical policies for this person in replacement picker
-  // lifeAssured may be stored as first name only ("Andy Au") while personName is full name ("Au Chi Hoi")
-  // Match if any word in lifeAssured appears in personName, or personName contains lifeAssured, or vice versa
-  function personMatch(lifeAssured: string, tabName: string): boolean {
-    if (!lifeAssured) return true  // if no lifeAssured stored, show for all
-    const la = lifeAssured.toLowerCase().trim()
-    const tn = tabName.toLowerCase().trim()
-    if (la === tn) return true
-    // Check if any word in lifeAssured matches any word in tabName
-    const laWords = la.split(/\s+/)
-    const tnWords = tn.split(/\s+/)
-    return laWords.some(w => w.length > 1 && tnWords.includes(w))
-  }
+  // Only show medical policies for this person in replacement picker.
+  // Matched on the structured person key (client/spouse/child_<id>) saved on
+  // each policy — not on lifeAssured name text, which caused false-positive
+  // matches across family members sharing a surname.
   const personMedicalPolicies = existingPolicies.filter(p =>
-    p.categoryCode === 'medical' && personMatch(p.lifeAssured, personName)
+    p.categoryCode === 'medical' && p.person === personKey
   )
 
   const filteredProducts = selComp ? byType(products.filter(p => p.company_id === selComp.id), topSlotTypeId) : []
@@ -1640,16 +1632,17 @@ function getLtcBenefitTerms(coverageType: string): string[] {
 }
 
 function LtcCard({ rec, onChange, onDelete, onChoose,
-  existingPolicies, ltcCompanies, products, coverageTypes, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
+  existingPolicies, ltcCompanies, products, coverageTypes, personName, personKey, monthlyIncome, monthlyExpenses, annualSurplusOverride }: {
   rec: ProtRec
   onChange: (r: ProtRec) => void
   onDelete: () => void
   onChoose: () => void
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; monthlyBenefit: number; benefitTerm: string; premiumMedisave: number }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; person: string; monthlyBenefit: number; benefitTerm: string; premiumMedisave: number }[]
   ltcCompanies: { id: number; name: string }[]
   products: InsProduct[]
   coverageTypes: string[]
   personName: string
+  personKey: string
   monthlyIncome: number
   monthlyExpenses: number
   annualSurplusOverride?: number
@@ -1673,18 +1666,10 @@ function LtcCard({ rec, onChange, onDelete, onChoose,
   // Coverage term options depend on coverage type
   const benefitTermOptions = getLtcBenefitTerms(rec.coverageType)
 
-  // Replacement picker: LTC category + person name match
-  function personMatch(lifeAssured: string, tabName: string): boolean {
-    if (!lifeAssured) return true
-    const la = lifeAssured.toLowerCase().trim()
-    const tn = tabName.toLowerCase().trim()
-    if (la === tn) return true
-    const laWords = la.split(/\s+/)
-    const tnWords = tn.split(/\s+/)
-    return laWords.some(w => w.length > 1 && tnWords.includes(w))
-  }
+  // Replacement picker: LTC category, matched on structured person key
+  // (client/spouse/child_<id>) rather than lifeAssured name text.
   const ltcPolicies = existingPolicies.filter(p =>
-    p.categoryCode === 'ltc' && personMatch(p.lifeAssured, personName)
+    p.categoryCode === 'ltc' && p.person === personKey
   )
 
   function togglePolicy(pol: typeof ltcPolicies[0]) {
@@ -2010,14 +1995,15 @@ function GeneralCard({ rec, onChange, onDelete, onChoose, generalCompanies, mont
 // ─── EXPENSE CARD (CORE PROTECTION) ───────────────────────────────────────────
 
 function ExpenseCard({ rec, onChange, onDelete, onChoose,
-  existingPolicies, lifeCompanies, personName, monthlyIncome, monthlyExpenses, annualSurplusOverride, usdRate, lifeExpectancy, clientAge }: {
+  existingPolicies, lifeCompanies, personName, personKey, monthlyIncome, monthlyExpenses, annualSurplusOverride, usdRate, lifeExpectancy, clientAge }: {
   rec: ProtRec
   onChange: (r: ProtRec) => void
   onDelete: () => void
   onChoose: () => void
-  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; deathBenefit: number; tpdBenefit: number; advCiBenefit: number; earlyCiBenefit: number; inceptionDate: string; premiumMaturity: string }[]
+  existingPolicies: { id: string; policyName: string; companyName: string; annualPremium: number; currentCashValue: number; lifeAssured: string; categoryCode: string; person: string; deathBenefit: number; tpdBenefit: number; advCiBenefit: number; earlyCiBenefit: number; inceptionDate: string; premiumMaturity: string }[]
   lifeCompanies: { id: number; name: string }[]
   personName: string
+  personKey: string
   monthlyIncome: number
   monthlyExpenses: number
   annualSurplusOverride?: number
@@ -2048,18 +2034,10 @@ function ExpenseCard({ rec, onChange, onDelete, onChoose,
   const compAdvCi  = isWL ? Math.round(rec.baseAdvCiBenefit * mult) : rec.advCiBenefit
   const compEarlyCI = isWL ? Math.round(rec.baseEarlyCiBenefit * mult) : rec.earlyCiBenefit
 
-  function personMatch(lifeAssured: string, tabName: string): boolean {
-    if (!lifeAssured) return true
-    const la = lifeAssured.toLowerCase().trim()
-    const tn = tabName.toLowerCase().trim()
-    if (la === tn || tn.includes(la) || la.includes(tn)) return true
-    const laWords = la.split(/\s+/)
-    const tnWords = tn.split(/\s+/)
-    return laWords.some(w => w.length > 1 && tnWords.includes(w))
-  }
-
+  // Replacement picker: Life category, matched on structured person key
+  // (client/spouse/child_<id>) rather than lifeAssured name text.
   const lifePolicies = existingPolicies.filter(p =>
-    p.categoryCode === 'life' && personMatch(p.lifeAssured, personName)
+    p.categoryCode === 'life' && p.person === personKey
   )
 
   function togglePolicy(pol: typeof existingPolicies[0]) {
@@ -3108,6 +3086,7 @@ export default function RecommendationsPage() {
   const [existingPolicies, setExistingPolicies] = useState<{
     id: string; policyName: string; companyName: string; annualPremium: number
     premiumMedisave: number; currentCashValue: number; lifeAssured: string; categoryCode: string
+    person: string
     monthlyBenefit: number; benefitTerm: string
     deathBenefit: number; tpdBenefit: number; advCiBenefit: number; earlyCiBenefit: number
     inceptionDate: string; premiumMaturity: string
@@ -3338,7 +3317,7 @@ export default function RecommendationsPage() {
           }
           const annualPrem = msAnnual + cashAnnual
           const mult2 = p.multiplier > 1 ? p.multiplier : 1
-          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, premiumMedisave: msAnnual, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '', monthlyBenefit: p.monthlyBenefit || 0, benefitTerm: p.benefitTerm || p.payoutTerm || '', deathBenefit: Math.round((p.baseDeath || 0) * mult2), tpdBenefit: Math.round((p.baseTPD || 0) * mult2), advCiBenefit: Math.round((p.baseAdvCI || 0) * mult2), earlyCiBenefit: Math.round((p.baseEarlyCI || 0) * mult2), inceptionDate: p.inceptionDate || '', premiumMaturity: p.premiumMaturity || '' }
+          return { id: p.id, policyName: p.productName || p.briefDescription || '', companyName: p.companyName || '', annualPremium: annualPrem, premiumMedisave: msAnnual, currentCashValue: p.currentCashValue || 0, lifeAssured: p.lifeAssured || '', categoryCode: p.categoryCode || '', person: p.person || '', monthlyBenefit: p.monthlyBenefit || 0, benefitTerm: p.benefitTerm || p.payoutTerm || '', deathBenefit: Math.round((p.baseDeath || 0) * mult2), tpdBenefit: Math.round((p.baseTPD || 0) * mult2), advCiBenefit: Math.round((p.baseAdvCI || 0) * mult2), earlyCiBenefit: Math.round((p.baseEarlyCI || 0) * mult2), inceptionDate: p.inceptionDate || '', premiumMaturity: p.premiumMaturity || '' }
         })
       )
 
@@ -3779,6 +3758,7 @@ export default function RecommendationsPage() {
                     rec={rec}
                     personAge={currentPerson?.age || 35}
                     personName={currentPerson?.label || ''}
+                    personKey={activePerson}
                     medisaveBands={medisaveBands}
                     onChange={r => updateMedical(activePerson, rec.id, r)}
                     onDelete={() => deleteMedical(activePerson, rec.id)}
@@ -3836,6 +3816,7 @@ export default function RecommendationsPage() {
                       ltcCompanies={ltcCompanies} products={products}
                       coverageTypes={coverageMap[cat.key]}
                       personName={personTabs.find(t => t.key === activePerson)?.label || ''}
+                      personKey={activePerson}
                       monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
                       annualSurplusOverride={annualSurplus}
                     />
@@ -3848,6 +3829,7 @@ export default function RecommendationsPage() {
                       existingPolicies={existingPolicies}
                       lifeCompanies={lifeCompanies}
                       personName={personTabs.find(t => t.key === activePerson)?.label || ''}
+                      personKey={activePerson}
                       monthlyIncome={monthlyIncome} monthlyExpenses={monthlyExpenses}
                       annualSurplusOverride={annualSurplus}
                       usdRate={usdRate}
