@@ -154,6 +154,7 @@ export default function MedicalClaimsPage() {
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const tokenClientRef = useRef<any>(null)
   const [pickedFolder, setPickedFolder] = useState<{ id: string; name: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
 
   // ── Route/feature guard — mirrors the nav's creator-bypass rule so direct
   // URL access without the flag doesn't work either. ──
@@ -455,38 +456,47 @@ export default function MedicalClaimsPage() {
     })
   }
 
-  async function changeFolder() {
-    const folder = await pickFolder()
-    if (!folder || !activeClient) return
-    setPickedFolder(folder)
-    const raw = JSON.stringify(folder)
-    const { error } = await supabase.from('clients').update({ drive_folder_link: raw, updated_at: new Date().toISOString() }).eq('id', activeClient.id)
-    if (error) { alert('Could not remember this folder: ' + error.message); return }
-    updateActiveClientFields({ drive_folder_link: raw })
+  // Both "first connect" and "change folder" funnel through here — always
+  // triggered by a plain, direct button click, never chained after a file
+  // chooser closes (that combination is what Chrome blocks; see the
+  // "window.open blocked due to active file chooser" console error this
+  // was built to avoid).
+  async function connectDrive() {
+    if (!activeClient) return
+    setConnecting(true)
+    setUploadError(null)
+    try {
+      const folder = await pickFolder()
+      if (!folder) return // advisor cancelled the picker
+      setPickedFolder(folder)
+      const raw = JSON.stringify(folder)
+      const { error } = await supabase.from('clients').update({ drive_folder_link: raw, updated_at: new Date().toISOString() }).eq('id', activeClient.id)
+      if (error) { setUploadError('Could not remember this folder: ' + error.message); return }
+      updateActiveClientFields({ drive_folder_link: raw })
+    } catch (err: any) {
+      setUploadError(err?.message || 'Could not connect to Drive')
+    } finally {
+      setConnecting(false)
+    }
   }
+  const changeFolder = connectDrive
 
   // ── Document upload/delete — straight browser-to-Google using the
-  // advisor's own token, so there's no server-side size limit to work around. ──
+  // advisor's own token, so there's no server-side size limit to work
+  // around. By the time this runs, a folder is already picked (the file
+  // input controlling this only renders once pickedFolder is set), and the
+  // access token is already cached from that earlier step — so this never
+  // needs to open a popup itself. ──
   async function uploadDocument(file: File) {
-    if (!activeClient || !selectedClaimId) return
+    if (!activeClient || !selectedClaimId || !pickedFolder) return
     setUploading(true)
     setUploadError(null)
     try {
-      let folder = pickedFolder
-      if (!folder) {
-        folder = await pickFolder()
-        if (!folder) { setUploading(false); return } // advisor cancelled the picker
-        setPickedFolder(folder)
-        const raw = JSON.stringify(folder)
-        await supabase.from('clients').update({ drive_folder_link: raw, updated_at: new Date().toISOString() }).eq('id', activeClient.id)
-        updateActiveClientFields({ drive_folder_link: raw })
-      }
-
       const token = await ensureAccessToken()
       const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink,size', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
-        body: JSON.stringify({ name: file.name, parents: [folder.id] }),
+        body: JSON.stringify({ name: file.name, parents: [pickedFolder.id] }),
       })
       if (!initRes.ok) throw new Error('Could not start upload (status ' + initRes.status + ')')
       const uploadUrl = initRes.headers.get('Location')
@@ -772,27 +782,32 @@ export default function MedicalClaimsPage() {
             </div>
 
             <div style={{ ...cardBase, padding: 14, marginBottom: 12 }}>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                <select className="claims-select" value={uploadTarget} onChange={e => setUploadTarget(e.target.value)} style={{ width: 220 }}>
-                  <option value="general">General (not tied to a line item)</option>
-                  {lineItems.map(it => (
-                    <option key={it.id} value={it.id}>{SECTION_LABEL[it.section]} — {it.description || it.invoice_no || 'untitled line'}</option>
-                  ))}
-                </select>
-                <label style={{ ...addBtn, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
-                  {uploading ? 'Uploading…' : '+ Upload File'}
-                  <input type="file" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocument(f); e.target.value = '' }} style={{ display: 'none' }} />
-                </label>
-                {pickedFolder ? (
+              {!pickedFolder ? (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button onClick={connectDrive} disabled={connecting} style={{ ...addBtn, opacity: connecting ? 0.6 : 1 }}>
+                    {connecting ? 'Connecting…' : 'Connect Drive & Choose Folder'}
+                  </button>
+                  <span style={{ fontSize: 11.5, color: T.textFaint }}>One-time per client — every upload after this goes straight there.</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <select className="claims-select" value={uploadTarget} onChange={e => setUploadTarget(e.target.value)} style={{ width: 220 }}>
+                    <option value="general">General (not tied to a line item)</option>
+                    {lineItems.map(it => (
+                      <option key={it.id} value={it.id}>{SECTION_LABEL[it.section]} — {it.description || it.invoice_no || 'untitled line'}</option>
+                    ))}
+                  </select>
+                  <label style={{ ...addBtn, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
+                    {uploading ? 'Uploading…' : '+ Upload File'}
+                    <input type="file" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocument(f); e.target.value = '' }} style={{ display: 'none' }} />
+                  </label>
                   <span style={{ fontSize: 11.5, color: T.textFaint }}>
                     Saving to <strong style={{ color: T.textDim }}>{pickedFolder.name}</strong>
                     {' · '}
                     <button onClick={changeFolder} style={{ background: 'none', border: 'none', color: T.gold, fontSize: 11.5, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Change</button>
                   </span>
-                ) : (
-                  <span style={{ fontSize: 11.5, color: T.textFaint }}>First upload for this client will ask you to pick a Drive folder — every upload after that goes straight there.</span>
-                )}
-              </div>
+                </div>
+              )}
               {uploadError && <div style={{ marginTop: 8, fontSize: 11.5, color: T.rose }}>{uploadError}</div>}
             </div>
 
