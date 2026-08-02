@@ -486,25 +486,40 @@ export default function MedicalClaimsPage() {
   // around. By the time this runs, a folder is already picked (the file
   // input controlling this only renders once pickedFolder is set), and the
   // access token is already cached from that earlier step — so this never
-  // needs to open a popup itself. ──
+  // needs to open a popup itself. Every network call has a hard timeout —
+  // a stalled request now surfaces as a clear error instead of leaving the
+  // button stuck on "Uploading…" forever with no way out. ──
+  async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      return await fetch(url, { ...opts, signal: controller.signal })
+    } catch (err: any) {
+      if (err?.name === 'AbortError') throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s — check your connection and try again.`)
+      throw new Error(`${label} failed: ${err?.message || 'network error'}`)
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   async function uploadDocument(file: File) {
     if (!activeClient || !selectedClaimId || !pickedFolder) return
     setUploading(true)
     setUploadError(null)
     try {
       const token = await ensureAccessToken()
-      const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink,size', {
+      const initRes = await fetchWithTimeout('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink,size', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
         body: JSON.stringify({ name: file.name, parents: [pickedFolder.id] }),
-      })
+      }, 20000, 'Starting the upload')
       if (!initRes.ok) throw new Error('Could not start upload (status ' + initRes.status + ')')
       const uploadUrl = initRes.headers.get('Location')
-      if (!uploadUrl) throw new Error('Drive did not return an upload session')
+      if (!uploadUrl) throw new Error('Drive did not return an upload session — this can happen if the browser blocked reading the response. Try a different browser if this repeats.')
 
-      const putRes = await fetch(uploadUrl, {
+      const putRes = await fetchWithTimeout(uploadUrl, {
         method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
-      })
+      }, 120000, 'Uploading the file')
       if (!putRes.ok) throw new Error('Upload to Drive failed (status ' + putRes.status + ')')
       const driveFile = await putRes.json()
 
