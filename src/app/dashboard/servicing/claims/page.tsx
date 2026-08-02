@@ -226,6 +226,24 @@ export default function MedicalClaimsPage() {
     if (error) alert('Save failed: ' + error.message)
   }
 
+  async function deleteClaim() {
+    if (!selectedClaim) return
+    const label = allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || selectedClaim.life_assured_person
+    if (!window.confirm(`Delete "${selectedClaim.label || 'Claim'}" for ${label}? This removes all its line items, notes, and documents. This cannot be undone.`)) return
+    const idToDelete = selectedClaim.id
+    setSaving(true)
+    const { error } = await supabase.from('claims').delete().eq('id', idToDelete)
+    setSaving(false)
+    if (error) { alert('Could not delete claim: ' + error.message); return }
+    setClaims(prev => {
+      const remaining = prev.filter(c => c.id !== idToDelete)
+      setSelectedClaimId(remaining[0]?.id || null)
+      return remaining
+    })
+    setDetailsOpen(false)
+    setExpandedItemId(null)
+  }
+
   async function onLifeAssuredChange(personKey: string) {
     const firstMain = policiesForPerson(personKey).find(p => p.policyTypeCode?.toLowerCase() === 'main') || policiesForPerson(personKey)[0]
     if (!firstMain) { alert('This person has no medical policy on file yet.'); return }
@@ -345,6 +363,10 @@ export default function MedicalClaimsPage() {
                 <option value="withdrawn">Withdrawn</option>
               </select>
             </div>
+            <button onClick={deleteClaim} disabled={saving}
+              style={{ marginTop: 10, background: 'none', border: 'none', color: T.rose, fontSize: 11, fontWeight: 700, padding: '4px 2px', cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
+              Delete this claim
+            </button>
             <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${T.line} 15%, ${T.line} 85%, transparent)`, margin: '20px 0' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
               <div>
@@ -426,7 +448,7 @@ export default function MedicalClaimsPage() {
           <div style={{ marginTop: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
               <div>
-                <div className="claims-serif" style={{ fontSize: 19, color: T.text }}>Pending Follow-Ups <span style={{ fontSize: 11, color: T.textFaint, fontFamily: 'inherit' }}>{pendingItems.length}</span></div>
+                <div className="claims-serif" style={{ fontSize: 19, color: T.text }}>Pending Follow-Ups <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'inherit', color: T.goldText, background: T.goldSoft, borderRadius: 999, padding: '2px 8px', marginLeft: 8 }}>{pendingItems.length}</span></div>
                 <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Line items awaiting insurer action</div>
               </div>
             </div>
