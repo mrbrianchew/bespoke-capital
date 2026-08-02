@@ -68,13 +68,6 @@ interface Policy {
   // USD policy flag
   isUSD?:  boolean
   fxRate?: number   // USD/SGD rate stored at time of entry
-  // Deductible / co-insurance — medical main plans only, used by Medical Claims
-  // for policy-year tracking. renewalDay/renewalMonth define the policy year
-  // boundary (renewal-to-renewal, not calendar year).
-  renewalDay?: number
-  renewalMonth?: number
-  deductibleAmount?: number
-  coinsuranceCapAnnual?: number
 }
 
 interface RiskMgmtData { policies: Policy[]; advisorNotes: string; statusOverrides?: Record<string, string> }
@@ -91,7 +84,6 @@ function emptyPolicy(person: string, ph = '', la = ''): Policy {
     inceptionDate: '', premiumMaturity: '', coverageMaturity: '',
     status: 'In-Force', remarks: '', person,
     isUSD: false, fxRate: 1.35,
-    renewalDay: undefined, renewalMonth: undefined, deductibleAmount: 0, coinsuranceCapAnnual: 0,
   }
 }
 
@@ -2712,21 +2704,6 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               {covMatMode==='text'&&<input type="text" value={form.coverageMaturity||''} onChange={e=>f('coverageMaturity',e.target.value)} placeholder="Type manually" style={{...inp,marginTop:6}}/>}
             </div>
           </div>
-
-          {/* ── Deductible & Co-Insurance (medical main plans only) — used by Medical Claims for policy-year tracking ── */}
-          {isMedical && !isRider && (
-            <div style={g3}>
-              <div>
-                <label style={lbl}>Renewal Date (dd/mm)</label>
-                <div style={{display:'flex', gap:6}}>
-                  <input type="number" min={1} max={31} value={form.renewalDay ?? ''} onChange={e=>f('renewalDay', e.target.value?+e.target.value:undefined)} placeholder="DD" style={{...inp, width:'50%'}}/>
-                  <input type="number" min={1} max={12} value={form.renewalMonth ?? ''} onChange={e=>f('renewalMonth', e.target.value?+e.target.value:undefined)} placeholder="MM" style={{...inp, width:'50%'}}/>
-                </div>
-              </div>
-              <div><label style={lbl}>Deductible (Annual, $)</label><input type="number" value={form.deductibleAmount||''} onChange={e=>f('deductibleAmount',+e.target.value)} style={inp}/></div>
-              <div><label style={lbl}>Co-Insurance Cap (Annual, $)</label><input type="number" value={form.coinsuranceCapAnnual||''} onChange={e=>f('coinsuranceCapAnnual',+e.target.value)} style={inp}/></div>
-            </div>
-          )}
 
           {/* ── Status + Remarks ── */}
           <div style={{display:'flex', flexDirection:'column', gap: 14}}>
