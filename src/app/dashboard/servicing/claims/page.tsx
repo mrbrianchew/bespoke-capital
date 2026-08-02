@@ -122,6 +122,7 @@ export default function MedicalClaimsPage() {
   const [notesByItem, setNotesByItem] = useState<Record<string, FollowupNote[]>>({})
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [resolvedOpen, setResolvedOpen] = useState(false)
+  const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
 
   // ── Route/feature guard — mirrors the nav's creator-bypass rule so direct
   // URL access without the flag doesn't work either. ──
@@ -159,6 +160,20 @@ export default function MedicalClaimsPage() {
       const claimRows = (claimsRes.data || []) as ClaimRow[]
       setClaims(claimRows)
       setSelectedClaimId(prev => claimRows.some(c => c.id === prev) ? prev : (claimRows[0]?.id || null))
+
+      const claimIds = claimRows.map(c => c.id)
+      if (claimIds.length > 0) {
+        const countsRes = await supabase.from('claim_line_items').select('claim_id, approved').in('claim_id', claimIds)
+        if (!cancelled) {
+          const counts: Record<string, number> = {}
+          ;(countsRes.data || []).forEach((row: any) => {
+            if (!row.approved) counts[row.claim_id] = (counts[row.claim_id] || 0) + 1
+          })
+          setPendingCountByClaim(counts)
+        }
+      } else {
+        setPendingCountByClaim({})
+      }
       setLoading(false)
     }
     load()
@@ -315,6 +330,12 @@ export default function MedicalClaimsPage() {
   })
   const resolvedItems = lineItems.filter(i => i.approved)
 
+  useEffect(() => {
+    if (!selectedClaimId) return
+    setPendingCountByClaim(prev => ({ ...prev, [selectedClaimId]: pendingItems.length }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClaimId, pendingItems.length])
+
   // ── Guards ──
   if (authLoading || loading) return <div style={pageWrap}><div style={{ color: T.textFaint, padding: 40, textAlign: 'center' }}>Loading…</div></div>
   if (!hasAccess) return null
@@ -334,9 +355,18 @@ export default function MedicalClaimsPage() {
       <div className="claims-scroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 16 }}>
         {claims.map(c => {
           const label = allPeople.find(p => p.key === c.life_assured_person)?.label || c.life_assured_person
+          const pendingCount = pendingCountByClaim[c.id] || 0
           return (
             <button key={c.id} onClick={() => { setSelectedClaimId(c.id); setDetailsOpen(false); setExpandedItemId(null) }}
-              style={{ ...pillBase, ...(c.id === selectedClaimId ? pillActive : pillInactive) }}>
+              style={{ ...pillBase, ...(c.id === selectedClaimId ? pillActive : pillInactive), position: 'relative' }}>
+              {pendingCount > 0 && (
+                <span className="claims-mono" style={{
+                  position: 'absolute', top: -7, right: -7, minWidth: 18, height: 18, borderRadius: 999,
+                  background: T.gold, color: T.void1, fontSize: 10.5, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
+                  border: `2px solid ${T.void1}`,
+                }}>{pendingCount}</span>
+              )}
               <div style={{ fontSize: 12.5, fontWeight: 700 }}>{label}</div>
               <div style={{ fontSize: 10, opacity: 0.6 }}>{c.label || 'Claim'}</div>
             </button>
@@ -448,7 +478,10 @@ export default function MedicalClaimsPage() {
           <div style={{ marginTop: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
               <div>
-                <div className="claims-serif" style={{ fontSize: 19, color: T.text }}>Pending Follow-Ups <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'inherit', color: T.goldText, background: T.goldSoft, borderRadius: 999, padding: '2px 8px', marginLeft: 8 }}>{pendingItems.length}</span></div>
+                <div className="claims-serif" style={{ fontSize: 19, color: T.text, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  Pending Follow-Ups
+                  <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: T.void1, background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{pendingItems.length}</span>
+                </div>
                 <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Line items awaiting insurer action</div>
               </div>
             </div>
