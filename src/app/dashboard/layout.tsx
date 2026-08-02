@@ -44,9 +44,13 @@ const NAV_GROUPS_ALL: { id: NavGroupId; label: string; items: typeof NAV_PLANNIN
 // (Financial Planning) are always visible. This is how staged rollout works
 // going forward: build behind a flag, then flip it on per-advisor in the DB —
 // no redeploy needed to grant access.
-function visibleNavGroups(betaFeatures: string[] | null | undefined) {
+// The creator (CREATOR_ID) always sees every beta-gated group by default,
+// regardless of their own beta_features row — new features ship visible to
+// Brian immediately, and only need the Admin Hub toggle for other advisors.
+function visibleNavGroups(betaFeatures: string[] | null | undefined, advisorId?: string | null) {
+  const isCreator = !!advisorId && advisorId === CREATOR_ID
   const flags = Array.isArray(betaFeatures) ? betaFeatures : []
-  return NAV_GROUPS_ALL.filter(g => !g.betaFlag || flags.includes(g.betaFlag))
+  return NAV_GROUPS_ALL.filter(g => !g.betaFlag || isCreator || flags.includes(g.betaFlag))
 }
 
 // Matches overview's exact-match rule (no accidental prefix matches on '/dashboard')
@@ -87,7 +91,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
 
   const [expandedGroup, setExpandedGroup] = useClientTabState<NavGroupId>('navGroup', 'planning')
-  const visibleGroups = visibleNavGroups(advisor?.beta_features)
+  const visibleGroups = visibleNavGroups(advisor?.beta_features, advisor?.id)
 
   // Route wins over whatever was last expanded whenever the current page
   // belongs to a visible group. On pages outside all visible groups (profile,
@@ -96,7 +100,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     const routeGroup = routeGroupFor(visibleGroups, pathname)
     if (routeGroup && routeGroup !== expandedGroup) setExpandedGroup(routeGroup)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, advisor?.beta_features])
+  }, [pathname, advisor?.beta_features, advisor?.id])
 
   async function deleteClient(clientId: string) {
     if (!confirm('Delete this client? This cannot be undone.')) return

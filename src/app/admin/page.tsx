@@ -200,14 +200,15 @@ function RegisteredAdvisorsCard() {
                     <td style={{ padding: '10px 8px', color: '#4A4740' }}>{a.firm || '—'}</td>
                     <td style={{ padding: '10px 8px' }}><StatusBadge status={a.status} /></td>
                     <td style={{ padding: '10px 8px' }}>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', cursor: busy ? 'default' : 'pointer' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: (busy || isCreator) ? 'default' : 'pointer' }}>
                         <input
                           type="checkbox"
-                          checked={Array.isArray(a.beta_features) && a.beta_features.includes('servicing')}
-                          disabled={busy}
+                          checked={isCreator || (Array.isArray(a.beta_features) && a.beta_features.includes('servicing'))}
+                          disabled={busy || isCreator}
                           onChange={e => handleToggleFeature(a.id, 'servicing', e.target.checked)}
-                          style={{ width: 16, height: 16, accentColor: '#2D5A4E', cursor: busy ? 'default' : 'pointer' }}
+                          style={{ width: 16, height: 16, accentColor: '#2D5A4E', cursor: (busy || isCreator) ? 'default' : 'pointer' }}
                         />
+                        {isCreator && <span style={{ fontSize: 11, color: '#9A9690' }}>always on</span>}
                       </label>
                     </td>
                     <td style={{ padding: '10px 8px', color: '#9A9690', fontFamily: 'DM Mono, monospace' }}>
