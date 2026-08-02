@@ -29,10 +29,6 @@ interface PolicyLite {
   lifeAssured: string
   policyNo: string
   person: string
-  renewalDay?: number
-  renewalMonth?: number
-  deductibleAmount?: number
-  coinsuranceCapAnnual?: number
 }
 
 interface ClaimRow {
@@ -43,6 +39,8 @@ interface ClaimRow {
   label: string | null
   status: 'open' | 'closed' | 'withdrawn'
   opened_date: string
+  deductible_amount: number
+  coinsurance_cap_annual: number
   created_at: string
   updated_at: string
 }
@@ -331,6 +329,18 @@ export default function MedicalClaimsPage() {
                 <FieldLabel>Policy No.</FieldLabel>
                 <div className="claims-mono" style={readonlyVal}>{mainPolicy?.policyNo || '—'}</div>
               </div>
+              <div>
+                <FieldLabel>Deductible (This Claim, $)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" value={selectedClaim.deductible_amount || 0}
+                  onChange={e => setClaims(prev => prev.map(c => c.id === selectedClaim.id ? { ...c, deductible_amount: +e.target.value } : c))}
+                  onBlur={e => updateClaim({ deductible_amount: +e.target.value })} />
+              </div>
+              <div>
+                <FieldLabel>Co-Insurance Cap (This Claim, $)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" value={selectedClaim.coinsurance_cap_annual || 0}
+                  onChange={e => setClaims(prev => prev.map(c => c.id === selectedClaim.id ? { ...c, coinsurance_cap_annual: +e.target.value } : c))}
+                  onBlur={e => updateClaim({ coinsurance_cap_annual: +e.target.value })} />
+              </div>
               <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
                 <FieldLabel>Linked Riders (in addition to main policy)</FieldLabel>
                 <div onClick={() => setPolicyPanelOpen(o => !o)} style={{ ...msBox }}>
@@ -448,12 +458,12 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete }: {
               </select>
             </div>
             <div><FieldLabel>Invoice / Claim No.</FieldLabel><input className="claims-input" value={draft.invoice_no || ''} onChange={e => setDraft({ ...draft, invoice_no: e.target.value })} onBlur={() => commit({ invoice_no: draft.invoice_no })} /></div>
-            <div><FieldLabel>Date From</FieldLabel><DateInput value={draft.date_from || ''} onChange={v => commit({ date_from: v || null })} /></div>
-            <div><FieldLabel>Date To</FieldLabel><DateInput value={draft.date_to || ''} onChange={v => commit({ date_to: v || null })} /></div>
+            <div><FieldLabel>Date From</FieldLabel><DateInput value={draft.date_from || ''} onChange={v => commit({ date_from: v || null })} className="claims-input" dark /></div>
+            <div><FieldLabel>Date To</FieldLabel><DateInput value={draft.date_to || ''} onChange={v => commit({ date_to: v || null })} className="claims-input" dark /></div>
             <div style={{ gridColumn: '1/-1' }}><FieldLabel>Description</FieldLabel><input className="claims-input" value={draft.description || ''} onChange={e => setDraft({ ...draft, description: e.target.value })} onBlur={() => commit({ description: draft.description })} /></div>
             <div><FieldLabel>Amount Claimed</FieldLabel><input className="claims-input claims-mono" type="number" value={draft.amount_claimed || 0} onChange={e => setDraft({ ...draft, amount_claimed: +e.target.value })} onBlur={() => commit({ amount_claimed: draft.amount_claimed })} /></div>
-            <div><FieldLabel>Submitted</FieldLabel><DateInput value={draft.submitted_date || ''} onChange={v => commit({ submitted_date: v || null })} /></div>
-            <div><FieldLabel>Date Approved</FieldLabel><DateInput value={draft.date_approved || ''} onChange={v => commit({ date_approved: v || null })} /></div>
+            <div><FieldLabel>Submitted</FieldLabel><DateInput value={draft.submitted_date || ''} onChange={v => commit({ submitted_date: v || null })} className="claims-input" dark /></div>
+            <div><FieldLabel>Date Approved</FieldLabel><DateInput value={draft.date_approved || ''} onChange={v => commit({ date_approved: v || null })} className="claims-input" dark /></div>
             <div><FieldLabel>Amount Approved</FieldLabel><input className="claims-input claims-mono" type="number" value={draft.amount_approved || 0} onChange={e => setDraft({ ...draft, amount_approved: +e.target.value })} onBlur={() => commit({ amount_approved: draft.amount_approved })} /></div>
             <div style={{ gridColumn: '1/-1' }}><FieldLabel>Remarks</FieldLabel><input className="claims-input" value={draft.remarks || ''} onChange={e => setDraft({ ...draft, remarks: e.target.value })} onBlur={() => commit({ remarks: draft.remarks })} /></div>
           </div>
