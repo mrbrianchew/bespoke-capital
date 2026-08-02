@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Instrument_Serif, IBM_Plex_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase'
@@ -141,14 +141,19 @@ export default function MedicalClaimsPage() {
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
 
-  // ── Documents (Drive) ──
+  // ── Documents (Drive) — Option B: the advisor's own Google login, via
+  // Google Identity Services + Picker. No pre-shared folder, no robot
+  // account. A chosen folder is remembered per client so it's only picked
+  // once, then reused silently on every later upload for that client. ──
   const [documents, setDocuments] = useState<ClaimDocument[]>([])
-  const [driveLinkInput, setDriveLinkInput] = useState('')
-  const [driveLinkSaving, setDriveLinkSaving] = useState(false)
-  const [driveLinkResult, setDriveLinkResult] = useState<{ ok: boolean; error?: string; name?: string; rawDetail?: string } | null>(null)
   const [uploadTarget, setUploadTarget] = useState<string>('general') // 'general' or a line item id
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [googleReady, setGoogleReady] = useState(false)
+  const [pickerReady, setPickerReady] = useState(false)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
+  const tokenClientRef = useRef<any>(null)
+  const [pickedFolder, setPickedFolder] = useState<{ id: string; name: string } | null>(null)
 
   // ── Route/feature guard — mirrors the nav's creator-bypass rule so direct
   // URL access without the flag doesn't work either. ──
@@ -158,9 +163,50 @@ export default function MedicalClaimsPage() {
 
   const clientName = activeClient?.name || 'Client'
 
+  // ── Load Google Identity Services + Picker scripts once ──
   useEffect(() => {
-    setDriveLinkInput(activeClient?.drive_folder_link || '')
-    setDriveLinkResult(null)
+    if ((window as any).google?.accounts?.oauth2) {
+      tokenClientRef.current = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: () => {},
+      })
+      setGoogleReady(true)
+    } else {
+      const s = document.createElement('script')
+      s.src = 'https://accounts.google.com/gsi/client'
+      s.async = true
+      s.onload = () => {
+        tokenClientRef.current = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+          scope: 'https://www.googleapis.com/auth/drive.file',
+          callback: () => {},
+        })
+        setGoogleReady(true)
+      }
+      document.body.appendChild(s)
+    }
+
+    if ((window as any).gapi?.picker) {
+      setPickerReady(true)
+    } else {
+      const s = document.createElement('script')
+      s.src = 'https://apis.google.com/js/api.js'
+      s.async = true
+      s.onload = () => { (window as any).gapi.load('picker', () => setPickerReady(true)) }
+      document.body.appendChild(s)
+    }
+  }, [])
+
+  // ── Restore the remembered Drive folder for whichever client is active ──
+  useEffect(() => {
+    const raw = activeClient?.drive_folder_link
+    if (!raw) { setPickedFolder(null); return }
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed?.id && parsed?.name) { setPickedFolder(parsed); return }
+    } catch { /* not our JSON shape — treat as unset */ }
+    setPickedFolder(null)
   }, [activeClient?.id])
 
   const allPeople = useMemo(() => {
@@ -350,46 +396,84 @@ export default function MedicalClaimsPage() {
     if (error) alert('Delete failed: ' + error.message)
   }
 
-  // ── Drive folder link ──
-  async function saveDriveLink() {
-    if (!activeClient) return
-    setDriveLinkSaving(true)
-    setDriveLinkResult(null)
-    try {
-      const verifyRes = await fetch('/api/drive/verify-folder', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderLink: driveLinkInput }),
-      })
-      const verifyData = await verifyRes.json()
-      setDriveLinkResult(verifyData)
-      if (!verifyData.ok) return
-      const { error } = await supabase.from('clients')
-        .update({ drive_folder_link: driveLinkInput, updated_at: new Date().toISOString() })
-        .eq('id', activeClient.id)
-      if (error) { setDriveLinkResult({ ok: false, error: 'Verified but could not save: ' + error.message }); return }
-      updateActiveClientFields({ drive_folder_link: driveLinkInput })
-    } catch (err: any) {
-      setDriveLinkResult({ ok: false, error: 'Could not verify: ' + (err?.message || 'unknown error') })
-    } finally {
-      setDriveLinkSaving(false)
-    }
+  // ── Google auth + folder picking (advisor's own account, not a robot) ──
+  async function ensureAccessToken(): Promise<string> {
+    if (accessToken) return accessToken
+    if (!tokenClientRef.current) throw new Error('Google Sign-In is still loading — try again in a moment.')
+    return new Promise((resolve, reject) => {
+      tokenClientRef.current.callback = (resp: any) => {
+        if (resp.error) { reject(new Error(resp.error)); return }
+        setAccessToken(resp.access_token)
+        resolve(resp.access_token)
+      }
+      tokenClientRef.current.requestAccessToken({ prompt: '' })
+    })
   }
 
-  // ── Document upload/delete ──
+  async function pickFolder(): Promise<{ id: string; name: string } | null> {
+    if (!pickerReady) throw new Error('Google Drive picker is still loading — try again in a moment.')
+    const token = await ensureAccessToken()
+    const g = (window as any).google
+    return new Promise(resolve => {
+      const view = new g.picker.DocsView(g.picker.ViewId.FOLDERS)
+        .setSelectFolderEnabled(true)
+        .setIncludeFolders(true)
+        .setMimeTypes('application/vnd.google-apps.folder')
+      const picker = new g.picker.PickerBuilder()
+        .addView(view)
+        .setOAuthToken(token)
+        .setDeveloperKey(process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY)
+        .setCallback((data: any) => {
+          if (data.action === g.picker.Action.PICKED) {
+            const doc = data.docs[0]
+            resolve({ id: doc.id, name: doc.name })
+          } else if (data.action === g.picker.Action.CANCEL) {
+            resolve(null)
+          }
+        })
+        .build()
+      picker.setVisible(true)
+    })
+  }
+
+  async function changeFolder() {
+    const folder = await pickFolder()
+    if (!folder || !activeClient) return
+    setPickedFolder(folder)
+    const raw = JSON.stringify(folder)
+    const { error } = await supabase.from('clients').update({ drive_folder_link: raw, updated_at: new Date().toISOString() }).eq('id', activeClient.id)
+    if (error) { alert('Could not remember this folder: ' + error.message); return }
+    updateActiveClientFields({ drive_folder_link: raw })
+  }
+
+  // ── Document upload/delete — straight browser-to-Google using the
+  // advisor's own token, so there's no server-side size limit to work around. ──
   async function uploadDocument(file: File) {
     if (!activeClient || !selectedClaimId) return
-    if (!activeClient.drive_folder_link) { setUploadError('Link a Drive folder for this client above before uploading.'); return }
     setUploading(true)
     setUploadError(null)
     try {
-      const startRes = await fetch('/api/drive/start-upload', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: activeClient.id, claimId: selectedClaimId, fileName: file.name, mimeType: file.type || 'application/octet-stream' }),
-      })
-      const startData = await startRes.json()
-      if (!startRes.ok || startData.error) throw new Error(startData.error || 'Could not start upload')
+      let folder = pickedFolder
+      if (!folder) {
+        folder = await pickFolder()
+        if (!folder) { setUploading(false); return } // advisor cancelled the picker
+        setPickedFolder(folder)
+        const raw = JSON.stringify(folder)
+        await supabase.from('clients').update({ drive_folder_link: raw, updated_at: new Date().toISOString() }).eq('id', activeClient.id)
+        updateActiveClientFields({ drive_folder_link: raw })
+      }
 
-      const putRes = await fetch(startData.uploadUrl, {
+      const token = await ensureAccessToken()
+      const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink,size', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ name: file.name, parents: [folder.id] }),
+      })
+      if (!initRes.ok) throw new Error('Could not start upload (status ' + initRes.status + ')')
+      const uploadUrl = initRes.headers.get('Location')
+      if (!uploadUrl) throw new Error('Drive did not return an upload session')
+
+      const putRes = await fetch(uploadUrl, {
         method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
       })
       if (!putRes.ok) throw new Error('Upload to Drive failed (status ' + putRes.status + ')')
@@ -415,10 +499,12 @@ export default function MedicalClaimsPage() {
     if (!window.confirm(`Delete "${doc.file_name}"? This removes it from Drive too.`)) return
     setDocuments(prev => prev.filter(d => d.id !== doc.id))
     try {
-      await fetch('/api/drive/delete-file', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId: doc.id }),
-      })
+      if (doc.drive_file_id) {
+        const token = await ensureAccessToken()
+        await fetch(`https://www.googleapis.com/drive/v3/files/${doc.drive_file_id}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+        })
+      }
     } catch { /* proceed to remove the app-side record regardless */ }
     const { error } = await supabase.from('claim_documents').delete().eq('id', doc.id)
     if (error) alert('Delete failed: ' + error.message)
@@ -465,30 +551,6 @@ export default function MedicalClaimsPage() {
         .claims-input, .claims-select { width: 100%; padding: 8px 10px; border: 1px solid ${T.line}; border-radius: 10px; background: ${T.void2}; color: ${T.text}; font-size: 13px; }
         .claims-input:focus, .claims-select:focus { outline: none; border-color: ${T.gold}; box-shadow: 0 0 0 3px ${T.goldSoft}; }
       `}</style>
-
-      {/* Client Drive folder — applies to every claim for this client, not just the selected one */}
-      <div style={{ ...cardBase, padding: 12, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, flexShrink: 0 }}>Drive Folder</div>
-        <input className="claims-input" placeholder="Paste this client's Drive folder link…" value={driveLinkInput}
-          onChange={e => setDriveLinkInput(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
-        <button onClick={saveDriveLink} disabled={driveLinkSaving || !driveLinkInput.trim()}
-          style={{ ...addBtn, flexShrink: 0, opacity: (driveLinkSaving || !driveLinkInput.trim()) ? 0.6 : 1 }}>
-          {driveLinkSaving ? 'Verifying…' : 'Save'}
-        </button>
-        {driveLinkResult && (
-          <div style={{ width: '100%', fontSize: 11.5, fontWeight: 600, color: driveLinkResult.ok ? T.emerald : T.rose }}>
-            {driveLinkResult.ok ? `Linked to "${driveLinkResult.name}" — documents will upload here.` : driveLinkResult.error}
-            {!driveLinkResult.ok && driveLinkResult.rawDetail && (
-              <div className="claims-mono" style={{ fontSize: 10.5, fontWeight: 400, color: T.textFaint, marginTop: 4 }}>
-                Raw: {driveLinkResult.rawDetail}
-              </div>
-            )}
-          </div>
-        )}
-        {!driveLinkResult && activeClient.drive_folder_link && (
-          <div style={{ width: '100%', fontSize: 11, color: T.textFaint }}>Currently linked — documents will upload here.</div>
-        )}
-      </div>
 
       {/* Claim switcher */}
       <div className="claims-scroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingTop: 12, paddingBottom: 4, marginTop: -12, marginBottom: 16 }}>
@@ -702,7 +764,15 @@ export default function MedicalClaimsPage() {
                   {uploading ? 'Uploading…' : '+ Upload File'}
                   <input type="file" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocument(f); e.target.value = '' }} style={{ display: 'none' }} />
                 </label>
-                {!activeClient.drive_folder_link && <span style={{ fontSize: 11.5, color: T.rose }}>Link a Drive folder above first.</span>}
+                {pickedFolder ? (
+                  <span style={{ fontSize: 11.5, color: T.textFaint }}>
+                    Saving to <strong style={{ color: T.textDim }}>{pickedFolder.name}</strong>
+                    {' · '}
+                    <button onClick={changeFolder} style={{ background: 'none', border: 'none', color: T.gold, fontSize: 11.5, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Change</button>
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11.5, color: T.textFaint }}>First upload for this client will ask you to pick a Drive folder — every upload after that goes straight there.</span>
+                )}
               </div>
               {uploadError && <div style={{ marginTop: 8, fontSize: 11.5, color: T.rose }}>{uploadError}</div>}
             </div>
