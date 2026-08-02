@@ -352,7 +352,7 @@ export default function MedicalClaimsPage() {
       `}</style>
 
       {/* Claim switcher */}
-      <div className="claims-scroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 16 }}>
+      <div className="claims-scroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingTop: 12, paddingBottom: 4, marginTop: -12, marginBottom: 16 }}>
         {claims.map(c => {
           const label = allPeople.find(p => p.key === c.life_assured_person)?.label || c.life_assured_person
           const pendingCount = pendingCountByClaim[c.id] || 0
