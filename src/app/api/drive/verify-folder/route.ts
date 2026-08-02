@@ -29,7 +29,13 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true, folderId, name: res.data.name })
   } catch (err: any) {
+    console.error('[drive/verify-folder] raw error:', JSON.stringify({
+      message: err?.message, code: err?.code, status: err?.response?.status,
+      googleErrors: err?.errors || err?.response?.data?.error,
+    }))
     const { message } = friendlyDriveError(err)
-    return NextResponse.json({ ok: false, error: message })
+    // TEMPORARY diagnostic detail — remove once the Drive connection is confirmed working.
+    const rawDetail = err?.response?.data?.error?.message || err?.message || 'no further detail'
+    return NextResponse.json({ ok: false, error: message, rawDetail, folderIdTried: folderId })
   }
 }

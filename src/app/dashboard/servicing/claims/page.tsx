@@ -145,7 +145,7 @@ export default function MedicalClaimsPage() {
   const [documents, setDocuments] = useState<ClaimDocument[]>([])
   const [driveLinkInput, setDriveLinkInput] = useState('')
   const [driveLinkSaving, setDriveLinkSaving] = useState(false)
-  const [driveLinkResult, setDriveLinkResult] = useState<{ ok: boolean; error?: string; name?: string } | null>(null)
+  const [driveLinkResult, setDriveLinkResult] = useState<{ ok: boolean; error?: string; name?: string; rawDetail?: string } | null>(null)
   const [uploadTarget, setUploadTarget] = useState<string>('general') // 'general' or a line item id
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -478,6 +478,11 @@ export default function MedicalClaimsPage() {
         {driveLinkResult && (
           <div style={{ width: '100%', fontSize: 11.5, fontWeight: 600, color: driveLinkResult.ok ? T.emerald : T.rose }}>
             {driveLinkResult.ok ? `Linked to "${driveLinkResult.name}" — documents will upload here.` : driveLinkResult.error}
+            {!driveLinkResult.ok && driveLinkResult.rawDetail && (
+              <div className="claims-mono" style={{ fontSize: 10.5, fontWeight: 400, color: T.textFaint, marginTop: 4 }}>
+                Raw: {driveLinkResult.rawDetail}
+              </div>
+            )}
           </div>
         )}
         {!driveLinkResult && activeClient.drive_folder_link && (
