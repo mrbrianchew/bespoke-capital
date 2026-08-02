@@ -71,6 +71,18 @@ interface FollowupNote {
   created_at: string
 }
 
+interface ClaimDocument {
+  id: string
+  claim_id: string
+  line_item_id: string | null
+  file_name: string
+  mime_type: string | null
+  file_size: number | null
+  drive_file_id: string | null
+  drive_view_url: string | null
+  uploaded_at: string
+}
+
 const SECTION_LABEL: Record<string, string> = { pre: 'Pre-Hospitalisation', in: 'Inpatient / Surgery', post: 'Post-Hospitalisation' }
 const SECTION_SUB: Record<string, string> = { pre: 'Outpatient claims before admission', in: 'Hospitalisation & surgery claims', post: 'Follow-up outpatient claims' }
 const TYPE_OPTIONS = ['CDL', 'Non-CDL', 'Services', 'Outpatient', 'Surgery', 'Inpatient']
@@ -90,6 +102,11 @@ function daysSince(iso: string | null): number | null {
   if (isNaN(d.getTime())) return null
   return Math.floor((Date.now() - d.getTime()) / 86400000)
 }
+function fmtFileSize(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return '—'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
 function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<LineItemRow, 'id'> {
   return {
     claim_id: claimId, section, type: section === 'in' ? 'Surgery' : 'Outpatient',
@@ -102,7 +119,7 @@ function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<Line
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
 export default function MedicalClaimsPage() {
-  const { activeClient, advisor, authLoading } = useDashboard()
+  const { activeClient, advisor, authLoading, updateActiveClientFields } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
 
@@ -124,6 +141,15 @@ export default function MedicalClaimsPage() {
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
 
+  // ── Documents (Drive) ──
+  const [documents, setDocuments] = useState<ClaimDocument[]>([])
+  const [driveLinkInput, setDriveLinkInput] = useState('')
+  const [driveLinkSaving, setDriveLinkSaving] = useState(false)
+  const [driveLinkResult, setDriveLinkResult] = useState<{ ok: boolean; error?: string; name?: string } | null>(null)
+  const [uploadTarget, setUploadTarget] = useState<string>('general') // 'general' or a line item id
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
   // ── Route/feature guard — mirrors the nav's creator-bypass rule so direct
   // URL access without the flag doesn't work either. ──
   useEffect(() => {
@@ -131,6 +157,11 @@ export default function MedicalClaimsPage() {
   }, [authLoading, advisor, hasAccess, router])
 
   const clientName = activeClient?.name || 'Client'
+
+  useEffect(() => {
+    setDriveLinkInput(activeClient?.drive_folder_link || '')
+    setDriveLinkResult(null)
+  }, [activeClient?.id])
 
   const allPeople = useMemo(() => {
     const spouse = familyMembers.find(m => m.relationship === 'Spouse')
@@ -183,19 +214,21 @@ export default function MedicalClaimsPage() {
 
   const selectedClaim = claims.find(c => c.id === selectedClaimId) || null
 
-  // ── Load line items + linked policies + follow-up notes whenever the selected claim changes ──
+  // ── Load line items + linked policies + follow-up notes + documents whenever the selected claim changes ──
   useEffect(() => {
-    if (!selectedClaimId) { setLineItems([]); setLinkedPolicyIds([]); setNotesByItem({}); return }
+    if (!selectedClaimId) { setLineItems([]); setLinkedPolicyIds([]); setNotesByItem({}); setDocuments([]); return }
     let cancelled = false
     async function load() {
-      const [itemsRes, linkedRes] = await Promise.all([
+      const [itemsRes, linkedRes, docsRes] = await Promise.all([
         supabase.from('claim_line_items').select('*').eq('claim_id', selectedClaimId!).order('date_from', { ascending: true }),
         supabase.from('claim_linked_policies').select('policy_id').eq('claim_id', selectedClaimId!),
+        supabase.from('claim_documents').select('*').eq('claim_id', selectedClaimId!).order('uploaded_at', { ascending: false }),
       ])
       if (cancelled) return
       const items = (itemsRes.data || []) as LineItemRow[]
       setLineItems(items)
       setLinkedPolicyIds((linkedRes.data || []).map((r: any) => r.policy_id))
+      setDocuments((docsRes.data || []) as ClaimDocument[])
 
       const ids = items.map(i => i.id)
       if (ids.length === 0) { setNotesByItem({}); return }
@@ -317,6 +350,80 @@ export default function MedicalClaimsPage() {
     if (error) alert('Delete failed: ' + error.message)
   }
 
+  // ── Drive folder link ──
+  async function saveDriveLink() {
+    if (!activeClient) return
+    setDriveLinkSaving(true)
+    setDriveLinkResult(null)
+    try {
+      const verifyRes = await fetch('/api/drive/verify-folder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderLink: driveLinkInput }),
+      })
+      const verifyData = await verifyRes.json()
+      setDriveLinkResult(verifyData)
+      if (!verifyData.ok) return
+      const { error } = await supabase.from('clients')
+        .update({ drive_folder_link: driveLinkInput, updated_at: new Date().toISOString() })
+        .eq('id', activeClient.id)
+      if (error) { setDriveLinkResult({ ok: false, error: 'Verified but could not save: ' + error.message }); return }
+      updateActiveClientFields({ drive_folder_link: driveLinkInput })
+    } catch (err: any) {
+      setDriveLinkResult({ ok: false, error: 'Could not verify: ' + (err?.message || 'unknown error') })
+    } finally {
+      setDriveLinkSaving(false)
+    }
+  }
+
+  // ── Document upload/delete ──
+  async function uploadDocument(file: File) {
+    if (!activeClient || !selectedClaimId) return
+    if (!activeClient.drive_folder_link) { setUploadError('Link a Drive folder for this client above before uploading.'); return }
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const startRes = await fetch('/api/drive/start-upload', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: activeClient.id, claimId: selectedClaimId, fileName: file.name, mimeType: file.type || 'application/octet-stream' }),
+      })
+      const startData = await startRes.json()
+      if (!startRes.ok || startData.error) throw new Error(startData.error || 'Could not start upload')
+
+      const putRes = await fetch(startData.uploadUrl, {
+        method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
+      })
+      if (!putRes.ok) throw new Error('Upload to Drive failed (status ' + putRes.status + ')')
+      const driveFile = await putRes.json()
+
+      const lineItemId = uploadTarget === 'general' ? null : uploadTarget
+      const { data, error } = await supabase.from('claim_documents').insert({
+        claim_id: selectedClaimId, line_item_id: lineItemId,
+        file_name: driveFile.name || file.name, mime_type: file.type || null,
+        file_size: driveFile.size ? +driveFile.size : file.size,
+        drive_file_id: driveFile.id, drive_view_url: driveFile.webViewLink || null,
+      }).select().maybeSingle()
+      if (error || !data) throw new Error(error?.message || 'Uploaded to Drive but could not save the record')
+      setDocuments(prev => [data as ClaimDocument, ...prev])
+    } catch (err: any) {
+      setUploadError(err?.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function deleteDocument(doc: ClaimDocument) {
+    if (!window.confirm(`Delete "${doc.file_name}"? This removes it from Drive too.`)) return
+    setDocuments(prev => prev.filter(d => d.id !== doc.id))
+    try {
+      await fetch('/api/drive/delete-file', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId: doc.id }),
+      })
+    } catch { /* proceed to remove the app-side record regardless */ }
+    const { error } = await supabase.from('claim_documents').delete().eq('id', doc.id)
+    if (error) alert('Delete failed: ' + error.message)
+  }
+
   // ── Totals ──
   const totalClaimed = lineItems.reduce((s, i) => s + (i.amount_claimed || 0), 0)
   const totalApproved = lineItems.reduce((s, i) => s + (i.approved ? (i.amount_approved || 0) : 0), 0)
@@ -336,6 +443,14 @@ export default function MedicalClaimsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClaimId, pendingItems.length])
 
+  // ── Documents grouped by the status of the line item they're tied to.
+  // A document with no line_item_id (a general claim-level file — e.g. a
+  // full policy schedule) has no approval state to derive, so it gets its
+  // own neutral group rather than being force-fit into Pending/Approved. ──
+  const generalDocs = documents.filter(d => !d.line_item_id)
+  const pendingDocs = documents.filter(d => d.line_item_id && lineItems.find(i => i.id === d.line_item_id && !i.approved))
+  const approvedDocs = documents.filter(d => d.line_item_id && lineItems.find(i => i.id === d.line_item_id && i.approved))
+
   // ── Guards ──
   if (authLoading || loading) return <div style={pageWrap}><div style={{ color: T.textFaint, padding: 40, textAlign: 'center' }}>Loading…</div></div>
   if (!hasAccess) return null
@@ -350,6 +465,25 @@ export default function MedicalClaimsPage() {
         .claims-input, .claims-select { width: 100%; padding: 8px 10px; border: 1px solid ${T.line}; border-radius: 10px; background: ${T.void2}; color: ${T.text}; font-size: 13px; }
         .claims-input:focus, .claims-select:focus { outline: none; border-color: ${T.gold}; box-shadow: 0 0 0 3px ${T.goldSoft}; }
       `}</style>
+
+      {/* Client Drive folder — applies to every claim for this client, not just the selected one */}
+      <div style={{ ...cardBase, padding: 12, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, flexShrink: 0 }}>Drive Folder</div>
+        <input className="claims-input" placeholder="Paste this client's Drive folder link…" value={driveLinkInput}
+          onChange={e => setDriveLinkInput(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+        <button onClick={saveDriveLink} disabled={driveLinkSaving || !driveLinkInput.trim()}
+          style={{ ...addBtn, flexShrink: 0, opacity: (driveLinkSaving || !driveLinkInput.trim()) ? 0.6 : 1 }}>
+          {driveLinkSaving ? 'Verifying…' : 'Save'}
+        </button>
+        {driveLinkResult && (
+          <div style={{ width: '100%', fontSize: 11.5, fontWeight: 600, color: driveLinkResult.ok ? T.emerald : T.rose }}>
+            {driveLinkResult.ok ? `Linked to "${driveLinkResult.name}" — documents will upload here.` : driveLinkResult.error}
+          </div>
+        )}
+        {!driveLinkResult && activeClient.drive_folder_link && (
+          <div style={{ width: '100%', fontSize: 11, color: T.textFaint }}>Currently linked — documents will upload here.</div>
+        )}
+      </div>
 
       {/* Claim switcher */}
       <div className="claims-scroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingTop: 12, paddingBottom: 4, marginTop: -12, marginBottom: 16 }}>
@@ -539,8 +673,50 @@ export default function MedicalClaimsPage() {
             )
           })}
 
+          {/* Documents */}
+          <div style={{ marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
+              <div>
+                <div className="claims-serif" style={{ fontSize: 19, color: T.text, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  Documents
+                  <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: T.void1, background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{documents.length}</span>
+                </div>
+                <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Stored in the client's Drive folder</div>
+              </div>
+            </div>
+
+            <div style={{ ...cardBase, padding: 14, marginBottom: 12 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select className="claims-select" value={uploadTarget} onChange={e => setUploadTarget(e.target.value)} style={{ width: 220 }}>
+                  <option value="general">General (not tied to a line item)</option>
+                  {lineItems.map(it => (
+                    <option key={it.id} value={it.id}>{SECTION_LABEL[it.section]} — {it.description || it.invoice_no || 'untitled line'}</option>
+                  ))}
+                </select>
+                <label style={{ ...addBtn, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
+                  {uploading ? 'Uploading…' : '+ Upload File'}
+                  <input type="file" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocument(f); e.target.value = '' }} style={{ display: 'none' }} />
+                </label>
+                {!activeClient.drive_folder_link && <span style={{ fontSize: 11.5, color: T.rose }}>Link a Drive folder above first.</span>}
+              </div>
+              {uploadError && <div style={{ marginTop: 8, fontSize: 11.5, color: T.rose }}>{uploadError}</div>}
+            </div>
+
+            {documents.length === 0 && <div style={{ ...cardBase, padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>No documents uploaded yet.</div>}
+
+            {generalDocs.length > 0 && (
+              <DocGroup label="General" docs={generalDocs} onDelete={deleteDocument} />
+            )}
+            {pendingDocs.length > 0 && (
+              <DocGroup label="Pending" docs={pendingDocs} onDelete={deleteDocument} accent={T.rose} />
+            )}
+            {approvedDocs.length > 0 && (
+              <DocGroup label="Approved" docs={approvedDocs} onDelete={deleteDocument} accent={T.emerald} />
+            )}
+          </div>
+
           <div style={{ marginTop: 24, padding: '14px 16px', borderRadius: 12, background: T.goldSoft, border: `1px solid ${T.line}`, fontSize: 11.5, color: T.textDim }}>
-            Per-line deductible/co-insurance running totals, documents, and message templates land in the next builds — this page now covers claim details, line items, and follow-up tracking.
+            Per-line deductible/co-insurance running totals and message templates land in the next builds — this page now covers claim details, line items, follow-up tracking, and documents.
           </div>
         </>
       )}
@@ -675,6 +851,26 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAddNote() } }}
           style={{ flex: 1 }} />
         <button onClick={onAddNote} style={addBtn}>Add</button>
+      </div>
+    </div>
+  )
+}
+
+function DocGroup({ label, docs, onDelete, accent }: { label: string; docs: ClaimDocument[]; onDelete: (doc: ClaimDocument) => void; accent?: string }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: accent || T.textFaint, marginBottom: 6, padding: '0 2px' }}>{label}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {docs.map(doc => (
+          <div key={doc.id} style={{ ...cardBase, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <a href={doc.drive_view_url || '#'} target="_blank" rel="noopener noreferrer"
+              style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: T.text, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {doc.file_name}
+            </a>
+            <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, flexShrink: 0 }}>{fmtFileSize(doc.file_size)} · {fmtDate(doc.uploaded_at)}</div>
+            <button onClick={() => onDelete(doc)} style={{ background: 'none', border: 'none', color: T.rose, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+          </div>
+        ))}
       </div>
     </div>
   )
