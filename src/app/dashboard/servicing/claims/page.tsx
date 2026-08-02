@@ -60,6 +60,15 @@ interface LineItemRow {
   date_approved: string | null
   amount_approved: number
   remarks: string | null
+  followup_status: string | null
+}
+
+interface FollowupNote {
+  id: string
+  line_item_id: string
+  text: string
+  note_date: string
+  created_at: string
 }
 
 const SECTION_LABEL: Record<string, string> = { pre: 'Pre-Hospitalisation', in: 'Inpatient / Surgery', post: 'Post-Hospitalisation' }
@@ -74,6 +83,12 @@ function fmtDate(iso: string | null) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-SG', { day: '2-digit', month: 'short' })
+}
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  return Math.floor((Date.now() - d.getTime()) / 86400000)
 }
 function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<LineItemRow, 'id'> {
   return {
@@ -104,6 +119,9 @@ export default function MedicalClaimsPage() {
   const [policyPanelOpen, setPolicyPanelOpen] = useState(false)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [notesByItem, setNotesByItem] = useState<Record<string, FollowupNote[]>>({})
+  const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
+  const [resolvedOpen, setResolvedOpen] = useState(false)
 
   // ── Route/feature guard — mirrors the nav's creator-bypass rule so direct
   // URL access without the flag doesn't work either. ──
@@ -150,9 +168,9 @@ export default function MedicalClaimsPage() {
 
   const selectedClaim = claims.find(c => c.id === selectedClaimId) || null
 
-  // ── Load line items + linked policies whenever the selected claim changes ──
+  // ── Load line items + linked policies + follow-up notes whenever the selected claim changes ──
   useEffect(() => {
-    if (!selectedClaimId) { setLineItems([]); setLinkedPolicyIds([]); return }
+    if (!selectedClaimId) { setLineItems([]); setLinkedPolicyIds([]); setNotesByItem({}); return }
     let cancelled = false
     async function load() {
       const [itemsRes, linkedRes] = await Promise.all([
@@ -160,8 +178,20 @@ export default function MedicalClaimsPage() {
         supabase.from('claim_linked_policies').select('policy_id').eq('claim_id', selectedClaimId!),
       ])
       if (cancelled) return
-      setLineItems((itemsRes.data || []) as LineItemRow[])
+      const items = (itemsRes.data || []) as LineItemRow[]
+      setLineItems(items)
       setLinkedPolicyIds((linkedRes.data || []).map((r: any) => r.policy_id))
+
+      const ids = items.map(i => i.id)
+      if (ids.length === 0) { setNotesByItem({}); return }
+      const notesRes = await supabase.from('claim_followup_notes').select('*').in('line_item_id', ids).order('created_at', { ascending: false })
+      if (cancelled) return
+      const grouped: Record<string, FollowupNote[]> = {}
+      ;(notesRes.data || []).forEach((n: any) => {
+        if (!grouped[n.line_item_id]) grouped[n.line_item_id] = []
+        grouped[n.line_item_id].push(n)
+      })
+      setNotesByItem(grouped)
     }
     load()
     return () => { cancelled = true }
@@ -238,10 +268,34 @@ export default function MedicalClaimsPage() {
     if (error) alert('Delete failed: ' + error.message)
   }
 
+  // ── Follow-up note mutations ──
+  async function addNote(lineItemId: string) {
+    const text = (noteDraft[lineItemId] || '').trim()
+    if (!text) return
+    const { data, error } = await supabase.from('claim_followup_notes').insert({ line_item_id: lineItemId, text }).select().maybeSingle()
+    if (error || !data) { alert('Could not add note: ' + (error?.message || 'unknown error')); return }
+    setNotesByItem(prev => ({ ...prev, [lineItemId]: [data as FollowupNote, ...(prev[lineItemId] || [])] }))
+    setNoteDraft(prev => ({ ...prev, [lineItemId]: '' }))
+  }
+
+  async function deleteNote(lineItemId: string, noteId: string) {
+    setNotesByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).filter(n => n.id !== noteId) }))
+    const { error } = await supabase.from('claim_followup_notes').delete().eq('id', noteId)
+    if (error) alert('Delete failed: ' + error.message)
+  }
+
   // ── Totals ──
   const totalClaimed = lineItems.reduce((s, i) => s + (i.amount_claimed || 0), 0)
   const totalApproved = lineItems.reduce((s, i) => s + (i.approved ? (i.amount_approved || 0) : 0), 0)
   const pct = totalClaimed > 0 ? Math.round((totalApproved / totalClaimed) * 100) : 0
+
+  // ── Follow-ups ──
+  const pendingItems = [...lineItems].filter(i => !i.approved).sort((a, b) => {
+    const da = daysSince(a.submitted_date || a.date_from) ?? -1
+    const db = daysSince(b.submitted_date || b.date_from) ?? -1
+    return db - da
+  })
+  const resolvedItems = lineItems.filter(i => i.approved)
 
   // ── Guards ──
   if (authLoading || loading) return <div style={pageWrap}><div style={{ color: T.textFaint, padding: 40, textAlign: 'center' }}>Loading…</div></div>
@@ -368,6 +422,44 @@ export default function MedicalClaimsPage() {
             </div>
           )}
 
+          {/* Pending Follow-Ups */}
+          <div style={{ marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
+              <div>
+                <div className="claims-serif" style={{ fontSize: 19, color: T.text }}>Pending Follow-Ups <span style={{ fontSize: 11, color: T.textFaint, fontFamily: 'inherit' }}>{pendingItems.length}</span></div>
+                <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Line items awaiting insurer action</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {pendingItems.length === 0 && <div style={{ ...cardBase, padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>Nothing pending — every line item is either resolved or not yet added.</div>}
+              {pendingItems.map(it => (
+                <FollowupCard key={it.id} item={it} notes={notesByItem[it.id] || []}
+                  draft={noteDraft[it.id] || ''} onDraftChange={v => setNoteDraft(prev => ({ ...prev, [it.id]: v }))}
+                  onAddNote={() => addNote(it.id)} onDeleteNote={noteId => deleteNote(it.id, noteId)}
+                  onStatusChange={status => saveLineItem(it.id, { followup_status: status })} />
+              ))}
+            </div>
+
+            {resolvedItems.length > 0 && (
+              <>
+                <button onClick={() => setResolvedOpen(o => !o)} style={{ ...detailsToggle, marginTop: 14 }}>
+                  <span>Resolved ({resolvedItems.length})</span>
+                  <span style={{ transform: resolvedOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s', display: 'inline-block' }}>▾</span>
+                </button>
+                {resolvedOpen && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                    {resolvedItems.map(it => (
+                      <FollowupCard key={it.id} item={it} notes={notesByItem[it.id] || []} resolved
+                        draft={noteDraft[it.id] || ''} onDraftChange={v => setNoteDraft(prev => ({ ...prev, [it.id]: v }))}
+                        onAddNote={() => addNote(it.id)} onDeleteNote={noteId => deleteNote(it.id, noteId)}
+                        onStatusChange={status => saveLineItem(it.id, { followup_status: status })} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Sections — always rendered together */}
           {(['pre', 'in', 'post'] as const).map(sec => {
             const items = lineItems.filter(i => i.section === sec)
@@ -393,7 +485,7 @@ export default function MedicalClaimsPage() {
           })}
 
           <div style={{ marginTop: 24, padding: '14px 16px', borderRadius: 12, background: T.goldSoft, border: `1px solid ${T.line}`, fontSize: 11.5, color: T.textDim }}>
-            Deductible/co-insurance tracking, follow-ups, documents, and message templates land in the next builds — this page currently covers claim details + line items only.
+            Per-line deductible/co-insurance running totals, documents, and message templates land in the next builds — this page now covers claim details, line items, and follow-up tracking.
           </div>
         </>
       )}
@@ -476,6 +568,59 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete }: {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, onDeleteNote, onStatusChange }: {
+  item: LineItemRow; notes: FollowupNote[]; resolved?: boolean
+  draft: string; onDraftChange: (v: string) => void
+  onAddNote: () => void; onDeleteNote: (noteId: string) => void
+  onStatusChange: (status: string) => void
+}) {
+  const days = daysSince(item.submitted_date || item.date_from)
+  const stale = !resolved && days !== null && days >= 14
+
+  return (
+    <div style={{ ...cardBase, padding: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.goldText, background: T.goldSoft, padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{item.description || '(no description)'}</span>
+          </div>
+          <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
+            {item.invoice_no || '—'} · {money(item.amount_claimed)}
+            {days !== null && !resolved && <span style={{ color: stale ? T.rose : T.textFaint, fontWeight: stale ? 700 : 400 }}> · {days}d idle</span>}
+          </div>
+        </div>
+        {!resolved ? (
+          <select className="claims-select" value={item.followup_status || 'Submitted'} onChange={e => onStatusChange(e.target.value)} style={{ width: 160, height: 32, flexShrink: 0 }}>
+            <option value="Submitted">Submitted</option>
+            <option value="Pending Documents">Pending Documents</option>
+          </select>
+        ) : (
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: T.emerald, flexShrink: 0 }}>Approved {money(item.amount_approved)}</span>
+        )}
+      </div>
+
+      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {notes.length === 0 && <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic' }}>No notes yet.</div>}
+        {notes.map(n => (
+          <div key={n.id} style={{ fontSize: 11.5, background: T.void2, borderRadius: 8, padding: '6px 9px', border: `1px solid ${T.line}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <div><span className="claims-mono" style={{ fontWeight: 700, color: T.gold, marginRight: 6, fontSize: 10.5 }}>{fmtDate(n.note_date)}</span>{n.text}</div>
+            <button onClick={() => onDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: T.rose, fontSize: 11, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <input className="claims-input" value={draft} placeholder="Add a note…"
+          onChange={e => onDraftChange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAddNote() } }}
+          style={{ flex: 1 }} />
+        <button onClick={onAddNote} style={addBtn}>Add</button>
+      </div>
     </div>
   )
 }
