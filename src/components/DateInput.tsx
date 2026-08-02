@@ -19,6 +19,10 @@ interface DateInputProps {
   className?: string
   placeholder?: string
   disabled?: boolean
+  // Opt-in dark palette for the calendar popup, for pages with a dark canvas
+  // (e.g. Medical Claims). Defaults to false — every existing light-theme
+  // usage elsewhere in the app is unaffected.
+  dark?: boolean
 }
 
 function isoToDisplay(iso: string): string {
@@ -69,7 +73,21 @@ export default function DateInput({
   className,
   placeholder = 'dd/mm/yyyy',
   disabled,
+  dark = false,
 }: DateInputProps) {
+  const pal = dark
+    ? {
+        bg: '#241F19', border: 'rgba(255,255,255,.09)', shadow: '0 8px 24px rgba(0,0,0,.5)',
+        headerText: '#F3EFE6', navText: '#A8A296', weekdayText: '#6D6960',
+        dayText: '#F3EFE6', hoverBg: 'rgba(255,255,255,.08)',
+        selectedBg: '#E7BC72', selectedText: '#241F19', iconColor: '#A8A296',
+      }
+    : {
+        bg: 'var(--cream, #F5F3EE)', border: 'var(--cream3, #E4E1DA)', shadow: '0 8px 24px rgba(28,26,23,0.14)',
+        headerText: 'var(--charcoal, #1C1A17)', navText: 'var(--ink2, #4A4740)', weekdayText: 'var(--ink3, #9A9690)',
+        dayText: 'var(--ink, #1A1816)', hoverBg: 'var(--cream2, #ECEAE4)',
+        selectedBg: 'var(--gold, #A8834A)', selectedText: '#fff', iconColor: 'var(--ink3, #9A9690)',
+      }
   const [text, setText] = useState(isoToDisplay(value))
   const [open, setOpen] = useState(false)
   const [viewYear, setViewYear] = useState(() => {
@@ -194,7 +212,7 @@ export default function DateInput({
             padding: 2,
             display: 'flex',
             alignItems: 'center',
-            color: 'var(--ink3, #9A9690)',
+            color: pal.iconColor,
           }}
           disabled={disabled}
         >
@@ -214,10 +232,10 @@ export default function DateInput({
             top: 'calc(100% + 6px)',
             left: 0,
             zIndex: 50,
-            background: 'var(--cream, #F5F3EE)',
-            border: '1px solid var(--cream3, #E4E1DA)',
+            background: pal.bg,
+            border: `1px solid ${pal.border}`,
             borderRadius: 10,
-            boxShadow: '0 8px 24px rgba(28,26,23,0.14)',
+            boxShadow: pal.shadow,
             padding: 14,
             width: 268,
             fontFamily: 'Inter, sans-serif',
@@ -227,17 +245,17 @@ export default function DateInput({
             <button
               type="button"
               onClick={goPrevMonth}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink2, #4A4740)', fontSize: 14, padding: 4 }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: pal.navText, fontSize: 14, padding: 4 }}
             >
               ‹
             </button>
-            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, color: 'var(--charcoal, #1C1A17)', fontWeight: 600 }}>
+            <span style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, color: pal.headerText, fontWeight: 600 }}>
               {MONTH_NAMES[viewMonth]} {viewYear}
             </span>
             <button
               type="button"
               onClick={goNextMonth}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink2, #4A4740)', fontSize: 14, padding: 4 }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: pal.navText, fontSize: 14, padding: 4 }}
             >
               ›
             </button>
@@ -252,7 +270,7 @@ export default function DateInput({
                   fontSize: 10,
                   fontWeight: 600,
                   letterSpacing: '0.05em',
-                  color: 'var(--ink3, #9A9690)',
+                  color: pal.weekdayText,
                   padding: '4px 0',
                 }}
               >
@@ -279,11 +297,11 @@ export default function DateInput({
                     cursor: 'pointer',
                     fontSize: 12,
                     fontFamily: 'DM Mono, monospace',
-                    background: isSelected ? 'var(--gold, #A8834A)' : 'transparent',
-                    color: isSelected ? '#fff' : 'var(--ink, #1A1816)',
+                    background: isSelected ? pal.selectedBg : 'transparent',
+                    color: isSelected ? pal.selectedText : pal.dayText,
                   }}
                   onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.background = 'var(--cream2, #ECEAE4)'
+                    if (!isSelected) e.currentTarget.style.background = pal.hoverBg
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected) e.currentTarget.style.background = 'transparent'
