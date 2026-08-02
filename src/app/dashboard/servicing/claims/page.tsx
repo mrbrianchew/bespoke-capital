@@ -163,38 +163,57 @@ export default function MedicalClaimsPage() {
 
   const clientName = activeClient?.name || 'Client'
 
-  // ── Load Google Identity Services + Picker scripts once ──
-  useEffect(() => {
-    if ((window as any).google?.accounts?.oauth2) {
+  // ── Load Google Identity Services + Picker scripts once. This entire
+  // effect is defensive on purpose: Drive upload is one small optional
+  // feature on this page, and nothing it does should ever be able to take
+  // down claim details, line items, or follow-ups if Google's side hiccups
+  // or the client ID is misconfigured. ──
+  function initGoogleTokenClient() {
+    try {
+      const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+      if (!clientId) { console.error('[drive] NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set'); return }
       tokenClientRef.current = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+        client_id: clientId,
         scope: 'https://www.googleapis.com/auth/drive.file',
         callback: () => {},
       })
       setGoogleReady(true)
-    } else {
-      const s = document.createElement('script')
-      s.src = 'https://accounts.google.com/gsi/client'
-      s.async = true
-      s.onload = () => {
-        tokenClientRef.current = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
-          scope: 'https://www.googleapis.com/auth/drive.file',
-          callback: () => {},
-        })
-        setGoogleReady(true)
-      }
-      document.body.appendChild(s)
+    } catch (err) {
+      console.error('[drive] Failed to init Google token client:', err)
     }
+  }
 
-    if ((window as any).gapi?.picker) {
-      setPickerReady(true)
-    } else {
-      const s = document.createElement('script')
-      s.src = 'https://apis.google.com/js/api.js'
-      s.async = true
-      s.onload = () => { (window as any).gapi.load('picker', () => setPickerReady(true)) }
-      document.body.appendChild(s)
+  useEffect(() => {
+    try {
+      if ((window as any).google?.accounts?.oauth2) {
+        initGoogleTokenClient()
+      } else {
+        const s = document.createElement('script')
+        s.src = 'https://accounts.google.com/gsi/client'
+        s.async = true
+        s.onload = initGoogleTokenClient
+        s.onerror = () => console.error('[drive] Failed to load Google Identity Services script')
+        document.body.appendChild(s)
+      }
+
+      if ((window as any).gapi?.picker) {
+        setPickerReady(true)
+      } else {
+        const s = document.createElement('script')
+        s.src = 'https://apis.google.com/js/api.js'
+        s.async = true
+        s.onload = () => {
+          try {
+            (window as any).gapi.load('picker', () => setPickerReady(true))
+          } catch (err) {
+            console.error('[drive] Failed to load Picker library:', err)
+          }
+        }
+        s.onerror = () => console.error('[drive] Failed to load Google API loader script')
+        document.body.appendChild(s)
+      }
+    } catch (err) {
+      console.error('[drive] Google script setup failed:', err)
     }
   }, [])
 
