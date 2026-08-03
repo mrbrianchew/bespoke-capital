@@ -192,6 +192,7 @@ export default function MedicalClaimsPage() {
   const tokenClientRef = useRef<any>(null)
   const [pickedFolder, setPickedFolder] = useState<{ id: string; name: string } | null>(null)
   const [connecting, setConnecting] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   // ── Route/feature guard — mirrors the nav's creator-bypass rule so direct
   // URL access without the flag doesn't work either. ──
@@ -510,18 +511,41 @@ export default function MedicalClaimsPage() {
     if (error) alert('Delete failed: ' + error.message)
   }
 
-  // ── Google auth + folder picking (advisor's own account, not a robot) ──
-  async function ensureAccessToken(): Promise<string> {
-    if (accessToken) return accessToken
+  // Google auth + folder picking (advisor's own account, not a robot).
+  // `interactive` forces a real consent popup instead of a silent request —
+  // used as a fallback when the silent attempt times out (common on a fresh
+  // browser session / after time has passed, since Google doesn't always
+  // invoke the callback at all if it has no cached session to work from —
+  // no error, no resolve, just silence. A hard timeout turns that silence
+  // into a clear message instead of an unkillable "Uploading…" state).
+  async function ensureAccessToken(interactive = false): Promise<string> {
+    if (accessToken && !interactive) return accessToken
     if (!tokenClientRef.current) throw new Error('Google Sign-In is still loading — try again in a moment.')
-    return new Promise((resolve, reject) => {
+    const requestOnce = (prompt: string): Promise<string> => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('__silent_timeout__')), 12000)
       tokenClientRef.current.callback = (resp: any) => {
+        clearTimeout(timer)
         if (resp.error) { reject(new Error(resp.error)); return }
         setAccessToken(resp.access_token)
         resolve(resp.access_token)
       }
-      tokenClientRef.current.requestAccessToken({ prompt: '' })
+      tokenClientRef.current.requestAccessToken({ prompt })
     })
+    if (!interactive) {
+      try {
+        return await requestOnce('')
+      } catch (err: any) {
+        if (err?.message !== '__silent_timeout__') throw err
+        // Silent auth didn't respond at all — fall through to an interactive
+        // popup so the advisor gets a real sign-in prompt instead of a hang.
+      }
+    }
+    try {
+      return await requestOnce('consent')
+    } catch (err: any) {
+      if (err?.message === '__silent_timeout__') throw new Error('Google sign-in did not respond — check that popups are allowed for this site, then try again.')
+      throw err
+    }
   }
 
   async function pickFolder(): Promise<{ id: string; name: string } | null> {
@@ -630,6 +654,14 @@ export default function MedicalClaimsPage() {
       setUploadError(err?.message || 'Upload failed')
     } finally {
       setUploading(false)
+    }
+  }
+
+  async function uploadFiles(files: FileList | File[]) {
+    for (const f of Array.from(files)) {
+      // Sequential on purpose — uploading/uploadError are single shared
+      // state, so parallel drops would stomp on each other's error/progress.
+      await uploadDocument(f)
     }
   }
 
@@ -902,53 +934,69 @@ export default function MedicalClaimsPage() {
                   Documents
                   <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: T.void1, background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{documents.length}</span>
                 </div>
-                <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Stored in the client's Drive folder</div>
+                <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>
+                  {approvedDocs.length > 0 || pendingDocs.length > 0 ? `${approvedDocs.length} approved · ${pendingDocs.length} pending` : "Stored in the client's Drive folder"}
+                </div>
               </div>
             </div>
 
-            <div style={{ ...cardBase, padding: 14, marginBottom: 12 }}>
-              {!pickedFolder ? (
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button onClick={connectDrive} disabled={connecting} style={{ ...addBtn, opacity: connecting ? 0.6 : 1 }}>
-                    {connecting ? 'Connecting…' : 'Connect Drive & Choose Folder'}
-                  </button>
-                  <span style={{ fontSize: 11.5, color: T.textFaint }}>One-time per client — every upload after this goes straight there.</span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {!pickedFolder ? (
+              <div style={{ ...cardBase, padding: 14, marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button onClick={connectDrive} disabled={connecting} style={{ ...addBtn, opacity: connecting ? 0.6 : 1 }}>
+                  {connecting ? 'Connecting…' : 'Connect Drive & Choose Folder'}
+                </button>
+                <span style={{ fontSize: 11.5, color: T.textFaint }}>One-time per client — every upload after this goes straight there.</span>
+                {uploadError && <div style={{ width: '100%', fontSize: 11.5, color: T.rose }}>{uploadError}</div>}
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
                   <select className="claims-select" value={uploadTarget} onChange={e => setUploadTarget(e.target.value)} style={{ width: 220 }}>
                     <option value="general">General (not tied to a line item)</option>
                     {lineItems.map(it => (
                       <option key={it.id} value={it.id}>{SECTION_LABEL[it.section]} — {it.description || it.invoice_no || 'untitled line'}</option>
                     ))}
                   </select>
-                  <label style={{ ...addBtn, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
-                    {uploading ? 'Uploading…' : '+ Upload File'}
-                    <input type="file" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocument(f); e.target.value = '' }} style={{ display: 'none' }} />
-                  </label>
                   <span style={{ fontSize: 11.5, color: T.textFaint }}>
                     Saving to <strong style={{ color: T.textDim }}>{pickedFolder.name}</strong>
                     {' · '}
                     <button onClick={changeFolder} style={{ background: 'none', border: 'none', color: T.gold, fontSize: 11.5, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Change</button>
+                    {' · '}
+                    <button onClick={() => ensureAccessToken(true).catch(err => setUploadError(err?.message || 'Reconnect failed'))}
+                      style={{ background: 'none', border: 'none', color: T.gold, fontSize: 11.5, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Reconnect</button>
                   </span>
                 </div>
-              )}
-              {uploadError && <div style={{ marginTop: 8, fontSize: 11.5, color: T.rose }}>{uploadError}</div>}
-            </div>
+                {uploadError && <div style={{ marginBottom: 10, padding: '0 2px', fontSize: 11.5, color: T.rose }}>{uploadError}</div>}
 
-            {documents.length === 0 ? (
-              <div style={{ ...cardBase, padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>No documents uploaded yet.</div>
-            ) : (
-              <>
-                <div style={{ fontSize: 11.5, color: T.textFaint, marginBottom: 8, padding: '0 2px' }}>
-                  {approvedDocs.length} approved · {pendingDocs.length} pending{generalDocs.length > 0 ? ` · ${generalDocs.length} general` : ''}
-                </div>
-                <div className="claims-scroll" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                <div
+                  className="claims-scroll"
+                  onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files) }}
+                  style={{
+                    display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, borderRadius: 16,
+                    outline: dragOver ? `2px dashed ${T.gold}` : 'none', outlineOffset: 4,
+                    background: dragOver ? T.goldSoft : 'transparent', transition: 'background .15s',
+                  }}>
                   {[...approvedDocs, ...pendingDocs, ...generalDocs].map(doc => {
                     const status: 'approved' | 'pending' | null =
                       approvedDocs.includes(doc) ? 'approved' : pendingDocs.includes(doc) ? 'pending' : null
                     return <DocCard key={doc.id} doc={doc} status={status} onDelete={() => deleteDocument(doc)} />
                   })}
+                  <label style={{
+                    width: 168, flexShrink: 0, borderRadius: 16, border: `1.5px dashed rgba(231,188,114,.35)`,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    color: T.gold, fontSize: 11.5, fontWeight: 700, cursor: uploading ? 'default' : 'pointer',
+                    opacity: uploading ? 0.6 : 1, minHeight: 108,
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M12 16V4M12 4l-4 4M12 4l4 4" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
+                    </svg>
+                    {uploading ? 'Uploading…' : 'Upload'}
+                    <input type="file" multiple disabled={uploading}
+                      onChange={e => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = '' }}
+                      style={{ display: 'none' }} />
+                  </label>
                 </div>
               </>
             )}
