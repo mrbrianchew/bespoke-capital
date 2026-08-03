@@ -183,7 +183,6 @@ export default function MedicalClaimsPage() {
   // account. A chosen folder is remembered per client so it's only picked
   // once, then reused silently on every later upload for that client. ──
   const [documents, setDocuments] = useState<ClaimDocument[]>([])
-  const [uploadTarget, setUploadTarget] = useState<string>('general') // 'general' or a line item id
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [googleReady, setGoogleReady] = useState(false)
@@ -620,7 +619,7 @@ export default function MedicalClaimsPage() {
     }
   }
 
-  async function uploadDocument(file: File) {
+  async function uploadDocument(file: File, lineItemId: string | null) {
     if (!activeClient || !selectedClaimId || !pickedFolder) return
     setUploading(true)
     setUploadError(null)
@@ -641,7 +640,6 @@ export default function MedicalClaimsPage() {
       if (!putRes.ok) throw new Error('Upload to Drive failed (status ' + putRes.status + ')')
       const driveFile = await putRes.json()
 
-      const lineItemId = uploadTarget === 'general' ? null : uploadTarget
       const { data, error } = await supabase.from('claim_documents').insert({
         claim_id: selectedClaimId, line_item_id: lineItemId,
         file_name: driveFile.name || file.name, mime_type: file.type || null,
@@ -657,11 +655,11 @@ export default function MedicalClaimsPage() {
     }
   }
 
-  async function uploadFiles(files: FileList | File[]) {
+  async function uploadFiles(files: FileList | File[], lineItemId: string | null) {
     for (const f of Array.from(files)) {
       // Sequential on purpose — uploading/uploadError are single shared
       // state, so parallel drops would stomp on each other's error/progress.
-      await uploadDocument(f)
+      await uploadDocument(f, lineItemId)
     }
   }
 
@@ -919,14 +917,21 @@ export default function MedicalClaimsPage() {
                   {items.map(it => (
                     <LineItemCard key={it.id} item={it} expanded={expandedItemId === it.id}
                       onToggle={() => setExpandedItemId(expandedItemId === it.id ? null : it.id)}
-                      onSave={patch => saveLineItem(it.id, patch)} onDelete={() => deleteLine(it.id)} />
+                      onSave={patch => saveLineItem(it.id, patch)} onDelete={() => deleteLine(it.id)}
+                      documents={documents.filter(d => d.line_item_id === it.id)}
+                      pickedFolder={pickedFolder} uploading={uploading}
+                      onUploadFiles={files => uploadFiles(files, it.id)}
+                      onDeleteDocument={deleteDocument} />
                   ))}
                 </div>
               </div>
             )
           })}
 
-          {/* Documents */}
+          {/* Documents — full collection. Uploads tied to a specific line item now
+              happen on that line item's own card; this drop zone is only for
+              claim-level documents (e.g. a full policy schedule) that aren't
+              about one particular line. */}
           <div style={{ marginTop: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
               <div>
@@ -935,7 +940,7 @@ export default function MedicalClaimsPage() {
                   <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: T.void1, background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{documents.length}</span>
                 </div>
                 <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>
-                  {approvedDocs.length > 0 || pendingDocs.length > 0 ? `${approvedDocs.length} approved · ${pendingDocs.length} pending` : "Stored in the client's Drive folder"}
+                  {approvedDocs.length > 0 || pendingDocs.length > 0 ? `${approvedDocs.length} approved · ${pendingDocs.length} pending` : "Everything uploaded — line-item docs upload from the line item itself"}
                 </div>
               </div>
             </div>
@@ -951,12 +956,6 @@ export default function MedicalClaimsPage() {
             ) : (
               <>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
-                  <select className="claims-select" value={uploadTarget} onChange={e => setUploadTarget(e.target.value)} style={{ width: 220 }}>
-                    <option value="general">General (not tied to a line item)</option>
-                    {lineItems.map(it => (
-                      <option key={it.id} value={it.id}>{SECTION_LABEL[it.section]} — {it.description || it.invoice_no || 'untitled line'}</option>
-                    ))}
-                  </select>
                   <span style={{ fontSize: 11.5, color: T.textFaint }}>
                     Saving to <strong style={{ color: T.textDim }}>{pickedFolder.name}</strong>
                     {' · '}
@@ -972,7 +971,7 @@ export default function MedicalClaimsPage() {
                   className="claims-scroll"
                   onDragOver={e => { e.preventDefault(); setDragOver(true) }}
                   onDragLeave={() => setDragOver(false)}
-                  onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files) }}
+                  onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files, null) }}
                   style={{
                     display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, borderRadius: 16,
                     outline: dragOver ? `2px dashed ${T.gold}` : 'none', outlineOffset: 4,
@@ -992,9 +991,9 @@ export default function MedicalClaimsPage() {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                       <path d="M12 16V4M12 4l-4 4M12 4l4 4" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
                     </svg>
-                    {uploading ? 'Uploading…' : 'Upload'}
+                    {uploading ? 'Uploading…' : 'General Doc'}
                     <input type="file" multiple disabled={uploading}
-                      onChange={e => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = '' }}
+                      onChange={e => { if (e.target.files?.length) uploadFiles(e.target.files, null); e.target.value = '' }}
                       style={{ display: 'none' }} />
                   </label>
                 </div>
@@ -1035,10 +1034,13 @@ function Ring({ pct }: { pct: number }) {
   )
 }
 
-function LineItemCard({ item, expanded, onToggle, onSave, onDelete }: {
+function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, pickedFolder, uploading, onUploadFiles, onDeleteDocument }: {
   item: LineItemRow; expanded: boolean; onToggle: () => void
   onSave: (patch: Partial<LineItemRow>) => void; onDelete: () => void
+  documents: ClaimDocument[]; pickedFolder: { id: string; name: string } | null; uploading: boolean
+  onUploadFiles: (files: FileList | File[]) => void; onDeleteDocument: (doc: ClaimDocument) => void
 }) {
+  const [dragOver, setDragOver] = useState(false)
   const [draft, setDraft] = useState(item)
   useEffect(() => setDraft(item), [item])
   function commit(patch: Partial<LineItemRow>) { setDraft(prev => ({ ...prev, ...patch })); onSave(patch) }
@@ -1052,7 +1054,10 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete }: {
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.goldText, background: T.goldSoft, padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
             <span style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description || '(no description)'}</span>
           </div>
-          <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>{item.invoice_no || '—'} · {fmtDate(item.date_from)}</div>
+          <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
+            {item.invoice_no || '—'} · {fmtDate(item.date_from)}
+            {documents.length > 0 && <> · {documents.length} doc{documents.length > 1 ? 's' : ''}</>}
+          </div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <div className="claims-serif" style={{ fontSize: 17, color: T.text }}>{money(item.amount_claimed)}</div>
@@ -1078,6 +1083,42 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete }: {
             <div><FieldLabel>Deductible Used (This Line, $)</FieldLabel><input className="claims-input claims-mono" type="number" value={draft.deductible_clocked || ''} onChange={e => setDraft({ ...draft, deductible_clocked: e.target.value === '' ? 0 : +e.target.value })} onBlur={() => commit({ deductible_clocked: draft.deductible_clocked })} /></div>
             <div><FieldLabel>Co-Insurance Applied (This Line, $)</FieldLabel><input className="claims-input claims-mono" type="number" value={draft.coinsurance_clocked || ''} onChange={e => setDraft({ ...draft, coinsurance_clocked: e.target.value === '' ? 0 : +e.target.value })} onBlur={() => commit({ coinsurance_clocked: draft.coinsurance_clocked })} /></div>
             <div style={{ gridColumn: '1/-1' }}><FieldLabel>Remarks</FieldLabel><input className="claims-input" value={draft.remarks || ''} onChange={e => setDraft({ ...draft, remarks: e.target.value })} onBlur={() => commit({ remarks: draft.remarks })} /></div>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <FieldLabel>Documents for this line</FieldLabel>
+            {!pickedFolder ? (
+              <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic' }}>Connect Drive in the Documents section below to attach files here.</div>
+            ) : (
+              <div
+                className="claims-scroll"
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) onUploadFiles(e.dataTransfer.files) }}
+                style={{
+                  display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, borderRadius: 14,
+                  outline: dragOver ? `2px dashed ${T.gold}` : 'none', outlineOffset: 3,
+                  background: dragOver ? T.goldSoft : 'transparent', transition: 'background .15s',
+                }}>
+                {documents.map(doc => (
+                  <DocCard key={doc.id} doc={doc} status={item.approved ? 'approved' : 'pending'} onDelete={() => onDeleteDocument(doc)} />
+                ))}
+                <label style={{
+                  width: 140, flexShrink: 0, borderRadius: 14, border: `1.5px dashed rgba(231,188,114,.35)`,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  color: T.gold, fontSize: 11, fontWeight: 700, cursor: uploading ? 'default' : 'pointer',
+                  opacity: uploading ? 0.6 : 1, minHeight: 88,
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M12 16V4M12 4l-4 4M12 4l4 4" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
+                  </svg>
+                  {uploading ? 'Uploading…' : 'Add Document'}
+                  <input type="file" multiple disabled={uploading}
+                    onChange={e => { if (e.target.files?.length) onUploadFiles(e.target.files); e.target.value = '' }}
+                    style={{ display: 'none' }} />
+                </label>
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: T.textDim }}>
