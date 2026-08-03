@@ -86,9 +86,63 @@ interface ClaimDocument {
   uploaded_at: string
 }
 
+interface MessageTemplate {
+  id: string
+  context_type: string
+  context_key: string
+  advisor_id: string | null
+  body: string
+}
+
+// Generalized on purpose — context_type is 'claim_status' today, but the
+// same table/lookup/composer pattern is meant to be reused by other parts
+// of the app later (renewal reminders, review nudges, etc.) rather than
+// each building its own template system.
+const CLAIM_MSG_TRIGGERS: { key: string; label: string }[] = [
+  { key: 'submitted', label: 'Claim Submitted' },
+  { key: 'approved', label: 'Claim Approved' },
+  { key: 'partial', label: 'Partially Approved' },
+  { key: 'docs', label: 'Additional Documents Needed' },
+  { key: 'paid', label: 'Payment Received' },
+]
+const MSG_VARIABLES: { key: string; label: string }[] = [
+  { key: 'client_name', label: 'Client' },
+  { key: 'policy_number', label: 'Policy No.' },
+  { key: 'insurer', label: 'Insurer' },
+  { key: 'amount_claimed', label: 'Claimed' },
+  { key: 'amount_approved', label: 'Approved' },
+  { key: 'approval_pct', label: 'Approval %' },
+  { key: 'status_badge', label: 'Status' },
+  { key: 'advisor_name', label: 'Advisor' },
+  { key: 'procedure_description', label: 'Procedure' },
+]
+const FALLBACK_MSG_TEMPLATES: Record<string, string> = {
+  submitted: `Hi {{client_name}}, your claim has been submitted to {{insurer}} (Policy {{policy_number}}). Total amount claimed: {{amount_claimed}}. We'll update you as soon as there's movement.\n\n— {{advisor_name}}`,
+  approved: `Good news, {{client_name}}! Your claim has been approved.\n\nApproved amount: {{amount_approved}} of {{amount_claimed}} claimed ({{approval_pct}}).\n\n— {{advisor_name}}`,
+  partial: `Hi {{client_name}}, {{insurer}} has partially approved your claim. Approved: {{amount_approved}} of {{amount_claimed}} claimed. Happy to walk you through the breakdown if useful.\n\n— {{advisor_name}}`,
+  docs: `Hi {{client_name}}, {{insurer}} has requested additional documents for your claim ({{procedure_description}}). Could you send these over when you have a chance?\n\n— {{advisor_name}}`,
+  paid: `Hi {{client_name}}, your claim payout of {{amount_approved}} has been credited. Claim closed on our end.\n\n— {{advisor_name}}`,
+}
+function substituteMsgVars(body: string, vars: Record<string, string>): string {
+  return body.replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : m))
+}
+
 const SECTION_LABEL: Record<string, string> = { pre: 'Pre-Hospitalisation', in: 'Inpatient / Surgery', post: 'Post-Hospitalisation' }
 const SECTION_SUB: Record<string, string> = { pre: 'Outpatient claims before admission', in: 'Hospitalisation & surgery claims', post: 'Follow-up outpatient claims' }
-const TYPE_OPTIONS = ['CDL', 'Non-CDL', 'Services', 'Outpatient', 'Surgery', 'Inpatient']
+const SECTION_TYPE_OPTIONS: Record<string, string[]> = {
+  pre: ['CDL', 'Non-CDL', 'Services', 'Outpatient'],
+  in: ['Inpatient', 'Surgery'],
+  post: ['CDL', 'Non-CDL', 'Services', 'Outpatient'],
+}
+// Pre and Post share the same claim types (both outpatient-style CDL/Non-CDL/
+// Services/Outpatient claims) so they're told apart by a subtly different
+// accent rather than color-coding the type itself. Inpatient/Surgery keeps
+// the original gold since it's the section everything else is styled around.
+const SECTION_ACCENT: Record<string, { text: string; soft: string }> = {
+  pre: { text: '#E7BC72', soft: 'rgba(231,188,114,.14)' },   // gold (unchanged)
+  in: { text: '#E7BC72', soft: 'rgba(231,188,114,.14)' },    // gold (unchanged)
+  post: { text: '#D9A06B', soft: 'rgba(217,160,107,.14)' },  // muted copper — same warm family as gold, distinct at a glance
+}
 
 function money(n: number | null | undefined) {
   return '$' + (n || 0).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -192,6 +246,15 @@ export default function MedicalClaimsPage() {
   const [pickedFolder, setPickedFolder] = useState<{ id: string; name: string } | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+
+  // ── Message templates (status update composer) ──
+  const [templates, setTemplates] = useState<MessageTemplate[]>([])
+  const [composerOpen, setComposerOpen] = useState(false)
+  const [msgTrigger, setMsgTrigger] = useState(CLAIM_MSG_TRIGGERS[1].key) // default 'approved'
+  const [msgBody, setMsgBody] = useState('')
+  const [msgEdited, setMsgEdited] = useState(false)
+  const [msgCopied, setMsgCopied] = useState<string | null>(null)
+  const msgTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Route/feature guard — mirrors the nav's creator-bypass rule so direct
   // URL access without the flag doesn't work either. ──
@@ -683,6 +746,79 @@ export default function MedicalClaimsPage() {
   const totalApproved = lineItems.reduce((s, i) => s + (i.approved ? (i.amount_approved || 0) : 0), 0)
   const pct = totalClaimed > 0 ? Math.round((totalApproved / totalClaimed) * 100) : 0
 
+  // ── Message templates (status update composer) ──
+  useEffect(() => {
+    if (!advisor) return
+    supabase.from('message_templates').select('*').eq('context_type', 'claim_status')
+      .then(({ data }) => setTemplates((data || []) as MessageTemplate[]))
+  }, [advisor?.id])
+
+  function templateBodyFor(key: string): string {
+    const personal = templates.find(t => t.context_key === key && t.advisor_id === advisor?.id)
+    if (personal) return personal.body
+    const def = templates.find(t => t.context_key === key && t.advisor_id === null)
+    if (def) return def.body
+    return FALLBACK_MSG_TEMPLATES[key] || ''
+  }
+  function loadTemplate(key: string) {
+    setMsgTrigger(key)
+    setMsgBody(templateBodyFor(key))
+    setMsgEdited(false)
+  }
+  // Load the default the first time the composer opens, and whenever the
+  // trigger changes — but never stomp on an in-progress edit on re-render.
+  useEffect(() => {
+    if (composerOpen) loadTemplate(msgTrigger)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerOpen, templates])
+
+  const derivedStatusBadge = lineItems.length === 0 ? 'No line items yet'
+    : lineItems.every(i => i.approved) ? 'Fully Approved'
+      : lineItems.some(i => i.approved) ? 'Partially Approved'
+        : 'Pending Insurer Review'
+  const msgVars: Record<string, string> = {
+    client_name: allPeople.find(p => p.key === selectedClaim?.life_assured_person)?.label || clientName,
+    policy_number: mainPolicy?.policyNo || '—',
+    insurer: mainPolicy?.companyName || '—',
+    amount_claimed: money(totalClaimed),
+    amount_approved: money(totalApproved),
+    approval_pct: pct + '%',
+    status_badge: derivedStatusBadge,
+    advisor_name: advisor?.name || '',
+    procedure_description: lineItems.map(i => i.description).filter(Boolean).join(', ') || selectedClaim?.label || 'this claim',
+  }
+  const msgPreview = substituteMsgVars(msgBody, msgVars)
+
+  function insertMsgVariable(key: string) {
+    const token = `{{${key}}}`
+    const el = msgTextareaRef.current
+    if (!el) { setMsgBody(prev => prev + token); setMsgEdited(true); return }
+    const start = el.selectionStart ?? msgBody.length
+    const end = el.selectionEnd ?? msgBody.length
+    const next = msgBody.slice(0, start) + token + msgBody.slice(end)
+    setMsgBody(next)
+    setMsgEdited(true)
+    requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = start + token.length })
+  }
+  async function upsertTemplate(advisorIdForRow: string | null) {
+    const existing = templates.find(t => t.context_key === msgTrigger && t.advisor_id === advisorIdForRow)
+    if (existing) {
+      setTemplates(prev => prev.map(t => t.id === existing.id ? { ...t, body: msgBody } : t))
+      await supabase.from('message_templates').update({ body: msgBody, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      const { data } = await supabase.from('message_templates')
+        .insert({ context_type: 'claim_status', context_key: msgTrigger, advisor_id: advisorIdForRow, body: msgBody })
+        .select().maybeSingle()
+      if (data) setTemplates(prev => [...prev, data as MessageTemplate])
+    }
+    setMsgEdited(false)
+  }
+  function copyMsg(forWhatsApp: boolean) {
+    if (navigator.clipboard) navigator.clipboard.writeText(msgPreview)
+    setMsgCopied(forWhatsApp ? 'whatsapp' : 'plain')
+    setTimeout(() => setMsgCopied(null), 1800)
+  }
+
   // ── Follow-ups ──
   const pendingItems = [...lineItems].filter(i => !i.approved).sort((a, b) => {
     const da = daysSince(a.submitted_date || a.date_from) ?? -1
@@ -859,7 +995,53 @@ export default function MedicalClaimsPage() {
             </div>
           )}
 
-          {/* Pending Follow-Ups */}
+          {/* Draft Status Update — message templates */}
+          <button onClick={() => setComposerOpen(o => !o)} style={detailsToggle}>
+            <span>Draft a status update message</span>
+            <span style={{ transform: composerOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s', display: 'inline-block' }}>▾</span>
+          </button>
+          {composerOpen && (
+            <div style={{ ...cardBase, marginTop: 10 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                <select className="claims-select" value={msgTrigger} onChange={e => loadTemplate(e.target.value)} style={{ width: 240 }}>
+                  {CLAIM_MSG_TRIGGERS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+                <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: msgEdited ? T.gold : T.textFaint }}>
+                  ● {msgEdited ? 'Edited — no longer matches default' : 'Using default template'}
+                </span>
+              </div>
+
+              <FieldLabel>Template (edit freely — variables below insert at cursor)</FieldLabel>
+              <textarea ref={msgTextareaRef} className="claims-input" value={msgBody}
+                onChange={e => { setMsgBody(e.target.value); setMsgEdited(true) }}
+                style={{ minHeight: 120, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
+
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {MSG_VARIABLES.map(v => (
+                  <button key={v.key} onClick={() => insertMsgVariable(v.key)}
+                    style={{ fontSize: 10.5, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(231,188,114,.3)`, padding: '4px 10px', borderRadius: 999, cursor: 'pointer' }}>
+                    + {v.label}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <FieldLabel>Preview (this is what gets copied)</FieldLabel>
+                <div style={{ ...readonlyVal, whiteSpace: 'pre-wrap', minHeight: 80, lineHeight: 1.5 }}>{msgPreview}</div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                <button onClick={() => loadTemplate(msgTrigger)} style={addBtn}>Reset</button>
+                <button onClick={() => upsertTemplate(advisor?.id || null)} style={addBtn}>Save as My Default</button>
+                {advisor?.id === CREATOR_ID && (
+                  <button onClick={() => upsertTemplate(null)} style={{ ...addBtn, color: T.rose, background: T.roseSoft, borderColor: 'rgba(255,107,87,.3)' }}>Save as Admin Default</button>
+                )}
+                <button onClick={() => copyMsg(false)} style={{ ...addBtn, marginLeft: 'auto' }}>{msgCopied === 'plain' ? 'Copied!' : 'Copy'}</button>
+                <button onClick={() => copyMsg(true)} style={{ ...addBtn, color: T.void1, background: T.gold }}>{msgCopied === 'whatsapp' ? 'Copied!' : 'Copy for WhatsApp'}</button>
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
               <div>
@@ -903,12 +1085,16 @@ export default function MedicalClaimsPage() {
           {/* Sections — always rendered together */}
           {(['pre', 'in', 'post'] as const).map(sec => {
             const items = lineItems.filter(i => i.section === sec)
+            const accent = SECTION_ACCENT[sec]
             return (
               <div key={sec} style={{ marginTop: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
-                  <div>
-                    <div className="claims-serif" style={{ fontSize: 19, color: T.text }}>{SECTION_LABEL[sec]} <span style={{ fontSize: 11, color: T.textFaint, fontFamily: 'inherit' }}>{items.length}</span></div>
-                    <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>{SECTION_SUB[sec]}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <div style={{ width: 3, height: 16, borderRadius: 2, background: accent.text, flexShrink: 0 }} />
+                    <div>
+                      <div className="claims-serif" style={{ fontSize: 19, color: T.text }}>{SECTION_LABEL[sec]} <span style={{ fontSize: 11, color: T.textFaint, fontFamily: 'inherit' }}>{items.length}</span></div>
+                      <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>{SECTION_SUB[sec]}</div>
+                    </div>
                   </div>
                   <button onClick={() => addLine(sec)} style={addBtn}>+ Add</button>
                 </div>
@@ -921,7 +1107,8 @@ export default function MedicalClaimsPage() {
                       documents={documents.filter(d => d.line_item_id === it.id)}
                       pickedFolder={pickedFolder} uploading={uploading}
                       onUploadFiles={files => uploadFiles(files, it.id)}
-                      onDeleteDocument={deleteDocument} />
+                      onDeleteDocument={deleteDocument}
+                      typeOptions={SECTION_TYPE_OPTIONS[sec]} accent={accent} />
                   ))}
                 </div>
               </div>
@@ -1000,10 +1187,6 @@ export default function MedicalClaimsPage() {
               </>
             )}
           </div>
-
-          <div style={{ marginTop: 24, padding: '14px 16px', borderRadius: 12, background: T.goldSoft, border: `1px solid ${T.line}`, fontSize: 11.5, color: T.textDim }}>
-            Status update message templates land in the next build.
-          </div>
         </>
       )}
     </div>
@@ -1034,11 +1217,12 @@ function Ring({ pct }: { pct: number }) {
   )
 }
 
-function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, pickedFolder, uploading, onUploadFiles, onDeleteDocument }: {
+function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, pickedFolder, uploading, onUploadFiles, onDeleteDocument, typeOptions, accent }: {
   item: LineItemRow; expanded: boolean; onToggle: () => void
   onSave: (patch: Partial<LineItemRow>) => void; onDelete: () => void
   documents: ClaimDocument[]; pickedFolder: { id: string; name: string } | null; uploading: boolean
   onUploadFiles: (files: FileList | File[]) => void; onDeleteDocument: (doc: ClaimDocument) => void
+  typeOptions: string[]; accent: { text: string; soft: string }
 }) {
   const [dragOver, setDragOver] = useState(false)
   const [draft, setDraft] = useState(item)
@@ -1051,7 +1235,7 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.approved ? T.emerald : T.rose, boxShadow: `0 0 0 3px ${item.approved ? T.emeraldSoft : T.roseSoft}`, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.goldText, background: T.goldSoft, padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: accent.text, background: accent.soft, padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
             <span style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description || '(no description)'}</span>
           </div>
           <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
@@ -1069,7 +1253,7 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
             <div><FieldLabel>Type</FieldLabel>
               <select className="claims-select" value={draft.type || ''} onChange={e => commit({ type: e.target.value })}>
-                {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div><FieldLabel>Invoice / Claim No.</FieldLabel><input className="claims-input" value={draft.invoice_no || ''} onChange={e => setDraft({ ...draft, invoice_no: e.target.value })} onBlur={() => commit({ invoice_no: draft.invoice_no })} /></div>
