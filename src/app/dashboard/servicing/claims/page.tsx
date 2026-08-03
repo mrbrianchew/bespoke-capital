@@ -29,6 +29,7 @@ interface PolicyLite {
   lifeAssured: string
   policyNo: string
   person: string
+  inceptionDate?: string
 }
 
 interface ClaimRow {
@@ -109,6 +110,37 @@ function fmtFileSize(bytes: number | null | undefined): string {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
+interface PolicyYearTerm {
+  id: string
+  client_id: string
+  policy_id: string
+  year_start: string
+  year_end: string
+  deductible_amount: number
+  coinsurance_cap_annual: number
+}
+
+// Medical plan years reset on the policy's inception anniversary (month/day),
+// independent of premium payment frequency. Returns the [start,end] window
+// (both ISO date strings) containing `forDateIso`.
+function getPolicyYearWindow(inceptionDateIso: string, forDateIso: string): { start: string; end: string } {
+  const inc = new Date(inceptionDateIso)
+  const forDate = new Date(forDateIso)
+  let year = forDate.getFullYear()
+  let start = new Date(year, inc.getMonth(), inc.getDate())
+  if (start.getTime() > forDate.getTime()) {
+    year -= 1
+    start = new Date(year, inc.getMonth(), inc.getDate())
+  }
+  const end = new Date(start)
+  end.setFullYear(end.getFullYear() + 1)
+  end.setDate(end.getDate() - 1)
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  return { start: iso(start), end: iso(end) }
+}
+function fmtYearRange(start: string, end: string) {
+  return `${fmtDate(start)} – ${fmtDate(end)}`
+}
 function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<LineItemRow, 'id'> {
   return {
     claim_id: claimId, section, type: section === 'in' ? 'Surgery' : 'Outpatient',
@@ -142,6 +174,9 @@ export default function MedicalClaimsPage() {
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
+  const [policyYearTerms, setPolicyYearTerms] = useState<PolicyYearTerm[]>([])
+  const [selectedYearStart, setSelectedYearStart] = useState<string | null>(null)
+  const [policyYearLineItems, setPolicyYearLineItems] = useState<{ deductible_clocked: number; coinsurance_clocked: number; claim_id: string }[]>([])
 
   // ── Documents (Drive) — Option B: the advisor's own Google login, via
   // Google Identity Services + Picker. No pre-shared folder, no robot
@@ -316,6 +351,63 @@ export default function MedicalClaimsPage() {
 
   const policiesForPerson = (personKey: string) => policies.filter(p => p.person === personKey)
   const mainPolicy = policies.find(p => p.id === selectedClaim?.policy_id) || null
+
+  // ── Policy year terms: load existing rows for this policy, auto-create the
+  // current year's row (copied from the most recent prior year) if missing ──
+  useEffect(() => {
+    if (!mainPolicy?.id || !mainPolicy?.inceptionDate || !activeClient) { setPolicyYearTerms([]); setSelectedYearStart(null); return }
+    let cancelled = false
+    ;(async () => {
+      const { data: terms } = await supabase.from('policy_year_terms').select('*').eq('policy_id', mainPolicy!.id).order('year_start', { ascending: false })
+      if (cancelled) return
+      const existing = (terms || []) as PolicyYearTerm[]
+      const window = getPolicyYearWindow(mainPolicy!.inceptionDate!, new Date().toISOString().slice(0, 10))
+      const currentExists = existing.some(t => t.year_start === window.start)
+      if (currentExists) {
+        setPolicyYearTerms(existing)
+        setSelectedYearStart(prev => prev && existing.some(t => t.year_start === prev) ? prev : window.start)
+      } else {
+        const prior = existing[0] // already sorted desc, so [0] is most recent
+        const { data: created } = await supabase.from('policy_year_terms').insert({
+          client_id: activeClient.id, policy_id: mainPolicy!.id,
+          year_start: window.start, year_end: window.end,
+          deductible_amount: prior?.deductible_amount || 0,
+          coinsurance_cap_annual: prior?.coinsurance_cap_annual || 0,
+        }).select().maybeSingle()
+        if (cancelled) return
+        const next = created ? [created as PolicyYearTerm, ...existing] : existing
+        setPolicyYearTerms(next)
+        setSelectedYearStart(window.start)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [mainPolicy?.id, mainPolicy?.inceptionDate, activeClient])
+
+  // ── Line items across every claim on this policy (not just the one open
+  // right now), so the policy-year rollup is accurate across multiple claims ──
+  useEffect(() => {
+    if (!mainPolicy?.id) { setPolicyYearLineItems([]); return }
+    const claimIds = claims.filter(c => c.policy_id === mainPolicy!.id).map(c => c.id)
+    if (claimIds.length === 0) { setPolicyYearLineItems([]); return }
+    let cancelled = false
+    supabase.from('claim_line_items').select('deductible_clocked,coinsurance_clocked,claim_id').in('claim_id', claimIds)
+      .then(({ data }) => { if (!cancelled) setPolicyYearLineItems(data || []) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mainPolicy?.id, claims, lineItems])
+
+  const selectedTerm = policyYearTerms.find(t => t.year_start === selectedYearStart) || null
+  const yearClaimIds = new Set(
+    selectedTerm ? claims.filter(c => c.policy_id === mainPolicy?.id && c.opened_date >= selectedTerm.year_start && c.opened_date <= selectedTerm.year_end).map(c => c.id) : []
+  )
+  const deductibleClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.deductible_clocked || 0), 0)
+  const coinsuranceClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
+
+  async function updateYearTerm(patch: Partial<PolicyYearTerm>) {
+    if (!selectedTerm) return
+    setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm.id ? { ...t, ...patch } : t))
+    await supabase.from('policy_year_terms').update(patch).eq('id', selectedTerm.id)
+  }
 
   // ── Claim mutations ──
   async function createClaim() {
@@ -560,8 +652,6 @@ export default function MedicalClaimsPage() {
   const totalClaimed = lineItems.reduce((s, i) => s + (i.amount_claimed || 0), 0)
   const totalApproved = lineItems.reduce((s, i) => s + (i.approved ? (i.amount_approved || 0) : 0), 0)
   const pct = totalClaimed > 0 ? Math.round((totalApproved / totalClaimed) * 100) : 0
-  const deductibleClockedTotal = lineItems.reduce((s, i) => s + (i.deductible_clocked || 0), 0)
-  const coinsuranceClockedTotal = lineItems.reduce((s, i) => s + (i.coinsurance_clocked || 0), 0)
 
   // ── Follow-ups ──
   const pendingItems = [...lineItems].filter(i => !i.approved).sort((a, b) => {
@@ -677,22 +767,39 @@ export default function MedicalClaimsPage() {
                 <FieldLabel>Policy No.</FieldLabel>
                 <div className="claims-mono" style={readonlyVal}>{mainPolicy?.policyNo || '—'}</div>
               </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <FieldLabel>Policy Year</FieldLabel>
+                {!mainPolicy?.inceptionDate ? (
+                  <div style={{ fontSize: 11.5, color: T.rose }}>This policy has no Inception Date set — add one on the Protection page to enable policy-year tracking.</div>
+                ) : policyYearTerms.length === 0 ? (
+                  <div style={{ fontSize: 11.5, color: T.textFaint }}>Loading…</div>
+                ) : (
+                  <div className="claims-scroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+                    {policyYearTerms.map(t => (
+                      <button key={t.id} onClick={() => setSelectedYearStart(t.year_start)}
+                        style={{ ...pillBase, fontSize: 11.5, padding: '6px 12px', ...(t.year_start === selectedYearStart ? pillActive : pillInactive) }}>
+                        {fmtYearRange(t.year_start, t.year_end)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div>
-                <FieldLabel>Deductible (This Claim, $)</FieldLabel>
-                <input className="claims-input claims-mono" type="number" value={selectedClaim.deductible_amount || ''}
-                  onChange={e => setClaims(prev => prev.map(c => c.id === selectedClaim.id ? { ...c, deductible_amount: e.target.value === '' ? 0 : +e.target.value } : c))}
-                  onBlur={e => updateClaim({ deductible_amount: e.target.value === '' ? 0 : +e.target.value })} />
+                <FieldLabel>Deductible (This Policy Year, $)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" value={selectedTerm?.deductible_amount || ''} disabled={!selectedTerm}
+                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, deductible_amount: e.target.value === '' ? 0 : +e.target.value } : t))}
+                  onBlur={e => updateYearTerm({ deductible_amount: e.target.value === '' ? 0 : +e.target.value })} />
                 <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
-                  Used to date <b style={{ color: T.text }}>{money(deductibleClockedTotal)}</b> of {money(selectedClaim.deductible_amount)}
+                  Used to date (all claims this policy year) <b style={{ color: T.text }}>{money(deductibleClockedTotal)}</b> of {money(selectedTerm?.deductible_amount)}
                 </div>
               </div>
               <div>
-                <FieldLabel>Co-Insurance Cap (Panel, $)</FieldLabel>
-                <input className="claims-input claims-mono" type="number" value={selectedClaim.coinsurance_cap_annual || ''}
-                  onChange={e => setClaims(prev => prev.map(c => c.id === selectedClaim.id ? { ...c, coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value } : c))}
-                  onBlur={e => updateClaim({ coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value })} />
+                <FieldLabel>Co-Insurance Cap (Panel, This Policy Year, $)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" value={selectedTerm?.coinsurance_cap_annual || ''} disabled={!selectedTerm}
+                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value } : t))}
+                  onBlur={e => updateYearTerm({ coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value })} />
                 <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
-                  Used to date <b style={{ color: T.text }}>{money(coinsuranceClockedTotal)}</b> of {money(selectedClaim.coinsurance_cap_annual)}
+                  Used to date (all claims this policy year) <b style={{ color: T.text }}>{money(coinsuranceClockedTotal)}</b> of {money(selectedTerm?.coinsurance_cap_annual)}
                 </div>
               </div>
               <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
@@ -848,7 +955,7 @@ export default function MedicalClaimsPage() {
           </div>
 
           <div style={{ marginTop: 24, padding: '14px 16px', borderRadius: 12, background: T.goldSoft, border: `1px solid ${T.line}`, fontSize: 11.5, color: T.textDim }}>
-            Deductible/co-insurance totals shown here are scoped to this claim only, not the full policy year across multiple claims — status update message templates land in the next build.
+            Status update message templates land in the next build.
           </div>
         </>
       )}

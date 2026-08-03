@@ -133,10 +133,41 @@ export async function POST(req: Request, { params }: { params: { token: string }
       }
     }
 
+    // Lifetime claims history — portfolio shares only, scoped to whichever
+    // policies are already visible above (so hidden/other-person policies
+    // never leak claims data through this side channel).
+    let claimsHistory: any[] = []
+    if (shareType === 'portfolio') {
+      const visiblePolicyIds = new Set(policies.map((p: any) => p.id))
+      const { data: claimRows } = await supabaseAdmin
+        .from('claims').select('id,policy_id,life_assured_person,label,opened_date')
+        .eq('client_id', share.client_id)
+      const visibleClaims = (claimRows || []).filter((c: any) => visiblePolicyIds.has(c.policy_id))
+      if (visibleClaims.length > 0) {
+        const { data: lineRows } = await supabaseAdmin
+          .from('claim_line_items').select('claim_id,amount_claimed,approved,amount_approved')
+          .in('claim_id', visibleClaims.map((c: any) => c.id))
+        claimsHistory = visibleClaims.map((c: any) => {
+          const lines = (lineRows || []).filter((l: any) => l.claim_id === c.id)
+          return {
+            id: c.id,
+            label: c.label,
+            opened_date: c.opened_date,
+            life_assured_person: c.life_assured_person,
+            policy_id: c.policy_id,
+            total_claimed: lines.reduce((s: number, l: any) => s + (l.amount_claimed || 0), 0),
+            total_approved: lines.reduce((s: number, l: any) => s + (l.approved ? (l.amount_approved || 0) : 0), 0),
+            line_item_count: lines.length,
+          }
+        }).sort((a: any, b: any) => (a.opened_date < b.opened_date ? 1 : -1))
+      }
+    }
+
     return NextResponse.json({
       client,
       person: share.person,
       policies,
+      claimsHistory,
       shareType,
       includedPersons,
       personLabels,

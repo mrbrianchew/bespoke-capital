@@ -491,6 +491,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [includedPersons, setIncludedPersons] = useState<string[]>([])
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({})
   const [personLabels, setPersonLabels] = useState<Record<string, string>>({})
+  const [claimsHistory, setClaimsHistory] = useState<any[]>([])
   const [advisorName, setAdvisorName] = useState('')
   const [firmName, setFirmName] = useState('Bespoke Heartwork')
   const year = new Date().getFullYear()
@@ -529,7 +530,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       return
     }
 
-    const { client, person, policies: all, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels, advisorName: aName, firmName: fName } = responseData
+    const { client, person, policies: all, claimsHistory: claimsData, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels, advisorName: aName, firmName: fName } = responseData
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
@@ -542,6 +543,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
     setIncludedPersons(iPersons || [])
     setStatusOverrides(sOverrides || {})
     setPersonLabels(pLabels || {})
+    setClaimsHistory(claimsData || [])
 
     // For payment_summary the API already filtered by included_persons; just filter active
     if (st === 'payment_summary') {
@@ -987,6 +989,44 @@ export default function SharePage({ params }: { params: { token: string } }) {
             </div>
           )
         })}
+
+      {/* CLAIMS HISTORY — lifetime record, not filtered by policy year */}
+      {shareType === 'portfolio' && claimsHistory.length > 0 && (
+        <div className="print-break-before">
+          <div className="pf-hero" style={hero('')}>
+            <div>
+              <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>{firmName} · Wealth Protection</div>
+              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>Claims History · {clientName}</div>
+            </div>
+            <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{advisorName ? `Prepared by ${advisorName}` : ''}</div>
+          </div>
+          <div className="pf-body" style={pageBody}>
+            <div style={{fontSize:11,color:'#888',marginBottom:16,fontStyle:'italic'}}>Every claim on file, across all years — not limited to the current policy year.</div>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:'0.5px solid #E0DDD6'}}>
+                  <th style={{textAlign:'left',padding:'8px 6px',color:'#888',fontWeight:600,fontSize:10,letterSpacing:'0.05em',textTransform:'uppercase'}}>Opened</th>
+                  <th style={{textAlign:'left',padding:'8px 6px',color:'#888',fontWeight:600,fontSize:10,letterSpacing:'0.05em',textTransform:'uppercase'}}>Claim</th>
+                  <th style={{textAlign:'left',padding:'8px 6px',color:'#888',fontWeight:600,fontSize:10,letterSpacing:'0.05em',textTransform:'uppercase'}}>Life Assured</th>
+                  <th style={{textAlign:'right',padding:'8px 6px',color:'#888',fontWeight:600,fontSize:10,letterSpacing:'0.05em',textTransform:'uppercase'}}>Claimed</th>
+                  <th style={{textAlign:'right',padding:'8px 6px',color:'#888',fontWeight:600,fontSize:10,letterSpacing:'0.05em',textTransform:'uppercase'}}>Approved</th>
+                </tr>
+              </thead>
+              <tbody>
+                {claimsHistory.map((c: any) => (
+                  <tr key={c.id} style={{borderBottom:'0.5px solid #F0EEE9'}}>
+                    <td style={{padding:'10px 6px',fontFamily:'DM Mono,monospace',color:'#555'}}>{formatDate(c.opened_date)}</td>
+                    <td style={{padding:'10px 6px',color:'#1A1A1A'}}>{c.label || 'Claim'}</td>
+                    <td style={{padding:'10px 6px',color:'#555'}}>{personLabels[c.life_assured_person] || c.life_assured_person}</td>
+                    <td style={{padding:'10px 6px',textAlign:'right',fontFamily:'DM Mono,monospace',color:'#1A1A1A'}}>{fmt(c.total_claimed)}</td>
+                    <td style={{padding:'10px 6px',textAlign:'right',fontFamily:'DM Mono,monospace',color:'#A8834A'}}>{fmt(c.total_approved)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="pf-footer" style={{background:'#1C1A17',padding:'20px 40px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
