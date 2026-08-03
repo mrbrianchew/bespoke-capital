@@ -29,7 +29,7 @@ const NAV_PLANNING = [
 ]
 
 const NAV_SERVICING = [
-  { href: '/dashboard/servicing/claims', label: 'Claims', icon: '⚑', id: 'claims' },
+  { href: '/dashboard/servicing/claims', label: 'Medical Claims', icon: '⚑', id: 'claims' },
 ]
 
 type NavGroupId = 'planning' | 'servicing'

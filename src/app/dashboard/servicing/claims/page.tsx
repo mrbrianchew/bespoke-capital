@@ -59,6 +59,8 @@ interface LineItemRow {
   approved: boolean
   date_approved: string | null
   amount_approved: number
+  deductible_clocked: number
+  coinsurance_clocked: number
   remarks: string | null
   followup_status: string | null
 }
@@ -112,7 +114,7 @@ function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<Line
     claim_id: claimId, section, type: section === 'in' ? 'Surgery' : 'Outpatient',
     date_from: null, date_to: null, description: '', invoice_no: '',
     amount_claimed: 0, submitted_date: null, approved: false, date_approved: null,
-    amount_approved: 0, remarks: '',
+    amount_approved: 0, deductible_clocked: 0, coinsurance_clocked: 0, remarks: '',
   } as any
 }
 
@@ -558,6 +560,8 @@ export default function MedicalClaimsPage() {
   const totalClaimed = lineItems.reduce((s, i) => s + (i.amount_claimed || 0), 0)
   const totalApproved = lineItems.reduce((s, i) => s + (i.approved ? (i.amount_approved || 0) : 0), 0)
   const pct = totalClaimed > 0 ? Math.round((totalApproved / totalClaimed) * 100) : 0
+  const deductibleClockedTotal = lineItems.reduce((s, i) => s + (i.deductible_clocked || 0), 0)
+  const coinsuranceClockedTotal = lineItems.reduce((s, i) => s + (i.coinsurance_clocked || 0), 0)
 
   // ── Follow-ups ──
   const pendingItems = [...lineItems].filter(i => !i.approved).sort((a, b) => {
@@ -626,17 +630,10 @@ export default function MedicalClaimsPage() {
         <>
           {/* Hero */}
           <div style={heroCard}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Claim · Opened {fmtDate(selectedClaim.opened_date)}</div>
-                <div className="claims-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Medical Insurance Claims for {allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || clientName}</div>
-                <div style={{ fontSize: 11.5, color: T.textDim, marginTop: 5 }}>Household <b style={{ color: T.text }}>{clientName}</b> family</div>
-              </div>
-              <select className="claims-select" value={selectedClaim.status} onChange={e => updateClaim({ status: e.target.value as any })} style={{ width: 130, height: 34, alignSelf: 'flex-start' }}>
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-                <option value="withdrawn">Withdrawn</option>
-              </select>
+            <div>
+              <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Claim · Opened {fmtDate(selectedClaim.opened_date)}</div>
+              <div className="claims-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Medical Insurance Claims for {allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || clientName}</div>
+              <div style={{ fontSize: 11.5, color: T.textDim, marginTop: 5 }}>Household <b style={{ color: T.text }}>{clientName}</b> family</div>
             </div>
             <button onClick={deleteClaim} disabled={saving}
               style={{ marginTop: 10, background: 'none', border: 'none', color: T.rose, fontSize: 11, fontWeight: 700, padding: '4px 2px', cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
@@ -685,12 +682,18 @@ export default function MedicalClaimsPage() {
                 <input className="claims-input claims-mono" type="number" value={selectedClaim.deductible_amount || ''}
                   onChange={e => setClaims(prev => prev.map(c => c.id === selectedClaim.id ? { ...c, deductible_amount: e.target.value === '' ? 0 : +e.target.value } : c))}
                   onBlur={e => updateClaim({ deductible_amount: e.target.value === '' ? 0 : +e.target.value })} />
+                <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
+                  Used to date <b style={{ color: T.text }}>{money(deductibleClockedTotal)}</b> of {money(selectedClaim.deductible_amount)}
+                </div>
               </div>
               <div>
                 <FieldLabel>Co-Insurance Cap (Panel, $)</FieldLabel>
                 <input className="claims-input claims-mono" type="number" value={selectedClaim.coinsurance_cap_annual || ''}
                   onChange={e => setClaims(prev => prev.map(c => c.id === selectedClaim.id ? { ...c, coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value } : c))}
                   onBlur={e => updateClaim({ coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value })} />
+                <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
+                  Used to date <b style={{ color: T.text }}>{money(coinsuranceClockedTotal)}</b> of {money(selectedClaim.coinsurance_cap_annual)}
+                </div>
               </div>
               <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
                 <FieldLabel>Linked Riders (in addition to main policy)</FieldLabel>
@@ -826,21 +829,26 @@ export default function MedicalClaimsPage() {
               {uploadError && <div style={{ marginTop: 8, fontSize: 11.5, color: T.rose }}>{uploadError}</div>}
             </div>
 
-            {documents.length === 0 && <div style={{ ...cardBase, padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>No documents uploaded yet.</div>}
-
-            {generalDocs.length > 0 && (
-              <DocGroup label="General" docs={generalDocs} onDelete={deleteDocument} />
-            )}
-            {pendingDocs.length > 0 && (
-              <DocGroup label="Pending" docs={pendingDocs} onDelete={deleteDocument} accent={T.rose} />
-            )}
-            {approvedDocs.length > 0 && (
-              <DocGroup label="Approved" docs={approvedDocs} onDelete={deleteDocument} accent={T.emerald} />
+            {documents.length === 0 ? (
+              <div style={{ ...cardBase, padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>No documents uploaded yet.</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 11.5, color: T.textFaint, marginBottom: 8, padding: '0 2px' }}>
+                  {approvedDocs.length} approved · {pendingDocs.length} pending{generalDocs.length > 0 ? ` · ${generalDocs.length} general` : ''}
+                </div>
+                <div className="claims-scroll" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                  {[...approvedDocs, ...pendingDocs, ...generalDocs].map(doc => {
+                    const status: 'approved' | 'pending' | null =
+                      approvedDocs.includes(doc) ? 'approved' : pendingDocs.includes(doc) ? 'pending' : null
+                    return <DocCard key={doc.id} doc={doc} status={status} onDelete={() => deleteDocument(doc)} />
+                  })}
+                </div>
+              </>
             )}
           </div>
 
           <div style={{ marginTop: 24, padding: '14px 16px', borderRadius: 12, background: T.goldSoft, border: `1px solid ${T.line}`, fontSize: 11.5, color: T.textDim }}>
-            Per-line deductible/co-insurance running totals and message templates land in the next builds — this page now covers claim details, line items, follow-up tracking, and documents.
+            Deductible/co-insurance totals shown here are scoped to this claim only, not the full policy year across multiple claims — status update message templates land in the next build.
           </div>
         </>
       )}
@@ -912,6 +920,8 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete }: {
             <div><FieldLabel>Submitted</FieldLabel><DateInput value={draft.submitted_date || ''} onChange={v => commit({ submitted_date: v || null })} className="claims-input" dark /></div>
             <div><FieldLabel>Date Approved</FieldLabel><DateInput value={draft.date_approved || ''} onChange={v => commit({ date_approved: v || null })} className="claims-input" dark /></div>
             <div><FieldLabel>Amount Approved</FieldLabel><input className="claims-input claims-mono" type="number" value={draft.amount_approved || ''} onChange={e => setDraft({ ...draft, amount_approved: e.target.value === '' ? 0 : +e.target.value })} onBlur={() => commit({ amount_approved: draft.amount_approved })} /></div>
+            <div><FieldLabel>Deductible Used (This Line, $)</FieldLabel><input className="claims-input claims-mono" type="number" value={draft.deductible_clocked || ''} onChange={e => setDraft({ ...draft, deductible_clocked: e.target.value === '' ? 0 : +e.target.value })} onBlur={() => commit({ deductible_clocked: draft.deductible_clocked })} /></div>
+            <div><FieldLabel>Co-Insurance Applied (This Line, $)</FieldLabel><input className="claims-input claims-mono" type="number" value={draft.coinsurance_clocked || ''} onChange={e => setDraft({ ...draft, coinsurance_clocked: e.target.value === '' ? 0 : +e.target.value })} onBlur={() => commit({ coinsurance_clocked: draft.coinsurance_clocked })} /></div>
             <div style={{ gridColumn: '1/-1' }}><FieldLabel>Remarks</FieldLabel><input className="claims-input" value={draft.remarks || ''} onChange={e => setDraft({ ...draft, remarks: e.target.value })} onBlur={() => commit({ remarks: draft.remarks })} /></div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
@@ -980,22 +990,24 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
   )
 }
 
-function DocGroup({ label, docs, onDelete, accent }: { label: string; docs: ClaimDocument[]; onDelete: (doc: ClaimDocument) => void; accent?: string }) {
+function DocCard({ doc, status, onDelete }: { doc: ClaimDocument; status: 'approved' | 'pending' | null; onDelete: () => void }) {
+  const isImage = (doc.mime_type || '').startsWith('image/') || /\.(jpe?g|png|gif|webp|heic)$/i.test(doc.file_name)
+  const kind = isImage ? 'IMG' : (doc.file_name.toLowerCase().endsWith('.pdf') ? 'PDF' : (doc.mime_type?.split('/')[1]?.slice(0, 3).toUpperCase() || 'DOC'))
+  const kindColor = isImage ? T.gold : T.emerald
+  const kindSoft = isImage ? T.goldSoft : T.emeraldSoft
+  const statusColor = status === 'approved' ? T.emerald : status === 'pending' ? T.rose : T.textFaint
+  const statusLabel = status === 'approved' ? 'APPROVED' : status === 'pending' ? 'PENDING' : 'GENERAL'
+
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: accent || T.textFaint, marginBottom: 6, padding: '0 2px' }}>{label}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {docs.map(doc => (
-          <div key={doc.id} style={{ ...cardBase, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <a href={doc.drive_view_url || '#'} target="_blank" rel="noopener noreferrer"
-              style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: T.text, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {doc.file_name}
-            </a>
-            <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, flexShrink: 0 }}>{fmtFileSize(doc.file_size)} · {fmtDate(doc.uploaded_at)}</div>
-            <button onClick={() => onDelete(doc)} style={{ background: 'none', border: 'none', color: T.rose, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>✕</button>
-          </div>
-        ))}
-      </div>
+    <div style={{ ...cardBase, padding: 12, width: 168, flexShrink: 0, position: 'relative' }}>
+      <button onClick={onDelete} style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', color: T.textFaint, fontSize: 12, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+      <div style={{ width: 34, height: 34, borderRadius: 8, background: kindSoft, color: kindColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3 }}>{kind}</div>
+      <a href={doc.drive_view_url || '#'} target="_blank" rel="noopener noreferrer"
+        style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginTop: 10, fontSize: 12.5, fontWeight: 600, color: T.text, textDecoration: 'none', lineHeight: 1.3, minHeight: 32 }}>
+        {doc.file_name}
+      </a>
+      <div className="claims-mono" style={{ fontSize: 10, color: T.textFaint, marginTop: 6 }}>{fmtFileSize(doc.file_size)} · {fmtDate(doc.uploaded_at)}</div>
+      <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, color: statusColor, marginTop: 6 }}>{statusLabel}</div>
     </div>
   )
 }
