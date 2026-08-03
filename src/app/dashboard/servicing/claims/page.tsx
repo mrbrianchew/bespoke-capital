@@ -1086,7 +1086,7 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
           </div>
 
           <div style={{ marginTop: 16 }}>
-            <FieldLabel>Documents for this line</FieldLabel>
+            <FieldLabel>Documents related to this claim</FieldLabel>
             {!pickedFolder ? (
               <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic' }}>Connect Drive in the Documents section below to attach files here.</div>
             ) : (
