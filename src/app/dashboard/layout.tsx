@@ -86,12 +86,17 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [showClientDrop, setShowClientDrop] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
 
   const [expandedGroup, setExpandedGroup] = useClientTabState<NavGroupId>('navGroup', 'planning')
   const visibleGroups = visibleNavGroups(advisor?.beta_features, advisor?.id)
+
+  // Close the mobile drawer on every navigation — otherwise it stays open
+  // over the new page since nothing else would trigger a close.
+  useEffect(() => { setSidebarOpen(false) }, [pathname])
 
   // Route wins over whatever was last expanded whenever the current page
   // belongs to a visible group. On pages outside all visible groups (profile,
@@ -139,7 +144,21 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--cream)' }}>
-      <aside className="sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0" style={{ width: 240, background: 'white', borderRight: '1px solid var(--line)' }}>
+      {/* Mobile-only hamburger — hidden entirely at md+ where the sidebar is always visible */}
+      <button onClick={() => setSidebarOpen(o => !o)}
+        className="md:hidden fixed top-3 left-3 z-50 flex items-center justify-center"
+        style={{ width: 40, height: 40, borderRadius: 999, background: 'white', border: '1px solid var(--line)', color: 'var(--ink)', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <span style={{ fontSize: 18, lineHeight: 1 }}>{sidebarOpen ? '✕' : '☰'}</span>
+      </button>
+
+      {/* Scrim behind the drawer on mobile only */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-40" style={{ background: 'rgba(26,24,22,0.5)' }} onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <aside
+        className={`sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0 fixed inset-y-0 left-0 z-50 transition-transform duration-200 md:static md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        style={{ width: 240, background: 'white', borderRight: '1px solid var(--line)' }}>
         <div className="px-6 py-7" style={{ borderBottom: '1px solid var(--line)' }}>
           <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>{advisor?.firm || 'Bespoke Heartwork'}</div>
 <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
@@ -264,7 +283,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--cream)' }}>
+      <main className="flex-1 overflow-y-auto pt-14 md:pt-0" style={{ background: 'var(--cream)' }}>
         <div key={activeClient?.id || 'no-client'} className="contents">{children}</div>
       </main>
       {showClientDrop && (<div className="fixed inset-0 z-40" onClick={() => { setShowClientDrop(false); setClientSearch('') }} />)}
