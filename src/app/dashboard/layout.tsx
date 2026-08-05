@@ -6,6 +6,7 @@ import Link from 'next/link'
 import DateInput from '@/components/DateInput'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
+import BugReportModal from '@/components/BugReportModal'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -87,6 +88,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [showClientModal, setShowClientModal] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showBugReport, setShowBugReport] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -281,6 +283,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               Sign out
             </button>
           </div>
+          <button onClick={() => setShowBugReport(true)} className="text-xs transition-colors mt-2 block" style={{ color: 'var(--ink3)' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
+            Report a bug
+          </button>
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto pt-14 md:pt-0" style={{ background: 'var(--cream)' }}>
@@ -294,6 +301,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           onSaved={async (client) => { setClients(prev => [client, ...prev]); setActiveClient(client); setShowClientModal(false) }}
         />
       )}
+      {showBugReport && <BugReportModal onClose={() => setShowBugReport(false)} />}
     </div>
   )
 }

@@ -11,6 +11,8 @@ create table goals (id uuid default uuid_generate_v4() primary key,client_id uui
 create table investments (id uuid default uuid_generate_v4() primary key,client_id uuid references clients(id) on delete cascade not null,name text not null,product_type text,mode text default 'Regular',start_date text,end_date text,monthly_contribution numeric default 0,lump_sum numeric default 0,current_value numeric default 0,irr numeric,created_at timestamptz default now());
 create table recommendations (id uuid default uuid_generate_v4() primary key,client_id uuid references clients(id) on delete cascade not null,shortfall_type text,product_name text,coverage_amount numeric,premium_monthly numeric,notes text,sort_order integer default 0,created_at timestamptz default now());
 create table plan_settings (id uuid default uuid_generate_v4() primary key,client_id uuid references clients(id) on delete cascade not null,global_return numeric default 5,global_inflation numeric default 3,updated_at timestamptz default now(),unique(client_id));
+create table bug_reports (id uuid default uuid_generate_v4() primary key,advisor_id uuid references advisors(id) on delete cascade not null,type text not null check (type in ('bug','suggestion')),description text not null,screenshot_path text not null,page_context text,status text not null default 'new' check (status in ('new','resolved')),created_at timestamptz default now(),updated_at timestamptz default now());
+-- Screenshots for bug_reports live in the private Supabase Storage bucket 'bug-report-screenshots' (public=false).
 alter table advisors enable row level security;
 alter table clients enable row level security;
 alter table family_members enable row level security;
@@ -22,6 +24,11 @@ alter table goals enable row level security;
 alter table investments enable row level security;
 alter table recommendations enable row level security;
 alter table plan_settings enable row level security;
+alter table bug_reports enable row level security;
+-- No client-side policies on bug_reports — all access goes through API
+-- routes using SUPABASE_SERVICE_ROLE_KEY (submit-bug-report is advisor-only
+-- via requireUser; get-bug-reports and update-bug-report-status are
+-- creator-only via requireCreator).
 create policy "advisors_own" on advisors for all using (auth.uid() = id);
 create policy "clients_own" on clients for all using (advisor_id = auth.uid());
 create policy "family_own" on family_members for all using (client_id in (select id from clients where advisor_id = auth.uid()));

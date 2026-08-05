@@ -248,6 +248,111 @@ function RegisteredAdvisorsCard() {
   )
 }
 
+const TYPE_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  bug: { bg: '#FBEAE7', color: '#7D2F22', label: 'Bug' },
+  suggestion: { bg: '#EAF1EE', color: '#1E4237', label: 'Suggestion' },
+}
+
+function TypeBadge({ type }: { type: string }) {
+  const s = TYPE_STYLE[type] || { bg: '#F0EDE6', color: '#9A9690', label: type }
+  return (
+    <span style={{ fontSize: 11, fontWeight: 500, color: s.color, background: s.bg, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' as const }}>
+      {s.label}
+    </span>
+  )
+}
+
+function BugReportsCard() {
+  const [reports, setReports] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [actionId, setActionId] = useState<string | null>(null)
+  const [showResolved, setShowResolved] = useState(false)
+
+  function load() {
+    setLoading(true)
+    fetch('/api/get-bug-reports')
+      .then(r => r.json())
+      .then(data => { setReports(Array.isArray(data) ? data : []); setLoading(false) })
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function setStatus(id: string, status: 'new' | 'resolved') {
+    setActionId(id)
+    await fetch('/api/update-bug-report-status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status }),
+    })
+    setReports(prev => prev.map(r => r.id === id ? { ...r, status } : r))
+    setActionId(null)
+  }
+
+  const newReports = reports.filter(r => r.status === 'new')
+  const resolvedReports = reports.filter(r => r.status === 'resolved')
+
+  function Row({ r }: { r: any }) {
+    const busy = actionId === r.id
+    return (
+      <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
+          {r.screenshot_url && (
+            <a href={r.screenshot_url} target="_blank" rel="noopener noreferrer">
+              <img src={r.screenshot_url} alt="Screenshot" style={{ width: 48, height: 36, objectFit: 'cover', borderRadius: 4, border: '0.5px solid #E0DDD6' }} />
+            </a>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <TypeBadge type={r.type} />
+            </div>
+            <p style={{ fontSize: 13, color: '#1A1816', margin: 0, wordBreak: 'break-word' as const }}>{r.description}</p>
+            <p style={{ fontSize: 11, color: '#9A9690', margin: '2px 0 0', fontFamily: 'DM Mono, monospace' }}>
+              {r.advisor?.name || r.advisor?.email || 'Unknown'} · {new Date(r.created_at).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {r.page_context ? ` · ${r.page_context}` : ''}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setStatus(r.id, r.status === 'new' ? 'resolved' : 'new')}
+          disabled={busy}
+          style={{ padding: '6px 10px', background: 'white', color: r.status === 'new' ? '#2D5A4E' : '#9A9690', border: `1px solid ${r.status === 'new' ? '#2D5A4E' : '#D0CDC5'}`, borderRadius: 6, fontSize: 11, cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' as const }}
+        >
+          {busy ? '…' : r.status === 'new' ? 'Mark resolved' : 'Reopen'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ gridColumn: '1 / -1', background: 'white', border: '0.5px solid #E0DDD6', borderRadius: 12, padding: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
+        <p style={{ fontSize: 15, fontWeight: 500, color: '#1A1816', margin: 0 }}>Bug Reports and Suggestions</p>
+        <span style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: '#A8834A', background: '#F5EFE3', padding: '3px 8px', borderRadius: 4 }}>
+          {loading ? '…' : newReports.length} New
+        </span>
+      </div>
+      <p style={{ fontSize: 13, color: '#9A9690', margin: '0 0 16px', lineHeight: 1.5 }}>
+        Submitted by advisors from the sidebar. Every report includes a screenshot.
+      </p>
+      {loading && <p style={{ fontSize: 13, color: '#9A9690' }}>Loading…</p>}
+      {!loading && newReports.length === 0 && <p style={{ fontSize: 13, color: '#9A9690', marginBottom: 12 }}>No new reports.</p>}
+      {!loading && newReports.map(r => <Row key={r.id} r={r} />)}
+
+      {!loading && resolvedReports.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <button
+            onClick={() => setShowResolved(s => !s)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#9A9690' }}
+          >
+            <span style={{ fontSize: 11, transform: showResolved ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>⌄</span>
+            <span style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>Resolved ({resolvedReports.length})</span>
+          </button>
+          {showResolved && <div style={{ marginTop: 10 }}>{resolvedReports.map(r => <Row key={r.id} r={r} />)}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -300,6 +405,7 @@ export default function AdminPage() {
         </div>
         <PendingAdvisorsCard />
         <RegisteredAdvisorsCard />
+        <BugReportsCard />
       </div>
     </div>
   )
