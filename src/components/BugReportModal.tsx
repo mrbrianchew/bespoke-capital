@@ -1,6 +1,8 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+
+const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 
 export default function BugReportModal({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<'bug' | 'suggestion'>('bug')
@@ -10,15 +12,45 @@ export default function BugReportModal({ onClose }: { onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pathname = usePathname()
 
   const canSubmit = description.trim().length > 0 && !!file && !submitting
 
   function handleFile(f: File | null) {
+    if (f && !ALLOWED_TYPES.includes(f.type)) {
+      setError('Screenshot must be a PNG, JPEG, WEBP or GIF image')
+      return
+    }
+    setError('')
     setFile(f)
     setPreview(f ? URL.createObjectURL(f) : null)
   }
+
+  // Clipboard paste anywhere in the modal — the normal flow is a snip tool
+  // (Cmd/Win+Shift+4, Snipping Tool) then Ctrl/Cmd+V, no save-to-folder step.
+  useEffect(() => {
+    if (done) return
+    function onPaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.type.startsWith('image/')) {
+          const pasted = item.getAsFile()
+          if (pasted) {
+            const named = new File([pasted], pasted.name || `pasted-screenshot.${item.type.split('/')[1] || 'png'}`, { type: item.type })
+            handleFile(named)
+          }
+          e.preventDefault()
+          break
+        }
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [done])
 
   async function submit() {
     if (!canSubmit) return
@@ -108,18 +140,24 @@ export default function BugReportModal({ onClose }: { onClose: () => void }) {
                 {preview ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setDragActive(true) }}
+                    onDragLeave={() => setDragActive(false)}
+                    onDrop={e => { e.preventDefault(); setDragActive(false); handleFile(e.dataTransfer.files?.[0] || null) }}
                     className="cursor-pointer"
-                    style={{ borderRadius: 8, border: '1px solid var(--line)', overflow: 'hidden' }}
+                    style={{ borderRadius: 8, border: `1px solid ${dragActive ? 'var(--gold)' : 'var(--line)'}`, overflow: 'hidden' }}
                   >
                     <img src={preview} alt="Screenshot preview" style={{ width: '100%', maxHeight: 180, objectFit: 'cover', display: 'block' }} />
                   </div>
                 ) : (
                   <div
                     onClick={() => fileInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); setDragActive(true) }}
+                    onDragLeave={() => setDragActive(false)}
+                    onDrop={e => { e.preventDefault(); setDragActive(false); handleFile(e.dataTransfer.files?.[0] || null) }}
                     className="cursor-pointer text-center"
-                    style={{ borderRadius: 8, border: '1px dashed var(--gold)', padding: '20px 12px' }}
+                    style={{ borderRadius: 8, border: `1px dashed ${dragActive ? 'var(--emerald)' : 'var(--gold)'}`, background: dragActive ? 'var(--emerald-l)' : 'transparent', padding: '20px 12px' }}
                   >
-                    <p className="text-sm" style={{ color: 'var(--ink3)' }}>Click to attach a screenshot of the area in question</p>
+                    <p className="text-sm" style={{ color: 'var(--ink3)' }}>Paste (Ctrl/Cmd+V), drag in, or click to attach a screenshot</p>
                   </div>
                 )}
               </div>
