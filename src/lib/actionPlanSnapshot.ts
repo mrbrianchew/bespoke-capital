@@ -533,6 +533,19 @@ function mapProt(category: 'ltc' | 'core' | 'general', categoryLabel: string, li
       ? (category === 'ltc' ? replacedCashTotal(r.replacedPolicies) : replacedTotal(r.replacedPolicies))
       : 0
     const cashImpactDelta = r.mode === 'replacement' ? cash - replacedCash : cash
+
+    // WL/LWL (Whole Life / Limited-Pay Whole Life) plans store their cover
+    // as base × multiplier rather than a flat deathBenefit/tpdBenefit/
+    // advCiBenefit/earlyCiBenefit figure — same convention as the "Effective
+    // benefits at Nx multiplier" panel on the Strategic Recommendation page
+    // (see WL/LWL fields in recommendations/page.tsx). That page never
+    // writes the multiplied figure back into the flat fields, so without
+    // this, a chosen WL/LWL recommendation silently contributes $0 to the
+    // Core Protection shortfall tapes below. Use the same base × multiplier
+    // formula here so it counts.
+    const isWL = r.coverageType === 'WL' || r.coverageType === 'LWL'
+    const mult = r.coverageMultiplier || 1
+
     return {
       id: r.id,
       category,
@@ -545,10 +558,10 @@ function mapProt(category: 'ltc' | 'core' | 'general', categoryLabel: string, li
       annualPremiumMedisave: round2(medisave),
       annualPremiumTotal: round2(cash + medisave),
       cashImpactDelta: round2(cashImpactDelta),
-      deathBenefit: Math.round(r.deathBenefit || 0),
-      tpdBenefit: Math.round(r.tpdBenefit || 0),
-      ciBenefit: Math.round(r.advCiBenefit || 0),
-      earlyCiBenefit: Math.round(r.earlyCiBenefit || 0),
+      deathBenefit: isWL ? Math.round((r.baseDeathBenefit || 0) * mult) : Math.round(r.deathBenefit || 0),
+      tpdBenefit: isWL ? Math.round((r.baseTpdBenefit || 0) * mult) : Math.round(r.tpdBenefit || 0),
+      ciBenefit: isWL ? Math.round((r.baseAdvCiBenefit || 0) * mult) : Math.round(r.advCiBenefit || 0),
+      earlyCiBenefit: isWL ? Math.round((r.baseEarlyCiBenefit || 0) * mult) : Math.round(r.earlyCiBenefit || 0),
       monthlyBenefit: Math.round(r.monthlyBenefit || 0),
       sumAssured: Math.round(r.sumAssured || r.accidentalDeathBenefit || 0),
       premiumTerm: r.premiumTerm || '',
