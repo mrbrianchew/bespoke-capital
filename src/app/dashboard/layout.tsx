@@ -83,10 +83,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const {
     user, advisor, clients, activeClient, spouseNames,
-    setActiveClient, setClients,
+    setActiveClient, setClients, updateActiveClientFields,
   } = useDashboard()
   const [showClientDrop, setShowClientDrop] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
+  const [showFolderModal, setShowFolderModal] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showBugReport, setShowBugReport] = useState(false)
@@ -179,22 +180,56 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
         </div>
         <div className="relative px-3 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
-          <button onClick={() => setShowClientDrop(!showClientDrop)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left"
-            style={{ background: 'var(--cream)', border: '1px solid var(--line)' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--gold)'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--line)'}>
-            {activeClient ? (
-              <>
-                <div className="w-8 h-8 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: '#C4A882' }}>{initials(activeClient.name)}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>{activeClient.name}</div>
-                  <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Age {getAge(activeClient.dob) ?? activeClient.age ?? '?'}</div>
-                </div>
-                <span className="text-xs" style={{ color: 'var(--ink3)' }}>⌄</span>
-              </>
-            ) : (<span className="text-sm" style={{ color: 'var(--ink3)' }}>Select client…</span>)}
-          </button>
+          <div className="flex items-stretch gap-1.5">
+            <div role="button" tabIndex={0}
+              onClick={() => setShowClientDrop(!showClientDrop)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setShowClientDrop(!showClientDrop) }}
+              className="flex-1 min-w-0 flex items-center gap-2.5 px-3 py-2.5 rounded-md transition-colors text-left cursor-pointer"
+              style={{ background: 'var(--cream)', border: '1px solid var(--line)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--gold)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--line)'}>
+              {activeClient ? (
+                <>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-serif text-xs text-white flex-shrink-0" style={{ background: '#C4A882' }}>{initials(activeClient.name)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate" style={{ color: 'var(--ink)' }}>{activeClient.name}</div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Age {getAge(activeClient.dob) ?? activeClient.age ?? '?'}</div>
+                  </div>
+                  <span className="text-xs" style={{ color: 'var(--ink3)' }}>⌄</span>
+                </>
+              ) : (<span className="text-sm" style={{ color: 'var(--ink3)' }}>Select client…</span>)}
+            </div>
+            {activeClient && (
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={() => {
+                    if (activeClient.client_folder_url) {
+                      window.open(activeClient.client_folder_url, '_blank', 'noopener,noreferrer')
+                    } else {
+                      setShowFolderModal(true)
+                    }
+                  }}
+                  title={activeClient.client_folder_url ? 'Open client folder' : 'Add client folder link'}
+                  className="w-9 h-full flex items-center justify-center rounded-md transition-colors"
+                  style={{ background: 'var(--cream)', border: '1px solid var(--line)', color: activeClient.client_folder_url ? 'var(--gold-tag)' : 'var(--ink3)' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--gold)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = 'var(--line)'}>
+                  <span className="text-sm">📁</span>
+                </button>
+                {activeClient.client_folder_url && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowFolderModal(true) }}
+                    title="Edit folder link"
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full transition-colors"
+                    style={{ background: 'white', border: '1px solid var(--line)', fontSize: 8, color: 'var(--ink3)' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
+                    ✎
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           {showClientDrop && (
             <div className="absolute left-3 right-3 top-full mt-1 z-50 shadow-lg" style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 6 }}>
               <div className="px-2 py-2" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -324,6 +359,59 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         />
       )}
       {showBugReport && <BugReportModal onClose={() => setShowBugReport(false)} />}
+      {showFolderModal && activeClient && (
+        <ClientFolderModal
+          clientName={activeClient.name}
+          currentUrl={activeClient.client_folder_url}
+          onClose={() => setShowFolderModal(false)}
+          onSaved={(url) => { updateActiveClientFields({ client_folder_url: url }); setShowFolderModal(false) }}
+        />
+      )}
+    </div>
+  )
+}
+
+function ClientFolderModal({ clientName, currentUrl, onClose, onSaved }: { clientName: string; currentUrl: string | null; onClose: () => void; onSaved: (url: string) => void }) {
+  const [url, setUrl] = useState(currentUrl || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const { activeClient } = useDashboard()
+  const supabase = createClient()
+
+  async function save() {
+    const trimmed = url.trim()
+    if (trimmed && !/^https?:\/\//i.test(trimmed)) { setError('Link must start with http:// or https://'); return }
+    if (!activeClient) return
+    setLoading(true)
+    const { error: err } = await supabase.from('clients')
+      .update({ client_folder_url: trimmed || null, updated_at: new Date().toISOString() })
+      .eq('id', activeClient.id)
+    setLoading(false)
+    if (err) { setError(err.message); return }
+    onSaved(trimmed)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}>
+      <div className="w-full max-w-md" style={{ background: 'white', borderRadius: 8 }}>
+        <div className="px-6 py-5" style={{ borderBottom: '1px solid var(--line)' }}>
+          <div className="font-serif text-xl">Client Folder Link</div>
+          <div className="text-xs mt-1" style={{ color: 'var(--ink3)' }}>{clientName}</div>
+        </div>
+        <div className="px-6 py-5 space-y-2">
+          <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Google Drive folder URL</label>
+          <input type="url" value={url} onChange={e => setUrl(e.target.value)} autoFocus
+            placeholder="https://drive.google.com/drive/folders/…"
+            className="w-full px-3 py-2.5 text-sm outline-none"
+            style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--cream)' }} />
+          <div className="text-xs" style={{ color: 'var(--ink3)' }}>Paste the folder's share link. One click will open it in Drive from now on.</div>
+          {error && <div className="text-sm px-3 py-2 mt-2" style={{ background: 'var(--rouge-l)', color: 'var(--rouge)' }}>{error}</div>}
+        </div>
+        <div className="px-6 py-4 flex gap-3 justify-end" style={{ borderTop: '1px solid var(--line)' }}>
+          <button onClick={onClose} className="px-4 py-2 text-sm" style={{ color: 'var(--ink2)', border: '1px solid var(--line2)' }}>Cancel</button>
+          <button onClick={save} disabled={loading} className="px-4 py-2 text-sm font-medium text-white" style={{ background: loading ? 'var(--ink2)' : 'var(--ink)' }}>{loading ? 'Saving…' : 'Save Link'}</button>
+        </div>
+      </div>
     </div>
   )
 }

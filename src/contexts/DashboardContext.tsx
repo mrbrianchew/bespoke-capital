@@ -39,6 +39,7 @@ export interface ClientRow {
   age: number | null
   start_year: number | null
   notes: string | null
+  client_folder_url: string | null
   created_at: string
   updated_at: string
   [key: string]: any
