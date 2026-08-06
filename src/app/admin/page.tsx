@@ -105,6 +105,23 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   suspended: { bg: '#FBEAEA', color: '#C0392B', label: 'Suspended' },
 }
 
+// Relative-time formatting for Last Active — easier to scan for "who's gone
+// quiet" than a raw date. Falls back to the date itself past ~5 weeks.
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return 'Never'
+  const then = new Date(iso).getTime()
+  const diffMs = Date.now() - then
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMins / 60)
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffMins < 60) return diffMins <= 1 ? 'Just now' : `${diffMins} min ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) return `${diffDays} days ago`
+  if (diffDays < 35) return `${Math.floor(diffDays / 7)}w ago`
+  return new Date(iso).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS_STYLE[status] || { bg: '#F0EDE6', color: '#9A9690', label: status }
   return (
@@ -186,6 +203,7 @@ function RegisteredAdvisorsCard() {
                 <th style={{ padding: '8px', fontWeight: 500 }}>Status</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Servicing (Beta)</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Joined</th>
+                <th style={{ padding: '8px', fontWeight: 500 }}>Last Active</th>
                 <th style={{ padding: '8px 0 8px 8px', fontWeight: 500 }}>Actions</th>
               </tr>
             </thead>
@@ -213,6 +231,9 @@ function RegisteredAdvisorsCard() {
                     </td>
                     <td style={{ padding: '10px 8px', color: '#9A9690', fontFamily: 'DM Mono, monospace' }}>
                       {a.created_at ? new Date(a.created_at).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                    </td>
+                    <td style={{ padding: '10px 8px', color: a.last_active_at ? '#4A4740' : '#C0392B', fontFamily: 'DM Mono, monospace' }}>
+                      {formatRelativeTime(a.last_active_at)}
                     </td>
                     <td style={{ padding: '10px 0 10px 8px' }}>
                       {isCreator ? (

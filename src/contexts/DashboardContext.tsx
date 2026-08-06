@@ -108,6 +108,14 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(user)
     setAdvisor(adv)
+    // Ping last_active_at at most once per 24h — cheap "is this advisor
+    // actually using the app" signal for the Admin Hub, distinct from
+    // auth.users.last_sign_in_at (which only reflects login, not usage).
+    // Fire-and-forget: never block dashboard rendering on this.
+    const lastActive = adv.last_active_at ? new Date(adv.last_active_at).getTime() : 0
+    if (Date.now() - lastActive > 24 * 60 * 60 * 1000) {
+      fetch('/api/update-last-active', { method: 'POST' }).catch(() => {})
+    }
     if (cls) {
       setClients(cls)
       if (cls.length > 0) {
