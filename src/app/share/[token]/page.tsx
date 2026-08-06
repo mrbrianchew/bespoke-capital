@@ -638,8 +638,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
 
           {claimsShareData.map((c: any) => (
             <div key={c.id} style={{background:'white',border:'1px solid #E0DDD6',marginBottom:24,padding:'24px 22px'}}>
-              <div style={{fontSize:9.5,letterSpacing:'0.1em',textTransform:'uppercase',color:'#A8834A',fontWeight:700}}>Claim · Opened {formatDate(c.opened_date)}</div>
-              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'#1C1A17',marginTop:4}}>{c.life_assured_label}{c.label ? ` — ${c.label}` : ''}</div>
+              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'#1C1A17',marginTop:4}}>{c.life_assured_label}{c.opened_date ? ` — ${new Date(c.opened_date).getFullYear()}` : ''}</div>
               <div style={{display:'flex',gap:24,marginTop:14,paddingTop:14,borderTop:'1px solid #ECEAE4',flexWrap:'wrap' as const}}>
                 <div>
                   <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'#888',fontWeight:700}}>Total Claimed</div>
