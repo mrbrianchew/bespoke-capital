@@ -37,6 +37,14 @@ interface ContactTodoRow {
   created_at: string
 }
 
+interface ContactCommentRow {
+  id: string
+  contact_report_id: string
+  comment_date: string
+  text: string
+  created_at: string
+}
+
 const CONTACT_TYPE_LABEL: Record<ContactType, string> = {
   f2f: 'F2F Meeting',
   non_f2f: 'Non-F2F',
@@ -57,6 +65,11 @@ function fmtDate(iso: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+function fmtShortDate(iso: string) {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-SG', { day: '2-digit', month: 'short' })
 }
 function contactTag(r: ContactReportRow): string {
   const icon = CONTACT_TYPE_ICON[r.contact_type]
@@ -84,9 +97,12 @@ export default function ContactReportPage() {
   const [loading, setLoading] = useState(true)
   const [reports, setReports] = useState<ContactReportRow[]>([])
   const [todosByReport, setTodosByReport] = useState<Record<string, ContactTodoRow[]>>({})
+  const [commentsByReport, setCommentsByReport] = useState<Record<string, ContactCommentRow[]>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [newTodoDraft, setNewTodoDraft] = useState<Record<string, string>>({})
+  const [newCommentDraft, setNewCommentDraft] = useState<Record<string, string>>({})
+  const [newCommentDate, setNewCommentDate] = useState<Record<string, string>>({})
 
   // ── Form state ──
   const [formOpen, setFormOpen] = useState(false)
@@ -125,11 +141,10 @@ export default function ContactReportPage() {
 
       if (rows.length > 0) {
         const ids = rows.map(r => r.id)
-        const { data: todoRows, error: todoErr } = await supabase
-          .from('contact_report_todos')
-          .select('*')
-          .in('contact_report_id', ids)
-          .order('sort_order', { ascending: true })
+        const [{ data: todoRows, error: todoErr }, { data: commentRows, error: commentErr }] = await Promise.all([
+          supabase.from('contact_report_todos').select('*').in('contact_report_id', ids).order('sort_order', { ascending: true }),
+          supabase.from('contact_report_comments').select('*').in('contact_report_id', ids).order('comment_date', { ascending: false }).order('created_at', { ascending: false }),
+        ])
         if (cancelled) return
         if (todoErr) {
           console.error('[contact-report] load todos failed:', todoErr)
@@ -141,8 +156,19 @@ export default function ContactReportPage() {
           }
           setTodosByReport(grouped)
         }
+        if (commentErr) {
+          console.error('[contact-report] load comments failed:', commentErr)
+        } else {
+          const groupedComments: Record<string, ContactCommentRow[]> = {}
+          for (const c of (commentRows || []) as ContactCommentRow[]) {
+            if (!groupedComments[c.contact_report_id]) groupedComments[c.contact_report_id] = []
+            groupedComments[c.contact_report_id].push(c)
+          }
+          setCommentsByReport(groupedComments)
+        }
       } else {
         setTodosByReport({})
+        setCommentsByReport({})
       }
       setLoading(false)
     })()
@@ -270,12 +296,49 @@ export default function ContactReportPage() {
     setNewTodoDraft(prev => ({ ...prev, [reportId]: '' }))
   }
 
+  async function addComment(reportId: string) {
+    const text = (newCommentDraft[reportId] || '').trim()
+    if (!text) return
+    const date = newCommentDate[reportId] || new Date().toISOString().slice(0, 10)
+    const { data, error } = await supabase.from('contact_report_comments').insert({
+      contact_report_id: reportId,
+      comment_date: date,
+      text,
+    }).select()
+    if (error) { console.error('[contact-report] add comment failed:', error); return }
+    const newComment = (data || [])[0] as ContactCommentRow | undefined
+    if (newComment) {
+      setCommentsByReport(prev => ({
+        ...prev,
+        [reportId]: [newComment, ...(prev[reportId] || [])].sort((a, b) => {
+          if (a.comment_date !== b.comment_date) return a.comment_date < b.comment_date ? 1 : -1
+          return a.created_at < b.created_at ? 1 : -1
+        }),
+      }))
+    }
+    setNewCommentDraft(prev => ({ ...prev, [reportId]: '' }))
+  }
+
+  async function deleteComment(comment: ContactCommentRow) {
+    setCommentsByReport(prev => ({
+      ...prev,
+      [comment.contact_report_id]: (prev[comment.contact_report_id] || []).filter(c => c.id !== comment.id),
+    }))
+    const { error } = await supabase.from('contact_report_comments').delete().eq('id', comment.id)
+    if (error) console.error('[contact-report] delete comment failed:', error)
+  }
+
   async function deleteEntry(report: ContactReportRow) {
     if (!confirm('Delete this contact report entry? This cannot be undone.')) return
     const { error } = await supabase.from('contact_reports').delete().eq('id', report.id)
     if (error) { console.error('[contact-report] delete entry failed:', error); return }
     setReports(prev => prev.filter(r => r.id !== report.id))
     setTodosByReport(prev => {
+      const next = { ...prev }
+      delete next[report.id]
+      return next
+    })
+    setCommentsByReport(prev => {
       const next = { ...prev }
       delete next[report.id]
       return next
@@ -291,6 +354,7 @@ export default function ContactReportPage() {
     const { error } = await supabase.from('contact_report_todos').delete().eq('id', todo.id)
     if (error) console.error('[contact-report] delete todo failed:', error)
   }
+
 
   // ── Guards ──
   if (authLoading || loading) {
@@ -387,6 +451,7 @@ export default function ContactReportPage() {
             const isExpanded = expandedId === r.id
             const todos = todosByReport[r.id] || []
             const openTodos = todos.filter(t => !t.done).length
+            const comments = commentsByReport[r.id] || []
             const secondary = secondaryTag(r)
             return (
               <div key={r.id} style={{ borderBottom: '1px solid var(--line)' }}>
@@ -419,6 +484,30 @@ export default function ContactReportPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                       <button onClick={() => openEditForm(r)} style={editEntryBtn}>Edit Entry</button>
                       <button onClick={() => deleteEntry(r)} style={deleteEntryBtn}>Delete Entry</button>
+                    </div>
+
+                    <div style={{ ...nestedTodoBox, marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--charcoal)', marginBottom: 8 }}>Updates</div>
+                      {comments.length === 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 8 }}>No updates logged yet.</div>
+                      )}
+                      {comments.map(c => (
+                        <div key={c.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '5px 0' }}>
+                          <span className="font-mono" style={{ fontSize: 10.5, color: 'var(--ink3)', width: 44, flexShrink: 0, paddingTop: 1 }}>{fmtShortDate(c.comment_date)}</span>
+                          <div style={{ ...ntText, flex: 1 }}>{c.text}</div>
+                          <button onClick={() => deleteComment(c)} style={ntDelete} aria-label="Remove update">×</button>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                        <input type="date" value={newCommentDate[r.id] || new Date().toISOString().slice(0, 10)}
+                          onChange={e => setNewCommentDate(prev => ({ ...prev, [r.id]: e.target.value }))}
+                          style={{ ...ntAddInput, flex: '0 0 128px', fontFamily: 'DM Mono, monospace' }} />
+                        <input type="text" value={newCommentDraft[r.id] || ''} placeholder="e.g. Sent illustration, emailed follow-up, client said not interested..."
+                          onChange={e => setNewCommentDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') addComment(r.id) }}
+                          style={ntAddInput} />
+                        <button onClick={() => addComment(r.id)} style={ntAddBtn}>Add</button>
+                      </div>
                     </div>
 
                     <div style={nestedTodoBox}>
