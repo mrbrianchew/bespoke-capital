@@ -125,11 +125,58 @@ export async function POST(req: Request, { params }: { params: { token: string }
       if (hiddenPolicyIds.length > 0) {
         policies = policies.filter((p: any) => !hiddenPolicyIds.includes(p.id))
       }
+    } else if (shareType === 'claims') {
+      // Claims-only share link — never expose protection_portfolio policy data
+      // through this side channel, even though the row was fetched above.
+      policies = []
     } else {
       // Portfolio: existing person filter
       const person = share.person
       if (person && person !== 'all') {
         policies = policies.filter((p: any) => p.person === person)
+      }
+    }
+
+    // Claims share — advisor-selected claims (share.claim_ids), each broken down
+    // by section (pre/in/post) with full line-item detail (status + amounts only,
+    // no internal remarks/notes — those stay advisor-side).
+    let claimsShareData: any[] = []
+    if (shareType === 'claims') {
+      const claimIds: string[] = share.claim_ids || []
+      if (claimIds.length > 0) {
+        const { data: claimRows } = await supabaseAdmin
+          .from('claims').select('id,life_assured_person,label,opened_date')
+          .eq('client_id', share.client_id)
+          .in('id', claimIds)
+        const { data: lineRows } = await supabaseAdmin
+          .from('claim_line_items').select('id,claim_id,section,type,panel_status,date_from,invoice_no,description,amount_claimed,approved,amount_approved')
+          .in('claim_id', claimIds)
+          .order('date_from', { ascending: true })
+        claimsShareData = (claimRows || []).map((c: any) => {
+          const lines = (lineRows || []).filter((l: any) => l.claim_id === c.id)
+          const sections: Record<'pre' | 'in' | 'post', any[]> = { pre: [], in: [], post: [] }
+          for (const l of lines) {
+            if (sections[l.section as 'pre' | 'in' | 'post']) {
+              sections[l.section as 'pre' | 'in' | 'post'].push({
+                id: l.id, type: l.type, panel_status: l.panel_status,
+                date_from: l.date_from, invoice_no: l.invoice_no, description: l.description,
+                amount_claimed: l.amount_claimed || 0, approved: l.approved, amount_approved: l.amount_approved || 0,
+              })
+            }
+          }
+          return {
+            id: c.id,
+            label: c.label,
+            life_assured_person: c.life_assured_person,
+            life_assured_label: personLabels[c.life_assured_person] || c.life_assured_person,
+            opened_date: c.opened_date,
+            total_claimed: lines.reduce((s: number, l: any) => s + (l.amount_claimed || 0), 0),
+            total_approved: lines.reduce((s: number, l: any) => s + (l.approved ? (l.amount_approved || 0) : 0), 0),
+            pending_count: lines.filter((l: any) => !l.approved).length,
+            resolved_count: lines.filter((l: any) => l.approved).length,
+            sections,
+          }
+        }).sort((a: any, b: any) => (a.opened_date < b.opened_date ? 1 : -1))
       }
     }
 
@@ -168,6 +215,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
       person: share.person,
       policies,
       claimsHistory,
+      claimsShareData,
       shareType,
       includedPersons,
       personLabels,

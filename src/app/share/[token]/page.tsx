@@ -485,7 +485,8 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [policies, setPolicies] = useState<Policy[]>([])
   const [clientAge, setClientAge] = useState(40)
   const [clientName, setClientName] = useState('')
-  const [shareType, setShareType] = useState<'portfolio'|'payment_summary'|'financial_plan'>('portfolio')
+  const [shareType, setShareType] = useState<'portfolio'|'payment_summary'|'claims'|'financial_plan'>('portfolio')
+  const [claimsShareData, setClaimsShareData] = useState<any[]>([])
   const [planSnapshot, setPlanSnapshot] = useState<any>(null)
   const [planLabel, setPlanLabel] = useState('')
   const [includedPersons, setIncludedPersons] = useState<string[]>([])
@@ -530,7 +531,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       return
     }
 
-    const { client, person, policies: all, claimsHistory: claimsData, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels, advisorName: aName, firmName: fName } = responseData
+    const { client, person, policies: all, claimsHistory: claimsData, claimsShareData: claimsShare, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels, advisorName: aName, firmName: fName } = responseData
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
@@ -538,15 +539,19 @@ export default function SharePage({ params }: { params: { token: string } }) {
     }
     if (aName) setAdvisorName(aName)
     if (fName) setFirmName(fName)
-    const st: 'portfolio'|'payment_summary' = sType === 'payment_summary' ? 'payment_summary' : 'portfolio'
+    const st: 'portfolio'|'payment_summary'|'claims' = sType === 'payment_summary' ? 'payment_summary' : sType === 'claims' ? 'claims' : 'portfolio'
     setShareType(st)
     setIncludedPersons(iPersons || [])
     setStatusOverrides(sOverrides || {})
     setPersonLabels(pLabels || {})
     setClaimsHistory(claimsData || [])
+    setClaimsShareData(claimsShare || [])
 
-    // For payment_summary the API already filtered by included_persons; just filter active
-    if (st === 'payment_summary') {
+    // For payment_summary the API already filtered by included_persons; just filter active.
+    // Claims links carry no policy data at all — nothing to filter.
+    if (st === 'claims') {
+      setPolicies([])
+    } else if (st === 'payment_summary') {
       setPolicies((all as Policy[]).filter(p => !['Terminated','Surrendered','Matured'].includes(p.status)))
     } else {
       const filtered = (all as Policy[]).filter(p => {
@@ -604,6 +609,89 @@ export default function SharePage({ params }: { params: { token: string } }) {
       <div style={{ background: '#F5F3EE', minHeight: '100vh', padding: '32px 16px' }}>
         <div style={{ maxWidth: 880, margin: '0 auto' }}>
           <FinancialPlanView plan={planSnapshot} />
+        </div>
+      </div>
+    )
+  }
+
+  // ── CLAIMS SHARE VIEW ───────────────────────────────────────────────────────
+  if (shareType === 'claims') {
+    const SECTION_LABEL: Record<'pre'|'in'|'post', string> = { pre: 'Pre-Hospitalisation', in: 'Inpatient / Surgery', post: 'Post-Hospitalisation' }
+    const SECTION_SUB: Record<'pre'|'in'|'post', string> = { pre: 'Outpatient claims before admission', in: 'Hospitalisation & surgery claims', post: 'Follow-up outpatient claims' }
+    const fmtItemDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—'
+    return (
+      <div style={{ background:'#F5F3EE', minHeight:'100vh', fontFamily:'Inter,sans-serif', padding:'32px 16px' }}>
+        <style>{`
+          @media print { @page{size:A4 portrait;margin:1.2cm} *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important} .no-print{display:none!important} body{background:white!important} }
+        `}</style>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          <div className="no-print" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+            <div style={{fontSize:11,letterSpacing:'0.2em',textTransform:'uppercase',color:'#A8834A'}}>{firmName}</div>
+            <button onClick={handleDownloadPDF} style={{padding:'8px 16px',background:'#1C1A17',color:'#fff',border:'none',fontSize:12,cursor:'pointer'}}>Download PDF</button>
+          </div>
+          <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:300,color:'#1C1A17',marginBottom:4}}>Claims Summary</div>
+          <div style={{fontSize:13,color:'#888',marginBottom:28}}>{clientName}{advisorName ? ` · Prepared by ${advisorName}` : ''}</div>
+
+          {claimsShareData.length === 0 && (
+            <div style={{padding:40,textAlign:'center',color:'#888',background:'white',border:'1px solid #E0DDD6'}}>No claims to show.</div>
+          )}
+
+          {claimsShareData.map((c: any) => (
+            <div key={c.id} style={{background:'white',border:'1px solid #E0DDD6',marginBottom:24,padding:'24px 22px'}}>
+              <div style={{fontSize:9.5,letterSpacing:'0.1em',textTransform:'uppercase',color:'#A8834A',fontWeight:700}}>Claim · Opened {formatDate(c.opened_date)}</div>
+              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:22,color:'#1C1A17',marginTop:4}}>{c.life_assured_label}{c.label ? ` — ${c.label}` : ''}</div>
+              <div style={{display:'flex',gap:24,marginTop:14,paddingTop:14,borderTop:'1px solid #ECEAE4',flexWrap:'wrap' as const}}>
+                <div>
+                  <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'#888',fontWeight:700}}>Total Claimed</div>
+                  <div style={{fontFamily:'DM Mono,monospace',fontSize:20,color:'#1C1A17',marginTop:4}}>{fmt(c.total_claimed)}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'#888',fontWeight:700}}>Approved</div>
+                  <div style={{fontFamily:'DM Mono,monospace',fontSize:20,color:'#2D5A4E',marginTop:4}}>{fmt(c.total_approved)}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'#888',fontWeight:700}}>Status</div>
+                  <div style={{fontSize:12,color:'#1C1A17',marginTop:6}}>{c.resolved_count} resolved · {c.pending_count} pending</div>
+                </div>
+              </div>
+
+              {(['pre','in','post'] as const).map(sec => {
+                const items = c.sections?.[sec] || []
+                return (
+                  <div key={sec} style={{marginTop:20}}>
+                    <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:15,color:'#1C1A17'}}>{SECTION_LABEL[sec]} <span style={{fontSize:11,color:'#AAA',fontFamily:'Inter,sans-serif'}}>{items.length}</span></div>
+                    <div style={{fontSize:9,letterSpacing:'0.06em',textTransform:'uppercase',color:'#AAA',fontWeight:600,marginBottom:8}}>{SECTION_SUB[sec]}</div>
+                    {items.length === 0 ? (
+                      <div style={{padding:12,textAlign:'center',color:'#AAA',fontSize:11.5,fontStyle:'italic',border:'1px solid #F0EDE8'}}>No line items yet.</div>
+                    ) : (
+                      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                        {items.map((it: any) => (
+                          <div key={it.id} style={{border:'1px solid #ECEAE4',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                            <div style={{minWidth:0}}>
+                              <div style={{display:'flex',gap:6,marginBottom:4,flexWrap:'wrap' as const}}>
+                                {it.type && <span style={{fontSize:9,fontWeight:700,letterSpacing:'0.04em',textTransform:'uppercase',color:'#166534',background:'#DCFCE7',padding:'2px 7px',borderRadius:5}}>{it.type}</span>}
+                                <span style={{fontSize:9,fontWeight:700,letterSpacing:'0.04em',textTransform:'uppercase',color:'#888',background:'#F0EDE8',padding:'2px 7px',borderRadius:5}}>{it.panel_status==='panel'?'Panel':'Non-Panel'}</span>
+                              </div>
+                              <div style={{fontSize:13,color:'#1C1A17',fontWeight:600}}>{it.description || '—'}</div>
+                              <div style={{fontSize:11,color:'#AAA',marginTop:2}}>{it.invoice_no ? `${it.invoice_no} · ` : ''}{fmtItemDate(it.date_from)}</div>
+                            </div>
+                            <div style={{textAlign:'right',flexShrink:0}}>
+                              <div style={{fontFamily:'DM Mono,monospace',fontSize:14,color:'#1C1A17'}}>{fmt(it.amount_claimed)}</div>
+                              {it.approved ? (
+                                <div style={{fontSize:11,color:'#2D5A4E',fontWeight:600,marginTop:2}}>Approved {fmt(it.amount_approved)}</div>
+                              ) : (
+                                <div style={{fontSize:11,color:'#92400E',fontWeight:600,marginTop:2}}>Pending</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
         </div>
       </div>
     )

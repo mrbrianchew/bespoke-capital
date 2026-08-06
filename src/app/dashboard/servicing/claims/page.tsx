@@ -243,6 +243,18 @@ export default function MedicalClaimsPage() {
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
+
+  // ── Share modal state ──
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [shareSelectedIds, setShareSelectedIds] = useState<string[]>([])
+  const [sharePassword, setSharePassword] = useState('')
+  const [shareHint, setShareHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
+  const [shareExpiry, setShareExpiry] = useState<'7d' | '30d' | 'permanent'>('30d')
+  const [shareGenerating, setShareGenerating] = useState(false)
+  const [shareLink, setShareLink] = useState('')
+  const [shareToken, setShareToken] = useState('')
+  const [shareCopied, setShareCopied] = useState(false)
+  const [revoking, setRevoking] = useState(false)
   const [policyYearTerms, setPolicyYearTerms] = useState<PolicyYearTerm[]>([])
   const [selectedYearStart, setSelectedYearStart] = useState<string | null>(null)
   const [policyYearLineItems, setPolicyYearLineItems] = useState<{ deductible_clocked: number; coinsurance_clocked: number; claim_id: string; panel_status: 'panel' | 'non_panel' }[]>([])
@@ -510,6 +522,59 @@ export default function MedicalClaimsPage() {
     setClaims(prev => [data as ClaimRow, ...prev])
     setSelectedClaimId((data as ClaimRow).id)
     setDetailsOpen(true)
+  }
+
+  async function handleGenerateClaimsShare() {
+    if (!sharePassword.trim() || shareSelectedIds.length === 0 || !activeClient) return
+    setShareGenerating(true)
+    try {
+      const hashRes = await fetch('/api/hash-share-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: sharePassword.trim() }),
+      })
+      if (!hashRes.ok) throw new Error('Password hashing failed')
+      const { hash: hashHex } = await hashRes.json()
+      const token = crypto.randomUUID().replace(/-/g, '')
+      let expiresAt: string | null = null
+      if (shareExpiry === '7d') expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
+      if (shareExpiry === '30d') expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
+      const { error } = await supabase.from('client_shares').insert({
+        client_id: activeClient.id,
+        token,
+        expires_at: expiresAt,
+        password_hash: hashHex,
+        password_hint: shareHint,
+        person: 'all',
+        share_type: 'claims',
+        claim_ids: shareSelectedIds,
+      })
+      if (error) throw error
+      setShareLink(`${window.location.origin}/share/${token}`)
+      setShareToken(token)
+    } catch (e) {
+      console.error('Claims share failed:', e)
+      alert('Could not generate share link: ' + (e instanceof Error ? e.message : 'unknown error'))
+    } finally {
+      setShareGenerating(false)
+    }
+  }
+
+  async function revokeClaimsShare(token: string) {
+    if (!token) return
+    if (!window.confirm('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
+    setRevoking(true)
+    try {
+      const { error } = await supabase.from('client_shares').delete().eq('token', token)
+      if (error) throw error
+      setShareLink('')
+      setSharePassword('')
+      setShareToken('')
+    } catch (e) {
+      console.error('Revoke failed:', e)
+    } finally {
+      setRevoking(false)
+    }
   }
 
   async function updateClaim(patch: Partial<ClaimRow>) {
@@ -904,6 +969,10 @@ export default function MedicalClaimsPage() {
           )
         })}
         <button onClick={createClaim} disabled={saving} style={{ ...pillBase, border: `1.5px dashed ${T.gold}`, background: T.goldSoft, color: T.goldText, fontSize: 12.5, fontWeight: 700 }}>+ New</button>
+        {claims.length > 0 && (
+          <button onClick={() => { setShowShareModal(true); setShareSelectedIds(selectedClaimId ? [selectedClaimId] : []); setShareLink(''); setSharePassword(''); setShareCopied(false) }}
+            style={{ ...pillBase, border: `1px solid ${T.line}`, background: 'var(--cream)', color: T.textDim, fontSize: 12.5, fontWeight: 700, marginLeft: 'auto' }}>Share</button>
+        )}
       </div>
 
       {!selectedClaim ? (
@@ -1248,6 +1317,106 @@ export default function MedicalClaimsPage() {
           onCancel={() => setAddModalSection(null)}
           onCreate={fields => createLineItem(addModalSection, fields)}
         />
+      )}
+
+      {showShareModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.7)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'white', width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
+            <div style={{ padding: '18px 26px', borderBottom: `1px solid ${T.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'white', zIndex: 1 }}>
+              <div className="claims-serif" style={{ fontSize: 20, color: T.text }}>Share Claims</div>
+              <button onClick={() => { setShowShareModal(false); setShareLink(''); setSharePassword(''); setShareCopied(false) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: T.textFaint }}>✕</button>
+            </div>
+            <div style={{ padding: '20px 26px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {!shareLink ? (
+                <>
+                  <div>
+                    <div style={{ fontSize: 9, letterSpacing: '0.13em', textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>Claims to Include</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+                      {claims.map(c => {
+                        const label = allPeople.find(p => p.key === c.life_assured_person)?.label || c.life_assured_person
+                        const included = shareSelectedIds.includes(c.id)
+                        return (
+                          <button key={c.id}
+                            onClick={() => setShareSelectedIds(prev => included ? prev.filter(x => x !== c.id) : [...prev, c.id])}
+                            style={{ padding: '7px 16px', fontSize: 12, border: `1px solid ${included ? '#1C1A17' : T.line}`,
+                              background: included ? '#1C1A17' : 'white', color: included ? 'white' : T.text, cursor: 'pointer', textAlign: 'left' }}>
+                            <div style={{ fontWeight: 700 }}>{label}</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>{c.label || 'Claim'}</div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {shareSelectedIds.length === 0 && (
+                      <div style={{ fontSize: 11, color: '#E53935', marginTop: 6 }}>Select at least one claim.</div>
+                    )}
+                    <div style={{ fontSize: 11, color: T.textFaint, marginTop: 8, lineHeight: 1.5 }}>
+                      The client sees status, dates, providers, and claimed/approved amounts for the selected claims only — no internal notes or remarks.
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, letterSpacing: '0.13em', textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>Link Expiry</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {([['7d', '7 Days'], ['30d', '30 Days'], ['permanent', 'Permanent']] as const).map(([val, label]) => (
+                        <button key={val} onClick={() => setShareExpiry(val)}
+                          style={{ padding: '7px 16px', fontSize: 12, border: `1px solid ${shareExpiry === val ? '#1C1A17' : T.line}`,
+                            background: shareExpiry === val ? '#1C1A17' : 'white', color: shareExpiry === val ? 'white' : T.text, cursor: 'pointer' }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, letterSpacing: '0.13em', textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>Password</div>
+                    <input type="text" value={sharePassword} onChange={e => setSharePassword(e.target.value)}
+                      placeholder="e.g. 567A1980"
+                      style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.line}`, background: 'var(--cream)', color: T.text, fontSize: 13, outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'DM Mono,monospace' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, letterSpacing: '0.13em', textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>Password Hint (shown to client)</div>
+                    <textarea value={shareHint} onChange={e => setShareHint(e.target.value)} rows={3}
+                      style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.line}`, background: 'var(--cream)', color: T.text, fontSize: 12, outline: 'none', resize: 'vertical' as const, boxSizing: 'border-box' as const, fontFamily: 'Inter,sans-serif', lineHeight: 1.6 }} />
+                  </div>
+                  <button onClick={handleGenerateClaimsShare} disabled={!sharePassword.trim() || shareSelectedIds.length === 0 || shareGenerating}
+                    style={{ padding: 10, background: (sharePassword.trim() && shareSelectedIds.length > 0) ? '#1C1A17' : '#ccc', color: 'white', border: 'none', cursor: (sharePassword.trim() && shareSelectedIds.length > 0) ? 'pointer' : 'default', fontSize: 13, fontWeight: 500 }}>
+                    {shareGenerating ? 'Generating…' : 'Generate Link'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ padding: 16, background: '#F5F3EE', border: '1px solid #E0DDD6' }}>
+                    <div style={{ fontSize: 10, color: T.textFaint, marginBottom: 6, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Your shareable link</div>
+                    <div className="claims-serif" style={{ fontSize: 16, color: T.text, marginBottom: 6 }}>Claims Summary — {clientName}</div>
+                    <div style={{ fontSize: 10, color: T.textFaint, fontFamily: 'DM Mono,monospace', wordBreak: 'break-all' as const }}>{shareLink}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textFaint, lineHeight: 1.6, background: '#FFFBF5', padding: 12, border: '1px solid #F0E8D8' }}>
+                    Copy the button below and paste into WhatsApp. The client sees a tappable link with the document title.
+                  </div>
+                  <button onClick={async () => {
+                    const text = `Claims Summary — ${clientName}\n\n${shareLink}`
+                    await navigator.clipboard.writeText(text)
+                    setShareCopied(true)
+                    setTimeout(() => setShareCopied(false), 3000)
+                  }}
+                    style={{ padding: 10, background: '#1C1A17', color: '#c8a96e', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
+                    {shareCopied ? '✓ Copied to clipboard!' : `Copy "Claims Summary — ${clientName}"`}
+                  </button>
+                  <div style={{ fontSize: 11, color: T.textFaint, textAlign: 'center' }}>
+                    {shareExpiry === 'permanent' ? 'This link does not expire.' : shareExpiry === '7d' ? 'Expires in 7 days.' : 'Expires in 30 days.'}
+                  </div>
+                  <button onClick={() => { setShareLink(''); setSharePassword('') }}
+                    style={{ padding: 8, background: 'none', border: `1px solid ${T.line}`, color: T.textFaint, cursor: 'pointer', fontSize: 12 }}>
+                    Generate Another Link
+                  </button>
+                  <button onClick={() => revokeClaimsShare(shareToken)} disabled={revoking}
+                    style={{ padding: 8, background: 'none', border: '1px solid var(--rouge, #E53935)', color: 'var(--rouge, #E53935)', cursor: 'pointer', fontSize: 12 }}>
+                    {revoking ? 'Revoking…' : 'Revoke This Link'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
