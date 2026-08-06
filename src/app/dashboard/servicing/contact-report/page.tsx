@@ -56,7 +56,7 @@ const PLATFORM_OPTIONS = ['Zoom', 'Google Meet', 'Microsoft Teams', 'WhatsApp Vi
 function fmtDate(iso: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-SG', { day: '2-digit', month: 'short' })
+  return d.toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 function contactTag(r: ContactReportRow): string {
   const icon = CONTACT_TYPE_ICON[r.contact_type]
@@ -90,6 +90,7 @@ export default function ContactReportPage() {
 
   // ── Form state ──
   const [formOpen, setFormOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [fType, setFType] = useState<ContactType | null>(null)
   const [fTypeOther, setFTypeOther] = useState('')
   const [fVenue, setFVenue] = useState('')
@@ -149,6 +150,7 @@ export default function ContactReportPage() {
   }, [activeClient, authLoading])
 
   function resetForm() {
+    setEditingId(null)
     setFType(null)
     setFTypeOther('')
     setFVenue('')
@@ -157,6 +159,19 @@ export default function ContactReportPage() {
     setFDate(new Date().toISOString().slice(0, 10))
     setFNotes('')
     setFormError('')
+  }
+
+  function openEditForm(report: ContactReportRow) {
+    setEditingId(report.id)
+    setFType(report.contact_type)
+    setFTypeOther(report.contact_type_other || '')
+    setFVenue(report.venue || '')
+    setFPlatform(report.platform || PLATFORM_OPTIONS[0])
+    setFPlatformOther(report.platform_other || '')
+    setFDate(report.contact_date)
+    setFNotes(report.notes || '')
+    setFormError('')
+    setFormOpen(true)
   }
 
   async function saveEntry() {
@@ -168,8 +183,6 @@ export default function ContactReportPage() {
     setSaving(true)
 
     const payload = {
-      client_id: activeClient.id,
-      advisor_id: advisor.id,
       contact_type: fType,
       contact_type_other: fType === 'other' ? fTypeOther.trim() : null,
       venue: fType === 'f2f' ? (fVenue.trim() || null) : null,
@@ -177,10 +190,35 @@ export default function ContactReportPage() {
       platform_other: fType === 'non_f2f' && fPlatform === 'Other' ? fPlatformOther.trim() : null,
       contact_date: fDate,
       notes: fNotes.trim() || null,
-      status: 'open' as ContactStatus,
     }
 
-    const { data, error } = await supabase.from('contact_reports').insert(payload).select()
+    if (editingId) {
+      const { data, error } = await supabase.from('contact_reports')
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', editingId)
+        .select()
+      setSaving(false)
+      if (error) { setFormError(error.message); return }
+      const updatedRow = (data || [])[0] as ContactReportRow | undefined
+      if (updatedRow) {
+        setReports(prev => prev.map(r => (r.id === editingId ? updatedRow : r))
+          .sort((a, b) => {
+            if (a.contact_date !== b.contact_date) return a.contact_date < b.contact_date ? 1 : -1
+            return a.created_at < b.created_at ? 1 : -1
+          }))
+        setExpandedId(editingId)
+      }
+      resetForm()
+      setFormOpen(false)
+      return
+    }
+
+    const { data, error } = await supabase.from('contact_reports').insert({
+      ...payload,
+      client_id: activeClient.id,
+      advisor_id: advisor.id,
+      status: 'open',
+    }).select()
     setSaving(false)
     if (error) { setFormError(error.message); return }
     const newRow = (data || [])[0] as ContactReportRow | undefined
@@ -197,16 +235,6 @@ export default function ContactReportPage() {
 
   function toggleExpand(id: string) {
     setExpandedId(prev => (prev === id ? null : id))
-  }
-
-  async function toggleStatus(report: ContactReportRow) {
-    const nextStatus: ContactStatus = report.status === 'open' ? 'resolved' : 'open'
-    setReports(prev => prev.map(r => (r.id === report.id ? { ...r, status: nextStatus } : r)))
-    const { error } = await supabase.from('contact_reports').update({ status: nextStatus, updated_at: new Date().toISOString() }).eq('id', report.id)
-    if (error) {
-      console.error('[contact-report] status update failed:', error)
-      setReports(prev => prev.map(r => (r.id === report.id ? { ...r, status: report.status } : r)))
-    }
   }
 
   async function toggleTodo(todo: ContactTodoRow) {
@@ -273,8 +301,6 @@ export default function ContactReportPage() {
     return <div style={pageWrap}><div style={{ color: 'var(--ink3)', padding: 40, textAlign: 'center' }}>Select a client to view Contact Reports.</div></div>
   }
 
-  const openCount = reports.filter(r => r.status === 'open').length
-
   return (
     <div style={pageWrap}>
       <div className="font-serif" style={{ fontSize: 26, color: 'var(--charcoal)', marginBottom: 2 }}>Contact Report</div>
@@ -282,7 +308,7 @@ export default function ContactReportPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
         <div className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
-          {reports.length} {reports.length === 1 ? 'entry' : 'entries'} · {openCount} open
+          {reports.length} {reports.length === 1 ? 'entry' : 'entries'}
         </div>
         {!formOpen && (
           <button onClick={() => setFormOpen(true)} style={btnPrimary}>+ Log Contact</button>
@@ -345,7 +371,7 @@ export default function ContactReportPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={() => { setFormOpen(false); resetForm() }} style={btnCancel}>Cancel</button>
             <button onClick={saveEntry} disabled={saving} style={{ ...btnSave, opacity: saving ? 0.6 : 1 }}>
-              {saving ? 'Saving…' : 'Save Entry'}
+              {saving ? 'Saving…' : editingId ? 'Update Entry' : 'Save Entry'}
             </button>
           </div>
         </div>
@@ -366,7 +392,6 @@ export default function ContactReportPage() {
               <div key={r.id} style={{ borderBottom: '1px solid var(--line)' }}>
                 <div onClick={() => toggleExpand(r.id)} style={logRow}>
                   <div className="font-mono" style={logDate}>{fmtDate(r.contact_date)}</div>
-                  <div style={{ ...logDot, background: r.status === 'open' ? 'var(--gold)' : 'var(--emerald)' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={logTitle}>
                       {r.notes ? r.notes.split('\n')[0].slice(0, 80) : `${CONTACT_TYPE_LABEL[r.contact_type]} logged`}
@@ -376,9 +401,9 @@ export default function ContactReportPage() {
                       {secondary && <span style={tagStyle}>{secondary}</span>}
                     </div>
                   </div>
-                  <div style={{ ...logStatus, color: r.status === 'open' ? 'var(--gold-tag)' : 'var(--emerald)' }}>
-                    {r.status === 'open' ? `Open${openTodos > 0 ? ` · ${openTodos}` : ''}` : 'Resolved'}
-                  </div>
+                  {openTodos > 0 && (
+                    <div className="font-mono" style={logStatus}>{openTodos} to-do{openTodos > 1 ? 's' : ''}</div>
+                  )}
                   <div style={{ ...chevron, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</div>
                 </div>
 
@@ -387,14 +412,12 @@ export default function ContactReportPage() {
                     {r.notes && (
                       <div style={{ marginBottom: 12 }}>
                         <div style={detailLabel}>Notes</div>
-                        <div style={detailValue}>{r.notes}</div>
+                        <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{r.notes}</div>
                       </div>
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <button onClick={() => toggleStatus(r)} style={r.status === 'open' ? statusBtnResolve : statusBtnReopen}>
-                        {r.status === 'open' ? 'Mark Resolved' : 'Reopen'}
-                      </button>
+                      <button onClick={() => openEditForm(r)} style={editEntryBtn}>Edit Entry</button>
                       <button onClick={() => deleteEntry(r)} style={deleteEntryBtn}>Delete Entry</button>
                     </div>
 
@@ -476,22 +499,17 @@ const btnCancel: React.CSSProperties = {
 }
 
 const logRow: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 4px', cursor: 'pointer' }
-const logDate: React.CSSProperties = { fontSize: 11, color: 'var(--ink3)', width: 48, flexShrink: 0, paddingTop: 2 }
-const logDot: React.CSSProperties = { width: 7, height: 7, borderRadius: '50%', marginTop: 6, flexShrink: 0 }
+const logDate: React.CSSProperties = { fontSize: 11, color: 'var(--ink3)', width: 62, flexShrink: 0, paddingTop: 2, lineHeight: 1.4 }
 const logTitle: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: 'var(--charcoal)' }
 const tagStyle: React.CSSProperties = { fontSize: 10, color: 'var(--ink3)', background: 'var(--cream2)', padding: '2px 8px', borderRadius: 5 }
-const logStatus: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, flexShrink: 0, paddingTop: 2, whiteSpace: 'nowrap' }
+const logStatus: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, flexShrink: 0, paddingTop: 2, whiteSpace: 'nowrap', color: 'var(--gold-tag)' }
 const chevron: React.CSSProperties = { fontSize: 11, color: 'var(--ink3)', marginLeft: 4, transition: 'transform 0.15s ease', flexShrink: 0, paddingTop: 3 }
 
-const logDetail: React.CSSProperties = { padding: '0 4px 16px 64px' }
+const logDetail: React.CSSProperties = { padding: '0 4px 16px 4px' }
 const detailLabel: React.CSSProperties = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--ink3)', marginBottom: 3 }
 const detailValue: React.CSSProperties = { fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }
 
-const statusBtnResolve: React.CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: 'var(--emerald)', background: 'var(--emerald-l)', border: 'none',
-  borderRadius: 6, padding: '6px 12px', cursor: 'pointer',
-}
-const statusBtnReopen: React.CSSProperties = {
+const editEntryBtn: React.CSSProperties = {
   fontSize: 11, fontWeight: 600, color: 'var(--gold-tag)', background: 'var(--gold-l)', border: 'none',
   borderRadius: 6, padding: '6px 12px', cursor: 'pointer',
 }
