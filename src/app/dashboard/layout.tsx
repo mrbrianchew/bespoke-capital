@@ -89,6 +89,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [clientSearch, setClientSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showBugReport, setShowBugReport] = useState(false)
+  const [adminBadgeCount, setAdminBadgeCount] = useState(0)
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -108,6 +109,17 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (routeGroup && routeGroup !== expandedGroup) setExpandedGroup(routeGroup)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, advisor?.beta_features, advisor?.id])
+
+  // Admin Hub notification badge — pending advisor approvals + unresolved
+  // bug reports. Creator-only, refetched on every navigation so it clears
+  // shortly after visiting /admin and resolving/approving things there.
+  useEffect(() => {
+    if (!user?.id || user.id !== CREATOR_ID) return
+    fetch('/api/get-admin-badge-counts')
+      .then(r => r.json())
+      .then(data => setAdminBadgeCount((data?.pendingAdvisors || 0) + (data?.newBugReports || 0)))
+      .catch(() => {})
+  }, [pathname, user?.id])
 
   async function deleteClient(clientId: string) {
     if (!confirm('Delete this client? This cannot be undone.')) return
@@ -264,7 +276,16 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <div className="px-3 py-3" style={{ borderTop: '1px solid var(--line)' }}>
             <div className="px-3 mb-1 text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)' }}>Admin</div>
             <Link href="/admin" className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all text-sm" style={{ color: pathname.startsWith('/admin') ? 'var(--gold-tag)' : 'var(--ink3)', background: pathname.startsWith('/admin') ? 'var(--gold-l)' : 'transparent' }}>
-              <span className="text-base w-4 text-center">&#9881;</span> Admin Hub
+              <span className="text-base w-4 text-center">&#9881;</span>
+              <span className="flex-1">Admin Hub</span>
+              {adminBadgeCount > 0 && (
+                <span
+                  className="flex items-center justify-center text-xs font-medium"
+                  style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
+                >
+                  {adminBadgeCount > 99 ? '99+' : adminBadgeCount}
+                </span>
+              )}
             </Link>
           </div>
         )}

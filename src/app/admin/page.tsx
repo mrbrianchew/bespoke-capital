@@ -287,6 +287,17 @@ function BugReportsCard() {
     setActionId(null)
   }
 
+  async function deleteReport(id: string) {
+    if (!confirm('Permanently delete this report? This cannot be undone.')) return
+    setActionId(id)
+    await fetch('/api/delete-bug-report', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    setReports(prev => prev.filter(r => r.id !== id))
+    setActionId(null)
+  }
+
   const newReports = reports.filter(r => r.status === 'new')
   const resolvedReports = reports.filter(r => r.status === 'resolved')
 
@@ -311,13 +322,23 @@ function BugReportsCard() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setStatus(r.id, r.status === 'new' ? 'resolved' : 'new')}
-          disabled={busy}
-          style={{ padding: '6px 10px', background: 'white', color: r.status === 'new' ? '#2D5A4E' : '#9A9690', border: `1px solid ${r.status === 'new' ? '#2D5A4E' : '#D0CDC5'}`, borderRadius: 6, fontSize: 11, cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' as const }}
-        >
-          {busy ? '…' : r.status === 'new' ? 'Mark resolved' : 'Reopen'}
-        </button>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button
+            onClick={() => setStatus(r.id, r.status === 'new' ? 'resolved' : 'new')}
+            disabled={busy}
+            style={{ padding: '6px 10px', background: 'white', color: r.status === 'new' ? '#2D5A4E' : '#9A9690', border: `1px solid ${r.status === 'new' ? '#2D5A4E' : '#D0CDC5'}`, borderRadius: 6, fontSize: 11, cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' as const }}
+          >
+            {busy ? '…' : r.status === 'new' ? 'Mark resolved' : 'Reopen'}
+          </button>
+          <button
+            onClick={() => deleteReport(r.id)}
+            disabled={busy}
+            title="Delete permanently"
+            style={{ padding: '6px 8px', background: 'white', color: '#C0392B', border: '1px solid #C0392B', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+          >
+            ✕
+          </button>
+        </div>
       </div>
     )
   }
