@@ -41,10 +41,10 @@ interface ClaimRow {
   label: string | null
   status: 'open' | 'closed' | 'withdrawn'
   opened_date: string
-  panel_status: 'panel' | 'non_panel'
-  // deductible_amount / coinsurance_cap_annual columns exist on this table
-  // but are unused — the real deductible/co-insurance-cap terms live on
-  // policy_year_terms (per policy, per policy year, per panel_status).
+  // panel_status/deductible_amount/coinsurance_cap_annual columns exist on
+  // this table but are DEPRECATED/unused — panel_status now lives on
+  // claim_line_items (a claim can mix Panel and Non-Panel lines), and the
+  // real deductible/co-insurance-cap terms live on policy_year_terms.
   deductible_amount: number
   coinsurance_cap_annual: number
   created_at: string
@@ -56,6 +56,7 @@ interface LineItemRow {
   claim_id: string
   section: 'pre' | 'in' | 'post'
   type: string | null
+  panel_status: 'panel' | 'non_panel'
   date_from: string | null
   date_to: string | null
   description: string | null
@@ -209,6 +210,7 @@ function fmtYearRange(start: string, end: string) {
 function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<LineItemRow, 'id'> {
   return {
     claim_id: claimId, section, type: section === 'in' ? 'Surgery' : 'Outpatient',
+    panel_status: 'panel',
     date_from: null, date_to: null, description: '', invoice_no: '',
     amount_claimed: 0, submitted_date: null, approved: false, date_approved: null,
     amount_approved: 0, deductible_clocked: 0, coinsurance_clocked: 0, remarks: '',
@@ -235,13 +237,15 @@ export default function MedicalClaimsPage() {
   const [policyPanelOpen, setPolicyPanelOpen] = useState(false)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [addModalSection, setAddModalSection] = useState<'pre' | 'in' | 'post' | null>(null)
+  const [addingLine, setAddingLine] = useState(false)
   const [notesByItem, setNotesByItem] = useState<Record<string, FollowupNote[]>>({})
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
   const [policyYearTerms, setPolicyYearTerms] = useState<PolicyYearTerm[]>([])
   const [selectedYearStart, setSelectedYearStart] = useState<string | null>(null)
-  const [policyYearLineItems, setPolicyYearLineItems] = useState<{ deductible_clocked: number; coinsurance_clocked: number; claim_id: string }[]>([])
+  const [policyYearLineItems, setPolicyYearLineItems] = useState<{ deductible_clocked: number; coinsurance_clocked: number; claim_id: string; panel_status: 'panel' | 'non_panel' }[]>([])
 
   // ── Documents (Drive) — Option B: the advisor's own Google login, via
   // Google Identity Services + Picker. No pre-shared folder, no robot
@@ -466,24 +470,23 @@ export default function MedicalClaimsPage() {
     const claimIds = claims.filter(c => c.policy_id === mainPolicy!.id).map(c => c.id)
     if (claimIds.length === 0) { setPolicyYearLineItems([]); return }
     let cancelled = false
-    supabase.from('claim_line_items').select('deductible_clocked,coinsurance_clocked,claim_id').in('claim_id', claimIds)
+    supabase.from('claim_line_items').select('deductible_clocked,coinsurance_clocked,claim_id,panel_status').in('claim_id', claimIds)
       .then(({ data }) => { if (!cancelled) setPolicyYearLineItems(data || []) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mainPolicy?.id, claims, lineItems])
 
   const selectedTerm = policyYearTerms.find(t => t.year_start === selectedYearStart) || null
-  const yearClaimsInWindow = selectedTerm
-    ? claims.filter(c => c.policy_id === mainPolicy?.id && c.opened_date >= selectedTerm.year_start && c.opened_date <= selectedTerm.year_end)
-    : []
-  // Panel and Non-Panel each clock against their own cap — a Non-Panel claim
-  // doesn't eat into the Panel co-insurance cap, and vice versa.
-  const panelClaimIds = new Set(yearClaimsInWindow.filter(c => c.panel_status !== 'non_panel').map(c => c.id))
-  const nonPanelClaimIds = new Set(yearClaimsInWindow.filter(c => c.panel_status === 'non_panel').map(c => c.id))
-  const panelDeductibleClockedTotal = policyYearLineItems.filter(li => panelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.deductible_clocked || 0), 0)
-  const panelCoinsuranceClockedTotal = policyYearLineItems.filter(li => panelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
-  const nonPanelDeductibleClockedTotal = policyYearLineItems.filter(li => nonPanelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.deductible_clocked || 0), 0)
-  const nonPanelCoinsuranceClockedTotal = policyYearLineItems.filter(li => nonPanelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
+  const yearClaimIds = new Set(
+    selectedTerm ? claims.filter(c => c.policy_id === mainPolicy?.id && c.opened_date >= selectedTerm.year_start && c.opened_date <= selectedTerm.year_end).map(c => c.id) : []
+  )
+  // Panel and Non-Panel each clock against their own cap — a Non-Panel line
+  // doesn't eat into the Panel co-insurance cap, and vice versa. This is
+  // per line item now, not per claim, since one claim can mix both.
+  const panelDeductibleClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id) && li.panel_status !== 'non_panel').reduce((s, li) => s + (li.deductible_clocked || 0), 0)
+  const panelCoinsuranceClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id) && li.panel_status !== 'non_panel').reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
+  const nonPanelDeductibleClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id) && li.panel_status === 'non_panel').reduce((s, li) => s + (li.deductible_clocked || 0), 0)
+  const nonPanelCoinsuranceClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id) && li.panel_status === 'non_panel').reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
 
   async function updateYearTerm(patch: Partial<PolicyYearTerm>) {
     if (!selectedTerm) return
@@ -501,7 +504,6 @@ export default function MedicalClaimsPage() {
     const { data, error } = await supabase.from('claims').insert({
       client_id: activeClient.id, policy_id: firstMain.id, life_assured_person: person,
       label: 'New Claim', status: 'open', opened_date: new Date().toISOString().slice(0, 10),
-      panel_status: 'panel',
     }).select().maybeSingle()
     setSaving(false)
     if (error || !data) { alert('Could not create claim: ' + (error?.message || 'unknown error')); return }
@@ -555,12 +557,15 @@ export default function MedicalClaimsPage() {
   }
 
   // ── Line item mutations ──
-  async function addLine(section: 'pre' | 'in' | 'post') {
+  async function createLineItem(section: 'pre' | 'in' | 'post', fields: Partial<LineItemRow>) {
     if (!selectedClaimId) return
-    const draft = newLineItem(selectedClaimId, section)
+    const draft = { ...newLineItem(selectedClaimId, section), ...fields }
+    setAddingLine(true)
     const { data, error } = await supabase.from('claim_line_items').insert(draft).select().maybeSingle()
+    setAddingLine(false)
     if (error || !data) { alert('Could not add line: ' + (error?.message || 'unknown error')); return }
     setLineItems(prev => [...prev, data as LineItemRow])
+    setAddModalSection(null)
     setExpandedItemId((data as LineItemRow).id)
   }
 
@@ -908,12 +913,7 @@ export default function MedicalClaimsPage() {
           {/* Hero */}
           <div style={heroCard}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Claim · Opened {fmtDate(selectedClaim.opened_date)}</div>
-                <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.goldText, background: T.goldSoft, padding: '2px 8px', borderRadius: 999 }}>
-                  {PANEL_STATUS_LABEL[selectedClaim.panel_status || 'panel']}
-                </span>
-              </div>
+              <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Claim · Opened {fmtDate(selectedClaim.opened_date)}</div>
               <div className="claims-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Medical Insurance Claims for {allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || clientName}</div>
               <div style={{ fontSize: 11.5, color: T.textDim, marginTop: 5 }}>Household <b style={{ color: T.text }}>{clientName}</b> family</div>
             </div>
@@ -922,10 +922,10 @@ export default function MedicalClaimsPage() {
               Delete this claim
             </button>
             <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${T.line} 15%, ${T.line} 85%, transparent)`, margin: '20px 0' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-              <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 9.5, letterSpacing: 1.2, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Total Claimed</div>
-                <div className="claims-mono" style={{ fontSize: 34, marginTop: 5, color: T.text }}>{money(totalClaimed)}</div>
+                <div className="claims-mono" style={{ fontSize: 'clamp(22px, 8vw, 34px)', marginTop: 5, color: T.text }}>{money(totalClaimed)}</div>
                 <div style={{ fontSize: 12, color: T.gold, marginTop: 5, fontWeight: 600 }}>Approved {money(totalApproved)}</div>
               </div>
               <Ring pct={pct} />
@@ -943,14 +943,6 @@ export default function MedicalClaimsPage() {
                 <FieldLabel>Life Assured</FieldLabel>
                 <select className="claims-select" value={selectedClaim.life_assured_person} onChange={e => onLifeAssuredChange(e.target.value)}>
                   {allPeople.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <FieldLabel>Panel Status</FieldLabel>
-                <select className="claims-select" value={selectedClaim.panel_status || 'panel'}
-                  onChange={e => updateClaim({ panel_status: e.target.value as 'panel' | 'non_panel' })}>
-                  <option value="panel">Panel</option>
-                  <option value="non_panel">Non-Panel</option>
                 </select>
               </div>
               <div>
@@ -1154,7 +1146,7 @@ export default function MedicalClaimsPage() {
                       <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>{SECTION_SUB[sec]}</div>
                     </div>
                   </div>
-                  <button onClick={() => addLine(sec)} style={addBtn}>+ Add</button>
+                  <button onClick={() => setAddModalSection(sec)} style={addBtn}>+ Add</button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {items.length === 0 && <div style={{ ...cardBase, padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>No line items yet.</div>}
@@ -1247,6 +1239,16 @@ export default function MedicalClaimsPage() {
           </div>
         </>
       )}
+
+      {addModalSection && (
+        <NewLineItemModal
+          section={addModalSection}
+          typeOptions={SECTION_TYPE_OPTIONS[addModalSection]}
+          saving={addingLine}
+          onCancel={() => setAddModalSection(null)}
+          onCreate={fields => createLineItem(addModalSection, fields)}
+        />
+      )}
     </div>
   )
 }
@@ -1275,6 +1277,67 @@ function Ring({ pct }: { pct: number }) {
   )
 }
 
+function NewLineItemModal({ section, typeOptions, saving, onCancel, onCreate }: {
+  section: 'pre' | 'in' | 'post'; typeOptions: string[]; saving: boolean
+  onCancel: () => void; onCreate: (fields: Partial<LineItemRow>) => void
+}) {
+  const [f, setF] = useState<Partial<LineItemRow>>({
+    type: section === 'in' ? 'Surgery' : 'Outpatient', panel_status: 'panel',
+    date_from: null, date_to: null, description: '', invoice_no: '',
+    amount_claimed: 0, submitted_date: null, approved: false, date_approved: null,
+    amount_approved: 0, deductible_clocked: 0, coinsurance_clocked: 0, remarks: '',
+  })
+  return (
+    <div onClick={onCancel} style={{
+      position: 'fixed', inset: 0, background: 'rgba(28,26,23,.45)', zIndex: 100,
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: 'var(--cream)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560,
+        maxHeight: '88vh', overflowY: 'auto', padding: '20px 18px 24px',
+        boxShadow: '0 -16px 40px rgba(28,26,23,.25)',
+      }}>
+        <div className="claims-serif" style={{ fontSize: 20, color: T.text, marginBottom: 4 }}>New {SECTION_LABEL[section]} Line</div>
+        <div style={{ fontSize: 11.5, color: T.textFaint, marginBottom: 16 }}>Fill in what you have — documents can be attached once it's saved.</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div><FieldLabel>Type</FieldLabel>
+            <select className="claims-select" value={f.type || ''} onChange={e => setF({ ...f, type: e.target.value })}>
+              {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div><FieldLabel>Panel Status</FieldLabel>
+            <select className="claims-select" value={f.panel_status || 'panel'} onChange={e => setF({ ...f, panel_status: e.target.value as 'panel' | 'non_panel' })}>
+              <option value="panel">Panel</option>
+              <option value="non_panel">Non-Panel</option>
+            </select>
+          </div>
+          <div><FieldLabel>Invoice / Claim No.</FieldLabel><input className="claims-input" value={f.invoice_no || ''} onChange={e => setF({ ...f, invoice_no: e.target.value })} /></div>
+          <div><FieldLabel>Date From</FieldLabel><DateInput value={f.date_from || ''} onChange={v => setF({ ...f, date_from: v || null })} className="claims-input" dark /></div>
+          <div><FieldLabel>Date To</FieldLabel><DateInput value={f.date_to || ''} onChange={v => setF({ ...f, date_to: v || null })} className="claims-input" dark /></div>
+          <div style={{ gridColumn: '1/-1' }}><FieldLabel>Description</FieldLabel><input className="claims-input" value={f.description || ''} onChange={e => setF({ ...f, description: e.target.value })} /></div>
+          <div><FieldLabel>Amount Claimed</FieldLabel><input className="claims-input claims-mono" type="number" value={f.amount_claimed || ''} onChange={e => setF({ ...f, amount_claimed: e.target.value === '' ? 0 : +e.target.value })} /></div>
+          <div><FieldLabel>Submitted</FieldLabel><DateInput value={f.submitted_date || ''} onChange={v => setF({ ...f, submitted_date: v || null })} className="claims-input" dark /></div>
+          <div><FieldLabel>Date Approved</FieldLabel><DateInput value={f.date_approved || ''} onChange={v => setF({ ...f, date_approved: v || null })} className="claims-input" dark /></div>
+          <div><FieldLabel>Amount Approved</FieldLabel><input className="claims-input claims-mono" type="number" value={f.amount_approved || ''} onChange={e => setF({ ...f, amount_approved: e.target.value === '' ? 0 : +e.target.value })} /></div>
+          <div><FieldLabel>Deductible Used (This Line, $)</FieldLabel><input className="claims-input claims-mono" type="number" value={f.deductible_clocked || ''} onChange={e => setF({ ...f, deductible_clocked: e.target.value === '' ? 0 : +e.target.value })} /></div>
+          <div><FieldLabel>Co-Insurance Applied (This Line, $)</FieldLabel><input className="claims-input claims-mono" type="number" value={f.coinsurance_clocked || ''} onChange={e => setF({ ...f, coinsurance_clocked: e.target.value === '' ? 0 : +e.target.value })} /></div>
+          <div style={{ gridColumn: '1/-1' }}><FieldLabel>Remarks</FieldLabel><input className="claims-input" value={f.remarks || ''} onChange={e => setF({ ...f, remarks: e.target.value })} /></div>
+          <div style={{ gridColumn: '1/-1' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: T.textDim }}>
+              <input type="checkbox" checked={!!f.approved} onChange={e => setF({ ...f, approved: e.target.checked })} style={{ width: 17, height: 17, accentColor: T.emerald }} />
+              Insurer approved this line
+            </label>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+          <button onClick={onCancel} disabled={saving} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: `1px solid ${T.line}`, background: 'var(--cream)', color: T.textDim, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={() => onCreate(f)} disabled={saving} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--charcoal)', color: 'var(--cream)', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save Line'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, pickedFolder, uploading, onUploadFiles, onDeleteDocument, typeOptions, accent }: {
   item: LineItemRow; expanded: boolean; onToggle: () => void
   onSave: (patch: Partial<LineItemRow>) => void; onDelete: () => void
@@ -1294,6 +1357,7 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: accent.text, background: accent.soft, padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, background: T.void2, padding: '2px 7px', borderRadius: 5 }}>{PANEL_STATUS_LABEL[item.panel_status || 'panel']}</span>
             <span style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description || '(no description)'}</span>
           </div>
           <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
@@ -1312,6 +1376,12 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
             <div><FieldLabel>Type</FieldLabel>
               <select className="claims-select" value={draft.type || ''} onChange={e => commit({ type: e.target.value })}>
                 {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div><FieldLabel>Panel Status</FieldLabel>
+              <select className="claims-select" value={draft.panel_status || 'panel'} onChange={e => commit({ panel_status: e.target.value as 'panel' | 'non_panel' })}>
+                <option value="panel">Panel</option>
+                <option value="non_panel">Non-Panel</option>
               </select>
             </div>
             <div><FieldLabel>Invoice / Claim No.</FieldLabel><input className="claims-input" value={draft.invoice_no || ''} onChange={e => setDraft({ ...draft, invoice_no: e.target.value })} onBlur={() => commit({ invoice_no: draft.invoice_no })} /></div>
@@ -1469,7 +1539,7 @@ const cardBase: React.CSSProperties = { background: 'var(--cream)', border: `1px
 const heroCard: React.CSSProperties = {
   padding: '24px 22px 26px', borderRadius: 16, border: `1px solid ${T.line}`,
   background: `radial-gradient(480px 240px at 50% 0%, rgba(168,131,74,.08), transparent 60%), linear-gradient(155deg, ${T.void3} 0%, ${T.void2} 60%, ${T.void1} 100%)`,
-  boxShadow: '0 16px 32px -20px rgba(28,26,23,.18)',
+  boxShadow: '0 16px 32px -20px rgba(28,26,23,.18)', overflow: 'hidden',
 }
 const detailsToggle: React.CSSProperties = { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 4px', background: 'none', border: 'none', borderBottom: `1px solid ${T.line}`, color: T.textDim, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginTop: 16 }
 const addBtn: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(168,131,74,.3)`, padding: '6px 13px', borderRadius: 999, cursor: 'pointer' }
