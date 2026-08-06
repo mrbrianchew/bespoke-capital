@@ -70,6 +70,8 @@ interface LineItemRow {
   coinsurance_clocked: number
   remarks: string | null
   followup_status: string | null
+  rejected: boolean
+  rejection_reason: string | null
 }
 
 interface FollowupNote {
@@ -108,6 +110,7 @@ const CLAIM_MSG_TRIGGERS: { key: string; label: string }[] = [
   { key: 'submitted', label: 'Claim Submitted' },
   { key: 'approved', label: 'Claim Approved' },
   { key: 'partial', label: 'Partially Approved' },
+  { key: 'rejected', label: 'Claim Rejected' },
   { key: 'docs', label: 'Additional Documents Needed' },
   { key: 'paid', label: 'Payment Received' },
 ]
@@ -119,6 +122,7 @@ const MSG_VARIABLES: { key: string; label: string }[] = [
   { key: 'amount_approved', label: 'Approved' },
   { key: 'approval_pct', label: 'Approval %' },
   { key: 'status_badge', label: 'Status' },
+  { key: 'rejection_reason', label: 'Rejection Reason' },
   { key: 'advisor_name', label: 'Advisor' },
   { key: 'procedure_description', label: 'Procedure' },
 ]
@@ -126,6 +130,7 @@ const FALLBACK_MSG_TEMPLATES: Record<string, string> = {
   submitted: `Hi {{client_name}}, your claim has been submitted to {{insurer}} (Policy {{policy_number}}). Total amount claimed: {{amount_claimed}}. We'll update you as soon as there's movement.\n\n— {{advisor_name}}`,
   approved: `Good news, {{client_name}}! Your claim has been approved.\n\nApproved amount: {{amount_approved}} of {{amount_claimed}} claimed ({{approval_pct}}).\n\n— {{advisor_name}}`,
   partial: `Hi {{client_name}}, {{insurer}} has partially approved your claim. Approved: {{amount_approved}} of {{amount_claimed}} claimed. Happy to walk you through the breakdown if useful.\n\n— {{advisor_name}}`,
+  rejected: `Hi {{client_name}}, {{insurer}} has reviewed your claim and unfortunately it was not approved. Reason given: {{rejection_reason}}. Happy to discuss next steps whenever suits you.\n\n— {{advisor_name}}`,
   docs: `Hi {{client_name}}, {{insurer}} has requested additional documents for your claim ({{procedure_description}}). Could you send these over when you have a chance?\n\n— {{advisor_name}}`,
   paid: `Hi {{client_name}}, your claim payout of {{amount_approved}} has been credited. Claim closed on our end.\n\n— {{advisor_name}}`,
 }
@@ -214,6 +219,7 @@ function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<Line
     date_from: null, date_to: null, description: '', invoice_no: '',
     amount_claimed: 0, submitted_date: null, approved: false, date_approved: null,
     amount_approved: 0, deductible_clocked: 0, coinsurance_clocked: 0, remarks: '',
+    rejected: false, rejection_reason: null,
   } as any
 }
 
@@ -387,11 +393,11 @@ export default function MedicalClaimsPage() {
 
       const claimIds = claimRows.map(c => c.id)
       if (claimIds.length > 0) {
-        const countsRes = await supabase.from('claim_line_items').select('claim_id, approved').in('claim_id', claimIds)
+        const countsRes = await supabase.from('claim_line_items').select('claim_id, approved, rejected').in('claim_id', claimIds)
         if (!cancelled) {
           const counts: Record<string, number> = {}
           ;(countsRes.data || []).forEach((row: any) => {
-            if (!row.approved) counts[row.claim_id] = (counts[row.claim_id] || 0) + 1
+            if (!row.approved && !row.rejected) counts[row.claim_id] = (counts[row.claim_id] || 0) + 1
           })
           setPendingCountByClaim(counts)
         }
@@ -863,9 +869,12 @@ export default function MedicalClaimsPage() {
   }, [composerOpen, templates])
 
   const derivedStatusBadge = lineItems.length === 0 ? 'No line items yet'
-    : lineItems.every(i => i.approved) ? 'Fully Approved'
-      : lineItems.some(i => i.approved) ? 'Partially Approved'
-        : 'Pending Insurer Review'
+    : lineItems.every(i => i.rejected) ? 'Rejected'
+      : lineItems.every(i => i.approved) ? 'Fully Approved'
+        : lineItems.some(i => i.rejected) ? 'Partially Rejected'
+          : lineItems.some(i => i.approved) ? 'Partially Approved'
+            : 'Pending Insurer Review'
+  const latestRejectionReason = [...lineItems].reverse().find(i => i.rejected && i.rejection_reason)?.rejection_reason || ''
   const msgVars: Record<string, string> = {
     client_name: allPeople.find(p => p.key === selectedClaim?.life_assured_person)?.label || clientName,
     policy_number: mainPolicy?.policyNo || '—',
@@ -874,6 +883,7 @@ export default function MedicalClaimsPage() {
     amount_approved: money(totalApproved),
     approval_pct: pct + '%',
     status_badge: derivedStatusBadge,
+    rejection_reason: latestRejectionReason,
     advisor_name: advisor?.name || '',
     procedure_description: lineItems.map(i => i.description).filter(Boolean).join(', ') || selectedClaim?.label || 'this claim',
   }
@@ -910,12 +920,12 @@ export default function MedicalClaimsPage() {
   }
 
   // ── Follow-ups ──
-  const pendingItems = [...lineItems].filter(i => !i.approved).sort((a, b) => {
+  const pendingItems = [...lineItems].filter(i => !i.approved && !i.rejected).sort((a, b) => {
     const da = daysSince(a.submitted_date || a.date_from) ?? -1
     const db = daysSince(b.submitted_date || b.date_from) ?? -1
     return db - da
   })
-  const resolvedItems = lineItems.filter(i => i.approved)
+  const resolvedItems = lineItems.filter(i => i.approved || i.rejected)
 
   useEffect(() => {
     if (!selectedClaimId) return
@@ -928,8 +938,9 @@ export default function MedicalClaimsPage() {
   // full policy schedule) has no approval state to derive, so it gets its
   // own neutral group rather than being force-fit into Pending/Approved. ──
   const generalDocs = documents.filter(d => !d.line_item_id)
-  const pendingDocs = documents.filter(d => d.line_item_id && lineItems.find(i => i.id === d.line_item_id && !i.approved))
+  const pendingDocs = documents.filter(d => d.line_item_id && lineItems.find(i => i.id === d.line_item_id && !i.approved && !i.rejected))
   const approvedDocs = documents.filter(d => d.line_item_id && lineItems.find(i => i.id === d.line_item_id && i.approved))
+  const rejectedDocs = documents.filter(d => d.line_item_id && lineItems.find(i => i.id === d.line_item_id && i.rejected))
 
   // ── Guards ──
   if (authLoading || loading) return <div style={pageWrap}><div style={{ color: T.textFaint, padding: 40, textAlign: 'center' }}>Loading…</div></div>
@@ -1246,7 +1257,7 @@ export default function MedicalClaimsPage() {
                   <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--charcoal)', background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{documents.length}</span>
                 </div>
                 <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>
-                  {approvedDocs.length > 0 || pendingDocs.length > 0 ? `${approvedDocs.length} approved · ${pendingDocs.length} pending` : "Everything uploaded — line-item docs upload from the line item itself"}
+                  {approvedDocs.length > 0 || pendingDocs.length > 0 || rejectedDocs.length > 0 ? `${approvedDocs.length} approved · ${rejectedDocs.length} rejected · ${pendingDocs.length} pending` : "Everything uploaded — line-item docs upload from the line item itself"}
                 </div>
               </div>
             </div>
@@ -1283,9 +1294,9 @@ export default function MedicalClaimsPage() {
                     outline: dragOver ? `2px dashed ${T.gold}` : 'none', outlineOffset: 4,
                     background: dragOver ? T.goldSoft : 'transparent', transition: 'background .15s',
                   }}>
-                  {[...approvedDocs, ...pendingDocs, ...generalDocs].map(doc => {
-                    const status: 'approved' | 'pending' | null =
-                      approvedDocs.includes(doc) ? 'approved' : pendingDocs.includes(doc) ? 'pending' : null
+                  {[...approvedDocs, ...rejectedDocs, ...pendingDocs, ...generalDocs].map(doc => {
+                    const status: 'approved' | 'rejected' | 'pending' | null =
+                      approvedDocs.includes(doc) ? 'approved' : rejectedDocs.includes(doc) ? 'rejected' : pendingDocs.includes(doc) ? 'pending' : null
                     return <DocCard key={doc.id} doc={doc} status={status} onDelete={() => deleteDocument(doc)} />
                   })}
                   <label style={{
@@ -1455,6 +1466,7 @@ function NewLineItemModal({ section, typeOptions, saving, onCancel, onCreate }: 
     date_from: null, date_to: null, description: '', invoice_no: '',
     amount_claimed: 0, submitted_date: null, approved: false, date_approved: null,
     amount_approved: 0, deductible_clocked: 0, coinsurance_clocked: 0, remarks: '',
+    rejected: false, rejection_reason: '',
   })
   return (
     <div onClick={onCancel} style={{
@@ -1492,10 +1504,30 @@ function NewLineItemModal({ section, typeOptions, saving, onCancel, onCreate }: 
           <div><FieldLabel>Co-Insurance Applied (This Line, $)</FieldLabel><input className="claims-input claims-mono" type="number" value={f.coinsurance_clocked || ''} onChange={e => setF({ ...f, coinsurance_clocked: e.target.value === '' ? 0 : +e.target.value })} /></div>
           <div style={{ gridColumn: '1/-1' }}><FieldLabel>Remarks</FieldLabel><input className="claims-input" value={f.remarks || ''} onChange={e => setF({ ...f, remarks: e.target.value })} /></div>
           <div style={{ gridColumn: '1/-1' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: T.textDim }}>
-              <input type="checkbox" checked={!!f.approved} onChange={e => setF({ ...f, approved: e.target.checked })} style={{ width: 17, height: 17, accentColor: T.emerald }} />
-              Insurer approved this line
-            </label>
+            <FieldLabel>Outcome</FieldLabel>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => setF({ ...f, approved: false, rejected: false })}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1.5px solid ${!f.approved && !f.rejected ? T.gold : T.line}`,
+                  background: !f.approved && !f.rejected ? T.goldSoft : 'var(--cream)',
+                  color: !f.approved && !f.rejected ? T.goldText : T.textFaint }}>Pending</button>
+              <button type="button" onClick={() => setF({ ...f, approved: true, rejected: false })}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1.5px solid ${f.approved ? T.emerald : T.line}`,
+                  background: f.approved ? T.emeraldSoft : 'var(--cream)',
+                  color: f.approved ? T.emerald : T.textFaint }}>Approved</button>
+              <button type="button" onClick={() => setF({ ...f, approved: false, rejected: true })}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1.5px solid ${f.rejected ? T.rose : T.line}`,
+                  background: f.rejected ? T.roseSoft : 'var(--cream)',
+                  color: f.rejected ? T.rose : T.textFaint }}>Rejected</button>
+            </div>
+            {f.rejected && (
+              <div style={{ marginTop: 10 }}>
+                <FieldLabel>Rejection Reason</FieldLabel>
+                <input className="claims-input" value={f.rejection_reason || ''} onChange={e => setF({ ...f, rejection_reason: e.target.value })} placeholder="e.g. Pre-existing condition exclusion" />
+              </div>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
@@ -1522,7 +1554,9 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
   return (
     <div style={{ ...cardBase, padding: 0, overflow: 'hidden' }}>
       <div onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', cursor: 'pointer' }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.approved ? T.emerald : T.rose, boxShadow: `0 0 0 3px ${item.approved ? T.emeraldSoft : T.roseSoft}`, flexShrink: 0 }} />
+        <div style={{ width: 8, height: 8, borderRadius: '50%',
+          background: item.approved ? T.emerald : item.rejected ? T.rose : T.gold,
+          boxShadow: `0 0 0 3px ${item.approved ? T.emeraldSoft : item.rejected ? T.roseSoft : T.goldSoft}`, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: accent.text, background: accent.soft, padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
@@ -1536,7 +1570,9 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <div className="claims-serif" style={{ fontSize: 17, color: T.text }}>{money(item.amount_claimed)}</div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: item.approved ? T.emerald : T.rose, marginTop: 2 }}>{item.approved ? `Approved ${money(item.amount_approved)}` : 'Pending'}</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: item.approved ? T.emerald : item.rejected ? T.rose : T.gold, marginTop: 2 }}>
+            {item.approved ? `Approved ${money(item.amount_approved)}` : item.rejected ? 'Rejected' : 'Pending'}
+          </div>
         </div>
       </div>
       {expanded && (
@@ -1582,7 +1618,7 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
                   background: dragOver ? T.goldSoft : 'transparent', transition: 'background .15s',
                 }}>
                 {documents.map(doc => (
-                  <DocCard key={doc.id} doc={doc} status={item.approved ? 'approved' : 'pending'} onDelete={() => onDeleteDocument(doc)} />
+                  <DocCard key={doc.id} doc={doc} status={item.approved ? 'approved' : item.rejected ? 'rejected' : 'pending'} onDelete={() => onDeleteDocument(doc)} />
                 ))}
                 <label style={{
                   width: 140, flexShrink: 0, borderRadius: 14, border: `1.5px dashed rgba(231,188,114,.35)`,
@@ -1601,11 +1637,36 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: T.textDim }}>
-              <input type="checkbox" checked={draft.approved} onChange={e => commit({ approved: e.target.checked })} style={{ width: 17, height: 17, accentColor: T.emerald }} />
-              Insurer approved this line
-            </label>
+          <div style={{ marginTop: 16 }}>
+            <FieldLabel>Outcome</FieldLabel>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => commit({ approved: false, rejected: false })}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1.5px solid ${!draft.approved && !draft.rejected ? T.gold : T.line}`,
+                  background: !draft.approved && !draft.rejected ? T.goldSoft : 'var(--cream)',
+                  color: !draft.approved && !draft.rejected ? T.goldText : T.textFaint }}>Pending</button>
+              <button type="button" onClick={() => commit({ approved: true, rejected: false })}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1.5px solid ${draft.approved ? T.emerald : T.line}`,
+                  background: draft.approved ? T.emeraldSoft : 'var(--cream)',
+                  color: draft.approved ? T.emerald : T.textFaint }}>Approved</button>
+              <button type="button" onClick={() => commit({ approved: false, rejected: true })}
+                style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1.5px solid ${draft.rejected ? T.rose : T.line}`,
+                  background: draft.rejected ? T.roseSoft : 'var(--cream)',
+                  color: draft.rejected ? T.rose : T.textFaint }}>Rejected</button>
+            </div>
+            {draft.rejected && (
+              <div style={{ marginTop: 10 }}>
+                <FieldLabel>Rejection Reason</FieldLabel>
+                <input className="claims-input" value={draft.rejection_reason || ''}
+                  onChange={e => setDraft({ ...draft, rejection_reason: e.target.value })}
+                  onBlur={() => commit({ rejection_reason: draft.rejection_reason })}
+                  placeholder="e.g. Pre-existing condition exclusion" />
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
             <button onClick={onDelete} style={{ background: 'none', border: 'none', color: T.rose, fontSize: 12, fontWeight: 700, padding: '6px 8px', cursor: 'pointer' }}>Delete line</button>
           </div>
         </div>
@@ -1640,7 +1701,10 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
           <select className="claims-select" value={item.followup_status || 'Submitted'} onChange={e => onStatusChange(e.target.value)} style={{ width: 160, height: 32, flexShrink: 0 }}>
             <option value="Submitted">Submitted</option>
             <option value="Pending Documents">Pending Documents</option>
+            <option value="Insurer Assessment">Insurer Assessment</option>
           </select>
+        ) : item.rejected ? (
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, flexShrink: 0 }}>Rejected{item.rejection_reason ? ` — ${item.rejection_reason}` : ''}</span>
         ) : (
           <span style={{ fontSize: 10.5, fontWeight: 700, color: T.emerald, flexShrink: 0 }}>Approved {money(item.amount_approved)}</span>
         )}
@@ -1667,13 +1731,13 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
   )
 }
 
-function DocCard({ doc, status, onDelete }: { doc: ClaimDocument; status: 'approved' | 'pending' | null; onDelete: () => void }) {
+function DocCard({ doc, status, onDelete }: { doc: ClaimDocument; status: 'approved' | 'rejected' | 'pending' | null; onDelete: () => void }) {
   const isImage = (doc.mime_type || '').startsWith('image/') || /\.(jpe?g|png|gif|webp|heic)$/i.test(doc.file_name)
   const kind = isImage ? 'IMG' : (doc.file_name.toLowerCase().endsWith('.pdf') ? 'PDF' : (doc.mime_type?.split('/')[1]?.slice(0, 3).toUpperCase() || 'DOC'))
   const kindColor = isImage ? T.gold : T.emerald
   const kindSoft = isImage ? T.goldSoft : T.emeraldSoft
-  const statusColor = status === 'approved' ? T.emerald : status === 'pending' ? T.rose : T.textFaint
-  const statusLabel = status === 'approved' ? 'APPROVED' : status === 'pending' ? 'PENDING' : 'GENERAL'
+  const statusColor = status === 'approved' ? T.emerald : status === 'rejected' ? T.rose : status === 'pending' ? T.gold : T.textFaint
+  const statusLabel = status === 'approved' ? 'APPROVED' : status === 'rejected' ? 'REJECTED' : status === 'pending' ? 'PENDING' : 'GENERAL'
 
   return (
     <div style={{ ...cardBase, padding: 12, width: 168, flexShrink: 0, position: 'relative' }}>
