@@ -9,7 +9,7 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
-type ContactType = 'f2f' | 'non_f2f' | 'phone' | 'other'
+type ContactType = 'f2f' | 'non_f2f' | 'phone' | 'service_update' | 'other'
 type ContactStatus = 'open' | 'resolved'
 
 interface ContactReportRow {
@@ -22,7 +22,6 @@ interface ContactReportRow {
   platform: string | null
   platform_other: string | null
   contact_date: string
-  contact_time: string | null
   notes: string | null
   status: ContactStatus
   created_at: string
@@ -42,12 +41,14 @@ const CONTACT_TYPE_LABEL: Record<ContactType, string> = {
   f2f: 'F2F Meeting',
   non_f2f: 'Non-F2F',
   phone: 'Phone Call',
+  service_update: 'Service Update',
   other: 'Other',
 }
 const CONTACT_TYPE_ICON: Record<ContactType, string> = {
   f2f: '🤝',
   non_f2f: '💻',
   phone: '📞',
+  service_update: '🔧',
   other: '✉️',
 }
 const PLATFORM_OPTIONS = ['Zoom', 'Google Meet', 'Microsoft Teams', 'WhatsApp Video', 'Skype', 'Other']
@@ -56,14 +57,6 @@ function fmtDate(iso: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-SG', { day: '2-digit', month: 'short' })
-}
-function fmtTime(t: string | null) {
-  if (!t) return null
-  const [h, m] = t.split(':')
-  const hour = parseInt(h, 10)
-  const suffix = hour >= 12 ? 'PM' : 'AM'
-  const hour12 = hour % 12 === 0 ? 12 : hour % 12
-  return `${hour12}:${m} ${suffix}`
 }
 function contactTag(r: ContactReportRow): string {
   const icon = CONTACT_TYPE_ICON[r.contact_type]
@@ -103,7 +96,6 @@ export default function ContactReportPage() {
   const [fPlatform, setFPlatform] = useState(PLATFORM_OPTIONS[0])
   const [fPlatformOther, setFPlatformOther] = useState('')
   const [fDate, setFDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [fTime, setFTime] = useState('')
   const [fNotes, setFNotes] = useState('')
   const [formError, setFormError] = useState('')
 
@@ -123,7 +115,7 @@ export default function ContactReportPage() {
         .select('*')
         .eq('client_id', activeClient.id)
         .order('contact_date', { ascending: false })
-        .order('contact_time', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
       if (cancelled) return
       if (reportErr) { console.error('[contact-report] load reports failed:', reportErr); setLoading(false); return }
 
@@ -163,7 +155,6 @@ export default function ContactReportPage() {
     setFPlatform(PLATFORM_OPTIONS[0])
     setFPlatformOther('')
     setFDate(new Date().toISOString().slice(0, 10))
-    setFTime('')
     setFNotes('')
     setFormError('')
   }
@@ -185,7 +176,6 @@ export default function ContactReportPage() {
       platform: fType === 'non_f2f' ? fPlatform : null,
       platform_other: fType === 'non_f2f' && fPlatform === 'Other' ? fPlatformOther.trim() : null,
       contact_date: fDate,
-      contact_time: fTime || null,
       notes: fNotes.trim() || null,
       status: 'open' as ContactStatus,
     }
@@ -197,7 +187,7 @@ export default function ContactReportPage() {
     if (newRow) {
       setReports(prev => [newRow, ...prev].sort((a, b) => {
         if (a.contact_date !== b.contact_date) return a.contact_date < b.contact_date ? 1 : -1
-        return (b.contact_time || '') < (a.contact_time || '') ? -1 : 1
+        return a.created_at < b.created_at ? 1 : -1
       }))
       setExpandedId(newRow.id)
     }
@@ -252,6 +242,19 @@ export default function ContactReportPage() {
     setNewTodoDraft(prev => ({ ...prev, [reportId]: '' }))
   }
 
+  async function deleteEntry(report: ContactReportRow) {
+    if (!confirm('Delete this contact report entry? This cannot be undone.')) return
+    const { error } = await supabase.from('contact_reports').delete().eq('id', report.id)
+    if (error) { console.error('[contact-report] delete entry failed:', error); return }
+    setReports(prev => prev.filter(r => r.id !== report.id))
+    setTodosByReport(prev => {
+      const next = { ...prev }
+      delete next[report.id]
+      return next
+    })
+    if (expandedId === report.id) setExpandedId(null)
+  }
+
   async function deleteTodo(todo: ContactTodoRow) {
     setTodosByReport(prev => ({
       ...prev,
@@ -288,9 +291,9 @@ export default function ContactReportPage() {
 
       {formOpen && (
         <div style={cardBase}>
-          <div style={fieldLabel}>Contact Type</div>
+          <div style={fieldLabel}>Service Type</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-            {(['f2f', 'non_f2f', 'phone', 'other'] as ContactType[]).map(t => (
+            {(['f2f', 'non_f2f', 'phone', 'service_update', 'other'] as ContactType[]).map(t => (
               <button key={t} onClick={() => setFType(t)} style={fType === t ? pillSelected : pillUnselected}>
                 {CONTACT_TYPE_ICON[t]} {CONTACT_TYPE_LABEL[t]}
               </button>
@@ -326,15 +329,9 @@ export default function ContactReportPage() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-            <div style={{ flex: 1 }}>
-              <div style={fieldLabel}>Date</div>
-              <DateInput value={fDate} onChange={setFDate} style={dateInputStyle} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={fieldLabel}>Time</div>
-              <input type="time" value={fTime} onChange={e => setFTime(e.target.value)} style={timeInputStyle} />
-            </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={fieldLabel}>Date</div>
+            <DateInput value={fDate} onChange={setFDate} style={dateInputStyle} />
           </div>
 
           <div style={fieldLabel}>Notes</div>
@@ -365,7 +362,6 @@ export default function ContactReportPage() {
             const todos = todosByReport[r.id] || []
             const openTodos = todos.filter(t => !t.done).length
             const secondary = secondaryTag(r)
-            const timeLabel = fmtTime(r.contact_time)
             return (
               <div key={r.id} style={{ borderBottom: '1px solid var(--line)' }}>
                 <div onClick={() => toggleExpand(r.id)} style={logRow}>
@@ -378,7 +374,6 @@ export default function ContactReportPage() {
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                       <span style={tagStyle}>{contactTag(r)}</span>
                       {secondary && <span style={tagStyle}>{secondary}</span>}
-                      {timeLabel && <span style={tagStyle} className="font-mono">{timeLabel}</span>}
                     </div>
                   </div>
                   <div style={{ ...logStatus, color: r.status === 'open' ? 'var(--gold-tag)' : 'var(--emerald)' }}>
@@ -396,10 +391,11 @@ export default function ContactReportPage() {
                       </div>
                     )}
 
-                    <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                       <button onClick={() => toggleStatus(r)} style={r.status === 'open' ? statusBtnResolve : statusBtnReopen}>
                         {r.status === 'open' ? 'Mark Resolved' : 'Reopen'}
                       </button>
+                      <button onClick={() => deleteEntry(r)} style={deleteEntryBtn}>Delete Entry</button>
                     </div>
 
                     <div style={nestedTodoBox}>
@@ -464,7 +460,6 @@ const textInput: React.CSSProperties = {
 }
 const selectInput: React.CSSProperties = { ...textInput }
 const dateInputStyle: React.CSSProperties = { ...textInput }
-const timeInputStyle: React.CSSProperties = { ...textInput, fontFamily: 'DM Mono, monospace' }
 const notesInput: React.CSSProperties = { ...textInput, resize: 'vertical', minHeight: 80, lineHeight: 1.55, marginBottom: 16 }
 
 const btnPrimary: React.CSSProperties = {
@@ -499,6 +494,10 @@ const statusBtnResolve: React.CSSProperties = {
 const statusBtnReopen: React.CSSProperties = {
   fontSize: 11, fontWeight: 600, color: 'var(--gold-tag)', background: 'var(--gold-l)', border: 'none',
   borderRadius: 6, padding: '6px 12px', cursor: 'pointer',
+}
+const deleteEntryBtn: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, color: 'var(--rouge)', background: 'transparent', border: 'none',
+  padding: '6px 4px', cursor: 'pointer',
 }
 
 const nestedTodoBox: React.CSSProperties = { background: 'var(--cream2)', borderRadius: 8, padding: 12 }
