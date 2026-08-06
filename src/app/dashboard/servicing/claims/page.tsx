@@ -1,18 +1,19 @@
 'use client'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Instrument_Serif, IBM_Plex_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
-// Scoped to this page only — the rest of the app stays on Cormorant/Inter/DM Mono.
-// Deliberately different visual language for Medical Claims (approved after
-// several mockup rounds); see conversation history for the "why".
-const instrumentSerif = Instrument_Serif({ subsets: ['latin'], weight: ['400'], style: ['normal', 'italic'], display: 'swap', variable: '--claims-font-serif' })
-const plexMono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'], display: 'swap', variable: '--claims-font-mono' })
+// Retheme (Aug 2026): this page previously ran a deliberately separate dark
+// "void" theme (Instrument Serif / IBM Plex Mono, near-black background).
+// That's gone — it now uses the same Cormorant/Inter/DM Mono + cream/charcoal
+// design system as the rest of the app (see globals.css). The T token object
+// below is kept as a single indirection layer so the ~1400 lines of styling
+// that reference T.xxx didn't all need touching individually — only the
+// palette definitions at the bottom of this file changed.
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,10 @@ interface ClaimRow {
   label: string | null
   status: 'open' | 'closed' | 'withdrawn'
   opened_date: string
+  panel_status: 'panel' | 'non_panel'
+  // deductible_amount / coinsurance_cap_annual columns exist on this table
+  // but are unused — the real deductible/co-insurance-cap terms live on
+  // policy_year_terms (per policy, per policy year, per panel_status).
   deductible_amount: number
   coinsurance_cap_annual: number
   created_at: string
@@ -139,9 +144,9 @@ const SECTION_TYPE_OPTIONS: Record<string, string[]> = {
 // accent rather than color-coding the type itself. Inpatient/Surgery keeps
 // the original gold since it's the section everything else is styled around.
 const SECTION_ACCENT: Record<string, { text: string; soft: string }> = {
-  pre: { text: '#E7BC72', soft: 'rgba(231,188,114,.14)' },   // gold (unchanged)
-  in: { text: '#E7BC72', soft: 'rgba(231,188,114,.14)' },    // gold (unchanged)
-  post: { text: '#D9A06B', soft: 'rgba(217,160,107,.14)' },  // muted copper — same warm family as gold, distinct at a glance
+  pre: { text: '#8A6C3A', soft: 'rgba(168,131,74,.12)' },    // gold-tag
+  in: { text: '#8A6C3A', soft: 'rgba(168,131,74,.12)' },     // gold-tag
+  post: { text: '#8A5A3A', soft: 'rgba(168,102,58,.12)' },   // muted copper — same warm family as gold, distinct at a glance
 }
 
 function money(n: number | null | undefined) {
@@ -170,9 +175,15 @@ interface PolicyYearTerm {
   policy_id: string
   year_start: string
   year_end: string
-  deductible_amount: number
-  coinsurance_cap_annual: number
+  panel_deductible_amount: number
+  panel_coinsurance_cap_annual: number
+  // Null = uncapped / not applicable for Non-Panel on this policy — the
+  // common case. Some policies do cap Non-Panel, so it's still editable.
+  non_panel_deductible_amount: number | null
+  non_panel_coinsurance_cap_annual: number | null
 }
+
+const PANEL_STATUS_LABEL: Record<'panel' | 'non_panel', string> = { panel: 'Panel', non_panel: 'Non-Panel' }
 
 // Medical plan years reset on the policy's inception anniversary (month/day),
 // independent of premium payment frequency. Returns the [start,end] window
@@ -434,8 +445,10 @@ export default function MedicalClaimsPage() {
         const { data: created } = await supabase.from('policy_year_terms').insert({
           client_id: activeClient.id, policy_id: mainPolicy!.id,
           year_start: window.start, year_end: window.end,
-          deductible_amount: prior?.deductible_amount || 0,
-          coinsurance_cap_annual: prior?.coinsurance_cap_annual || 0,
+          panel_deductible_amount: prior?.panel_deductible_amount || 0,
+          panel_coinsurance_cap_annual: prior?.panel_coinsurance_cap_annual || 0,
+          non_panel_deductible_amount: prior?.non_panel_deductible_amount ?? null,
+          non_panel_coinsurance_cap_annual: prior?.non_panel_coinsurance_cap_annual ?? null,
         }).select().maybeSingle()
         if (cancelled) return
         const next = created ? [created as PolicyYearTerm, ...existing] : existing
@@ -460,11 +473,17 @@ export default function MedicalClaimsPage() {
   }, [mainPolicy?.id, claims, lineItems])
 
   const selectedTerm = policyYearTerms.find(t => t.year_start === selectedYearStart) || null
-  const yearClaimIds = new Set(
-    selectedTerm ? claims.filter(c => c.policy_id === mainPolicy?.id && c.opened_date >= selectedTerm.year_start && c.opened_date <= selectedTerm.year_end).map(c => c.id) : []
-  )
-  const deductibleClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.deductible_clocked || 0), 0)
-  const coinsuranceClockedTotal = policyYearLineItems.filter(li => yearClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
+  const yearClaimsInWindow = selectedTerm
+    ? claims.filter(c => c.policy_id === mainPolicy?.id && c.opened_date >= selectedTerm.year_start && c.opened_date <= selectedTerm.year_end)
+    : []
+  // Panel and Non-Panel each clock against their own cap — a Non-Panel claim
+  // doesn't eat into the Panel co-insurance cap, and vice versa.
+  const panelClaimIds = new Set(yearClaimsInWindow.filter(c => c.panel_status !== 'non_panel').map(c => c.id))
+  const nonPanelClaimIds = new Set(yearClaimsInWindow.filter(c => c.panel_status === 'non_panel').map(c => c.id))
+  const panelDeductibleClockedTotal = policyYearLineItems.filter(li => panelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.deductible_clocked || 0), 0)
+  const panelCoinsuranceClockedTotal = policyYearLineItems.filter(li => panelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
+  const nonPanelDeductibleClockedTotal = policyYearLineItems.filter(li => nonPanelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.deductible_clocked || 0), 0)
+  const nonPanelCoinsuranceClockedTotal = policyYearLineItems.filter(li => nonPanelClaimIds.has(li.claim_id)).reduce((s, li) => s + (li.coinsurance_clocked || 0), 0)
 
   async function updateYearTerm(patch: Partial<PolicyYearTerm>) {
     if (!selectedTerm) return
@@ -482,6 +501,7 @@ export default function MedicalClaimsPage() {
     const { data, error } = await supabase.from('claims').insert({
       client_id: activeClient.id, policy_id: firstMain.id, life_assured_person: person,
       label: 'New Claim', status: 'open', opened_date: new Date().toISOString().slice(0, 10),
+      panel_status: 'panel',
     }).select().maybeSingle()
     setSaving(false)
     if (error || !data) { alert('Could not create claim: ' + (error?.message || 'unknown error')); return }
@@ -847,13 +867,14 @@ export default function MedicalClaimsPage() {
   if (!activeClient) return <div style={pageWrap}><div style={{ color: T.textFaint, padding: 40, textAlign: 'center' }}>Select a client to view Medical Claims.</div></div>
 
   return (
-    <div className={`${instrumentSerif.variable} ${plexMono.variable}`} style={pageWrap}>
+    <div style={pageWrap}>
       <style>{`
-        .claims-serif { font-family: var(--claims-font-serif), Georgia, serif; }
-        .claims-mono { font-family: var(--claims-font-mono), monospace; }
+        .claims-serif { font-family: var(--font-cormorant), Georgia, serif; }
+        .claims-mono { font-family: var(--font-dm-mono), monospace; }
         .claims-scroll::-webkit-scrollbar { display: none; }
-        .claims-input, .claims-select { width: 100%; padding: 8px 10px; border: 1px solid ${T.line}; border-radius: 10px; background: ${T.void2}; color: ${T.text}; font-size: 13px; }
+        .claims-input, .claims-select { width: 100%; padding: 8px 10px; border: 1px solid ${T.line}; border-radius: 10px; background: var(--cream); color: ${T.text}; font-size: 13px; }
         .claims-input:focus, .claims-select:focus { outline: none; border-color: ${T.gold}; box-shadow: 0 0 0 3px ${T.goldSoft}; }
+        .claims-input:disabled, .claims-select:disabled { opacity: 0.6; }
       `}</style>
 
       {/* Claim switcher */}
@@ -867,7 +888,7 @@ export default function MedicalClaimsPage() {
               {pendingCount > 0 && (
                 <span className="claims-mono" style={{
                   position: 'absolute', top: -7, right: -7, minWidth: 18, height: 18, borderRadius: 999,
-                  background: T.gold, color: T.void1, fontSize: 10.5, fontWeight: 700,
+                  background: T.gold, color: 'var(--charcoal)', fontSize: 10.5, fontWeight: 700,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
                   border: `2px solid ${T.void1}`,
                 }}>{pendingCount}</span>
@@ -887,7 +908,12 @@ export default function MedicalClaimsPage() {
           {/* Hero */}
           <div style={heroCard}>
             <div>
-              <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Claim · Opened {fmtDate(selectedClaim.opened_date)}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Claim · Opened {fmtDate(selectedClaim.opened_date)}</div>
+                <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.goldText, background: T.goldSoft, padding: '2px 8px', borderRadius: 999 }}>
+                  {PANEL_STATUS_LABEL[selectedClaim.panel_status || 'panel']}
+                </span>
+              </div>
               <div className="claims-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Medical Insurance Claims for {allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || clientName}</div>
               <div style={{ fontSize: 11.5, color: T.textDim, marginTop: 5 }}>Household <b style={{ color: T.text }}>{clientName}</b> family</div>
             </div>
@@ -917,6 +943,14 @@ export default function MedicalClaimsPage() {
                 <FieldLabel>Life Assured</FieldLabel>
                 <select className="claims-select" value={selectedClaim.life_assured_person} onChange={e => onLifeAssuredChange(e.target.value)}>
                   {allPeople.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Panel Status</FieldLabel>
+                <select className="claims-select" value={selectedClaim.panel_status || 'panel'}
+                  onChange={e => updateClaim({ panel_status: e.target.value as 'panel' | 'non_panel' })}>
+                  <option value="panel">Panel</option>
+                  <option value="non_panel">Non-Panel</option>
                 </select>
               </div>
               <div>
@@ -950,22 +984,46 @@ export default function MedicalClaimsPage() {
                   </div>
                 )}
               </div>
+
+              {/* Panel terms */}
+              <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: T.goldText, marginTop: 4 }}>Panel Terms — This Policy Year</div>
               <div>
-                <FieldLabel>Deductible (This Policy Year, $)</FieldLabel>
-                <input className="claims-input claims-mono" type="number" value={selectedTerm?.deductible_amount || ''} disabled={!selectedTerm}
-                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, deductible_amount: e.target.value === '' ? 0 : +e.target.value } : t))}
-                  onBlur={e => updateYearTerm({ deductible_amount: e.target.value === '' ? 0 : +e.target.value })} />
+                <FieldLabel>Panel Deductible ($)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" value={selectedTerm?.panel_deductible_amount || ''} disabled={!selectedTerm}
+                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, panel_deductible_amount: e.target.value === '' ? 0 : +e.target.value } : t))}
+                  onBlur={e => updateYearTerm({ panel_deductible_amount: e.target.value === '' ? 0 : +e.target.value })} />
                 <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
-                  Used to date (all claims this policy year) <b style={{ color: T.text }}>{money(deductibleClockedTotal)}</b> of {money(selectedTerm?.deductible_amount)}
+                  Clocked (Panel claims) <b style={{ color: T.text }}>{money(panelDeductibleClockedTotal)}</b> of {money(selectedTerm?.panel_deductible_amount)}
                 </div>
               </div>
               <div>
-                <FieldLabel>Co-Insurance Cap (Panel, This Policy Year, $)</FieldLabel>
-                <input className="claims-input claims-mono" type="number" value={selectedTerm?.coinsurance_cap_annual || ''} disabled={!selectedTerm}
-                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value } : t))}
-                  onBlur={e => updateYearTerm({ coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value })} />
+                <FieldLabel>Panel Co-Insurance Cap ($)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" value={selectedTerm?.panel_coinsurance_cap_annual || ''} disabled={!selectedTerm}
+                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, panel_coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value } : t))}
+                  onBlur={e => updateYearTerm({ panel_coinsurance_cap_annual: e.target.value === '' ? 0 : +e.target.value })} />
                 <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
-                  Used to date (all claims this policy year) <b style={{ color: T.text }}>{money(coinsuranceClockedTotal)}</b> of {money(selectedTerm?.coinsurance_cap_annual)}
+                  Clocked (Panel claims) <b style={{ color: T.text }}>{money(panelCoinsuranceClockedTotal)}</b> of {money(selectedTerm?.panel_coinsurance_cap_annual)}
+                </div>
+              </div>
+
+              {/* Non-Panel terms */}
+              <div style={{ gridColumn: '1 / -1', fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: T.goldText, marginTop: 4 }}>Non-Panel Terms — This Policy Year</div>
+              <div>
+                <FieldLabel>Non-Panel Deductible ($, leave blank if none)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" placeholder="—" value={selectedTerm?.non_panel_deductible_amount ?? ''} disabled={!selectedTerm}
+                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, non_panel_deductible_amount: e.target.value === '' ? null : +e.target.value } : t))}
+                  onBlur={e => updateYearTerm({ non_panel_deductible_amount: e.target.value === '' ? null : +e.target.value })} />
+                <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
+                  Clocked (Non-Panel claims) <b style={{ color: T.text }}>{money(nonPanelDeductibleClockedTotal)}</b>{selectedTerm?.non_panel_deductible_amount != null ? <> of {money(selectedTerm.non_panel_deductible_amount)}</> : null}
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Non-Panel Co-Insurance Cap ($, leave blank if uncapped)</FieldLabel>
+                <input className="claims-input claims-mono" type="number" placeholder="No cap" value={selectedTerm?.non_panel_coinsurance_cap_annual ?? ''} disabled={!selectedTerm}
+                  onChange={e => setPolicyYearTerms(prev => prev.map(t => t.id === selectedTerm?.id ? { ...t, non_panel_coinsurance_cap_annual: e.target.value === '' ? null : +e.target.value } : t))}
+                  onBlur={e => updateYearTerm({ non_panel_coinsurance_cap_annual: e.target.value === '' ? null : +e.target.value })} />
+                <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 6 }}>
+                  Clocked (Non-Panel claims) <b style={{ color: T.text }}>{money(nonPanelCoinsuranceClockedTotal)}</b>{selectedTerm?.non_panel_coinsurance_cap_annual != null ? <> of {money(selectedTerm.non_panel_coinsurance_cap_annual)}</> : <> · uncapped</>}
                 </div>
               </div>
               <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
@@ -1037,7 +1095,7 @@ export default function MedicalClaimsPage() {
                   <button onClick={() => upsertTemplate(null)} style={{ ...addBtn, color: T.rose, background: T.roseSoft, borderColor: 'rgba(255,107,87,.3)' }}>Save as Admin Default</button>
                 )}
                 <button onClick={() => copyMsg(false)} style={{ ...addBtn, marginLeft: 'auto' }}>{msgCopied === 'plain' ? 'Copied!' : 'Copy'}</button>
-                <button onClick={() => copyMsg(true)} style={{ ...addBtn, color: T.void1, background: T.gold }}>{msgCopied === 'whatsapp' ? 'Copied!' : 'Copy for WhatsApp'}</button>
+                <button onClick={() => copyMsg(true)} style={{ ...addBtn, color: 'var(--charcoal)', background: T.gold }}>{msgCopied === 'whatsapp' ? 'Copied!' : 'Copy for WhatsApp'}</button>
               </div>
             </div>
           )}
@@ -1047,7 +1105,7 @@ export default function MedicalClaimsPage() {
               <div>
                 <div className="claims-serif" style={{ fontSize: 19, color: T.text, display: 'flex', alignItems: 'center', gap: 10 }}>
                   Pending Follow-Ups
-                  <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: T.void1, background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{pendingItems.length}</span>
+                  <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--charcoal)', background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{pendingItems.length}</span>
                 </div>
                 <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Line items awaiting insurer action</div>
               </div>
@@ -1124,7 +1182,7 @@ export default function MedicalClaimsPage() {
               <div>
                 <div className="claims-serif" style={{ fontSize: 19, color: T.text, display: 'flex', alignItems: 'center', gap: 10 }}>
                   Documents
-                  <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: T.void1, background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{documents.length}</span>
+                  <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--charcoal)', background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{documents.length}</span>
                 </div>
                 <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>
                   {approvedDocs.length > 0 || pendingDocs.length > 0 ? `${approvedDocs.length} approved · ${pendingDocs.length} pending` : "Everything uploaded — line-item docs upload from the line item itself"}
@@ -1205,7 +1263,7 @@ function Ring({ pct }: { pct: number }) {
   return (
     <div style={{ position: 'relative', width: 80, height: 80, flexShrink: 0 }}>
       <svg width={80} height={80} viewBox="0 0 80 80" style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={40} cy={40} r={r} fill="none" stroke="rgba(255,255,255,.09)" strokeWidth={6} />
+        <circle cx={40} cy={40} r={r} fill="none" stroke="rgba(28,26,23,.08)" strokeWidth={6} />
         <circle cx={40} cy={40} r={r} fill="none" stroke={T.gold} strokeWidth={6} strokeLinecap="round"
           strokeDasharray={c} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 1s cubic-bezier(.16,1,.3,1)' }} />
       </svg>
@@ -1394,29 +1452,32 @@ function DocCard({ doc, status, onDelete }: { doc: ClaimDocument; status: 'appro
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 
+// void1/2/3 named for backward compat with the ~70 T.void* references
+// throughout this file (page bg → deepest card surface, ascending contrast) —
+// they now point at the app's cream scale instead of a dark scale.
 const T = {
-  void1: '#100E0C', void2: '#1A1613', void3: '#241F19',
-  gold: '#E7BC72', goldText: '#B4924F', goldSoft: 'rgba(231,188,114,.14)',
-  emerald: '#2FD498', emeraldSoft: 'rgba(47,212,152,.13)',
-  rose: '#FF6B57', roseSoft: 'rgba(255,107,87,.13)',
-  text: '#F3EFE6', textDim: '#A8A296', textFaint: '#6D6960',
-  line: 'rgba(255,255,255,.09)',
+  void1: 'var(--cream)', void2: 'var(--cream2)', void3: 'var(--cream3)',
+  gold: 'var(--gold)', goldText: 'var(--gold-tag)', goldSoft: 'rgba(168,131,74,.12)',
+  emerald: 'var(--emerald)', emeraldSoft: 'rgba(42,94,70,.12)',
+  rose: 'var(--rouge)', roseSoft: 'rgba(138,40,40,.10)',
+  text: 'var(--ink)', textDim: 'var(--ink2)', textFaint: 'var(--ink3)',
+  line: 'var(--line)',
 }
 
 const pageWrap: React.CSSProperties = { background: T.void1, minHeight: '100%', padding: 24, borderRadius: 16, color: T.text }
-const cardBase: React.CSSProperties = { background: 'rgba(255,255,255,.045)', backdropFilter: 'blur(20px)', border: `1px solid ${T.line}`, borderRadius: 16, padding: 18 }
+const cardBase: React.CSSProperties = { background: 'var(--cream)', border: `1px solid ${T.line}`, borderRadius: 14, padding: 18 }
 const heroCard: React.CSSProperties = {
-  padding: '24px 22px 26px', borderRadius: 20, border: `1px solid ${T.line}`,
-  background: `radial-gradient(480px 240px at 50% 0%, rgba(231,188,114,.14), transparent 60%), linear-gradient(155deg, ${T.void3} 0%, ${T.void2} 60%, ${T.void1} 100%)`,
-  boxShadow: '0 30px 70px -30px rgba(0,0,0,.7)',
+  padding: '24px 22px 26px', borderRadius: 16, border: `1px solid ${T.line}`,
+  background: `radial-gradient(480px 240px at 50% 0%, rgba(168,131,74,.08), transparent 60%), linear-gradient(155deg, ${T.void3} 0%, ${T.void2} 60%, ${T.void1} 100%)`,
+  boxShadow: '0 16px 32px -20px rgba(28,26,23,.18)',
 }
 const detailsToggle: React.CSSProperties = { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 4px', background: 'none', border: 'none', borderBottom: `1px solid ${T.line}`, color: T.textDim, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginTop: 16 }
-const addBtn: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: T.gold, background: T.goldSoft, border: `1px solid rgba(231,188,114,.3)`, padding: '6px 13px', borderRadius: 999, cursor: 'pointer' }
+const addBtn: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(168,131,74,.3)`, padding: '6px 13px', borderRadius: 999, cursor: 'pointer' }
 const readonlyVal: React.CSSProperties = { padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 10, background: T.void3, color: T.textDim, fontSize: 13 }
-const pillBase: React.CSSProperties = { flexShrink: 0, padding: '8px 16px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', textAlign: 'left' }
-const pillActive: React.CSSProperties = { background: T.void1, color: T.text, border: `1px solid ${T.line}` }
-const pillInactive: React.CSSProperties = { background: 'rgba(255,255,255,.045)', color: T.textDim, border: `1px solid ${T.line}` }
+const pillBase: React.CSSProperties = { flexShrink: 0, padding: '8px 16px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid transparent', textAlign: 'left', fontSize: 12.5, fontWeight: 600 }
+const pillActive: React.CSSProperties = { background: 'var(--charcoal)', color: 'var(--cream)', border: '1px solid var(--charcoal)' }
+const pillInactive: React.CSSProperties = { background: 'var(--cream)', color: T.textDim, border: `1px solid ${T.line}` }
 const msBox: React.CSSProperties = { minHeight: 38, padding: '5px 8px', border: `1px solid ${T.line}`, borderRadius: 10, background: T.void2, display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', cursor: 'pointer' }
 const msTag: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, background: T.goldSoft, color: T.goldText, fontSize: 11, fontWeight: 700, padding: '3px 6px 3px 9px', borderRadius: 999, whiteSpace: 'nowrap' }
-const msPanel: React.CSSProperties = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 25, background: T.void3, border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: '0 20px 44px rgba(0,0,0,.5)', padding: 6, maxHeight: 220, overflowY: 'auto', marginTop: 6 }
+const msPanel: React.CSSProperties = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 25, background: 'var(--cream)', border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: '0 16px 32px rgba(28,26,23,.14)', padding: 6, maxHeight: 220, overflowY: 'auto', marginTop: 6 }
 const msOption: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer', color: T.text }
