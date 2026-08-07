@@ -679,6 +679,16 @@ function MedicalClaimsPage() {
     if (error || !data) { alert('Could not add line: ' + (error?.message || 'unknown error')); return }
     setLineItems(prev => [...prev, data as LineItemRow])
     setAddModalSection(null)
+    // addSectionConsumedRef is only ever set true by the Business Dashboard
+    // deep-link effect above — reusing it here as "this save originated from
+    // the board" rather than tracking a second flag for the same fact. Only
+    // fires on successful save; Cancel on this modal still just closes it and
+    // leaves the advisor on this page, unchanged from before.
+    if (addSectionConsumedRef.current) {
+      addSectionConsumedRef.current = false
+      router.push('/dashboard/business/claims')
+      return
+    }
     setExpandedItemId((data as LineItemRow).id)
   }
 
