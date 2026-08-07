@@ -242,6 +242,13 @@ function MedicalClaimsPage() {
   // that claim once its client loads. Only honored when the id actually belongs
   // to the newly-loaded client's claims — see the load effect below.
   const urlClaimId = searchParams.get('claimId')
+  // Set by the Business Dashboard's Add Claim flow when it wants a specific
+  // Pre/In/Post line-item form opened immediately, instead of just landing
+  // on a bare claim. Consumed exactly once via the ref below — otherwise
+  // navigating away and back to this same claim later would keep reopening
+  // the modal every time selectedClaimId happens to match again.
+  const addSectionParam = searchParams.get('addSection') as 'pre' | 'in' | 'post' | null
+  const addSectionConsumedRef = useRef(false)
 
   const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
 
@@ -434,6 +441,17 @@ function MedicalClaimsPage() {
     if (urlClaimId && claims.some(c => c.id === urlClaimId)) setSelectedClaimId(urlClaimId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlClaimId])
+
+  // Opens the Pre/In/Post add-line-item form once the deep-linked claim from
+  // the Business Dashboard is actually the selected one — same modal the
+  // section "+" buttons use, nothing duplicated for this entry point.
+  useEffect(() => {
+    if (addSectionConsumedRef.current) return
+    if (!addSectionParam || !['pre', 'in', 'post'].includes(addSectionParam)) return
+    if (!urlClaimId || selectedClaimId !== urlClaimId) return
+    addSectionConsumedRef.current = true
+    setAddModalSection(addSectionParam)
+  }, [addSectionParam, urlClaimId, selectedClaimId])
 
   const selectedClaim = claims.find(c => c.id === selectedClaimId) || null
 

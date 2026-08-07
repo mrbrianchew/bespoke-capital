@@ -103,6 +103,11 @@ function patchFor(zone: DropZone): Partial<LineItemRow> {
 const RESOLVED_VISIBLE_DAYS = 30
 const STALE_DAYS = 14 // matches the per-client Medical Claims page's idle threshold
 
+// Matches SECTION_LABEL on the per-client Medical Claims page exactly.
+const SECTION_LABEL: Record<'pre' | 'in' | 'post', string> = {
+  pre: 'Pre-Hospitalisation', in: 'Inpatient / Surgery', post: 'Post-Hospitalisation',
+}
+
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
 function money(n: number | null | undefined) {
@@ -169,6 +174,7 @@ export default function BusinessClaimsBoardPage() {
   const [addClaimSearch, setAddClaimSearch] = useState('')
   const [addClaimSaving, setAddClaimSaving] = useState(false)
   const [addClaimError, setAddClaimError] = useState('')
+  const [addClaimClient, setAddClaimClient] = useState<ClientRow | null>(null) // step 2: which client, waiting on section pick
 
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
@@ -320,31 +326,44 @@ export default function BusinessClaimsBoardPage() {
     if (error) alert('Save failed: ' + error.message)
   }
 
-  // Mirrors createClaim() on the per-client Medical Claims page: same defaults
-  // (life assured = the client themself, first 'main' medical policy on file),
-  // same "create bare, then edit inline" pattern — no upfront picker here.
-  // A fresh claim has zero line items, so it can't render as a board card yet;
-  // the natural next step is the per-client page where line items actually
-  // get added, so this hands off there immediately (same ?claimId= deep link
-  // the cards already use) rather than duplicating that form on the board.
-  async function createClaimForClient(client: ClientRow) {
-    const clientPolicies = (policiesByClient[client.id] || []).filter(p => p.person === 'client')
-    const firstMain = clientPolicies.find(p => p.policyTypeCode?.toLowerCase() === 'main') || clientPolicies[0]
-    if (!firstMain) {
-      setAddClaimError(`${client.name} has no medical policy on file yet — add one on the Protection page first.`)
-      return
-    }
+  // Reuses the client's most recent existing claim if one exists (life_assured
+  // = client themself — the same default the old flow used) rather than
+  // creating a new claim container every time. Only inserts a new claims row
+  // when this client genuinely has none yet. Either way, the actual line item
+  // is added on the per-client page (via addSection) — not duplicated here.
+  async function addLineItemForClient(client: ClientRow, section: 'pre' | 'in' | 'post') {
     setAddClaimSaving(true)
     setAddClaimError('')
-    const { data, error } = await supabase.from('claims').insert({
-      client_id: client.id, policy_id: firstMain.id, life_assured_person: 'client',
-      label: 'New Claim', status: 'open', opened_date: new Date().toISOString().slice(0, 10),
-    }).select().maybeSingle()
+
+    const existing = claims
+      .filter(c => c.client_id === client.id && c.life_assured_person === 'client')
+      .sort((a, b) => new Date(b.opened_date).getTime() - new Date(a.opened_date).getTime())[0]
+
+    let claimId = existing?.id
+    if (!claimId) {
+      const clientPolicies = (policiesByClient[client.id] || []).filter(p => p.person === 'client')
+      const firstMain = clientPolicies.find(p => p.policyTypeCode?.toLowerCase() === 'main') || clientPolicies[0]
+      if (!firstMain) {
+        setAddClaimSaving(false)
+        setAddClaimError(`${client.name} has no medical policy on file yet — add one on the Protection page first.`)
+        return
+      }
+      const { data, error } = await supabase.from('claims').insert({
+        client_id: client.id, policy_id: firstMain.id, life_assured_person: 'client',
+        label: 'New Claim', status: 'open', opened_date: new Date().toISOString().slice(0, 10),
+      }).select().maybeSingle()
+      if (error || !data) {
+        setAddClaimSaving(false)
+        setAddClaimError('Could not create claim: ' + (error?.message || 'unknown error'))
+        return
+      }
+      claimId = (data as { id: string }).id
+    }
+
     setAddClaimSaving(false)
-    if (error || !data) { setAddClaimError('Could not create claim: ' + (error?.message || 'unknown error')); return }
     setActiveClient(client)
     localStorage.setItem('selectedClientId', client.id)
-    router.push(`/dashboard/servicing/claims?claimId=${(data as { id: string }).id}`)
+    router.push(`/dashboard/servicing/claims?claimId=${claimId}&addSection=${section}`)
   }
 
   function openCard(card: CardData) {
@@ -370,7 +389,7 @@ export default function BusinessClaimsBoardPage() {
             {loading ? 'Loading…' : `${totalInProgress} claim line item${totalInProgress === 1 ? '' : 's'} in progress across all clients`}
           </div>
         </div>
-        <button onClick={() => { setShowAddClaim(true); setAddClaimSearch(''); setAddClaimError('') }}
+        <button onClick={() => { setShowAddClaim(true); setAddClaimSearch(''); setAddClaimError(''); setAddClaimClient(null) }}
           style={{ padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--charcoal)', border: 'none', borderRadius: 8, cursor: 'pointer', flexShrink: 0 }}>
           + Add Claim
         </button>
@@ -439,47 +458,77 @@ export default function BusinessClaimsBoardPage() {
         </div>
       )}
       {showAddClaim && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }} onClick={() => !addClaimSaving && setShowAddClaim(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}
+          onClick={() => { if (!addClaimSaving) { setShowAddClaim(false); setAddClaimClient(null) } }}>
           <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 12 }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '20px 20px 4px' }}>
-              <div className="font-serif" style={{ fontSize: 19, color: T.text }}>Add Claim</div>
-              <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>
-                Pick a client — the claim is created with defaults (client themself, first medical policy on file), then you'll land on their Medical Claims page to add the line item.
-              </div>
-            </div>
-            <div style={{ padding: '14px 20px 0' }}>
-              <input autoFocus value={addClaimSearch} onChange={e => setAddClaimSearch(e.target.value)}
-                placeholder="Search clients…" disabled={addClaimSaving}
-                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 10, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
-            </div>
-            {addClaimError && (
-              <div style={{ margin: '12px 20px 0', padding: '8px 10px', background: T.roseSoft, color: T.rose, fontSize: 12, borderRadius: 8 }}>{addClaimError}</div>
-            )}
-            <div style={{ maxHeight: 280, overflowY: 'auto', padding: '10px 12px 20px' }}>
-              {clients
-                .filter(c => c.name?.toLowerCase().includes(addClaimSearch.trim().toLowerCase()))
-                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                .map(c => (
-                  <button key={c.id} disabled={addClaimSaving} onClick={() => createClaimForClient(c)}
-                    style={{
-                      width: '100%', textAlign: 'left', padding: '9px 10px', borderRadius: 8, border: 'none',
-                      background: 'transparent', cursor: addClaimSaving ? 'default' : 'pointer', fontSize: 13, color: T.text,
-                    }}
-                    onMouseEnter={e => { if (!addClaimSaving) (e.currentTarget as HTMLElement).style.background = 'var(--cream)' }}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                    {c.name}
+            {!addClaimClient ? (
+              <>
+                <div style={{ padding: '20px 20px 4px' }}>
+                  <div className="font-serif" style={{ fontSize: 19, color: T.text }}>Add Claim — Pick Client</div>
+                  <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>
+                    Adds a line item to this client's existing claim, or starts a new one if they don't have one yet.
+                  </div>
+                </div>
+                <div style={{ padding: '14px 20px 0' }}>
+                  <input autoFocus value={addClaimSearch} onChange={e => setAddClaimSearch(e.target.value)}
+                    placeholder="Search clients…"
+                    style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 10, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+                </div>
+                <div style={{ maxHeight: 280, overflowY: 'auto', padding: '10px 12px 20px' }}>
+                  {clients
+                    .filter(c => c.name?.toLowerCase().includes(addClaimSearch.trim().toLowerCase()))
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map(c => (
+                      <button key={c.id} onClick={() => { setAddClaimClient(c); setAddClaimError('') }}
+                        style={{ width: '100%', textAlign: 'left', padding: '9px 10px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: T.text }}
+                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--cream)'}
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                        {c.name}
+                      </button>
+                    ))}
+                  {clients.filter(c => c.name?.toLowerCase().includes(addClaimSearch.trim().toLowerCase())).length === 0 && (
+                    <div style={{ padding: '10px', fontSize: 12.5, color: T.textFaint }}>No clients found</div>
+                  )}
+                </div>
+                <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={() => setShowAddClaim(false)}
+                    style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: 'pointer' }}>
+                    Cancel
                   </button>
-                ))}
-              {clients.filter(c => c.name?.toLowerCase().includes(addClaimSearch.trim().toLowerCase())).length === 0 && (
-                <div style={{ padding: '10px', fontSize: 12.5, color: T.textFaint }}>No clients found</div>
-              )}
-            </div>
-            <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowAddClaim(false)} disabled={addClaimSaving}
-                style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: addClaimSaving ? 'default' : 'pointer' }}>
-                {addClaimSaving ? 'Creating…' : 'Cancel'}
-              </button>
-            </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ padding: '20px 20px 4px' }}>
+                  <div className="font-serif" style={{ fontSize: 19, color: T.text }}>{addClaimClient.name}</div>
+                  <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>Which section is this line item for?</div>
+                </div>
+                {addClaimError && (
+                  <div style={{ margin: '14px 20px 0', padding: '8px 10px', background: T.roseSoft, color: T.rose, fontSize: 12, borderRadius: 8 }}>{addClaimError}</div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 20px' }}>
+                  {(['pre', 'in', 'post'] as const).map(sec => (
+                    <button key={sec} disabled={addClaimSaving} onClick={() => addLineItemForClient(addClaimClient, sec)}
+                      style={{
+                        textAlign: 'left', padding: '11px 14px', borderRadius: 10, border: `1px solid ${T.line}`,
+                        background: 'var(--cream)', cursor: addClaimSaving ? 'default' : 'pointer', fontSize: 13.5, fontWeight: 600, color: T.text,
+                      }}>
+                      {SECTION_LABEL[sec]}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'space-between' }}>
+                  <button onClick={() => { setAddClaimClient(null); setAddClaimError('') }} disabled={addClaimSaving}
+                    style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: addClaimSaving ? 'default' : 'pointer' }}>
+                    ← Back
+                  </button>
+                  <button onClick={() => { setShowAddClaim(false); setAddClaimClient(null) }} disabled={addClaimSaving}
+                    style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: addClaimSaving ? 'default' : 'pointer' }}>
+                    {addClaimSaving ? 'Working…' : 'Cancel'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
