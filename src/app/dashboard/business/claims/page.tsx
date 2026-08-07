@@ -67,6 +67,37 @@ const COLUMNS: { id: ColumnId; title: string; hint: string }[] = [
   { id: 'resolved', title: 'Approved / Rejected', hint: 'Last 30 days' },
 ]
 
+// Drop zones are one level more specific than display columns — column 4
+// splits into two zones (a drop needs to say which outcome, not just "done").
+// This is also exactly the set of states a card can be dragged INTO; dragging
+// out of resolved-approved/-rejected into any of the first three zones is how
+// a card gets un-resolved.
+type DropZone = 'docs' | 'submitted' | 'assessment' | 'resolved-approved' | 'resolved-rejected'
+
+function effectiveZone(item: LineItemRow): DropZone {
+  if (item.approved) return 'resolved-approved'
+  if (item.rejected) return 'resolved-rejected'
+  if (item.followup_status === 'Pending Documents') return 'docs'
+  if (item.followup_status === 'Insurer Assessment') return 'assessment'
+  return 'submitted'
+}
+
+// What a drop into each zone writes. Moving into docs/submitted/assessment
+// always clears approved/rejected (that's the un-resolve path); amount_approved
+// and rejection_reason are deliberately left untouched either way — they're
+// edited on the per-client page, and clearing them on drag would lose data
+// for no reason (same "deprecated columns stay in place" instinct as the rest
+// of this codebase).
+function patchFor(zone: DropZone): Partial<LineItemRow> {
+  switch (zone) {
+    case 'docs': return { followup_status: 'Pending Documents', approved: false, rejected: false }
+    case 'submitted': return { followup_status: 'Submitted', approved: false, rejected: false }
+    case 'assessment': return { followup_status: 'Insurer Assessment', approved: false, rejected: false }
+    case 'resolved-approved': return { approved: true, rejected: false }
+    case 'resolved-rejected': return { approved: false, rejected: true }
+  }
+}
+
 const RESOLVED_VISIBLE_DAYS = 30
 const STALE_DAYS = 14 // matches the per-client Medical Claims page's idle threshold
 
@@ -122,6 +153,14 @@ export default function BusinessClaimsBoardPage() {
   const [lineItems, setLineItems] = useState<LineItemRow[]>([])
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([])
   const [policiesByClient, setPoliciesByClient] = useState<Record<string, PolicyLite[]>>({})
+
+  // ── Drag-and-drop state ──
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverZone, setDragOverZone] = useState<DropZone | null>(null)
+  // Set right after a drop lands on resolved-rejected with no existing reason —
+  // captures it without blocking the drag itself. 'Skip' just closes it.
+  const [rejectionPromptItemId, setRejectionPromptItemId] = useState<string | null>(null)
+  const [rejectionDraft, setRejectionDraft] = useState('')
 
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
@@ -239,6 +278,40 @@ export default function BusinessClaimsBoardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems, claimsById, clientsById, familyByClient, policiesByClient])
 
+  // Same pattern as saveLineItem on the per-client Medical Claims page:
+  // optimistic local update first, then the write, alert() on failure. No
+  // rollback attempted on error — matches the existing page's behavior
+  // (advisor sees the alert and can retry by dragging again).
+  async function moveItem(id: string, zone: DropZone) {
+    const patch = { ...patchFor(zone), updated_at: new Date().toISOString() }
+    setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
+    const { error } = await supabase.from('claim_line_items').update(patch).eq('id', id)
+    if (error) alert('Move failed: ' + error.message)
+  }
+
+  function handleDrop(zone: DropZone) {
+    setDragOverZone(null)
+    const id = draggingId
+    setDraggingId(null)
+    if (!id) return
+    const item = lineItems.find(i => i.id === id)
+    if (!item || effectiveZone(item) === zone) return // no-op: dropped back where it started
+    if (zone === 'resolved-rejected' && !item.rejection_reason) {
+      setRejectionDraft('')
+      setRejectionPromptItemId(id)
+    }
+    moveItem(id, zone)
+  }
+
+  // Item is already in resolved-rejected by the time this fires (moveItem ran
+  // on drop) — this only ever patches rejection_reason, nothing else.
+  async function saveRejectionReason(id: string, reason: string) {
+    const trimmed = reason.trim() || null
+    setLineItems(prev => prev.map(i => i.id === id ? { ...i, rejection_reason: trimmed } : i))
+    const { error } = await supabase.from('claim_line_items').update({ rejection_reason: trimmed }).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
   function openCard(card: CardData) {
     const client = clients.find(c => c.id === card.clientId)
     if (client) {
@@ -277,32 +350,107 @@ export default function BusinessClaimsBoardPage() {
                   {columns[col.id].length}
                 </span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
-                {columns[col.id].length === 0 && (
-                  <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '10px 4px' }}>Nothing here</div>
-                )}
-                {columns[col.id].map(card => (
-                  <ClaimCard key={card.item.id} card={card} onClick={() => openCard(card)} />
-                ))}
-              </div>
+
+              {col.id === 'resolved' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <DropZoneList zone="resolved-approved" label="Approved" color={T.emerald}
+                    cards={columns.resolved.filter(c => c.item.approved)}
+                    dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
+                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={openCard} />
+                  <DropZoneList zone="resolved-rejected" label="Rejected" color={T.rose}
+                    cards={columns.resolved.filter(c => c.item.rejected)}
+                    dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
+                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={openCard} />
+                </div>
+              ) : (
+                <DropZoneList zone={col.id as DropZone} cards={columns[col.id]}
+                  dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
+                  draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={openCard} />
+              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {rejectionPromptItemId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 12 }}>
+            <div style={{ padding: '20px 20px 4px' }}>
+              <div className="font-serif" style={{ fontSize: 19, color: T.text }}>Rejection Reason</div>
+              <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>Optional — can also be added later on the client's Medical Claims page.</div>
+            </div>
+            <div style={{ padding: 20 }}>
+              <input value={rejectionDraft} onChange={e => setRejectionDraft(e.target.value)} autoFocus
+                placeholder="e.g. Pre-existing condition exclusion"
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 10, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+            </div>
+            <div style={{ padding: '0 20px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setRejectionPromptItemId(null)}
+                style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: 'pointer' }}>
+                Skip
+              </button>
+              <button onClick={() => { saveRejectionReason(rejectionPromptItemId, rejectionDraft); setRejectionPromptItemId(null) }}
+                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, color: 'white', borderRadius: 8, background: 'var(--charcoal)', border: 'none', cursor: 'pointer' }}>
+                Save
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function ClaimCard({ card, onClick }: { card: CardData; onClick: () => void }) {
+function DropZoneList({ zone, label, color, cards, dragOverZone, setDragOverZone, onDrop, draggingId, setDraggingId, onCardClick }: {
+  zone: DropZone; label?: string; color?: string; cards: CardData[]
+  dragOverZone: DropZone | null; setDragOverZone: (z: DropZone | null) => void
+  onDrop: (zone: DropZone) => void
+  draggingId: string | null; setDraggingId: (id: string | null) => void
+  onCardClick: (card: CardData) => void
+}) {
+  const isOver = dragOverZone === zone
+  return (
+    <div
+      onDragOver={e => { e.preventDefault(); if (dragOverZone !== zone) setDragOverZone(zone) }}
+      onDragLeave={() => { if (dragOverZone === zone) setDragOverZone(null) }}
+      onDrop={e => { e.preventDefault(); onDrop(zone) }}
+      style={{
+        display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60, borderRadius: 12, padding: 6,
+        border: isOver ? `1.5px dashed ${color || T.gold}` : '1.5px dashed transparent',
+        background: isOver ? (color ? `${color}0F` : T.goldSoft) : 'transparent',
+      }}>
+      {label && (
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: color || T.textFaint, textTransform: 'uppercase', letterSpacing: 0.4, padding: '0 4px' }}>
+          {label} · {cards.length}
+        </div>
+      )}
+      {cards.length === 0 && (
+        <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '10px 4px' }}>Nothing here</div>
+      )}
+      {cards.map(card => (
+        <ClaimCard key={card.item.id} card={card}
+          dragging={draggingId === card.item.id}
+          onDragStart={() => setDraggingId(card.item.id)}
+          onDragEnd={() => setDraggingId(null)}
+          onClick={() => onCardClick(card)} />
+      ))}
+    </div>
+  )
+}
+
+function ClaimCard({ card, dragging, onDragStart, onDragEnd, onClick }: {
+  card: CardData; dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onClick: () => void
+}) {
   const { item } = card
   const resolved = item.approved || item.rejected
   const days = daysSince(item.submitted_date || item.date_from)
   const stale = !resolved && days !== null && days >= STALE_DAYS
 
   return (
-    <button onClick={onClick} style={{
-      textAlign: 'left', width: '100%', cursor: 'pointer',
+    <button draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} style={{
+      textAlign: 'left', width: '100%', cursor: 'grab',
       background: 'white', border: `1px solid ${T.line}`, borderRadius: 12, padding: 12,
+      opacity: dragging ? 0.4 : 1,
     }}>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{card.clientName}</div>
       <div style={{ fontSize: 11, color: T.textFaint, marginTop: 1 }}>{card.lifeAssuredLabel} · {card.policyLabel}</div>
