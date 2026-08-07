@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { useDashboard } from '@/contexts/DashboardContext'
+import { useDashboard, ClientRow } from '@/contexts/DashboardContext'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -21,8 +21,10 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 interface PolicyLite {
   id: string
   categoryCode: string
+  policyTypeCode: string
   companyName: string
   productName: string
+  person: string
 }
 
 interface ClaimRow {
@@ -161,6 +163,12 @@ export default function BusinessClaimsBoardPage() {
   // captures it without blocking the drag itself. 'Skip' just closes it.
   const [rejectionPromptItemId, setRejectionPromptItemId] = useState<string | null>(null)
   const [rejectionDraft, setRejectionDraft] = useState('')
+
+  // ── Add Claim modal state ──
+  const [showAddClaim, setShowAddClaim] = useState(false)
+  const [addClaimSearch, setAddClaimSearch] = useState('')
+  const [addClaimSaving, setAddClaimSaving] = useState(false)
+  const [addClaimError, setAddClaimError] = useState('')
 
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
@@ -312,6 +320,33 @@ export default function BusinessClaimsBoardPage() {
     if (error) alert('Save failed: ' + error.message)
   }
 
+  // Mirrors createClaim() on the per-client Medical Claims page: same defaults
+  // (life assured = the client themself, first 'main' medical policy on file),
+  // same "create bare, then edit inline" pattern — no upfront picker here.
+  // A fresh claim has zero line items, so it can't render as a board card yet;
+  // the natural next step is the per-client page where line items actually
+  // get added, so this hands off there immediately (same ?claimId= deep link
+  // the cards already use) rather than duplicating that form on the board.
+  async function createClaimForClient(client: ClientRow) {
+    const clientPolicies = (policiesByClient[client.id] || []).filter(p => p.person === 'client')
+    const firstMain = clientPolicies.find(p => p.policyTypeCode?.toLowerCase() === 'main') || clientPolicies[0]
+    if (!firstMain) {
+      setAddClaimError(`${client.name} has no medical policy on file yet — add one on the Protection page first.`)
+      return
+    }
+    setAddClaimSaving(true)
+    setAddClaimError('')
+    const { data, error } = await supabase.from('claims').insert({
+      client_id: client.id, policy_id: firstMain.id, life_assured_person: 'client',
+      label: 'New Claim', status: 'open', opened_date: new Date().toISOString().slice(0, 10),
+    }).select().maybeSingle()
+    setAddClaimSaving(false)
+    if (error || !data) { setAddClaimError('Could not create claim: ' + (error?.message || 'unknown error')); return }
+    setActiveClient(client)
+    localStorage.setItem('selectedClientId', client.id)
+    router.push(`/dashboard/servicing/claims?claimId=${(data as { id: string }).id}`)
+  }
+
   function openCard(card: CardData) {
     const client = clients.find(c => c.id === card.clientId)
     if (client) {
@@ -327,12 +362,18 @@ export default function BusinessClaimsBoardPage() {
 
   return (
     <div style={{ padding: 24, background: 'var(--cream)', minHeight: '100%', borderRadius: 16 }}>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Business Dashboard</div>
-        <div className="font-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Claims Board</div>
-        <div style={{ fontSize: 12.5, color: T.textFaint, marginTop: 4 }}>
-          {loading ? 'Loading…' : `${totalInProgress} claim line item${totalInProgress === 1 ? '' : 's'} in progress across all clients`}
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Business Dashboard</div>
+          <div className="font-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Claims Board</div>
+          <div style={{ fontSize: 12.5, color: T.textFaint, marginTop: 4 }}>
+            {loading ? 'Loading…' : `${totalInProgress} claim line item${totalInProgress === 1 ? '' : 's'} in progress across all clients`}
+          </div>
         </div>
+        <button onClick={() => { setShowAddClaim(true); setAddClaimSearch(''); setAddClaimError('') }}
+          style={{ padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--charcoal)', border: 'none', borderRadius: 8, cursor: 'pointer', flexShrink: 0 }}>
+          + Add Claim
+        </button>
       </div>
 
       {loading ? (
@@ -392,6 +433,51 @@ export default function BusinessClaimsBoardPage() {
               <button onClick={() => { saveRejectionReason(rejectionPromptItemId, rejectionDraft); setRejectionPromptItemId(null) }}
                 style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, color: 'white', borderRadius: 8, background: 'var(--charcoal)', border: 'none', cursor: 'pointer' }}>
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showAddClaim && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }} onClick={() => !addClaimSaving && setShowAddClaim(false)}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 12 }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px 20px 4px' }}>
+              <div className="font-serif" style={{ fontSize: 19, color: T.text }}>Add Claim</div>
+              <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>
+                Pick a client — the claim is created with defaults (client themself, first medical policy on file), then you'll land on their Medical Claims page to add the line item.
+              </div>
+            </div>
+            <div style={{ padding: '14px 20px 0' }}>
+              <input autoFocus value={addClaimSearch} onChange={e => setAddClaimSearch(e.target.value)}
+                placeholder="Search clients…" disabled={addClaimSaving}
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 10, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+            </div>
+            {addClaimError && (
+              <div style={{ margin: '12px 20px 0', padding: '8px 10px', background: T.roseSoft, color: T.rose, fontSize: 12, borderRadius: 8 }}>{addClaimError}</div>
+            )}
+            <div style={{ maxHeight: 280, overflowY: 'auto', padding: '10px 12px 20px' }}>
+              {clients
+                .filter(c => c.name?.toLowerCase().includes(addClaimSearch.trim().toLowerCase()))
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => (
+                  <button key={c.id} disabled={addClaimSaving} onClick={() => createClaimForClient(c)}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '9px 10px', borderRadius: 8, border: 'none',
+                      background: 'transparent', cursor: addClaimSaving ? 'default' : 'pointer', fontSize: 13, color: T.text,
+                    }}
+                    onMouseEnter={e => { if (!addClaimSaving) (e.currentTarget as HTMLElement).style.background = 'var(--cream)' }}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    {c.name}
+                  </button>
+                ))}
+              {clients.filter(c => c.name?.toLowerCase().includes(addClaimSearch.trim().toLowerCase())).length === 0 && (
+                <div style={{ padding: '10px', fontSize: 12.5, color: T.textFaint }}>No clients found</div>
+              )}
+            </div>
+            <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowAddClaim(false)} disabled={addClaimSaving}
+                style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: addClaimSaving ? 'default' : 'pointer' }}>
+                {addClaimSaving ? 'Creating…' : 'Cancel'}
               </button>
             </div>
           </div>
