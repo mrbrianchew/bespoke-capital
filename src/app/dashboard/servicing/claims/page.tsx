@@ -1017,7 +1017,7 @@ function MedicalClaimsPage() {
           const pendingCount = pendingCountByClaim[c.id] || 0
           return (
             <button key={c.id} onClick={() => { setSelectedClaimId(c.id); setDetailsOpen(false); setExpandedItemId(null) }}
-              style={{ ...pillBase, ...(c.id === selectedClaimId ? pillActive : pillInactive), position: 'relative' }}>
+              style={{ ...pillBase, ...(c.id === selectedClaimId ? pillActive : pillInactive), position: 'relative', opacity: c.status === 'closed' && c.id !== selectedClaimId ? 0.55 : 1 }}>
               {pendingCount > 0 && (
                 <span className="claims-mono" style={{
                   position: 'absolute', top: -7, right: -7, minWidth: 18, height: 18, borderRadius: 999,
@@ -1027,7 +1027,7 @@ function MedicalClaimsPage() {
                 }}>{pendingCount}</span>
               )}
               <div style={{ fontSize: 12.5, fontWeight: 700 }}>{label}</div>
-              <div style={{ fontSize: 10, opacity: 0.6 }}>{c.label || 'Claim'}</div>
+              <div style={{ fontSize: 10, opacity: 0.6 }}>{c.status === 'closed' ? 'Closed' : (c.label || 'Claim')}</div>
             </button>
           )
         })}
@@ -1045,14 +1045,25 @@ function MedicalClaimsPage() {
           {/* Hero */}
           <div style={heroCard}>
             <div>
-              <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Claim · Opened {fmtDate(selectedClaim.opened_date)}</div>
+              <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                Claim · Opened {fmtDate(selectedClaim.opened_date)}
+                {selectedClaim.status === 'closed' && (
+                  <span style={{ color: T.textFaint, background: 'var(--cream2)', borderRadius: 999, padding: '2px 9px', letterSpacing: 0.6 }}>Closed</span>
+                )}
+              </div>
               <div className="claims-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Medical Insurance Claims for {allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || clientName}</div>
               <div style={{ fontSize: 11.5, color: T.textDim, marginTop: 5 }}>Household <b style={{ color: T.text }}>{clientName}</b> family</div>
             </div>
-            <button onClick={deleteClaim} disabled={saving}
-              style={{ marginTop: 10, background: 'none', border: 'none', color: T.rose, fontSize: 11, fontWeight: 700, padding: '4px 2px', cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
-              Delete this claim
-            </button>
+            <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+              <button onClick={() => updateClaim({ status: selectedClaim.status === 'closed' ? 'open' : 'closed' })} disabled={saving}
+                style={{ background: 'none', border: 'none', color: T.textDim, fontSize: 11, fontWeight: 700, padding: '4px 2px', cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
+                {selectedClaim.status === 'closed' ? 'Reopen this claim' : 'Close this claim'}
+              </button>
+              <button onClick={deleteClaim} disabled={saving}
+                style={{ background: 'none', border: 'none', color: T.rose, fontSize: 11, fontWeight: 700, padding: '4px 2px', cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
+                Delete this claim
+              </button>
+            </div>
             <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${T.line} 15%, ${T.line} 85%, transparent)`, margin: '20px 0' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
               <div style={{ minWidth: 0 }}>
@@ -1226,12 +1237,15 @@ function MedicalClaimsPage() {
 
           <div style={{ marginTop: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
-              <div>
-                <div className="claims-serif" style={{ fontSize: 19, color: T.text, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  Pending Follow-Ups
-                  <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--charcoal)', background: T.gold, borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{pendingItems.length}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <div style={{ width: 3, height: 16, borderRadius: 2, background: 'var(--charcoal)', flexShrink: 0 }} />
+                <div>
+                  <div className="claims-serif" style={{ fontSize: 19, color: T.text, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    Pending Follow-Ups
+                    <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: 'white', background: 'var(--charcoal)', borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{pendingItems.length}</span>
+                  </div>
+                  <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Line items awaiting insurer action</div>
                 </div>
-                <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Line items awaiting insurer action</div>
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

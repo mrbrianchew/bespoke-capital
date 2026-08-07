@@ -33,6 +33,7 @@ interface ClaimRow {
   policy_id: string
   life_assured_person: string
   label: string | null
+  status: 'open' | 'closed' | 'withdrawn'
   opened_date: string
 }
 
@@ -192,7 +193,7 @@ export default function BusinessClaimsBoardPage() {
     async function load() {
       setLoading(true)
       const [claimsRes, familyRes] = await Promise.all([
-        supabase.from('claims').select('id, client_id, policy_id, life_assured_person, label, opened_date'),
+        supabase.from('claims').select('id, client_id, policy_id, life_assured_person, label, status, opened_date'),
         supabase.from('family_members').select('id, client_id, name, relationship'),
       ])
       if (cancelled) return
@@ -335,8 +336,13 @@ export default function BusinessClaimsBoardPage() {
     setAddClaimSaving(true)
     setAddClaimError('')
 
+    // Only reuse a claim that's actually still OPEN — a closed claim is a
+    // finished event (per Brian: "one claim should end, then another opens").
+    // If more than one happens to be open at once (shouldn't normally happen
+    // if claims get closed promptly), most-recent is a reasonable fallback
+    // rather than blocking on a picker for what should be a rare edge case.
     const existing = claims
-      .filter(c => c.client_id === client.id && c.life_assured_person === 'client')
+      .filter(c => c.client_id === client.id && c.life_assured_person === 'client' && c.status === 'open')
       .sort((a, b) => new Date(b.opened_date).getTime() - new Date(a.opened_date).getTime())[0]
 
     let claimId = existing?.id
