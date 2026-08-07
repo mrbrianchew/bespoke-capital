@@ -6,7 +6,7 @@ import { requireCreator } from '@/lib/requireCreator'
 // arbitrary jsonb-array editor — add a new key here when a new feature is
 // built behind a flag (see NAV_GROUPS_ALL in dashboard/layout.tsx for the
 // first one, 'servicing').
-const VALID_FEATURES = ['servicing']
+const VALID_FEATURES = ['servicing', 'business_dashboard']
 
 export async function POST(req: Request) {
   // Only the creator may grant/revoke beta feature access. This is the

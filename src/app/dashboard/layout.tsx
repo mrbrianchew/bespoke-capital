@@ -41,6 +41,29 @@ const NAV_GROUPS_ALL: { id: NavGroupId; label: string; items: typeof NAV_PLANNIN
   { id: 'servicing', label: 'Client Servicing', items: NAV_SERVICING, betaFlag: 'servicing' },
 ]
 
+// Business Dashboard: the client-agnostic sidebar mode (see DashboardLayoutInner
+// below). Claims Board is the first real item; New Business Pipeline and
+// Servicing Pipeline are placeholders reserved for future builds — rendered
+// disabled rather than omitted so the shape of the section is visible now.
+const NAV_BUSINESS: { href: string; label: string; icon: string; id: string; disabled?: boolean }[] = [
+  { href: '/dashboard/business/claims', label: 'Claims Board', icon: '▤', id: 'claims-board' },
+  { href: '#', label: 'New Business Pipeline', icon: '◐', id: 'new-business-pipeline', disabled: true },
+  { href: '#', label: 'Servicing Pipeline', icon: '◑', id: 'servicing-pipeline', disabled: true },
+]
+
+// Business Dashboard gating is intentionally stricter than a single flag:
+// the Claims Board is a firm-wide read/write view over the same claims data
+// as the per-client Medical Claims page, so an advisor without 'servicing'
+// access would hit a hard wall the moment they clicked into a card. Require
+// both flags rather than let that dead end exist. Creator bypasses both, same
+// as every other beta flag.
+function hasBusinessDashboardAccess(betaFeatures: string[] | null | undefined, advisorId?: string | null): boolean {
+  const isCreator = !!advisorId && advisorId === CREATOR_ID
+  if (isCreator) return true
+  const flags = Array.isArray(betaFeatures) ? betaFeatures : []
+  return flags.includes('business_dashboard') && flags.includes('servicing')
+}
+
 // Groups gated by betaFlag only render for advisors whose beta_features
 // array (advisors.beta_features, jsonb) includes that flag. Ungated groups
 // (Financial Planning) are always visible. This is how staged rollout works
@@ -98,6 +121,14 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   const [expandedGroup, setExpandedGroup] = useClientTabState<NavGroupId>('navGroup', 'planning')
   const visibleGroups = visibleNavGroups(advisor?.beta_features, advisor?.id)
+
+  // Business Dashboard mode is derived from the route, not stored state —
+  // it's just "am I under /dashboard/business". activeClient is untouched by
+  // switching modes, so the previously open client is naturally still there
+  // when the advisor switches back to Client Workspace.
+  const businessAccess = hasBusinessDashboardAccess(advisor?.beta_features, advisor?.id)
+  const isBusinessMode = businessAccess && pathname.startsWith('/dashboard/business')
+  const businessActiveId = NAV_BUSINESS.find(item => pathname === item.href)?.id
 
   // Close the mobile drawer on every navigation — otherwise it stays open
   // over the new page since nothing else would trigger a close.
@@ -179,6 +210,25 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>{advisor?.firm || 'Bespoke Heartwork'}</div>
 <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
         </div>
+        {businessAccess && (
+          <div className="px-3 pt-3" style={{ borderBottom: isBusinessMode ? '1px solid var(--line)' : 'none' }}>
+            <div className="flex" style={{ background: 'var(--cream)', border: '1px solid var(--line)', borderRadius: 8, padding: 2, marginBottom: 12 }}>
+              <button onClick={() => router.push('/dashboard')}
+                className="flex-1 text-center transition-colors"
+                style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+                  color: !isBusinessMode ? 'white' : 'var(--ink3)', background: !isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
+                Client Workspace
+              </button>
+              <button onClick={() => router.push('/dashboard/business/claims')}
+                className="flex-1 text-center transition-colors"
+                style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+                  color: isBusinessMode ? 'white' : 'var(--ink3)', background: isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
+                Business Dashboard
+              </button>
+            </div>
+          </div>
+        )}
+        {!isBusinessMode && (
         <div className="relative px-3 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
           <div className="flex items-stretch gap-1.5">
             <div role="button" tabIndex={0}
@@ -272,8 +322,28 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             </div>
           )}
         </div>
+        )}
         <nav className="flex-1 px-3 py-2">
-          {visibleGroups.length === 1 ? (
+          {isBusinessMode ? (
+            NAV_BUSINESS.map(item => (
+              item.disabled ? (
+                <div key={item.id}
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded mb-0.5 text-sm"
+                  style={{ color: 'var(--ink3)', opacity: 0.5, cursor: 'default' }}>
+                  <span className="text-base w-4 text-center">{item.icon}</span>
+                  {item.label}
+                  <span className="ml-auto text-xs tracking-widest uppercase" style={{ fontSize: 9.5 }}>Soon</span>
+                </div>
+              ) : (
+                <Link key={item.id} href={item.href}
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all mb-0.5 text-sm"
+                  style={{ color: businessActiveId === item.id ? 'var(--gold-tag)' : 'var(--ink3)', background: businessActiveId === item.id ? 'var(--gold-l)' : 'transparent', fontWeight: businessActiveId === item.id ? 500 : 400 }}>
+                  <span className="text-base w-4 text-center">{item.icon}</span>
+                  {item.label}
+                </Link>
+              )
+            ))
+          ) : visibleGroups.length === 1 ? (
             visibleGroups[0].items.map(item => (
               <Link key={item.id} href={item.href}
                 className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all mb-0.5 text-sm"

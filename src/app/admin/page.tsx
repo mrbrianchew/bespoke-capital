@@ -202,6 +202,7 @@ function RegisteredAdvisorsCard() {
                 <th style={{ padding: '8px', fontWeight: 500 }}>Firm</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Status</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Servicing (Beta)</th>
+                <th style={{ padding: '8px', fontWeight: 500 }}>Business Dashboard (Beta)</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Joined</th>
                 <th style={{ padding: '8px', fontWeight: 500 }}>Last Active</th>
                 <th style={{ padding: '8px 0 8px 8px', fontWeight: 500 }}>Actions</th>
@@ -228,6 +229,25 @@ function RegisteredAdvisorsCard() {
                         />
                         {isCreator && <span style={{ fontSize: 11, color: '#9A9690' }}>always on</span>}
                       </label>
+                    </td>
+                    <td style={{ padding: '10px 8px' }}>
+                      {(() => {
+                        const servicingOn = isCreator || (Array.isArray(a.beta_features) && a.beta_features.includes('servicing'))
+                        return (
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: (busy || isCreator || !servicingOn) ? 'default' : 'pointer' }}
+                            title={!servicingOn && !isCreator ? 'Requires Servicing (Beta) — Claims Board reads the same claims data' : undefined}>
+                            <input
+                              type="checkbox"
+                              checked={isCreator || (Array.isArray(a.beta_features) && a.beta_features.includes('business_dashboard'))}
+                              disabled={busy || isCreator || !servicingOn}
+                              onChange={e => handleToggleFeature(a.id, 'business_dashboard', e.target.checked)}
+                              style={{ width: 16, height: 16, accentColor: '#2D5A4E', cursor: (busy || isCreator || !servicingOn) ? 'default' : 'pointer' }}
+                            />
+                            {isCreator && <span style={{ fontSize: 11, color: '#9A9690' }}>always on</span>}
+                            {!isCreator && !servicingOn && <span style={{ fontSize: 11, color: '#9A9690' }}>needs Servicing</span>}
+                          </label>
+                        )
+                      })()}
                     </td>
                     <td style={{ padding: '10px 8px', color: '#9A9690', fontFamily: 'DM Mono, monospace' }}>
                       {a.created_at ? new Date(a.created_at).toLocaleDateString('en-SG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}

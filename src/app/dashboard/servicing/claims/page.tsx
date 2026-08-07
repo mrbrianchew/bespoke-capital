@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useMemo, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
@@ -225,10 +225,23 @@ function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<Line
 
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
-export default function MedicalClaimsPage() {
+export default function MedicalClaimsPageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <MedicalClaimsPage />
+    </Suspense>
+  )
+}
+
+function MedicalClaimsPage() {
   const { activeClient, advisor, authLoading, updateActiveClientFields } = useDashboard()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+  // Deep-link from the Business Dashboard Claims Board: ?claimId=<uuid> selects
+  // that claim once its client loads. Only honored when the id actually belongs
+  // to the newly-loaded client's claims — see the load effect below.
+  const urlClaimId = searchParams.get('claimId')
 
   const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
 
@@ -389,7 +402,10 @@ export default function MedicalClaimsPage() {
       setFamilyMembers(famRes.data || [])
       const claimRows = (claimsRes.data || []) as ClaimRow[]
       setClaims(claimRows)
-      setSelectedClaimId(prev => claimRows.some(c => c.id === prev) ? prev : (claimRows[0]?.id || null))
+      setSelectedClaimId(prev => {
+        if (urlClaimId && claimRows.some(c => c.id === urlClaimId)) return urlClaimId
+        return claimRows.some(c => c.id === prev) ? prev : (claimRows[0]?.id || null)
+      })
 
       const claimIds = claimRows.map(c => c.id)
       if (claimIds.length > 0) {
@@ -410,6 +426,14 @@ export default function MedicalClaimsPage() {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeClient?.id, authLoading])
+
+  // Covers clicking a different Claims Board card for a client that's already
+  // active — activeClient.id doesn't change so the load effect above won't
+  // rerun, but urlClaimId does change and claims is already populated.
+  useEffect(() => {
+    if (urlClaimId && claims.some(c => c.id === urlClaimId)) setSelectedClaimId(urlClaimId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlClaimId])
 
   const selectedClaim = claims.find(c => c.id === selectedClaimId) || null
 
