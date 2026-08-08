@@ -1235,7 +1235,7 @@ function MedicalClaimsPage() {
             </div>
           )}
 
-          <div style={{ marginTop: 20 }}>
+          <div style={{ marginTop: 20, background: 'rgba(28,26,23,.055)', border: '1px solid rgba(28,26,23,.13)', borderRadius: 14, padding: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 2px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                 <div style={{ width: 3, height: 16, borderRadius: 2, background: 'var(--charcoal)', flexShrink: 0 }} />
@@ -1249,7 +1249,7 @@ function MedicalClaimsPage() {
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {pendingItems.length === 0 && <div style={{ ...cardBase, padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>Nothing pending — every line item is either resolved or not yet added.</div>}
+              {pendingItems.length === 0 && <div style={{ ...cardBase, background: 'white', padding: 16, textAlign: 'center', color: T.textFaint, fontSize: 12.5, fontStyle: 'italic' }}>Nothing pending — every line item is either resolved or not yet added.</div>}
               {pendingItems.map(it => (
                 <FollowupCard key={it.id} item={it} notes={notesByItem[it.id] || []}
                   draft={noteDraft[it.id] || ''} onDraftChange={v => setNoteDraft(prev => ({ ...prev, [it.id]: v }))}
@@ -1751,7 +1751,7 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
   const stale = !resolved && days !== null && days >= 14
 
   return (
-    <div style={{ ...cardBase, padding: 14 }}>
+    <div style={{ ...cardBase, background: 'white', padding: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap' }}>
