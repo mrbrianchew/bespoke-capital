@@ -1755,7 +1755,7 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--ink2)', background: 'rgba(28,26,23,.08)', padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: 'white', background: 'var(--charcoal)', padding: '2px 7px', borderRadius: 5 }}>{item.type || '—'}</span>
             <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{item.description || '(no description)'}</span>
           </div>
           <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
