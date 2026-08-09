@@ -8,6 +8,7 @@ import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import BugReportModal from '@/components/BugReportModal'
 import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
+import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -43,13 +44,16 @@ const NAV_GROUPS_ALL: { id: NavGroupId; label: string; items: typeof NAV_PLANNIN
 ]
 
 // Business Dashboard: the client-agnostic sidebar mode (see DashboardLayoutInner
-// below). Claims Board is the first real item; New Business Pipeline and
-// Servicing Pipeline are placeholders reserved for future builds — rendered
-// disabled rather than omitted so the shape of the section is visible now.
+// below). Naming convention going forward: plain noun, no UI-shape suffix
+// ("Board," "Pipeline," "Desk") — plural for discrete trackable items
+// (Claims, Service Requests), singular/gerund for ongoing process categories.
+// New Business Pipeline remains a placeholder reserved for a future build —
+// rendered disabled rather than omitted so the shape of the section stays
+// visible. Its label will need the same cleanup once that feature is built.
 const NAV_BUSINESS: { href: string; label: string; icon: string; id: string; disabled?: boolean }[] = [
-  { href: '/dashboard/business/claims', label: 'Claims Board', icon: '▤', id: 'claims-board' },
+  { href: '/dashboard/business/claims', label: 'Claims', icon: '▤', id: 'claims-board' },
+  { href: '/dashboard/business/service-requests', label: 'Service Requests', icon: '◑', id: 'service-requests' },
   { href: '#', label: 'New Business Pipeline', icon: '◐', id: 'new-business-pipeline', disabled: true },
-  { href: '#', label: 'Servicing Pipeline', icon: '◑', id: 'servicing-pipeline', disabled: true },
 ]
 
 // Business Dashboard gating is intentionally stricter than a single flag:
@@ -117,6 +121,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [showBugReport, setShowBugReport] = useState(false)
   const [adminBadgeCount, setAdminBadgeCount] = useState(0)
   const [claimsBadgeCount, setClaimsBadgeCount] = useState(0)
+  const [serviceRequestsBadgeCount, setServiceRequestsBadgeCount] = useState(0)
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -154,6 +159,18 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (!businessAccess) { setClaimsBadgeCount(0); return }
     let cancelled = false
     fetchClaimsAttentionCount(supabase).then(count => { if (!cancelled) setClaimsBadgeCount(count) }).catch(() => {})
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, businessAccess])
+
+  // Service Requests badge — count of open (not-done) requests. Same
+  // firm-wide-via-RLS pattern as the claims badge above; shown on the
+  // Business Dashboard toggle (summed with the claims count) and on the
+  // Service Requests nav item itself.
+  useEffect(() => {
+    if (!businessAccess) { setServiceRequestsBadgeCount(0); return }
+    let cancelled = false
+    fetchServiceRequestsAttentionCount(supabase).then(count => { if (!cancelled) setServiceRequestsBadgeCount(count) }).catch(() => {})
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, businessAccess])
@@ -239,12 +256,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, position: 'relative',
                   color: isBusinessMode ? 'white' : 'var(--ink3)', background: isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
                 Business Dashboard
-                {claimsBadgeCount > 0 && (
+                {(claimsBadgeCount + serviceRequestsBadgeCount) > 0 && (
                   <span
                     className="flex items-center justify-center text-xs font-medium"
                     style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: 'var(--rouge)', color: 'white', lineHeight: 1, fontSize: 9.5 }}
                   >
-                    {claimsBadgeCount > 99 ? '99+' : claimsBadgeCount}
+                    {(claimsBadgeCount + serviceRequestsBadgeCount) > 99 ? '99+' : (claimsBadgeCount + serviceRequestsBadgeCount)}
                   </span>
                 )}
               </button>
@@ -369,6 +386,14 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                       style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
                     >
                       {claimsBadgeCount > 99 ? '99+' : claimsBadgeCount}
+                    </span>
+                  )}
+                  {item.id === 'service-requests' && serviceRequestsBadgeCount > 0 && (
+                    <span
+                      className="flex items-center justify-center text-xs font-medium"
+                      style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
+                    >
+                      {serviceRequestsBadgeCount > 99 ? '99+' : serviceRequestsBadgeCount}
                     </span>
                   )}
                 </Link>
