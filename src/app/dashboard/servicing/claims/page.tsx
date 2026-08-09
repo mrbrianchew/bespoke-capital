@@ -280,6 +280,9 @@ function MedicalClaimsPage() {
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [todoDraft, setTodoDraft] = useState<Record<string, string>>({})
   const [todoDueDraft, setTodoDueDraft] = useState<Record<string, string>>({})
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
+  const [editTodoText, setEditTodoText] = useState('')
+  const [editTodoDate, setEditTodoDate] = useState('')
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
 
@@ -772,6 +775,22 @@ function MedicalClaimsPage() {
     setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).filter(t => t.id !== todoId) }))
     const { error } = await supabase.from('claim_followup_todos').delete().eq('id', todoId)
     if (error) alert('Delete failed: ' + error.message)
+  }
+
+  function startEditTodo(t: FollowupTodo) {
+    setEditingTodoId(t.id)
+    setEditTodoText(t.task)
+    setEditTodoDate(t.due_date || '')
+  }
+
+  async function saveEditTodo(lineItemId: string) {
+    if (!editingTodoId || !editTodoText.trim()) return
+    const id = editingTodoId
+    const patch = { task: editTodoText.trim(), due_date: editTodoDate || null }
+    setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).map(t => t.id === id ? { ...t, ...patch } : t) }))
+    setEditingTodoId(null)
+    const { error } = await supabase.from('claim_followup_todos').update(patch).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
   }
 
   // Google auth + folder picking (advisor's own account, not a robot).
@@ -1312,7 +1331,10 @@ function MedicalClaimsPage() {
                   todoDraft={todoDraft[it.id] || ''} onTodoDraftChange={v => setTodoDraft(prev => ({ ...prev, [it.id]: v }))}
                   todoDueDraft={todoDueDraft[it.id] || ''} onTodoDueDraftChange={v => setTodoDueDraft(prev => ({ ...prev, [it.id]: v }))}
                   onAddTodo={() => addTodo(it.id)} onToggleTodo={(todoId, done) => toggleTodo(it.id, todoId, done)}
-                  onDeleteTodo={todoId => deleteTodo(it.id, todoId)} />
+                  onDeleteTodo={todoId => deleteTodo(it.id, todoId)}
+                  editingTodoId={editingTodoId} editTodoText={editTodoText} onEditTodoTextChange={setEditTodoText}
+                  editTodoDate={editTodoDate} onEditTodoDateChange={setEditTodoDate}
+                  onStartEditTodo={startEditTodo} onSaveEditTodo={() => saveEditTodo(it.id)} onCancelEditTodo={() => setEditingTodoId(null)} />
               ))}
             </div>
 
@@ -1333,7 +1355,10 @@ function MedicalClaimsPage() {
                         todoDraft={todoDraft[it.id] || ''} onTodoDraftChange={v => setTodoDraft(prev => ({ ...prev, [it.id]: v }))}
                         todoDueDraft={todoDueDraft[it.id] || ''} onTodoDueDraftChange={v => setTodoDueDraft(prev => ({ ...prev, [it.id]: v }))}
                         onAddTodo={() => addTodo(it.id)} onToggleTodo={(todoId, done) => toggleTodo(it.id, todoId, done)}
-                        onDeleteTodo={todoId => deleteTodo(it.id, todoId)} />
+                        onDeleteTodo={todoId => deleteTodo(it.id, todoId)}
+                        editingTodoId={editingTodoId} editTodoText={editTodoText} onEditTodoTextChange={setEditTodoText}
+                        editTodoDate={editTodoDate} onEditTodoDateChange={setEditTodoDate}
+                        onStartEditTodo={startEditTodo} onSaveEditTodo={() => saveEditTodo(it.id)} onCancelEditTodo={() => setEditingTodoId(null)} />
                     ))}
                   </div>
                 )}
@@ -1818,7 +1843,8 @@ function todoDueLabel(dueDate: string | null): { text: string; kind: 'overdue' |
 }
 
 function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, onDeleteNote, onStatusChange,
-  todos, todoDraft, onTodoDraftChange, todoDueDraft, onTodoDueDraftChange, onAddTodo, onToggleTodo, onDeleteTodo }: {
+  todos, todoDraft, onTodoDraftChange, todoDueDraft, onTodoDueDraftChange, onAddTodo, onToggleTodo, onDeleteTodo,
+  editingTodoId, editTodoText, onEditTodoTextChange, editTodoDate, onEditTodoDateChange, onStartEditTodo, onSaveEditTodo, onCancelEditTodo }: {
   item: LineItemRow; notes: FollowupNote[]; resolved?: boolean
   draft: string; onDraftChange: (v: string) => void
   onAddNote: () => void; onDeleteNote: (noteId: string) => void
@@ -1827,6 +1853,9 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
   todoDraft: string; onTodoDraftChange: (v: string) => void
   todoDueDraft: string; onTodoDueDraftChange: (v: string) => void
   onAddTodo: () => void; onToggleTodo: (todoId: string, done: boolean) => void; onDeleteTodo: (todoId: string) => void
+  editingTodoId: string | null; editTodoText: string; onEditTodoTextChange: (v: string) => void
+  editTodoDate: string; onEditTodoDateChange: (v: string) => void
+  onStartEditTodo: (t: FollowupTodo) => void; onSaveEditTodo: () => void; onCancelEditTodo: () => void
 }) {
   const days = daysSince(item.submitted_date || item.date_from)
   const stale = !resolved && days !== null && days >= 14
@@ -1887,6 +1916,19 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
           </div>
         )}
         {openTodos.map(t => {
+          if (editingTodoId === t.id) {
+            return (
+              <div key={t.id} style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                <input className="claims-input" value={editTodoText} onChange={e => onEditTodoTextChange(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSaveEditTodo() } }} autoFocus
+                  style={{ flex: 1, minWidth: 160 }} />
+                <input type="date" className="claims-input" value={editTodoDate} onChange={e => onEditTodoDateChange(e.target.value)}
+                  style={{ width: 140, flexShrink: 0 }} />
+                <button onClick={onSaveEditTodo} style={{ fontSize: 11.5, fontWeight: 700, color: T.emerald, background: 'none', border: 'none', cursor: 'pointer' }}>Save</button>
+                <button onClick={onCancelEditTodo} style={{ fontSize: 11.5, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            )
+          }
           const label = todoDueLabel(t.due_date)
           const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
           return (
@@ -1895,6 +1937,7 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
                 style={{ width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }} />
               <span style={{ flex: 1, fontSize: 12, color: T.text }}>{t.task}</span>
               {label.text && <span style={{ fontSize: 10.5, fontWeight: label.kind === 'upcoming' ? 400 : 700, color: badgeColor }}>{label.text}</span>}
+              <button onClick={() => onStartEditTodo(t)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>Edit</button>
               <button onClick={() => onDeleteTodo(t.id)} style={{ background: 'none', border: 'none', color: T.rose, fontSize: 11, cursor: 'pointer', flexShrink: 0 }}>✕</button>
             </div>
           )

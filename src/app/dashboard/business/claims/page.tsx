@@ -226,6 +226,9 @@ export default function BusinessClaimsBoardPage() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editNoteText, setEditNoteText] = useState('')
   const [editNoteDate, setEditNoteDate] = useState('')
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
+  const [editTodoText, setEditTodoText] = useState('')
+  const [editTodoDate, setEditTodoDate] = useState('')
   const [todoDraft, setTodoDraft] = useState('')
   const [todoDueDate, setTodoDueDate] = useState('')
   const [savingModal, setSavingModal] = useState(false)
@@ -624,6 +627,22 @@ export default function BusinessClaimsBoardPage() {
     if (error) alert('Delete failed: ' + error.message)
   }
 
+  function startEditTodo(t: FollowupTodo) {
+    setEditingTodoId(t.id)
+    setEditTodoText(t.task)
+    setEditTodoDate(t.due_date || '')
+  }
+
+  async function saveEditTodo() {
+    if (!editingTodoId || !editTodoText.trim()) return
+    const id = editingTodoId
+    const patch = { task: editTodoText.trim(), due_date: editTodoDate || null }
+    setModalTodos(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
+    setEditingTodoId(null)
+    const { error } = await supabase.from('claim_followup_todos').update(patch).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
   function startEditNote(n: FollowupNote) {
     setEditingNoteId(n.id)
     setEditNoteText(n.text)
@@ -1009,12 +1028,24 @@ export default function BusinessClaimsBoardPage() {
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>To-dos</div>
               {modalTodos.length === 0 && <div style={{ fontSize: 12.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 10 }}>No to-dos yet.</div>}
               {modalTodos.map(t => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
-                  <input type="checkbox" checked={t.done} onChange={e => toggleTodo(t.id, e.target.checked)} />
-                  <span style={{ flex: 1, fontSize: 13, color: t.done ? T.textFaint : T.text, textDecoration: t.done ? 'line-through' : 'none' }}>{t.task}</span>
-                  {t.due_date && <span style={{ fontSize: 11, color: T.textFaint }}>{t.due_date}</span>}
-                  <button onClick={() => deleteTodo(t.id)} style={{ background: 'none', border: 'none', color: T.textFaint, cursor: 'pointer', fontSize: 13, padding: '0 2px' }}>×</button>
-                </div>
+                editingTodoId === t.id ? (
+                  <div key={t.id} style={{ display: 'flex', gap: 6, padding: '5px 0' }}>
+                    <input value={editTodoText} onChange={e => setEditTodoText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveEditTodo() }} autoFocus
+                      style={{ flex: 1, padding: '6px 8px', border: `1px solid ${T.line}`, borderRadius: 6, background: 'white', color: T.text, fontSize: 12.5 }} />
+                    <input type="date" value={editTodoDate} onChange={e => setEditTodoDate(e.target.value)}
+                      style={{ padding: '6px 8px', border: `1px solid ${T.line}`, borderRadius: 6, background: 'white', color: T.text, fontSize: 12 }} />
+                    <button onClick={saveEditTodo} style={{ fontSize: 11.5, fontWeight: 700, color: T.emerald, background: 'none', border: 'none', cursor: 'pointer' }}>Save</button>
+                    <button onClick={() => setEditingTodoId(null)} style={{ fontSize: 11.5, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                  </div>
+                ) : (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+                    <input type="checkbox" checked={t.done} onChange={e => toggleTodo(t.id, e.target.checked)} />
+                    <span style={{ flex: 1, fontSize: 13, color: t.done ? T.textFaint : T.text, textDecoration: t.done ? 'line-through' : 'none' }}>{t.task}</span>
+                    {t.due_date && <span style={{ fontSize: 11, color: T.textFaint }}>{t.due_date}</span>}
+                    <button onClick={() => startEditTodo(t)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>Edit</button>
+                    <button onClick={() => deleteTodo(t.id)} style={{ background: 'none', border: 'none', color: T.textFaint, cursor: 'pointer', fontSize: 13, padding: '0 2px' }}>×</button>
+                  </div>
+                )
               ))}
               <div style={{ fontSize: 11, color: T.textFaint, marginTop: 10, marginBottom: 5 }}>Enter to-do and deadline</div>
               <div style={{ display: 'flex', gap: 6 }}>
