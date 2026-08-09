@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
+import GmailConnectCard from '@/components/GmailConnectCard'
 
 export default function ProfilePage() {
   const { user, advisor, authLoading, setAdvisor } = useDashboard()
@@ -76,6 +77,7 @@ export default function ProfilePage() {
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
       </div>
+      <GmailConnectCard />
     </div>
   )
 }

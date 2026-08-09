@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
+import GmailClaimSearch from '@/components/GmailClaimSearch'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -1063,6 +1064,7 @@ function MedicalClaimsPage() {
                 style={{ background: 'none', border: 'none', color: T.rose, fontSize: 11, fontWeight: 700, padding: '4px 2px', cursor: 'pointer', opacity: saving ? 0.5 : 1 }}>
                 Delete this claim
               </button>
+              <GmailClaimSearch claimId={selectedClaim.id} defaultTerms={[mainPolicy?.policyNo, selectedClaim.label].filter((v): v is string => !!v)} />
             </div>
             <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${T.line} 15%, ${T.line} 85%, transparent)`, margin: '20px 0' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
