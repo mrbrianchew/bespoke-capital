@@ -12,11 +12,10 @@ interface EmailMatch {
 
 // Session-only cache (resets on a full page reload — deliberately not
 // sessionStorage/localStorage, since email metadata shouldn't sit in
-// browser storage any longer than the tab is open). Keyed by claimId so
-// reopening the same claim within the same tab — closing/reopening the
-// Board's modal, or navigating away from and back to a claim on the
-// per-client page — shows the last results instantly instead of forcing a
-// re-search. A different claimId always starts fresh.
+// browser storage any longer than the tab is open). Keyed by whichever id
+// is in play (claim or service request) so reopening the same one within
+// the same tab shows the last results instantly instead of forcing a
+// re-search. A different id always starts fresh.
 const searchCache: Record<string, { terms: string[]; matches: EmailMatch[] | null; searched: boolean }> = {}
 
 // Renders as its own collapsible section (matching the Documents section's
@@ -24,8 +23,15 @@ const searchCache: Record<string, { terms: string[]; matches: EmailMatch[] | nul
 // floating dropdown — the earlier dropdown version got silently clipped by a
 // parent with overflow:hidden. Defaults to collapsed so the claim page
 // doesn't grow taller for advisors who never use this feature.
-export default function GmailClaimSearch({ claimId, defaultTerms }: { claimId: string; defaultTerms: string[] }) {
-  const cached = searchCache[claimId]
+//
+// Reused as-is by the Service Requests board — pass serviceRequestId
+// instead of claimId and everything else (caching, rate limiting, audit
+// log) is handled identically server-side. Exactly one of the two must be
+// given; which one is present is what /api/gmail/search uses to decide
+// which table to check ownership against.
+export default function GmailClaimSearch({ claimId, serviceRequestId, defaultTerms }: { claimId?: string; serviceRequestId?: string; defaultTerms: string[] }) {
+  const cacheKey = claimId || serviceRequestId || ''
+  const cached = searchCache[cacheKey]
   const [expanded, setExpanded] = useState(false)
   const [terms, setTerms] = useState<string[]>(cached?.terms || defaultTerms.filter(Boolean))
   const [termInput, setTermInput] = useState('')
@@ -35,11 +41,11 @@ export default function GmailClaimSearch({ claimId, defaultTerms }: { claimId: s
   const [matches, setMatches] = useState<EmailMatch[] | null>(cached?.matches ?? null)
   const [searched, setSearched] = useState(cached?.searched || false)
 
-  // Keeps the cache in sync so the next mount for this same claimId (modal
+  // Keeps the cache in sync so the next mount for this same id (modal
   // reopened, page revisited) picks up right where this one left off.
   useEffect(() => {
-    searchCache[claimId] = { terms, matches, searched }
-  }, [claimId, terms, matches, searched])
+    searchCache[cacheKey] = { terms, matches, searched }
+  }, [cacheKey, terms, matches, searched])
 
   function addTerm() {
     const t = termInput.trim()
@@ -60,7 +66,7 @@ export default function GmailClaimSearch({ claimId, defaultTerms }: { claimId: s
       const res = await fetch('/api/gmail/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ claimId, terms }),
+        body: JSON.stringify({ claimId, serviceRequestId, terms }),
       })
       const data = await res.json()
       if (res.status === 409 && (data.error === 'not_connected' || data.error === 'reconnect_required')) {
@@ -99,7 +105,7 @@ export default function GmailClaimSearch({ claimId, defaultTerms }: { claimId: s
             )}
           </div>
           <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--ink3)', fontWeight: 700 }}>
-            {searched && terms.length > 0 ? `Gmail · matched on ${terms.join(', ')}` : 'Search Gmail for emails matching this claim'}
+            {searched && terms.length > 0 ? `Gmail · matched on ${terms.join(', ')}` : 'Search Gmail for related emails'}
           </div>
         </div>
         <span style={{ color: 'var(--ink3)', fontSize: 14, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s', display: 'inline-block', flexShrink: 0 }}>▾</span>
