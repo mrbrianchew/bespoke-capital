@@ -83,6 +83,15 @@ interface FollowupNote {
   created_at: string
 }
 
+interface FollowupTodo {
+  id: string
+  line_item_id: string
+  task: string
+  due_date: string | null
+  done: boolean
+  created_at: string
+}
+
 interface ClaimDocument {
   id: string
   claim_id: string
@@ -267,7 +276,10 @@ function MedicalClaimsPage() {
   const [addModalSection, setAddModalSection] = useState<'pre' | 'in' | 'post' | null>(null)
   const [addingLine, setAddingLine] = useState(false)
   const [notesByItem, setNotesByItem] = useState<Record<string, FollowupNote[]>>({})
+  const [todosByItem, setTodosByItem] = useState<Record<string, FollowupTodo[]>>({})
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
+  const [todoDraft, setTodoDraft] = useState<Record<string, string>>({})
+  const [todoDueDraft, setTodoDueDraft] = useState<Record<string, string>>({})
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
 
@@ -458,7 +470,7 @@ function MedicalClaimsPage() {
 
   // ── Load line items + linked policies + follow-up notes + documents whenever the selected claim changes ──
   useEffect(() => {
-    if (!selectedClaimId) { setLineItems([]); setLinkedPolicyIds([]); setNotesByItem({}); setDocuments([]); return }
+    if (!selectedClaimId) { setLineItems([]); setLinkedPolicyIds([]); setNotesByItem({}); setTodosByItem({}); setDocuments([]); return }
     let cancelled = false
     async function load() {
       const [itemsRes, linkedRes, docsRes] = await Promise.all([
@@ -473,8 +485,11 @@ function MedicalClaimsPage() {
       setDocuments((docsRes.data || []) as ClaimDocument[])
 
       const ids = items.map(i => i.id)
-      if (ids.length === 0) { setNotesByItem({}); return }
-      const notesRes = await supabase.from('claim_followup_notes').select('*').in('line_item_id', ids).order('created_at', { ascending: false })
+      if (ids.length === 0) { setNotesByItem({}); setTodosByItem({}); return }
+      const [notesRes, todosRes] = await Promise.all([
+        supabase.from('claim_followup_notes').select('*').in('line_item_id', ids).order('created_at', { ascending: false }),
+        supabase.from('claim_followup_todos').select('*').in('line_item_id', ids).order('due_date', { ascending: true, nullsFirst: false }),
+      ])
       if (cancelled) return
       const grouped: Record<string, FollowupNote[]> = {}
       ;(notesRes.data || []).forEach((n: any) => {
@@ -482,6 +497,12 @@ function MedicalClaimsPage() {
         grouped[n.line_item_id].push(n)
       })
       setNotesByItem(grouped)
+      const groupedTodos: Record<string, FollowupTodo[]> = {}
+      ;(todosRes.data || []).forEach((t: any) => {
+        if (!groupedTodos[t.line_item_id]) groupedTodos[t.line_item_id] = []
+        groupedTodos[t.line_item_id].push(t)
+      })
+      setTodosByItem(groupedTodos)
     }
     load()
     return () => { cancelled = true }
@@ -719,6 +740,37 @@ function MedicalClaimsPage() {
   async function deleteNote(lineItemId: string, noteId: string) {
     setNotesByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).filter(n => n.id !== noteId) }))
     const { error } = await supabase.from('claim_followup_notes').delete().eq('id', noteId)
+    if (error) alert('Delete failed: ' + error.message)
+  }
+
+  // ── Follow-up todo mutations — same claim_followup_todos table the
+  // Claims Board's "This week's follow-ups" tab reads from, so an item
+  // added or checked off here shows up there immediately, and vice versa. ──
+  async function addTodo(lineItemId: string) {
+    const task = (todoDraft[lineItemId] || '').trim()
+    if (!task) return
+    const dueDate = todoDueDraft[lineItemId] || null
+    const { data, error } = await supabase.from('claim_followup_todos')
+      .insert({ line_item_id: lineItemId, task, due_date: dueDate, done: false }).select().maybeSingle()
+    if (error || !data) { alert('Could not add follow-up: ' + (error?.message || 'unknown error')); return }
+    setTodosByItem(prev => {
+      const next = [...(prev[lineItemId] || []), data as FollowupTodo]
+      next.sort((a, b) => (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31'))
+      return { ...prev, [lineItemId]: next }
+    })
+    setTodoDraft(prev => ({ ...prev, [lineItemId]: '' }))
+    setTodoDueDraft(prev => ({ ...prev, [lineItemId]: '' }))
+  }
+
+  async function toggleTodo(lineItemId: string, todoId: string, done: boolean) {
+    setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).map(t => t.id === todoId ? { ...t, done } : t) }))
+    const { error } = await supabase.from('claim_followup_todos').update({ done }).eq('id', todoId)
+    if (error) alert('Could not update: ' + error.message)
+  }
+
+  async function deleteTodo(lineItemId: string, todoId: string) {
+    setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).filter(t => t.id !== todoId) }))
+    const { error } = await supabase.from('claim_followup_todos').delete().eq('id', todoId)
     if (error) alert('Delete failed: ' + error.message)
   }
 
@@ -1242,7 +1294,7 @@ function MedicalClaimsPage() {
                 <div style={{ width: 3, height: 16, borderRadius: 2, background: 'var(--charcoal)', flexShrink: 0 }} />
                 <div>
                   <div className="claims-serif" style={{ fontSize: 19, color: T.text, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    Pending Follow-Ups
+                    In Progress
                     <span className="claims-mono" style={{ fontSize: 13, fontWeight: 700, color: 'white', background: 'var(--charcoal)', borderRadius: 999, padding: '3px 11px', lineHeight: 1.3 }}>{pendingItems.length}</span>
                   </div>
                   <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700 }}>Line items awaiting insurer action</div>
@@ -1255,7 +1307,12 @@ function MedicalClaimsPage() {
                 <FollowupCard key={it.id} item={it} notes={notesByItem[it.id] || []}
                   draft={noteDraft[it.id] || ''} onDraftChange={v => setNoteDraft(prev => ({ ...prev, [it.id]: v }))}
                   onAddNote={() => addNote(it.id)} onDeleteNote={noteId => deleteNote(it.id, noteId)}
-                  onStatusChange={status => saveLineItem(it.id, { followup_status: status })} />
+                  onStatusChange={status => saveLineItem(it.id, { followup_status: status })}
+                  todos={todosByItem[it.id] || []}
+                  todoDraft={todoDraft[it.id] || ''} onTodoDraftChange={v => setTodoDraft(prev => ({ ...prev, [it.id]: v }))}
+                  todoDueDraft={todoDueDraft[it.id] || ''} onTodoDueDraftChange={v => setTodoDueDraft(prev => ({ ...prev, [it.id]: v }))}
+                  onAddTodo={() => addTodo(it.id)} onToggleTodo={(todoId, done) => toggleTodo(it.id, todoId, done)}
+                  onDeleteTodo={todoId => deleteTodo(it.id, todoId)} />
               ))}
             </div>
 
@@ -1271,7 +1328,12 @@ function MedicalClaimsPage() {
                       <FollowupCard key={it.id} item={it} notes={notesByItem[it.id] || []} resolved
                         draft={noteDraft[it.id] || ''} onDraftChange={v => setNoteDraft(prev => ({ ...prev, [it.id]: v }))}
                         onAddNote={() => addNote(it.id)} onDeleteNote={noteId => deleteNote(it.id, noteId)}
-                        onStatusChange={status => saveLineItem(it.id, { followup_status: status })} />
+                        onStatusChange={status => saveLineItem(it.id, { followup_status: status })}
+                        todos={todosByItem[it.id] || []}
+                        todoDraft={todoDraft[it.id] || ''} onTodoDraftChange={v => setTodoDraft(prev => ({ ...prev, [it.id]: v }))}
+                        todoDueDraft={todoDueDraft[it.id] || ''} onTodoDueDraftChange={v => setTodoDueDraft(prev => ({ ...prev, [it.id]: v }))}
+                        onAddTodo={() => addTodo(it.id)} onToggleTodo={(todoId, done) => toggleTodo(it.id, todoId, done)}
+                        onDeleteTodo={todoId => deleteTodo(it.id, todoId)} />
                     ))}
                   </div>
                 )}
@@ -1744,14 +1806,31 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
   )
 }
 
-function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, onDeleteNote, onStatusChange }: {
+function todoDueLabel(dueDate: string | null): { text: string; kind: 'overdue' | 'today' | 'upcoming' | 'none' } {
+  if (!dueDate) return { text: '', kind: 'none' }
+  const d = new Date(dueDate + 'T00:00:00')
+  if (isNaN(d.getTime())) return { text: '', kind: 'none' }
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
+  if (diffDays < 0) return { text: `Overdue · ${Math.abs(diffDays)}d`, kind: 'overdue' }
+  if (diffDays === 0) return { text: 'Due today', kind: 'today' }
+  return { text: `Due ${d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}`, kind: 'upcoming' }
+}
+
+function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, onDeleteNote, onStatusChange,
+  todos, todoDraft, onTodoDraftChange, todoDueDraft, onTodoDueDraftChange, onAddTodo, onToggleTodo, onDeleteTodo }: {
   item: LineItemRow; notes: FollowupNote[]; resolved?: boolean
   draft: string; onDraftChange: (v: string) => void
   onAddNote: () => void; onDeleteNote: (noteId: string) => void
   onStatusChange: (status: string) => void
+  todos: FollowupTodo[]
+  todoDraft: string; onTodoDraftChange: (v: string) => void
+  todoDueDraft: string; onTodoDueDraftChange: (v: string) => void
+  onAddTodo: () => void; onToggleTodo: (todoId: string, done: boolean) => void; onDeleteTodo: (todoId: string) => void
 }) {
   const days = daysSince(item.submitted_date || item.date_from)
   const stale = !resolved && days !== null && days >= 14
+  const openTodos = todos.filter(t => !t.done)
 
   return (
     <div style={{ ...cardBase, background: 'white', padding: 14 }}>
@@ -1795,6 +1874,38 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAddNote() } }}
           style={{ flex: 1 }} />
         <button onClick={onAddNote} style={addBtn}>Add</button>
+      </div>
+
+      {/* Follow-ups — claim_followup_todos, same table the Claims Board's
+          "This week's follow-ups" tab reads from. Adding or checking one
+          off here shows up there immediately, no separate list. */}
+      <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 12, paddingTop: 10 }}>
+        <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700, marginBottom: 7 }}>Follow-ups</div>
+        {openTodos.length === 0 && <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 8 }}>No follow-ups set for this item.</div>}
+        {openTodos.map(t => {
+          const label = todoDueLabel(t.due_date)
+          const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
+          return (
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
+              <input type="checkbox" checked={false} onChange={e => onToggleTodo(t.id, e.target.checked)}
+                style={{ width: 14, height: 14, flexShrink: 0, cursor: 'pointer' }} />
+              <span style={{ flex: 1, fontSize: 12, color: T.text }}>{t.task}</span>
+              {label.text && <span style={{ fontSize: 10.5, fontWeight: label.kind === 'upcoming' ? 400 : 700, color: badgeColor }}>{label.text}</span>}
+              <button onClick={() => onDeleteTodo(t.id)} style={{ background: 'none', border: 'none', color: T.rose, fontSize: 11, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+            </div>
+          )
+        })}
+        {!resolved && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <input className="claims-input" value={todoDraft} placeholder="Add a follow-up…"
+              onChange={e => onTodoDraftChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAddTodo() } }}
+              style={{ flex: 1 }} />
+            <input type="date" className="claims-input" value={todoDueDraft}
+              onChange={e => onTodoDueDraftChange(e.target.value)} style={{ width: 140, flexShrink: 0 }} />
+            <button onClick={onAddTodo} style={addBtn}>Add</button>
+          </div>
+        )}
       </div>
     </div>
   )
