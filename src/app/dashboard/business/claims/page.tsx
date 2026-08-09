@@ -134,7 +134,7 @@ function patchFor(zone: DropZone): Partial<LineItemRow> {
 }
 
 const RESOLVED_VISIBLE_DAYS = 30
-const STALE_DAYS = 7 // matches the per-client Medical Claims page's idle threshold
+const STALE_DAYS = 14 // matches the per-client Medical Claims page's idle threshold — insurers' own settlement window is typically ~14 days
 
 // Matches SECTION_LABEL on the per-client Medical Claims page exactly.
 const SECTION_LABEL: Record<'pre' | 'in' | 'post', string> = {
@@ -803,7 +803,7 @@ export default function BusinessClaimsBoardPage() {
                       Needs a follow-up · {needsFollowupRows.length}
                     </div>
                     <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
-                      Idle 7+ days with nothing being tracked to chase it — set a reminder or update its stage.
+                      Idle 14+ days with nothing being tracked to chase it — set a reminder or update its stage.
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {needsFollowupRows.map(card => {

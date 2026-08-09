@@ -10,7 +10,7 @@
 // Keeping the definition in one place means the sidebar badge and the
 // board's own "Needs a follow-up" bucket can never disagree with each other.
 
-const STALE_DAYS = 7 // matches the idle threshold used elsewhere on the Claims Board
+const STALE_DAYS = 14 // matches the idle threshold used elsewhere on the Claims Board — insurers' own settlement window is typically ~14 days
 
 export interface AttentionLineItem {
   id: string
