@@ -231,6 +231,15 @@ export default function BusinessClaimsBoardPage() {
   const drive = useDriveUpload()
   const [modalFolder, setModalFolder] = useState<{ id: string; name: string } | null>(null)
 
+  // ── Today's Follow-Ups tab ──
+  // Firm-wide, cross-client view of every incomplete claim_followup_todos
+  // row. Separate from the Kanban's per-card todo list (modalTodos) — this
+  // is the daily action list; that's the per-claim detail. Kept in sync by
+  // toggleGlobalTodoDone below, which updates both when the same todo is
+  // open in the modal at the same time.
+  const [activeTab, setActiveTab] = useState<'board' | 'followups'>('board')
+  const [pendingTodos, setPendingTodos] = useState<FollowupTodo[]>([])
+
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
   useEffect(() => {
@@ -261,9 +270,21 @@ export default function BusinessClaimsBoardPage() {
           .select('id, claim_id, section, type, description, invoice_no, amount_claimed, amount_approved, approved, rejected, rejection_reason, followup_status, submitted_date, date_from, updated_at')
           .in('claim_id', claimIds)
         if (cancelled) return
-        setLineItems((itemsRes.data || []) as LineItemRow[])
+        const itemRows = (itemsRes.data || []) as LineItemRow[]
+        setLineItems(itemRows)
+
+        const itemIds = itemRows.map(i => i.id)
+        if (itemIds.length > 0) {
+          const todosRes = await supabase.from('claim_followup_todos')
+            .select('*').in('line_item_id', itemIds).eq('done', false)
+          if (cancelled) return
+          setPendingTodos((todosRes.data || []) as FollowupTodo[])
+        } else {
+          setPendingTodos([])
+        }
       } else {
         setLineItems([])
+        setPendingTodos([])
       }
 
       const clientIds = Array.from(new Set(claimRows.map(c => c.client_id))) // ES5 target — no Set spread
@@ -319,6 +340,56 @@ export default function BusinessClaimsBoardPage() {
     claims.forEach(c => { map[c.id] = c })
     return map
   }, [claims])
+
+  const itemsById = useMemo(() => {
+    const map: Record<string, LineItemRow> = {}
+    lineItems.forEach(i => { map[i.id] = i })
+    return map
+  }, [lineItems])
+
+  // Same shape as a Kanban CardData, plus the todo itself — lets a row open
+  // the exact same edit modal a card click would.
+  const followupRows = useMemo(() => {
+    return pendingTodos
+      .map(todo => {
+        const item = itemsById[todo.line_item_id]
+        if (!item) return null
+        const claim = claimsById[item.claim_id]
+        if (!claim) return null
+        const card: CardData = {
+          item, claim,
+          clientId: claim.client_id,
+          clientName: clientsById[claim.client_id] || 'Unknown client',
+          lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
+          policyLabel: policyLabel(claim.client_id, claim.policy_id),
+        }
+        return { todo, card }
+      })
+      .filter((r): r is { todo: FollowupTodo; card: CardData } => r !== null)
+      .sort((a, b) => (a.todo.due_date || '9999-12-31').localeCompare(b.todo.due_date || '9999-12-31'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTodos, itemsById, claimsById, clientsById, familyByClient, policiesByClient])
+
+  function dueLabel(dueDate: string | null): { text: string; kind: 'overdue' | 'today' | 'upcoming' | 'none' } {
+    if (!dueDate) return { text: 'No due date', kind: 'none' }
+    const d = new Date(dueDate + 'T00:00:00')
+    if (isNaN(d.getTime())) return { text: 'No due date', kind: 'none' }
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
+    if (diffDays < 0) return { text: `Overdue · ${Math.abs(diffDays)}d`, kind: 'overdue' }
+    if (diffDays === 0) return { text: 'Due today', kind: 'today' }
+    return { text: `Due ${d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}`, kind: 'upcoming' }
+  }
+
+  // Marking done removes the row from this tab immediately (optimistic) and
+  // keeps the per-card modal's todo list in sync if that same card happens
+  // to be open at the same time.
+  async function toggleGlobalTodoDone(todoId: string, done: boolean) {
+    setPendingTodos(prev => done ? prev.filter(t => t.id !== todoId) : prev)
+    setModalTodos(prev => prev.map(t => t.id === todoId ? { ...t, done } : t))
+    const { error } = await supabase.from('claim_followup_todos').update({ done }).eq('id', todoId)
+    if (error) alert('Could not update: ' + error.message)
+  }
 
   const columns = useMemo(() => {
     const buckets: Record<ColumnId, CardData[]> = { docs: [], submitted: [], assessment: [], resolved: [] }
@@ -580,8 +651,64 @@ export default function BusinessClaimsBoardPage() {
         </button>
       </div>
 
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={() => setActiveTab('board')} style={{
+          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
+          color: activeTab === 'board' ? T.text : T.textFaint,
+          borderBottom: activeTab === 'board' ? `2px solid ${T.gold}` : '2px solid transparent',
+        }}>
+          Board
+        </button>
+        <button onClick={() => setActiveTab('followups')} style={{
+          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+          background: activeTab === 'followups' ? T.goldSoft : 'none',
+          border: 'none', borderRadius: activeTab === 'followups' ? '8px 8px 0 0' : 0,
+          color: activeTab === 'followups' ? T.goldText : T.textFaint,
+          borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
+        }}>
+          Today's follow-ups{pendingTodos.length > 0 ? ` · ${pendingTodos.length}` : ''}
+        </button>
+      </div>
+
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13 }}>Loading claims…</div>
+      ) : activeTab === 'followups' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 620 }}>
+          {followupRows.length === 0 && (
+            <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13, fontStyle: 'italic' }}>
+              Nothing pending — every follow-up is checked off.
+            </div>
+          )}
+          {followupRows.map(({ todo, card }) => {
+            const label = dueLabel(todo.due_date)
+            const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
+            const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
+            const badgeBg = label.kind === 'overdue' ? T.roseSoft : label.kind === 'today' ? T.goldSoft : 'transparent'
+            return (
+              <div key={todo.id} onClick={() => setEditingCard(card)} style={{
+                background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${barColor}`,
+                borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+              }}>
+                <input type="checkbox" onClick={e => e.stopPropagation()}
+                  onChange={e => toggleGlobalTodoDone(todo.id, e.target.checked)}
+                  style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
+                    {card.clientName} · {card.lifeAssuredLabel !== card.clientName ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>{todo.task}</div>
+                </div>
+                <div style={{
+                  fontSize: 10.5, fontWeight: label.kind === 'upcoming' || label.kind === 'none' ? 400 : 700,
+                  color: badgeColor, background: badgeBg, padding: badgeBg === 'transparent' ? 0 : '3px 9px',
+                  borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                  {label.text}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       ) : (
         <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
           {COLUMNS.map(col => (
