@@ -6,6 +6,8 @@ import { useDashboard, ClientRow } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import { useDriveUpload } from '@/lib/useDriveUpload'
 import { needsFollowupItems } from '@/lib/claimsAttention'
+import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -132,7 +134,7 @@ function patchFor(zone: DropZone): Partial<LineItemRow> {
 }
 
 const RESOLVED_VISIBLE_DAYS = 30
-const STALE_DAYS = 14 // matches the per-client Medical Claims page's idle threshold
+const STALE_DAYS = 7 // matches the per-client Medical Claims page's idle threshold
 
 // Matches SECTION_LABEL on the per-client Medical Claims page exactly.
 const SECTION_LABEL: Record<'pre' | 'in' | 'post', string> = {
@@ -201,8 +203,18 @@ export default function BusinessClaimsBoardPage() {
   const [policiesByClient, setPoliciesByClient] = useState<Record<string, PolicyLite[]>>({})
 
   // ── Drag-and-drop state ──
+  // draggingId only drives the dragged card's opacity now — dnd-kit's
+  // useDroppable gives each zone its own isOver locally, so there's no need
+  // for a centralized "which zone is hovered" state like the old native
+  // HTML5 drag implementation needed.
   const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragOverZone, setDragOverZone] = useState<DropZone | null>(null)
+  const dndSensors = useSensors(
+    // distance:8 is what lets a tap still open the card modal — drag only
+    // activates once the pointer has actually moved, so a plain click never
+    // gets swallowed as an accidental drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+  )
   // Set right after a drop lands on resolved-rejected with no existing reason —
   // captures it without blocking the drag itself. 'Skip' just closes it.
   const [rejectionPromptItemId, setRejectionPromptItemId] = useState<string | null>(null)
@@ -474,11 +486,12 @@ export default function BusinessClaimsBoardPage() {
     if (error) alert('Move failed: ' + error.message)
   }
 
-  function handleDrop(zone: DropZone) {
-    setDragOverZone(null)
-    const id = draggingId
+  function handleDragEnd(event: DragEndEvent) {
     setDraggingId(null)
-    if (!id) return
+    const { active, over } = event
+    if (!over) return
+    const id = active.id as string
+    const zone = over.id as DropZone
     const item = lineItems.find(i => i.id === id)
     if (!item || effectiveZone(item) === zone) return // no-op: dropped back where it started
     if (zone === 'resolved-rejected' && !item.rejection_reason) {
@@ -790,7 +803,7 @@ export default function BusinessClaimsBoardPage() {
                       Needs a follow-up · {needsFollowupRows.length}
                     </div>
                     <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
-                      Idle 14+ days with nothing being tracked to chase it — set a reminder or update its stage.
+                      Idle 7+ days with nothing being tracked to chase it — set a reminder or update its stage.
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {needsFollowupRows.map(card => {
@@ -830,38 +843,37 @@ export default function BusinessClaimsBoardPage() {
           })()}
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
-          {COLUMNS.map(col => (
-            <div key={col.id} style={{ flex: '0 0 280px', minWidth: 280 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '2px 4px 10px' }}>
-                <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{col.title}</div>
-                  <div style={{ fontSize: 10.5, color: T.textFaint }}>{col.hint}</div>
+        <DndContext sensors={dndSensors} onDragStart={e => setDraggingId(e.active.id as string)} onDragEnd={handleDragEnd} onDragCancel={() => setDraggingId(null)}>
+          <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+            {COLUMNS.map(col => (
+              <div key={col.id} style={{ flex: '0 0 280px', minWidth: 280 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '2px 4px 10px' }}>
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{col.title}</div>
+                    <div style={{ fontSize: 10.5, color: T.textFaint }}>{col.hint}</div>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, background: 'var(--cream2)', padding: '2px 8px', borderRadius: 999 }}>
+                    {columns[col.id].length}
+                  </span>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, background: 'var(--cream2)', padding: '2px 8px', borderRadius: 999 }}>
-                  {columns[col.id].length}
-                </span>
-              </div>
 
-              {col.id === 'resolved' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <DropZoneList zone="resolved-approved" label="Approved" color={T.emerald}
-                    cards={columns.resolved.filter(c => c.item.approved)}
-                    dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
-                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={setEditingCard} />
-                  <DropZoneList zone="resolved-rejected" label="Rejected" color={T.rose}
-                    cards={columns.resolved.filter(c => c.item.rejected)}
-                    dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
-                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={setEditingCard} />
-                </div>
-              ) : (
-                <DropZoneList zone={col.id as DropZone} cards={columns[col.id]}
-                  dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
-                  draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={setEditingCard} />
-              )}
-            </div>
-          ))}
-        </div>
+                {col.id === 'resolved' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <DropZoneList zone="resolved-approved" label="Approved" color={T.emerald}
+                      cards={columns.resolved.filter(c => c.item.approved)}
+                      draggingId={draggingId} onCardClick={setEditingCard} />
+                    <DropZoneList zone="resolved-rejected" label="Rejected" color={T.rose}
+                      cards={columns.resolved.filter(c => c.item.rejected)}
+                      draggingId={draggingId} onCardClick={setEditingCard} />
+                  </div>
+                ) : (
+                  <DropZoneList zone={col.id as DropZone} cards={columns[col.id]}
+                    draggingId={draggingId} onCardClick={setEditingCard} />
+                )}
+              </div>
+            ))}
+          </div>
+        </DndContext>
       )}
 
       {rejectionPromptItemId && (
@@ -1163,19 +1175,15 @@ function ModalField({ label, children }: { label: string; children: React.ReactN
   )
 }
 
-function DropZoneList({ zone, label, color, cards, dragOverZone, setDragOverZone, onDrop, draggingId, setDraggingId, onCardClick }: {
+function DropZoneList({ zone, label, color, cards, draggingId, onCardClick }: {
   zone: DropZone; label?: string; color?: string; cards: CardData[]
-  dragOverZone: DropZone | null; setDragOverZone: (z: DropZone | null) => void
-  onDrop: (zone: DropZone) => void
-  draggingId: string | null; setDraggingId: (id: string | null) => void
+  draggingId: string | null
   onCardClick: (card: CardData) => void
 }) {
-  const isOver = dragOverZone === zone
+  const { setNodeRef, isOver } = useDroppable({ id: zone })
   return (
     <div
-      onDragOver={e => { e.preventDefault(); if (dragOverZone !== zone) setDragOverZone(zone) }}
-      onDragLeave={() => { if (dragOverZone === zone) setDragOverZone(null) }}
-      onDrop={e => { e.preventDefault(); onDrop(zone) }}
+      ref={setNodeRef}
       style={{
         display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60, borderRadius: 12, padding: 6,
         border: isOver ? `1.5px dashed ${color || T.gold}` : '1.5px dashed transparent',
@@ -1192,27 +1200,28 @@ function DropZoneList({ zone, label, color, cards, dragOverZone, setDragOverZone
       {cards.map(card => (
         <ClaimCard key={card.item.id} card={card}
           dragging={draggingId === card.item.id}
-          onDragStart={() => setDraggingId(card.item.id)}
-          onDragEnd={() => setDraggingId(null)}
           onClick={() => onCardClick(card)} />
       ))}
     </div>
   )
 }
 
-function ClaimCard({ card, dragging, onDragStart, onDragEnd, onClick }: {
-  card: CardData; dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onClick: () => void
+function ClaimCard({ card, dragging, onClick }: {
+  card: CardData; dragging: boolean; onClick: () => void
 }) {
   const { item } = card
   const resolved = item.approved || item.rejected
   const days = daysSince(item.submitted_date || item.date_from)
   const stale = !resolved && days !== null && days >= STALE_DAYS
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id })
 
   return (
-    <button draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} style={{
-      textAlign: 'left', width: '100%', cursor: 'grab',
+    <button ref={setNodeRef} {...listeners} {...attributes} onClick={onClick} style={{
+      textAlign: 'left', width: '100%', cursor: 'grab', touchAction: 'none',
       background: 'white', border: `1px solid ${T.line}`, borderRadius: 12, padding: 12,
-      opacity: dragging ? 0.4 : 1,
+      opacity: dragging || isDragging ? 0.4 : 1,
+      transform: transform ? CSS.Translate.toString(transform) : undefined,
+      zIndex: isDragging ? 10 : undefined, position: isDragging ? 'relative' : undefined,
     }}>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{card.clientName}</div>
       <div style={{ fontSize: 11, color: T.textFaint, marginTop: 1 }}>{card.lifeAssuredLabel} · {card.policyLabel}</div>
