@@ -381,6 +381,22 @@ export default function BusinessClaimsBoardPage() {
     return { text: `Due ${d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}`, kind: 'upcoming' }
   }
 
+  // Splits followupRows into the two sections of the "This week" tab —
+  // Overdue + due-today land in Today (most urgent first); the rest of this
+  // calendar week (next 1-7 days) plus undated todos land in This Week.
+  // Anything due more than 7 days out is left off this tab entirely — it'll
+  // surface here once it's actually within the week. No row appears twice.
+  function weekBucket(dueDate: string | null): 'today' | 'week' | 'later' {
+    if (!dueDate) return 'week'
+    const d = new Date(dueDate + 'T00:00:00')
+    if (isNaN(d.getTime())) return 'week'
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
+    if (diffDays <= 0) return 'today'
+    if (diffDays <= 7) return 'week'
+    return 'later'
+  }
+
   // Marking done removes the row from this tab immediately (optimistic) and
   // keeps the per-card modal's todo list in sync if that same card happens
   // to be open at the same time.
@@ -652,13 +668,6 @@ export default function BusinessClaimsBoardPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${T.line}` }}>
-        <button onClick={() => setActiveTab('board')} style={{
-          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
-          color: activeTab === 'board' ? T.text : T.textFaint,
-          borderBottom: activeTab === 'board' ? `2px solid ${T.gold}` : '2px solid transparent',
-        }}>
-          Board
-        </button>
         <button onClick={() => setActiveTab('followups')} style={{
           padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
           background: activeTab === 'followups' ? T.goldSoft : 'none',
@@ -666,48 +675,83 @@ export default function BusinessClaimsBoardPage() {
           color: activeTab === 'followups' ? T.goldText : T.textFaint,
           borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
         }}>
-          Today's follow-ups{pendingTodos.length > 0 ? ` · ${pendingTodos.length}` : ''}
+          This week's follow-ups{followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length}` : ''}
+        </button>
+        <button onClick={() => setActiveTab('board')} style={{
+          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
+          color: activeTab === 'board' ? T.text : T.textFaint,
+          borderBottom: activeTab === 'board' ? `2px solid ${T.gold}` : '2px solid transparent',
+        }}>
+          Board
         </button>
       </div>
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13 }}>Loading claims…</div>
       ) : activeTab === 'followups' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 620 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 620 }}>
           {followupRows.length === 0 && (
             <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13, fontStyle: 'italic' }}>
               Nothing pending — every follow-up is checked off.
             </div>
           )}
-          {followupRows.map(({ todo, card }) => {
-            const label = dueLabel(todo.due_date)
-            const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
-            const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
-            const badgeBg = label.kind === 'overdue' ? T.roseSoft : label.kind === 'today' ? T.goldSoft : 'transparent'
-            return (
-              <div key={todo.id} onClick={() => setEditingCard(card)} style={{
-                background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${barColor}`,
-                borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
-              }}>
-                <input type="checkbox" onClick={e => e.stopPropagation()}
-                  onChange={e => toggleGlobalTodoDone(todo.id, e.target.checked)}
-                  style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
-                    {card.clientName} · {card.lifeAssuredLabel !== card.clientName ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
-                  </div>
-                  <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>{todo.task}</div>
-                </div>
-                <div style={{
-                  fontSize: 10.5, fontWeight: label.kind === 'upcoming' || label.kind === 'none' ? 400 : 700,
-                  color: badgeColor, background: badgeBg, padding: badgeBg === 'transparent' ? 0 : '3px 9px',
-                  borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0,
+          {(() => {
+            const todayRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'today')
+            const weekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'week')
+            const renderRow = ({ todo, card }: { todo: FollowupTodo; card: CardData }) => {
+              const label = dueLabel(todo.due_date)
+              const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
+              const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
+              const badgeBg = label.kind === 'overdue' ? T.roseSoft : label.kind === 'today' ? T.goldSoft : 'transparent'
+              return (
+                <div key={todo.id} onClick={() => setEditingCard(card)} style={{
+                  background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${barColor}`,
+                  borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
                 }}>
-                  {label.text}
+                  <input type="checkbox" onClick={e => e.stopPropagation()}
+                    onChange={e => toggleGlobalTodoDone(todo.id, e.target.checked)}
+                    style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
+                      {card.clientName} · {card.lifeAssuredLabel !== card.clientName ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>{todo.task}</div>
+                  </div>
+                  <div style={{
+                    fontSize: 10.5, fontWeight: label.kind === 'upcoming' || label.kind === 'none' ? 400 : 700,
+                    color: badgeColor, background: badgeBg, padding: badgeBg === 'transparent' ? 0 : '3px 9px',
+                    borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
+                    {label.text}
+                  </div>
                 </div>
-              </div>
+              )
+            }
+            return (
+              <>
+                {todayRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                      Today · {todayRows.length}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {todayRows.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+                {weekRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                      This week · {weekRows.length}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {weekRows.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+              </>
             )
-          })}
+          })()}
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
