@@ -246,6 +246,10 @@ export default function BusinessServiceRequestsPage() {
   // Adds a new type to the shared picklist if it doesn't already exist
   // (case-insensitive). Returns the canonical label to use — either the
   // newly-created one, or the existing match if this was a near-duplicate.
+  // A genuine insert failure is surfaced via alert() and returns null —
+  // it must NOT fall back to "pretend it worked" local-only state, or the
+  // type silently vanishes on next load with no sign anything went wrong
+  // (this masked a real PostgREST schema-cache staleness bug once already).
   async function addNewType(raw: string): Promise<string | null> {
     const label = raw.trim()
     if (!label) return null
@@ -253,11 +257,18 @@ export default function BusinessServiceRequestsPage() {
     if (existing) return existing
     const { data, error } = await supabase.from('service_request_types').insert({ label }).select().maybeSingle()
     if (error) {
-      // Unique-index race (two people add the same new type at once) —
-      // treat as success and just use the label typed; a refresh will pick
-      // up the canonical row either way.
-      setTypeOptions(prev => Array.from(new Set([...prev, label])))
-      return label
+      // A real unique-index race (someone else added the exact same new
+      // type a moment ago) shows up as Postgres error code 23505 — that's
+      // the one case where falling back to the now-existing label is
+      // correct. Anything else is a genuine failure and must be shown.
+      if (error.code === '23505') {
+        const { data: row } = await supabase.from('service_request_types').select('label').ilike('label', label).maybeSingle()
+        const canonical = row?.label || label
+        setTypeOptions(prev => Array.from(new Set([...prev, canonical])))
+        return canonical
+      }
+      alert('Could not save new type: ' + error.message)
+      return null
     }
     const newLabel = (data as TypeRow)?.label || label
     setTypeOptions(prev => Array.from(new Set([...prev, newLabel])))
@@ -358,7 +369,7 @@ export default function BusinessServiceRequestsPage() {
             value={capType}
             options={typeOptions}
             onChange={setCapType}
-            onAddNew={async label => { const canonical = await addNewType(label); if (canonical) setCapType(canonical) }}
+            onAddNew={async label => { const canonical = await addNewType(label); if (canonical) { setCapType(canonical); return true }; return false }}
             width={170}
           />
           <input
@@ -490,7 +501,7 @@ export default function BusinessServiceRequestsPage() {
                     value={editingRow.request_type}
                     options={typeOptions}
                     onChange={v => patchRow(editingRow.id, { request_type: v })}
-                    onAddNew={async label => { const canonical = await addNewType(label); if (canonical) patchRow(editingRow.id, { request_type: canonical }) }}
+                    onAddNew={async label => { const canonical = await addNewType(label); if (canonical) { patchRow(editingRow.id, { request_type: canonical }); return true }; return false }}
                     width="100%"
                   />
                 </div>
@@ -549,7 +560,7 @@ const ADD_NEW_SENTINEL = '__add_new__'
 // service_request_types table — this component doesn't know about Supabase.
 function TypeSelect({ value, options, onChange, onAddNew, width }: {
   value: string; options: string[]; onChange: (v: string) => void
-  onAddNew: (label: string) => Promise<void>; width: number | string
+  onAddNew: (label: string) => Promise<boolean>; width: number | string
 }) {
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
@@ -559,10 +570,9 @@ function TypeSelect({ value, options, onChange, onAddNew, width }: {
     const label = draft.trim()
     if (!label) { setAdding(false); return }
     setSaving(true)
-    await onAddNew(label)
+    const ok = await onAddNew(label)
     setSaving(false)
-    setDraft('')
-    setAdding(false)
+    if (ok) { setDraft(''); setAdding(false) } // failure leaves the input open with the typed text so it's retryable, not silently discarded
   }
 
   if (adding) {
