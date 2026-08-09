@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard, ClientRow } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
+import { useDriveUpload } from '@/lib/useDriveUpload'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -84,6 +85,7 @@ interface ClaimDocRow {
   id: string
   claim_id: string
   file_name: string
+  drive_file_id: string | null
   drive_view_url: string | null
   uploaded_at: string
 }
@@ -220,9 +222,14 @@ export default function BusinessClaimsBoardPage() {
   const [modalLoading, setModalLoading] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
   const [noteDate, setNoteDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editNoteText, setEditNoteText] = useState('')
+  const [editNoteDate, setEditNoteDate] = useState('')
   const [todoDraft, setTodoDraft] = useState('')
   const [todoDueDate, setTodoDueDate] = useState('')
   const [savingModal, setSavingModal] = useState(false)
+  const drive = useDriveUpload()
+  const [modalFolder, setModalFolder] = useState<{ id: string; name: string } | null>(null)
 
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
@@ -423,19 +430,33 @@ export default function BusinessClaimsBoardPage() {
   // Re-runs whenever the open card's line item changes (i.e. whenever a
   // different card is clicked) and clears everything when the modal closes.
   useEffect(() => {
-    if (!editingCard) { setModalNotes([]); setModalTodos([]); setModalDocuments([]); return }
+    if (!editingCard) { setModalNotes([]); setModalTodos([]); setModalDocuments([]); setModalFolder(null); return }
     let cancelled = false
     async function loadModalData() {
       setModalLoading(true)
       const [notesRes, todosRes, docsRes] = await Promise.all([
         supabase.from('claim_followup_notes').select('*').eq('line_item_id', editingCard!.item.id).order('note_date', { ascending: false }),
         supabase.from('claim_followup_todos').select('*').eq('line_item_id', editingCard!.item.id).order('created_at', { ascending: true }),
-        supabase.from('claim_documents').select('id, claim_id, file_name, drive_view_url, uploaded_at').eq('claim_id', editingCard!.claim.id).order('uploaded_at', { ascending: false }),
+        supabase.from('claim_documents').select('id, claim_id, file_name, drive_file_id, drive_view_url, uploaded_at').eq('claim_id', editingCard!.claim.id).order('uploaded_at', { ascending: false }),
       ])
       if (cancelled) return
       setModalNotes((notesRes.data || []) as FollowupNote[])
       setModalTodos((todosRes.data || []) as FollowupTodo[])
       setModalDocuments((docsRes.data || []) as ClaimDocRow[])
+
+      // The picked Drive folder is remembered per-client — pull it from the
+      // client record already loaded in this page's `clients` array (fetched
+      // with select('*'), so drive_folder_link is already present).
+      const client = clients.find(c => c.id === editingCard!.clientId)
+      const raw = client?.drive_folder_link as string | undefined
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          setModalFolder(parsed?.id && parsed?.name ? parsed : null)
+        } catch { setModalFolder(null) }
+      } else {
+        setModalFolder(null)
+      }
       setModalLoading(false)
     }
     loadModalData()
@@ -488,6 +509,46 @@ export default function BusinessClaimsBoardPage() {
     setModalTodos(prev => prev.filter(t => t.id !== id))
     const { error } = await supabase.from('claim_followup_todos').delete().eq('id', id)
     if (error) alert('Delete failed: ' + error.message)
+  }
+
+  function startEditNote(n: FollowupNote) {
+    setEditingNoteId(n.id)
+    setEditNoteText(n.text)
+    setEditNoteDate(n.note_date)
+  }
+
+  async function saveEditNote() {
+    if (!editingNoteId || !editNoteText.trim()) return
+    const id = editingNoteId
+    const patch = { text: editNoteText.trim(), note_date: editNoteDate }
+    setModalNotes(prev => prev.map(n => n.id === id ? { ...n, ...patch } : n))
+    setEditingNoteId(null)
+    const { error } = await supabase.from('claim_followup_notes').update(patch).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
+  async function deleteNote(id: string) {
+    if (!window.confirm('Delete this note?')) return
+    setModalNotes(prev => prev.filter(n => n.id !== id))
+    const { error } = await supabase.from('claim_followup_notes').delete().eq('id', id)
+    if (error) alert('Delete failed: ' + error.message)
+  }
+
+  async function connectModalDrive() {
+    if (!editingCard) return
+    const folder = await drive.connectDriveForClient(editingCard.clientId)
+    if (folder) setModalFolder(folder)
+  }
+
+  async function uploadModalFiles(files: FileList | File[]) {
+    if (!editingCard || !modalFolder) return
+    const uploaded = await drive.uploadFiles(files, editingCard.claim.id, editingCard.item.id, modalFolder)
+    if (uploaded.length > 0) setModalDocuments(prev => [...uploaded, ...prev] as ClaimDocRow[])
+  }
+
+  async function deleteModalDocument(doc: ClaimDocRow) {
+    const ok = await drive.deleteDocument(doc)
+    if (ok) setModalDocuments(prev => prev.filter(d => d.id !== doc.id))
   }
 
   function openCard(card: CardData) {
@@ -727,7 +788,8 @@ export default function BusinessClaimsBoardPage() {
                   <button onClick={() => deleteTodo(t.id)} style={{ background: 'none', border: 'none', color: T.textFaint, cursor: 'pointer', fontSize: 13, padding: '0 2px' }}>×</button>
                 </div>
               ))}
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: T.textFaint, marginTop: 10, marginBottom: 5 }}>Enter to-do and deadline</div>
+              <div style={{ display: 'flex', gap: 6 }}>
                 <input value={todoDraft} onChange={e => setTodoDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTodo() }}
                   placeholder="e.g. Chase supporting document"
                   style={{ flex: 1, padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
@@ -742,9 +804,24 @@ export default function BusinessClaimsBoardPage() {
               {modalNotes.length === 0 && <div style={{ fontSize: 12.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 10 }}>No notes yet.</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
                 {modalNotes.map(n => (
-                  <div key={n.id} style={{ fontSize: 12.5, color: T.text }}>
-                    <span style={{ color: T.textFaint, fontSize: 11 }}>{n.note_date}</span> — {n.text}
-                  </div>
+                  editingNoteId === n.id ? (
+                    <div key={n.id} style={{ display: 'flex', gap: 6 }}>
+                      <input type="date" value={editNoteDate} onChange={e => setEditNoteDate(e.target.value)}
+                        style={{ padding: '6px 8px', border: `1px solid ${T.line}`, borderRadius: 6, background: 'white', color: T.text, fontSize: 12 }} />
+                      <input value={editNoteText} onChange={e => setEditNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveEditNote() }} autoFocus
+                        style={{ flex: 1, padding: '6px 8px', border: `1px solid ${T.line}`, borderRadius: 6, background: 'white', color: T.text, fontSize: 12.5 }} />
+                      <button onClick={saveEditNote} style={{ fontSize: 11.5, fontWeight: 700, color: T.emerald, background: 'none', border: 'none', cursor: 'pointer' }}>Save</button>
+                      <button onClick={() => setEditingNoteId(null)} style={{ fontSize: 11.5, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div key={n.id} style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                      <div style={{ flex: 1, fontSize: 12.5, color: T.text }}>
+                        <span style={{ color: T.textFaint, fontSize: 11 }}>{n.note_date}</span> — {n.text}
+                      </div>
+                      <button onClick={() => startEditNote(n)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>Edit</button>
+                      <button onClick={() => deleteNote(n.id)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+                    </div>
+                  )
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -764,17 +841,31 @@ export default function BusinessClaimsBoardPage() {
               ) : modalDocuments.length === 0 ? (
                 <div style={{ fontSize: 12.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 8 }}>No attachments yet.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
                   {modalDocuments.map(d => (
-                    <a key={d.id} href={d.drive_view_url || '#'} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 12.5, color: T.gold, textDecoration: 'none' }}>{d.file_name}</a>
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <a href={d.drive_view_url || '#'} target="_blank" rel="noopener noreferrer"
+                        style={{ flex: 1, fontSize: 12.5, color: T.gold, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.file_name}</a>
+                      <button onClick={() => deleteModalDocument(d)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+                    </div>
                   ))}
                 </div>
               )}
-              <button onClick={() => openCard(editingCard)}
-                style={{ fontSize: 11.5, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
-                Add attachments on the full claim page
-              </button>
+
+              {drive.uploadError && <div style={{ fontSize: 11.5, color: T.rose, marginBottom: 8 }}>{drive.uploadError}</div>}
+
+              {!modalFolder ? (
+                <button onClick={connectModalDrive} disabled={drive.connecting}
+                  style={{ fontSize: 12, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(168,131,74,.3)`, padding: '6px 13px', borderRadius: 999, cursor: 'pointer', opacity: drive.connecting ? 0.6 : 1 }}>
+                  {drive.connecting ? 'Connecting…' : 'Connect Drive & choose folder'}
+                </button>
+              ) : (
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(168,131,74,.3)`, padding: '6px 13px', borderRadius: 999, cursor: drive.uploading ? 'default' : 'pointer', opacity: drive.uploading ? 0.6 : 1 }}>
+                  {drive.uploading ? 'Uploading…' : `Upload to ${modalFolder.name}`}
+                  <input type="file" multiple disabled={drive.uploading} style={{ display: 'none' }}
+                    onChange={e => { if (e.target.files?.length) uploadModalFiles(e.target.files); e.target.value = '' }} />
+                </label>
+              )}
 
               <div style={{ height: 1, background: T.line, margin: '16px 0' }} />
 

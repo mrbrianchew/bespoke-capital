@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface EmailMatch {
   id: string
@@ -10,20 +10,36 @@ interface EmailMatch {
   permalink: string
 }
 
+// Session-only cache (resets on a full page reload — deliberately not
+// sessionStorage/localStorage, since email metadata shouldn't sit in
+// browser storage any longer than the tab is open). Keyed by claimId so
+// reopening the same claim within the same tab — closing/reopening the
+// Board's modal, or navigating away from and back to a claim on the
+// per-client page — shows the last results instantly instead of forcing a
+// re-search. A different claimId always starts fresh.
+const searchCache: Record<string, { terms: string[]; matches: EmailMatch[] | null; searched: boolean }> = {}
+
 // Renders as its own collapsible section (matching the Documents section's
 // header style directly above it in servicing/claims/page.tsx) rather than a
 // floating dropdown — the earlier dropdown version got silently clipped by a
 // parent with overflow:hidden. Defaults to collapsed so the claim page
 // doesn't grow taller for advisors who never use this feature.
 export default function GmailClaimSearch({ claimId, defaultTerms }: { claimId: string; defaultTerms: string[] }) {
+  const cached = searchCache[claimId]
   const [expanded, setExpanded] = useState(false)
-  const [terms, setTerms] = useState<string[]>(defaultTerms.filter(Boolean))
+  const [terms, setTerms] = useState<string[]>(cached?.terms || defaultTerms.filter(Boolean))
   const [termInput, setTermInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [needsConnect, setNeedsConnect] = useState(false)
-  const [matches, setMatches] = useState<EmailMatch[] | null>(null)
-  const [searched, setSearched] = useState(false)
+  const [matches, setMatches] = useState<EmailMatch[] | null>(cached?.matches ?? null)
+  const [searched, setSearched] = useState(cached?.searched || false)
+
+  // Keeps the cache in sync so the next mount for this same claimId (modal
+  // reopened, page revisited) picks up right where this one left off.
+  useEffect(() => {
+    searchCache[claimId] = { terms, matches, searched }
+  }, [claimId, terms, matches, searched])
 
   function addTerm() {
     const t = termInput.trim()

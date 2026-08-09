@@ -1385,7 +1385,7 @@ function MedicalClaimsPage() {
             )}
           </div>
 
-          <GmailClaimSearch claimId={selectedClaim.id} defaultTerms={[mainPolicy?.policyNo, selectedClaim.label].filter((v): v is string => !!v)} />
+          <GmailClaimSearch claimId={selectedClaim.id} defaultTerms={[mainPolicy?.policyNo, selectedClaim.label && selectedClaim.label.trim().toLowerCase() !== 'new claim' ? selectedClaim.label : null].filter((v): v is string => !!v)} />
         </>
       )}
 
