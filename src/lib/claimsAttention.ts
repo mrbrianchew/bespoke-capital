@@ -59,8 +59,12 @@ export function needsFollowupItems(items: AttentionLineItem[], todos: AttentionT
   })
 }
 
+export function urgentTodos(todos: AttentionTodo[]): AttentionTodo[] {
+  return todos.filter(isUrgentTodo)
+}
+
 export function urgentTodoCount(todos: AttentionTodo[]): number {
-  return todos.filter(isUrgentTodo).length
+  return urgentTodos(todos).length
 }
 
 export function attentionCount(items: AttentionLineItem[], todos: AttentionTodo[]): number {
