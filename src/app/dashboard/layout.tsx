@@ -7,6 +7,7 @@ import DateInput from '@/components/DateInput'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import BugReportModal from '@/components/BugReportModal'
+import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -115,6 +116,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showBugReport, setShowBugReport] = useState(false)
   const [adminBadgeCount, setAdminBadgeCount] = useState(0)
+  const [claimsBadgeCount, setClaimsBadgeCount] = useState(0)
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -142,6 +144,19 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (routeGroup && routeGroup !== expandedGroup) setExpandedGroup(routeGroup)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, advisor?.beta_features, advisor?.id])
+
+  // Claims attention badge — overdue/due-today follow-ups plus stale claim
+  // line items with no follow-up tracked at all (see claimsAttention.ts).
+  // Shown on the Business Dashboard toggle (visible in either mode) and on
+  // the Claims Board nav item itself. Any advisor with business dashboard
+  // access sees their own count — not creator-only, unlike the admin badge.
+  useEffect(() => {
+    if (!businessAccess) { setClaimsBadgeCount(0); return }
+    let cancelled = false
+    fetchClaimsAttentionCount(supabase).then(count => { if (!cancelled) setClaimsBadgeCount(count) }).catch(() => {})
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, businessAccess])
 
   // Admin Hub notification badge — pending advisor approvals + unresolved
   // bug reports. Creator-only, refetched on every navigation so it clears
@@ -221,9 +236,17 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               </button>
               <button onClick={() => router.push('/dashboard/business/claims')}
                 className="flex-1 text-center transition-colors"
-                style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+                style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, position: 'relative',
                   color: isBusinessMode ? 'white' : 'var(--ink3)', background: isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
                 Business Dashboard
+                {claimsBadgeCount > 0 && (
+                  <span
+                    className="flex items-center justify-center text-xs font-medium"
+                    style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: 'var(--rouge)', color: 'white', lineHeight: 1, fontSize: 9.5 }}
+                  >
+                    {claimsBadgeCount > 99 ? '99+' : claimsBadgeCount}
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -339,7 +362,15 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                   className="flex items-center gap-2.5 px-3 py-2.5 rounded transition-all mb-0.5 text-sm"
                   style={{ color: businessActiveId === item.id ? 'var(--gold-tag)' : 'var(--ink3)', background: businessActiveId === item.id ? 'var(--gold-l)' : 'transparent', fontWeight: businessActiveId === item.id ? 500 : 400 }}>
                   <span className="text-base w-4 text-center">{item.icon}</span>
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {item.id === 'claims-board' && claimsBadgeCount > 0 && (
+                    <span
+                      className="flex items-center justify-center text-xs font-medium"
+                      style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
+                    >
+                      {claimsBadgeCount > 99 ? '99+' : claimsBadgeCount}
+                    </span>
+                  )}
                 </Link>
               )
             ))

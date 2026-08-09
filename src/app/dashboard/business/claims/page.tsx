@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard, ClientRow } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import { useDriveUpload } from '@/lib/useDriveUpload'
+import { needsFollowupItems } from '@/lib/claimsAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -370,6 +371,31 @@ export default function BusinessClaimsBoardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingTodos, itemsById, claimsById, clientsById, familyByClient, policiesByClient])
 
+  // Stale in-progress line items with zero open follow-ups tracked at all —
+  // the case a due-date list can never show, since there's no todo row to
+  // list. Surfaced as its own bucket so "nobody's chasing this" is visible
+  // instead of the item just quietly not appearing anywhere.
+  const needsFollowupRows = useMemo(() => {
+    const flaggedIds = new Set(needsFollowupItems(lineItems, pendingTodos).map(i => i.id))
+    return lineItems
+      .filter(item => flaggedIds.has(item.id))
+      .map(item => {
+        const claim = claimsById[item.claim_id]
+        if (!claim) return null
+        const card: CardData = {
+          item, claim,
+          clientId: claim.client_id,
+          clientName: clientsById[claim.client_id] || 'Unknown client',
+          lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
+          policyLabel: policyLabel(claim.client_id, claim.policy_id),
+        }
+        return card
+      })
+      .filter((c): c is CardData => c !== null)
+      .sort((a, b) => daysSince(b.item.submitted_date || b.item.date_from)! - daysSince(a.item.submitted_date || a.item.date_from)!)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineItems, pendingTodos, claimsById, clientsById, familyByClient, policiesByClient])
+
   function dueLabel(dueDate: string | null): { text: string; kind: 'overdue' | 'today' | 'upcoming' | 'none' } {
     if (!dueDate) return { text: 'No due date', kind: 'none' }
     const d = new Date(dueDate + 'T00:00:00')
@@ -675,7 +701,7 @@ export default function BusinessClaimsBoardPage() {
           color: activeTab === 'followups' ? T.goldText : T.textFaint,
           borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
         }}>
-          This week's follow-ups{followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length}` : ''}
+          This week's follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length}` : ''}
         </button>
         <button onClick={() => setActiveTab('board')} style={{
           padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
@@ -690,7 +716,7 @@ export default function BusinessClaimsBoardPage() {
         <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13 }}>Loading claims…</div>
       ) : activeTab === 'followups' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 620 }}>
-          {followupRows.length === 0 && (
+          {followupRows.length === 0 && needsFollowupRows.length === 0 && (
             <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13, fontStyle: 'italic' }}>
               Nothing pending — every follow-up is checked off.
             </div>
@@ -736,6 +762,37 @@ export default function BusinessClaimsBoardPage() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {todayRows.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+                {needsFollowupRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.rose, marginBottom: 3 }}>
+                      Needs a follow-up · {needsFollowupRows.length}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
+                      Idle 14+ days with nothing being tracked to chase it — set a reminder or update its stage.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {needsFollowupRows.map(card => {
+                        const days = daysSince(card.item.submitted_date || card.item.date_from)
+                        return (
+                          <div key={card.item.id} onClick={() => setEditingCard(card)} style={{
+                            background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${T.rose}`,
+                            borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                          }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
+                                {card.clientName} · {card.lifeAssuredLabel !== card.clientName ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
+                              </div>
+                              <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2, fontStyle: 'italic' }}>No follow-up set</div>
+                            </div>
+                            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {days}d idle
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}

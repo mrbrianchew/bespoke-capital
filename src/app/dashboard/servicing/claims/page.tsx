@@ -1881,7 +1881,11 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
           off here shows up there immediately, no separate list. */}
       <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 12, paddingTop: 10 }}>
         <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, fontWeight: 700, marginBottom: 7 }}>Follow-ups</div>
-        {openTodos.length === 0 && <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 8 }}>No follow-ups set for this item.</div>}
+        {openTodos.length === 0 && (
+          <div style={{ fontSize: 11.5, fontStyle: 'italic', marginBottom: 8, color: stale ? T.rose : T.textFaint, fontWeight: stale ? 700 : 400 }}>
+            {stale ? 'No follow-up set — this has been idle 14+ days.' : 'No follow-ups set for this item.'}
+          </div>
+        )}
         {openTodos.map(t => {
           const label = todoDueLabel(t.due_date)
           const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
@@ -1896,11 +1900,11 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
           )
         })}
         {!resolved && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
             <input className="claims-input" value={todoDraft} placeholder="Add a follow-up…"
               onChange={e => onTodoDraftChange(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAddTodo() } }}
-              style={{ flex: 1 }} />
+              style={{ flex: 1, minWidth: 160 }} />
             <input type="date" className="claims-input" value={todoDueDraft}
               onChange={e => onTodoDueDraftChange(e.target.value)} style={{ width: 140, flexShrink: 0 }} />
             <button onClick={onAddTodo} style={addBtn}>Add</button>
