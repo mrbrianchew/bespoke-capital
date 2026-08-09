@@ -99,10 +99,10 @@ export async function GET(req: Request) {
   )
 
   const { data: advisors } = await supabase.from('advisors')
-    .select('id, name, email, status, beta_features')
+    .select('id, name, email, digest_email, status, beta_features')
   const eligible = (advisors || []).filter((a: any) =>
     a.status === 'approved' &&
-    a.email &&
+    (a.digest_email || a.email) &&
     (a.id === CREATOR_ID || (Array.isArray(a.beta_features) && a.beta_features.includes('servicing')))
   )
 
@@ -120,7 +120,7 @@ export async function GET(req: Request) {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RESEND_API_KEY}` },
       body: JSON.stringify({
         from: 'Bespoke Capital <onboarding@resend.dev>',
-        to: advisor.email,
+        to: advisor.digest_email || advisor.email,
         subject: `${count} item${count === 1 ? '' : 's'} need attention this week`,
         html,
       }),
