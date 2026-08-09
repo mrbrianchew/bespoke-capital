@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard, ClientRow } from '@/contexts/DashboardContext'
+import GmailClaimSearch from '@/components/GmailClaimSearch'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -40,6 +41,7 @@ interface ClaimRow {
 interface LineItemRow {
   id: string
   claim_id: string
+  section: 'pre' | 'in' | 'post' | null
   type: string | null
   description: string | null
   invoice_no: string | null
@@ -59,6 +61,31 @@ interface FamilyMember {
   client_id: string
   name: string | null
   relationship: string
+}
+
+interface FollowupNote {
+  id: string
+  line_item_id: string
+  note_date: string
+  text: string
+  created_at: string
+}
+
+interface FollowupTodo {
+  id: string
+  line_item_id: string
+  task: string
+  due_date: string | null
+  done: boolean
+  created_at: string
+}
+
+interface ClaimDocRow {
+  id: string
+  claim_id: string
+  file_name: string
+  drive_view_url: string | null
+  uploaded_at: string
 }
 
 type ColumnId = 'docs' | 'submitted' | 'assessment' | 'resolved'
@@ -107,6 +134,14 @@ const STALE_DAYS = 14 // matches the per-client Medical Claims page's idle thres
 // Matches SECTION_LABEL on the per-client Medical Claims page exactly.
 const SECTION_LABEL: Record<'pre' | 'in' | 'post', string> = {
   pre: 'Pre-Hospitalisation', in: 'Inpatient / Surgery', post: 'Post-Hospitalisation',
+}
+
+// Matches SECTION_TYPE_OPTIONS on the per-client Medical Claims page exactly
+// — used only for the Type dropdown inside the card edit modal.
+const SECTION_TYPE_OPTIONS: Record<string, string[]> = {
+  pre: ['CDL', 'Non-CDL', 'Services', 'Outpatient'],
+  in: ['Inpatient', 'Surgery'],
+  post: ['CDL', 'Non-CDL', 'Services', 'Outpatient'],
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -177,6 +212,18 @@ export default function BusinessClaimsBoardPage() {
   const [addClaimError, setAddClaimError] = useState('')
   const [addClaimClient, setAddClaimClient] = useState<ClientRow | null>(null) // step 2: which client, waiting on section pick
 
+  // ── Edit-in-place modal state (opened by clicking a card) ──
+  const [editingCard, setEditingCard] = useState<CardData | null>(null)
+  const [modalNotes, setModalNotes] = useState<FollowupNote[]>([])
+  const [modalTodos, setModalTodos] = useState<FollowupTodo[]>([])
+  const [modalDocuments, setModalDocuments] = useState<ClaimDocRow[]>([])
+  const [modalLoading, setModalLoading] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteDate, setNoteDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [todoDraft, setTodoDraft] = useState('')
+  const [todoDueDate, setTodoDueDate] = useState('')
+  const [savingModal, setSavingModal] = useState(false)
+
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
   useEffect(() => {
@@ -204,7 +251,7 @@ export default function BusinessClaimsBoardPage() {
       const claimIds = claimRows.map(c => c.id)
       if (claimIds.length > 0) {
         const itemsRes = await supabase.from('claim_line_items')
-          .select('id, claim_id, type, description, invoice_no, amount_claimed, amount_approved, approved, rejected, rejection_reason, followup_status, submitted_date, date_from, updated_at')
+          .select('id, claim_id, section, type, description, invoice_no, amount_claimed, amount_approved, approved, rejected, rejection_reason, followup_status, submitted_date, date_from, updated_at')
           .in('claim_id', claimIds)
         if (cancelled) return
         setLineItems((itemsRes.data || []) as LineItemRow[])
@@ -372,6 +419,77 @@ export default function BusinessClaimsBoardPage() {
     router.push(`/dashboard/servicing/claims?claimId=${claimId}&addSection=${section}`)
   }
 
+  // Loads notes/todos/documents for whichever card is open in the modal.
+  // Re-runs whenever the open card's line item changes (i.e. whenever a
+  // different card is clicked) and clears everything when the modal closes.
+  useEffect(() => {
+    if (!editingCard) { setModalNotes([]); setModalTodos([]); setModalDocuments([]); return }
+    let cancelled = false
+    async function loadModalData() {
+      setModalLoading(true)
+      const [notesRes, todosRes, docsRes] = await Promise.all([
+        supabase.from('claim_followup_notes').select('*').eq('line_item_id', editingCard!.item.id).order('note_date', { ascending: false }),
+        supabase.from('claim_followup_todos').select('*').eq('line_item_id', editingCard!.item.id).order('created_at', { ascending: true }),
+        supabase.from('claim_documents').select('id, claim_id, file_name, drive_view_url, uploaded_at').eq('claim_id', editingCard!.claim.id).order('uploaded_at', { ascending: false }),
+      ])
+      if (cancelled) return
+      setModalNotes((notesRes.data || []) as FollowupNote[])
+      setModalTodos((todosRes.data || []) as FollowupTodo[])
+      setModalDocuments((docsRes.data || []) as ClaimDocRow[])
+      setModalLoading(false)
+    }
+    loadModalData()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCard?.item.id])
+
+  // Saves a partial patch to the open card's line item — same optimistic
+  // pattern as moveItem: update local state immediately, write, alert on
+  // failure. Also keeps editingCard in sync so the modal reflects the save.
+  async function saveModalField(patch: Partial<LineItemRow>) {
+    if (!editingCard) return
+    const id = editingCard.item.id
+    setSavingModal(true)
+    setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...patch, updated_at: new Date().toISOString() } : i))
+    setEditingCard(prev => prev ? { ...prev, item: { ...prev.item, ...patch, updated_at: new Date().toISOString() } } : prev)
+    const { error } = await supabase.from('claim_line_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
+    setSavingModal(false)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
+  async function addNote() {
+    if (!editingCard || !noteDraft.trim()) return
+    const { data, error } = await supabase.from('claim_followup_notes')
+      .insert({ line_item_id: editingCard.item.id, note_date: noteDate, text: noteDraft.trim() })
+      .select().maybeSingle()
+    if (error) { alert('Could not add note: ' + error.message); return }
+    if (data) setModalNotes(prev => [data as FollowupNote, ...prev])
+    setNoteDraft('')
+  }
+
+  async function addTodo() {
+    if (!editingCard || !todoDraft.trim()) return
+    const { data, error } = await supabase.from('claim_followup_todos')
+      .insert({ line_item_id: editingCard.item.id, task: todoDraft.trim(), due_date: todoDueDate || null })
+      .select().maybeSingle()
+    if (error) { alert('Could not add to-do: ' + error.message); return }
+    if (data) setModalTodos(prev => [...prev, data as FollowupTodo])
+    setTodoDraft('')
+    setTodoDueDate('')
+  }
+
+  async function toggleTodo(id: string, done: boolean) {
+    setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done } : t))
+    const { error } = await supabase.from('claim_followup_todos').update({ done }).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
+  async function deleteTodo(id: string) {
+    setModalTodos(prev => prev.filter(t => t.id !== id))
+    const { error } = await supabase.from('claim_followup_todos').delete().eq('id', id)
+    if (error) alert('Delete failed: ' + error.message)
+  }
+
   function openCard(card: CardData) {
     const client = clients.find(c => c.id === card.clientId)
     if (client) {
@@ -422,16 +540,16 @@ export default function BusinessClaimsBoardPage() {
                   <DropZoneList zone="resolved-approved" label="Approved" color={T.emerald}
                     cards={columns.resolved.filter(c => c.item.approved)}
                     dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
-                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={openCard} />
+                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={setEditingCard} />
                   <DropZoneList zone="resolved-rejected" label="Rejected" color={T.rose}
                     cards={columns.resolved.filter(c => c.item.rejected)}
                     dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
-                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={openCard} />
+                    draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={setEditingCard} />
                 </div>
               ) : (
                 <DropZoneList zone={col.id as DropZone} cards={columns[col.id]}
                   dragOverZone={dragOverZone} setDragOverZone={setDragOverZone} onDrop={handleDrop}
-                  draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={openCard} />
+                  draggingId={draggingId} setDraggingId={setDraggingId} onCardClick={setEditingCard} />
               )}
             </div>
           ))}
@@ -538,6 +656,159 @@ export default function BusinessClaimsBoardPage() {
           </div>
         </div>
       )}
+
+      {editingCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}
+          onClick={() => setEditingCard(null)}>
+          <div style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto', background: 'white', borderRadius: 14 }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div className="font-serif" style={{ fontSize: 21, color: T.text }}>{editingCard.clientName}</div>
+                <div style={{ fontSize: 12, color: T.textFaint, marginTop: 3 }}>{editingCard.lifeAssuredLabel} · {editingCard.policyLabel}</div>
+              </div>
+              <button onClick={() => setEditingCard(null)} style={{ background: 'none', border: 'none', color: T.textFaint, fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 2 }}>×</button>
+            </div>
+
+            <div style={{ padding: '16px 24px 0' }}>
+              <button onClick={() => openCard(editingCard)}
+                style={{ fontSize: 11.5, fontWeight: 700, color: T.gold, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                Open full claim →
+              </button>
+            </div>
+
+            <ModalSection title="Claim details" subtitle={`${SECTION_LABEL[editingCard.item.section || 'in']} · opened ${editingCard.claim.opened_date}`} defaultOpen={false}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <ModalField label="Type">
+                  <select value={editingCard.item.type || ''} onChange={e => saveModalField({ type: e.target.value })}
+                    style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 13 }}>
+                    <option value="">—</option>
+                    {(SECTION_TYPE_OPTIONS[editingCard.item.section || 'in'] || []).map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </ModalField>
+                <ModalField label="Invoice / claim no.">
+                  <input defaultValue={editingCard.item.invoice_no || ''} onBlur={e => saveModalField({ invoice_no: e.target.value || null })}
+                    style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+                </ModalField>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <ModalField label="Description">
+                    <input defaultValue={editingCard.item.description || ''} onBlur={e => saveModalField({ description: e.target.value || null })}
+                      style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+                  </ModalField>
+                </div>
+                <ModalField label="Amount claimed ($)">
+                  <input type="number" defaultValue={editingCard.item.amount_claimed || ''} onBlur={e => saveModalField({ amount_claimed: e.target.value === '' ? 0 : +e.target.value })}
+                    style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+                </ModalField>
+                {editingCard.item.approved && (
+                  <ModalField label="Amount approved ($)">
+                    <input type="number" defaultValue={editingCard.item.amount_approved || ''} onBlur={e => saveModalField({ amount_approved: e.target.value === '' ? 0 : +e.target.value })}
+                      style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+                  </ModalField>
+                )}
+                {editingCard.item.rejected && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <ModalField label="Rejection reason">
+                      <input defaultValue={editingCard.item.rejection_reason || ''} onBlur={e => saveModalField({ rejection_reason: e.target.value || null })}
+                        style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+                    </ModalField>
+                  </div>
+                )}
+              </div>
+            </ModalSection>
+
+            <ModalSection title="To-dos & notes" defaultOpen={true}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>To-dos</div>
+              {modalTodos.length === 0 && <div style={{ fontSize: 12.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 10 }}>No to-dos yet.</div>}
+              {modalTodos.map(t => (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+                  <input type="checkbox" checked={t.done} onChange={e => toggleTodo(t.id, e.target.checked)} />
+                  <span style={{ flex: 1, fontSize: 13, color: t.done ? T.textFaint : T.text, textDecoration: t.done ? 'line-through' : 'none' }}>{t.task}</span>
+                  {t.due_date && <span style={{ fontSize: 11, color: T.textFaint }}>{t.due_date}</span>}
+                  <button onClick={() => deleteTodo(t.id)} style={{ background: 'none', border: 'none', color: T.textFaint, cursor: 'pointer', fontSize: 13, padding: '0 2px' }}>×</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <input value={todoDraft} onChange={e => setTodoDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTodo() }}
+                  placeholder="e.g. Chase supporting document"
+                  style={{ flex: 1, padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                <input type="date" value={todoDueDate} onChange={e => setTodoDueDate(e.target.value)}
+                  style={{ padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                <button onClick={addTodo} style={{ padding: '7px 14px', fontSize: 12.5, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Add</button>
+              </div>
+
+              <div style={{ height: 1, background: T.line, margin: '16px 0' }} />
+
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>Notes</div>
+              {modalNotes.length === 0 && <div style={{ fontSize: 12.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 10 }}>No notes yet.</div>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                {modalNotes.map(n => (
+                  <div key={n.id} style={{ fontSize: 12.5, color: T.text }}>
+                    <span style={{ color: T.textFaint, fontSize: 11 }}>{n.note_date}</span> — {n.text}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input type="date" value={noteDate} onChange={e => setNoteDate(e.target.value)}
+                  style={{ padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                <input value={noteDraft} onChange={e => setNoteDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addNote() }}
+                  placeholder="Add a note…"
+                  style={{ flex: 1, padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                <button onClick={addNote} style={{ padding: '7px 14px', fontSize: 12.5, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Add</button>
+              </div>
+            </ModalSection>
+
+            <ModalSection title="Activity — attachments, emails" defaultOpen={true}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>Attachments</div>
+              {modalLoading ? (
+                <div style={{ fontSize: 12.5, color: T.textFaint }}>Loading…</div>
+              ) : modalDocuments.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: T.textFaint, fontStyle: 'italic', marginBottom: 8 }}>No attachments yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                  {modalDocuments.map(d => (
+                    <a key={d.id} href={d.drive_view_url || '#'} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12.5, color: T.gold, textDecoration: 'none' }}>{d.file_name}</a>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => openCard(editingCard)}
+                style={{ fontSize: 11.5, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                Add attachments on the full claim page
+              </button>
+
+              <div style={{ height: 1, background: T.line, margin: '16px 0' }} />
+
+              <GmailClaimSearch claimId={editingCard.claim.id} defaultTerms={[editingCard.item.invoice_no].filter((v): v is string => !!v)} />
+            </ModalSection>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ModalSection({ title, subtitle, defaultOpen, children }: { title: string; subtitle?: string; defaultOpen: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{ padding: '16px 24px 0' }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderTop: `1px solid ${T.line}`, textAlign: 'left' }}>
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>{subtitle}</div>}
+        </div>
+        <span style={{ color: T.textFaint, fontSize: 13, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s', flexShrink: 0 }}>▾</span>
+      </button>
+      {open && <div style={{ paddingBottom: 16 }}>{children}</div>}
+    </div>
+  )
+}
+
+function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 5 }}>{label}</div>
+      {children}
     </div>
   )
 }
