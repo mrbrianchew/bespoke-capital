@@ -18,7 +18,7 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
-type RequestType = 'fund_switch' | 'nominee_change' | 'policy_loan' | 'correspondence' | 'document_request'
+type RequestType = string // open list now — see service_request_types table
 type Status = 'requested' | 'in_progress' | 'done'
 type WaitingOn = 'client' | 'firm' | null
 
@@ -44,20 +44,38 @@ interface TodoRow {
   created_at: string
 }
 
-const TYPE_LABEL: Record<RequestType, string> = {
-  fund_switch: 'Fund Switch',
-  nominee_change: 'Nominee Change',
-  policy_loan: 'Policy Loan',
-  correspondence: 'Correspondence',
-  document_request: 'Document Request',
+interface TypeRow {
+  id: string
+  label: string
+  created_at: string
 }
 
-const TYPE_COLOR: Record<RequestType, { bg: string; fg: string }> = {
-  fund_switch: { bg: 'var(--gold-l)', fg: 'var(--gold-tag)' },
-  nominee_change: { bg: 'rgba(58,90,120,.12)', fg: '#3A5A78' },
-  policy_loan: { bg: 'var(--rouge-l)', fg: 'var(--rouge)' },
-  correspondence: { bg: 'var(--emerald-l)', fg: 'var(--emerald)' },
-  document_request: { bg: 'var(--cream2)', fg: 'var(--ink2)' },
+// Curated colors for the original 5 types, keyed by label (request_type now
+// stores the label directly, not a machine key — see the open-list migration).
+// Anything added later falls through to FALLBACK_PALETTE below, picked
+// deterministically by label so the same new type always renders the same
+// color across sessions without needing a DB column for it.
+const CURATED_TYPE_COLOR: Record<string, { bg: string; fg: string }> = {
+  'Fund Switch': { bg: 'var(--gold-l)', fg: 'var(--gold-tag)' },
+  'Nominee Change': { bg: 'rgba(58,90,120,.12)', fg: '#3A5A78' },
+  'Policy Loan': { bg: 'var(--rouge-l)', fg: 'var(--rouge)' },
+  'Correspondence': { bg: 'var(--emerald-l)', fg: 'var(--emerald)' },
+  'Document Request': { bg: 'var(--cream2)', fg: 'var(--ink2)' },
+}
+
+const FALLBACK_PALETTE: { bg: string; fg: string }[] = [
+  { bg: 'rgba(168,131,74,.12)', fg: '#8A6C3A' },
+  { bg: 'rgba(42,94,70,.12)', fg: '#2A5E46' },
+  { bg: 'rgba(138,40,40,.10)', fg: '#8A2828' },
+  { bg: 'rgba(58,90,120,.12)', fg: '#3A5A78' },
+  { bg: 'rgba(26,24,22,.08)', fg: '#4A4740' },
+]
+
+function colorForType(label: string): { bg: string; fg: string } {
+  if (CURATED_TYPE_COLOR[label]) return CURATED_TYPE_COLOR[label]
+  let hash = 0
+  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) >>> 0
+  return FALLBACK_PALETTE[hash % FALLBACK_PALETTE.length]
 }
 
 const RESOLVED_VISIBLE_DAYS = 30 // matches Claims Board's resolved drop-off, for consistency
@@ -118,11 +136,16 @@ export default function BusinessServiceRequestsPage() {
 
   // ── quick-capture bar state ──
   const [capClientName, setCapClientName] = useState('')
-  const [capType, setCapType] = useState<RequestType>('fund_switch')
+  const [capType, setCapType] = useState<RequestType>('')
   const [capDesc, setCapDesc] = useState('')
   const [capSaving, setCapSaving] = useState(false)
   const [capError, setCapError] = useState('')
   const capDescRef = useRef<HTMLInputElement>(null)
+
+  // ── shared type picklist (service_request_types) ──
+  // Firm-wide, not client-scoped — grows as advisors add new types via
+  // TypeSelect below. Loaded once alongside the main data.
+  const [typeOptions, setTypeOptions] = useState<string[]>([])
 
   // ── edit modal state ──
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -137,14 +160,28 @@ export default function BusinessServiceRequestsPage() {
   // Firm-wide load. RLS on service_requests scopes through clients.advisor_id
   // (own_service_requests policy) — a plain select with no client_id filter
   // already returns only this advisor's rows, same as Claims Board.
+  // service_request_types has no client scoping at all — it's a shared
+  // taxonomy, RLS just requires being logged in.
   useEffect(() => {
     if (authLoading || !hasAccess) { setLoading(false); return }
     let cancelled = false
     async function load() {
       setLoading(true)
-      const { data } = await supabase.from('service_requests').select('*')
+      const [reqRes, typesRes] = await Promise.all([
+        supabase.from('service_requests').select('*'),
+        supabase.from('service_request_types').select('label').order('created_at', { ascending: true }),
+      ])
       if (cancelled) return
-      setRows((data || []) as ServiceRequestRow[])
+      const rowsData = (reqRes.data || []) as ServiceRequestRow[]
+      setRows(rowsData)
+      const labels = ((typesRes.data || []) as { label: string }[]).map(t => t.label)
+      // Belt-and-braces: any request_type in use that somehow isn't in the
+      // picklist (e.g. added before this migration) still shows up as an
+      // option rather than silently vanishing from dropdowns.
+      const inUse = Array.from(new Set(rowsData.map(r => r.request_type).filter(Boolean)))
+      const merged = Array.from(new Set([...labels, ...inUse]))
+      setTypeOptions(merged)
+      if (merged.length > 0) setCapType(prev => prev || merged[0])
       setLoading(false)
     }
     load()
@@ -206,6 +243,27 @@ export default function BusinessServiceRequestsPage() {
     moveTo(id, zone)
   }
 
+  // Adds a new type to the shared picklist if it doesn't already exist
+  // (case-insensitive). Returns the canonical label to use — either the
+  // newly-created one, or the existing match if this was a near-duplicate.
+  async function addNewType(raw: string): Promise<string | null> {
+    const label = raw.trim()
+    if (!label) return null
+    const existing = typeOptions.find(t => t.toLowerCase() === label.toLowerCase())
+    if (existing) return existing
+    const { data, error } = await supabase.from('service_request_types').insert({ label }).select().maybeSingle()
+    if (error) {
+      // Unique-index race (two people add the same new type at once) —
+      // treat as success and just use the label typed; a refresh will pick
+      // up the canonical row either way.
+      setTypeOptions(prev => Array.from(new Set([...prev, label])))
+      return label
+    }
+    const newLabel = (data as TypeRow)?.label || label
+    setTypeOptions(prev => Array.from(new Set([...prev, newLabel])))
+    return newLabel
+  }
+
   // Quick-capture — resolves the typed client name against the already-loaded
   // client list (via the datalist below). Requires an exact match; anything
   // else is a typo and gets rejected rather than silently creating a request
@@ -214,7 +272,7 @@ export default function BusinessServiceRequestsPage() {
     setCapError('')
     const name = capClientName.trim()
     const desc = capDesc.trim()
-    if (!name || !desc) return
+    if (!name || !desc || !capType) return
     const client = clients.find(c => c.name.toLowerCase() === name.toLowerCase())
     if (!client) { setCapError(`No client named "${name}" — check the spelling or pick from the list.`); return }
     setCapSaving(true)
@@ -296,10 +354,13 @@ export default function BusinessServiceRequestsPage() {
           <datalist id="sr-clients-datalist">
             {clients.map(c => <option key={c.id} value={c.name} />)}
           </datalist>
-          <select value={capType} onChange={e => setCapType(e.target.value as RequestType)}
-            style={{ flex: '0 0 160px', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
-            {(Object.keys(TYPE_LABEL) as RequestType[]).map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-          </select>
+          <TypeSelect
+            value={capType}
+            options={typeOptions}
+            onChange={setCapType}
+            onAddNew={async label => { const canonical = await addNewType(label); if (canonical) setCapType(canonical) }}
+            width={170}
+          />
           <input
             ref={capDescRef}
             value={capDesc}
@@ -308,8 +369,8 @@ export default function BusinessServiceRequestsPage() {
             placeholder="What needs to be done…"
             style={{ flex: '1 1 200px', minWidth: 160, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}
           />
-          <button onClick={submitQuickCapture} disabled={capSaving || !capClientName.trim() || !capDesc.trim()}
-            style={{ padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: capSaving ? 'default' : 'pointer', opacity: capSaving || !capClientName.trim() || !capDesc.trim() ? 0.5 : 1 }}>
+          <button onClick={submitQuickCapture} disabled={capSaving || !capClientName.trim() || !capDesc.trim() || !capType}
+            style={{ padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: capSaving ? 'default' : 'pointer', opacity: capSaving || !capClientName.trim() || !capDesc.trim() || !capType ? 0.5 : 1 }}>
             {capSaving ? 'Adding…' : 'Add'}
           </button>
         </div>
@@ -319,8 +380,8 @@ export default function BusinessServiceRequestsPage() {
       {/* ── type filter chips ── */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 18 }}>
         <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>All types</FilterChip>
-        {(Object.keys(TYPE_LABEL) as RequestType[]).map(t => (
-          <FilterChip key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>{TYPE_LABEL[t]}</FilterChip>
+        {typeOptions.map(t => (
+          <FilterChip key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>{t}</FilterChip>
         ))}
       </div>
 
@@ -392,7 +453,7 @@ export default function BusinessServiceRequestsPage() {
                   {clientsById[editingRow.client_id] || 'Unknown client'}
                 </div>
                 <div style={{ fontSize: 12, color: T.textFaint, marginTop: 3 }}>
-                  {TYPE_LABEL[editingRow.request_type]}{editingRow.policy_label ? ` · ${editingRow.policy_label}` : ''} · opened {new Date(editingRow.created_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
+                  {editingRow.request_type}{editingRow.policy_label ? ` · ${editingRow.policy_label}` : ''} · opened {new Date(editingRow.created_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
                 </div>
               </div>
               <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', color: T.textFaint, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 2 }}>×</button>
@@ -425,10 +486,13 @@ export default function BusinessServiceRequestsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
                   <FieldLabel>Type</FieldLabel>
-                  <select value={editingRow.request_type} onChange={e => patchRow(editingRow.id, { request_type: e.target.value as RequestType })}
-                    style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
-                    {(Object.keys(TYPE_LABEL) as RequestType[]).map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-                  </select>
+                  <TypeSelect
+                    value={editingRow.request_type}
+                    options={typeOptions}
+                    onChange={v => patchRow(editingRow.id, { request_type: v })}
+                    onAddNew={async label => { const canonical = await addNewType(label); if (canonical) patchRow(editingRow.id, { request_type: canonical }) }}
+                    width="100%"
+                  />
                 </div>
                 <div>
                   <FieldLabel>Policy (optional)</FieldLabel>
@@ -476,6 +540,57 @@ export default function BusinessServiceRequestsPage() {
 }
 
 // ─── SUBCOMPONENTS ──────────────────────────────────────────────────────────
+
+const ADD_NEW_SENTINEL = '__add_new__'
+
+// A normal <select> of existing types, plus an "+ Add new type…" option that
+// swaps in a text input. Confirming (Enter or the Add button) hands the raw
+// text to onAddNew, which is responsible for dedup/insert into the shared
+// service_request_types table — this component doesn't know about Supabase.
+function TypeSelect({ value, options, onChange, onAddNew, width }: {
+  value: string; options: string[]; onChange: (v: string) => void
+  onAddNew: (label: string) => Promise<void>; width: number | string
+}) {
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function confirm() {
+    const label = draft.trim()
+    if (!label) { setAdding(false); return }
+    setSaving(true)
+    await onAddNew(label)
+    setSaving(false)
+    setDraft('')
+    setAdding(false)
+  }
+
+  if (adding) {
+    return (
+      <div style={{ display: 'flex', gap: 6, flex: `0 0 ${typeof width === 'number' ? width + 'px' : width}` }}>
+        <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') { setAdding(false); setDraft('') } }}
+          placeholder="New type name…"
+          style={{ flex: 1, minWidth: 0, padding: '9px 11px', border: `1px solid ${T.gold}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+        <button onClick={confirm} disabled={saving || !draft.trim()}
+          style={{ padding: '9px 12px', fontSize: 12, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: 'pointer', opacity: saving || !draft.trim() ? 0.5 : 1 }}>
+          {saving ? '…' : '✓'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={e => { if (e.target.value === ADD_NEW_SENTINEL) setAdding(true); else onChange(e.target.value) }}
+      style={{ flex: typeof width === 'number' ? `0 0 ${width}px` : undefined, width: typeof width === 'string' ? width : undefined, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
+      {!value && <option value="">Select type…</option>}
+      {options.map(t => <option key={t} value={t}>{t}</option>)}
+      <option value={ADD_NEW_SENTINEL}>+ Add new type…</option>
+    </select>
+  )
+}
 
 function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -531,7 +646,7 @@ function RequestCard({ row, clientName, dragging, onClick }: {
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: row.id })
   const days = daysSince(row.created_at)
-  const color = TYPE_COLOR[row.request_type]
+  const color = colorForType(row.request_type)
   const waitingLabel = row.waiting_on === 'client' ? 'Waiting on client' : row.waiting_on === 'firm' ? 'Waiting on insurer' : null
 
   return (
@@ -545,7 +660,7 @@ function RequestCard({ row, clientName, dragging, onClick }: {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
         <span className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text, lineHeight: 1.15 }}>{clientName}</span>
         <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2.5px 8px', borderRadius: 5, background: color.bg, color: color.fg, whiteSpace: 'nowrap' }}>
-          {TYPE_LABEL[row.request_type]}
+          {row.request_type}
         </span>
       </div>
       <div style={{ fontSize: 12, color: T.textDim, margin: '5px 0 8px', lineHeight: 1.4 }}>{row.description}</div>
