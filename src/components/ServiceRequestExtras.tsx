@@ -89,28 +89,34 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     let cancelled = false
     async function load() {
       setLoading(true)
+      // Folder is per-CLIENT for Service Requests — its own column
+      // (clients.service_requests_drive_folder_link), separate from the
+      // one Claims uses (clients.drive_folder_link), so the two features
+      // don't collide, but every request for this client shares one
+      // folder rather than each request picking its own.
       const [attRes, meetRes, actRes, clientRes] = await Promise.all([
         supabase.from('service_request_attachments').select('*').eq('service_request_id', serviceRequestId).order('uploaded_at', { ascending: false }),
         supabase.from('service_request_meetings').select('*').eq('service_request_id', serviceRequestId).order('meeting_date', { ascending: false }),
         supabase.from('service_request_activity_log').select('*').eq('service_request_id', serviceRequestId).order('activity_date', { ascending: false }),
-        supabase.from('clients').select('drive_folder_link').eq('id', clientId).maybeSingle(),
+        supabase.from('clients').select('service_requests_drive_folder_link').eq('id', clientId).maybeSingle(),
       ])
       if (cancelled) return
       setAttachments((attRes.data || []) as AttachmentRow[])
       setMeetings((meetRes.data || []) as MeetingRow[])
       setActivity((actRes.data || []) as ActivityRow[])
-      const raw = (clientRes.data as any)?.drive_folder_link as string | undefined
+      const raw = (clientRes.data as any)?.service_requests_drive_folder_link as string | undefined
       if (raw) { try { const parsed = JSON.parse(raw); setDriveFolder(parsed?.id && parsed?.name ? parsed : null) } catch { setDriveFolder(null) } }
+      else setDriveFolder(null)
       setLoading(false)
     }
     load()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serviceRequestId])
+  }, [serviceRequestId, clientId])
 
   // ── attachments ──
   async function connectDrive() {
-    const folder = await drive.connectDriveForClient(clientId)
+    const folder = await drive.connectDriveFolder({ table: 'clients', idColumn: 'id', id: clientId }, 'service_requests_drive_folder_link')
     if (folder) setDriveFolder(folder)
   }
 
@@ -267,9 +273,15 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
         <input id={`sr-file-input-${serviceRequestId}`} type="file" multiple disabled={drive.uploading} style={{ display: 'none' }}
           onChange={e => { if (e.target.files?.length) doUpload(e.target.files); e.target.value = '' }} />
         <p style={{ fontSize: 12, color: T.textFaint, margin: 0 }}>
-          {drive.uploading ? 'Uploading…' : driveFolder ? `Paste, drag in, or click to upload to ${driveFolder.name}` : 'Paste, drag in, or click — you\'ll be asked to connect Drive first'}
+          {drive.uploading ? 'Uploading…' : driveFolder ? `Paste, drag in, or click to upload to ${driveFolder.name}` : 'Paste, drag in, or click — you\'ll be asked to pick a folder for this client\'s service requests'}
         </p>
       </div>
+      {driveFolder && (
+        <button onClick={connectDrive} disabled={drive.connecting}
+          style={{ marginTop: 6, fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+          {drive.connecting ? 'Connecting…' : "Change folder — applies to all this client's service requests"}
+        </button>
+      )}
 
       {/* ── meetings ── */}
       <SectionLabel>Meetings</SectionLabel>

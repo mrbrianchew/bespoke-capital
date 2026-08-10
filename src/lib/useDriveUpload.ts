@@ -184,6 +184,30 @@ export function useDriveUpload() {
     }
   }
 
+  // Generic version — picks (or changes) a folder for any target row/column.
+  // Defaults to 'drive_folder_link' (the column name used everywhere else),
+  // but takes an explicit column name so a table that already has one
+  // drive-folder column for one feature (e.g. clients.drive_folder_link,
+  // used by Claims) can have a second, independent one for another feature
+  // — e.g. clients.service_requests_drive_folder_link — without colliding.
+  async function connectDriveFolder(target: UploadTarget, column: string = 'drive_folder_link'): Promise<{ id: string; name: string } | null> {
+    setConnecting(true)
+    setUploadError(null)
+    try {
+      const folder = await pickFolder()
+      if (!folder) return null
+      const raw = JSON.stringify(folder)
+      const { error } = await supabase.from(target.table).update({ [column]: raw }).eq(target.idColumn, target.id)
+      if (error) { setUploadError('Could not remember this folder: ' + error.message); return null }
+      return folder
+    } catch (err: any) {
+      setUploadError(err?.message || 'Could not connect to Drive')
+      return null
+    } finally {
+      setConnecting(false)
+    }
+  }
+
   async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number, label: string): Promise<Response> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -323,7 +347,7 @@ export function useDriveUpload() {
 
   return {
     googleReady, pickerReady, connecting, uploading, uploadError, setUploadError,
-    ensureAccessToken, pickFolder, connectDriveForClient, uploadFiles, deleteDocument,
+    ensureAccessToken, pickFolder, connectDriveForClient, connectDriveFolder, uploadFiles, deleteDocument,
     uploadFilesGeneric, deleteDocumentGeneric,
   }
 }
