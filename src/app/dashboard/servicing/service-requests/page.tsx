@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import ServiceRequestExtras from '@/components/ServiceRequestExtras'
+import { needsFollowupRequests } from '@/lib/serviceRequestsAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -75,6 +76,7 @@ export default function ServiceRequestsServicingPage() {
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<ServiceRequestRow[]>([])
+  const [openTodos, setOpenTodos] = useState<TodoRow[]>([]) // this client's open to-dos only — enough to drive the same needsFollowupRequests check the Board uses, no firm-wide fetch needed here
   const [typeDefs, setTypeDefs] = useState<TypeRow[]>([])
   const [policies, setPolicies] = useState<PolicyLite[]>([])
 
@@ -103,7 +105,15 @@ export default function ServiceRequestsServicingPage() {
         supabase.from('fact_finding').select('data').eq('client_id', activeClient!.id).eq('section', 'protection_portfolio').maybeSingle(),
       ])
       if (cancelled) return
-      setRows(((reqRes.data || []) as any[]).map(r => ({ ...r, field_values: r.field_values || {} })) as ServiceRequestRow[])
+      const rowsData = ((reqRes.data || []) as any[]).map(r => ({ ...r, field_values: r.field_values || {} })) as ServiceRequestRow[]
+      setRows(rowsData)
+      const reqIds = rowsData.map(r => r.id)
+      if (reqIds.length > 0) {
+        const todosRes = await supabase.from('service_request_todos').select('*').in('service_request_id', reqIds).eq('done', false)
+        if (!cancelled) setOpenTodos((todosRes.data || []) as TodoRow[])
+      } else {
+        setOpenTodos([])
+      }
       setTypeDefs(((typesRes.data || []) as any[]).map(t => ({ ...t, fields: t.fields || [] })) as TypeRow[])
       const list: PolicyLite[] = ((ffRes.data as any)?.data?.risk_management?.policies || []).map((p: any) => ({
         id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
@@ -117,6 +127,7 @@ export default function ServiceRequestsServicingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, hasAccess, activeClient?.id])
 
+  const staleIds = useMemo(() => new Set(needsFollowupRequests(rows, openTodos).map(r => r.id)), [rows, openTodos])
   const typeOptions = useMemo(() => typeDefs.map(t => t.label), [typeDefs])
   const editingRow = editingId ? rows.find(r => r.id === editingId) || null : null
   const editingFields = editingRow ? (typeDefs.find(t => t.label === editingRow.request_type)?.fields || []) : []
@@ -172,21 +183,24 @@ export default function ServiceRequestsServicingPage() {
       .insert({ service_request_id: editingId, text: todoDraft.trim(), due_date: todoDueDraft || null })
       .select().maybeSingle()
     if (error) { alert('Could not add to-do: ' + error.message); return }
-    if (data) setModalTodos(prev => [...prev, data as TodoRow])
+    if (data) { setModalTodos(prev => [...prev, data as TodoRow]); setOpenTodos(prev => [...prev, data as TodoRow]) }
     setTodoDraft(''); setTodoDueDraft('')
   }
   async function toggleTodo(id: string, done: boolean) {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done } : t))
+    setOpenTodos(prev => done ? prev.filter(t => t.id !== id) : prev)
     const { error } = await supabase.from('service_request_todos').update({ done }).eq('id', id)
     if (error) alert('Save failed: ' + error.message)
   }
   async function deleteTodo(id: string) {
     setModalTodos(prev => prev.filter(t => t.id !== id))
+    setOpenTodos(prev => prev.filter(t => t.id !== id))
     const { error } = await supabase.from('service_request_todos').delete().eq('id', id)
     if (error) alert('Delete failed: ' + error.message)
   }
   function setTodoDueDate(id: string, date: string) {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: date || null } : t))
+    setOpenTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: date || null } : t))
     supabase.from('service_request_todos').update({ due_date: date || null }).eq('id', id).then(({ error }: any) => { if (error) alert('Save failed: ' + error.message) })
   }
 
@@ -264,13 +278,20 @@ export default function ServiceRequestsServicingPage() {
                   {r.status === 'done' && r.resolved_at && ` · Resolved ${new Date(r.resolved_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}`}
                 </div>
               </div>
-              <span style={{
-                fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap',
-                background: r.status === 'done' ? 'rgba(45,90,78,.12)' : r.status === 'in_progress' ? T.goldSoft : 'var(--cream2)',
-                color: r.status === 'done' ? T.emerald : r.status === 'in_progress' ? T.goldText : T.textDim,
-              }}>
-                {STATUS_LABEL[r.status]}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {staleIds.has(r.id) && (
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>
+                    Needs follow-up
+                  </span>
+                )}
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap',
+                  background: r.status === 'done' ? 'rgba(45,90,78,.12)' : r.status === 'in_progress' ? T.goldSoft : 'var(--cream2)',
+                  color: r.status === 'done' ? T.emerald : r.status === 'in_progress' ? T.goldText : T.textDim,
+                }}>
+                  {STATUS_LABEL[r.status]}
+                </span>
+              </div>
             </button>
           ))}
         </div>

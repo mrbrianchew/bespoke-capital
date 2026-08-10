@@ -54,6 +54,15 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
   const supabase = createClient()
   const drive = useDriveUpload()
 
+  // Bumps the parent request's updated_at so serviceRequestsAttention.ts's
+  // idle-day staleness check sees this as "recently touched" even though
+  // none of the plain fields (status/description/etc, saved via patchRow
+  // in the host page) changed. Fire-and-forget — a missed touch just means
+  // the request looks one interaction staler than it is, not incorrect data.
+  function touchRequest() {
+    supabase.from('service_requests').update({ updated_at: new Date().toISOString() }).eq('id', serviceRequestId).then(() => {})
+  }
+
   const [attachments, setAttachments] = useState<AttachmentRow[]>([])
   const [meetings, setMeetings] = useState<MeetingRow[]>([])
   const [activity, setActivity] = useState<ActivityRow[]>([])
@@ -108,7 +117,7 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
   async function doUpload(files: FileList | File[]) {
     if (!driveFolder) { await connectDrive(); return }
     const uploaded = await drive.uploadFilesGeneric(files, { table: 'service_request_attachments', idColumn: 'service_request_id', id: serviceRequestId }, driveFolder)
-    if (uploaded.length > 0) setAttachments(prev => [...(uploaded as AttachmentRow[]), ...prev])
+    if (uploaded.length > 0) { setAttachments(prev => [...(uploaded as AttachmentRow[]), ...prev]); touchRequest() }
   }
 
   async function removeAttachment(doc: AttachmentRow) {
@@ -172,7 +181,7 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     }).select().maybeSingle()
     setSavingMeeting(false)
     if (error) { alert('Could not save meeting: ' + error.message); return }
-    if (data) setMeetings(prev => [data as MeetingRow, ...prev])
+    if (data) { setMeetings(prev => [data as MeetingRow, ...prev]); touchRequest() }
     setMeetingMode(null)
   }
 
@@ -190,7 +199,7 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
       .insert({ service_request_id: serviceRequestId, activity_date: activityDateDraft, description: activityDraft.trim() })
       .select().maybeSingle()
     if (error) { alert('Could not add entry: ' + error.message); return }
-    if (data) setActivity(prev => [data as ActivityRow, ...prev])
+    if (data) { setActivity(prev => [data as ActivityRow, ...prev]); touchRequest() }
     setActivityDraft('')
     setActivityDateDraft(new Date().toISOString().slice(0, 10))
   }
@@ -209,6 +218,7 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     setEditingActivityId(null)
     const { error } = await supabase.from('service_request_activity_log').update(patch).eq('id', id)
     if (error) alert('Save failed: ' + error.message)
+    else touchRequest()
   }
 
   async function deleteActivity(id: string) {

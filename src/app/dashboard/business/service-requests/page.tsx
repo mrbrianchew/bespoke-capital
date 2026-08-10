@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import ServiceRequestExtras from '@/components/ServiceRequestExtras'
+import { needsFollowupRequests } from '@/lib/serviceRequestsAttention'
 import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -170,6 +171,8 @@ export default function BusinessServiceRequestsPage() {
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<ServiceRequestRow[]>([])
+  const [pendingTodos, setPendingTodos] = useState<TodoRow[]>([]) // firm-wide, done=false — feeds the follow-ups tab, same shape as Claims Board's pendingTodos
+  const [activeTab, setActiveTab] = useState<'followups' | 'board'>('followups')
   const [typeFilter, setTypeFilter] = useState<RequestType | 'all'>('all')
   const [mobileCol, setMobileCol] = useState<Status>('requested')
 
@@ -228,6 +231,20 @@ export default function BusinessServiceRequestsPage() {
       if (cancelled) return
       const rowsData = (reqRes.data || []).map((r: any) => ({ ...r, field_values: r.field_values || {} })) as ServiceRequestRow[]
       setRows(rowsData)
+
+      // Firm-wide open to-dos, for the follow-ups tab — same two-step
+      // pattern as Claims Board (fetch parent ids, then todos in() those
+      // ids), since service_request_todos has no direct RLS of its own to
+      // lean on for a plain select.
+      const reqIds = rowsData.map(r => r.id)
+      if (reqIds.length > 0) {
+        const todosRes = await supabase.from('service_request_todos').select('*').in('service_request_id', reqIds).eq('done', false)
+        if (cancelled) return
+        setPendingTodos((todosRes.data || []) as TodoRow[])
+      } else {
+        setPendingTodos([])
+      }
+
       const loadedTypes = ((typesRes.data || []) as any[]).map(t => ({ ...t, fields: t.fields || [] })) as TypeRow[]
       // Belt-and-braces: any request_type in use that somehow isn't in the
       // picklist (e.g. added before this migration, or a rename race) still
@@ -249,6 +266,53 @@ export default function BusinessServiceRequestsPage() {
     clients.forEach(c => { map[c.id] = c.name })
     return map
   }, [clients])
+
+  const rowsById = useMemo(() => {
+    const map: Record<string, ServiceRequestRow> = {}
+    rows.forEach(r => { map[r.id] = r })
+    return map
+  }, [rows])
+
+  // Same shape of pairing as Claims Board's followupRows — todo + the row it
+  // belongs to, so a row click opens the exact same edit modal a card click
+  // would. Sorted soonest-due first (undated last).
+  const followupRows = useMemo(() => {
+    return pendingTodos
+      .map(todo => { const row = rowsById[todo.service_request_id]; return row ? { todo, row } : null })
+      .filter((r): r is { todo: TodoRow; row: ServiceRequestRow } => r !== null)
+      .sort((a, b) => (a.todo.due_date || '9999-12-31').localeCompare(b.todo.due_date || '9999-12-31'))
+  }, [pendingTodos, rowsById])
+
+  // Stale open requests with zero open to-dos tracking them at all — the
+  // case a due-date list can never show, since there's no todo row to list.
+  const needsFollowupRows = useMemo(() => needsFollowupRequests(rows, pendingTodos)
+    .map(r => rowsById[r.id]).filter((r): r is ServiceRequestRow => !!r)
+    .sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()), // stalest first
+    [rows, pendingTodos, rowsById])
+
+  // Same "today / this week / later" split as Claims Board — anything due
+  // more than 7 days out is left off this tab entirely, surfacing here once
+  // it's actually within the week. No row appears twice.
+  function weekBucket(dueDate: string | null): 'today' | 'week' | 'later' {
+    if (!dueDate) return 'week'
+    const d = new Date(dueDate + 'T00:00:00')
+    if (isNaN(d.getTime())) return 'week'
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
+    if (diffDays <= 0) return 'today'
+    if (diffDays <= 7) return 'week'
+    return 'later'
+  }
+
+  // Marking done from the follow-ups tab removes the row immediately
+  // (optimistic) and keeps the per-card modal's own todo list in sync if
+  // that same card happens to be open at the same time.
+  async function toggleGlobalTodoDone(todoId: string, done: boolean) {
+    setPendingTodos(prev => done ? prev.filter(t => t.id !== todoId) : prev)
+    setModalTodos(prev => prev.map(t => t.id === todoId ? { ...t, done } : t))
+    const { error } = await supabase.from('service_request_todos').update({ done }).eq('id', todoId)
+    if (error) alert('Save failed: ' + error.message)
+  }
 
   const typeOptions = useMemo(() => typeDefs.map(t => t.label), [typeDefs])
   const typeUsageCount = useMemo(() => {
@@ -450,25 +514,28 @@ export default function BusinessServiceRequestsPage() {
     const { data, error } = await supabase.from('service_request_todos')
       .insert({ service_request_id: editingId, text: todoDraft.trim(), due_date: todoDueDraft || null }).select().maybeSingle()
     if (error) { alert('Could not add: ' + error.message); return }
-    if (data) setModalTodos(prev => [...prev, data as TodoRow])
+    if (data) { setModalTodos(prev => [...prev, data as TodoRow]); setPendingTodos(prev => [...prev, data as TodoRow]) }
     setTodoDraft('')
     setTodoDueDraft('')
   }
 
   async function toggleTodo(id: string, done: boolean) {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done } : t))
+    setPendingTodos(prev => done ? prev.filter(t => t.id !== id) : prev) // done=false re-adding isn't reconstructable locally — next firm-wide load picks it back up
     const { error } = await supabase.from('service_request_todos').update({ done }).eq('id', id)
     if (error) alert('Save failed: ' + error.message)
   }
 
   async function setTodoDueDate(id: string, due_date: string) {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: due_date || null } : t))
+    setPendingTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: due_date || null } : t))
     const { error } = await supabase.from('service_request_todos').update({ due_date: due_date || null }).eq('id', id)
     if (error) alert('Save failed: ' + error.message)
   }
 
   async function deleteTodo(id: string) {
     setModalTodos(prev => prev.filter(t => t.id !== id))
+    setPendingTodos(prev => prev.filter(t => t.id !== id))
     const { error } = await supabase.from('service_request_todos').delete().eq('id', id)
     if (error) alert('Delete failed: ' + error.message)
   }
@@ -499,6 +566,126 @@ export default function BusinessServiceRequestsPage() {
         </div>
       </div>
 
+      {/* ── tabs — same shape as Claims Board's ── */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={() => setActiveTab('followups')} style={{
+          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+          background: activeTab === 'followups' ? T.goldSoft : 'none',
+          border: 'none', borderRadius: activeTab === 'followups' ? '8px 8px 0 0' : 0,
+          color: activeTab === 'followups' ? T.goldText : T.textFaint,
+          borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
+        }}>
+          This week's follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length}` : ''}
+        </button>
+        <button onClick={() => setActiveTab('board')} style={{
+          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
+          color: activeTab === 'board' ? T.text : T.textFaint,
+          borderBottom: activeTab === 'board' ? `2px solid ${T.gold}` : '2px solid transparent',
+        }}>
+          Board
+        </button>
+      </div>
+
+      {!loading && activeTab === 'followups' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 620 }}>
+          {followupRows.length === 0 && needsFollowupRows.length === 0 && (
+            <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13, fontStyle: 'italic' }}>
+              Nothing pending — every follow-up is checked off.
+            </div>
+          )}
+          {(() => {
+            const todayRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'today')
+            const weekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'week')
+            const renderRow = ({ todo, row }: { todo: TodoRow; row: ServiceRequestRow }) => {
+              const label = dueLabel(todo.due_date)
+              const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
+              const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
+              const badgeBg = label.kind === 'overdue' ? T.roseSoft : label.kind === 'today' ? T.goldSoft : 'transparent'
+              return (
+                <div key={todo.id} onClick={() => setEditingId(row.id)} style={{
+                  background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${barColor}`,
+                  borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                }}>
+                  <input type="checkbox" onClick={e => e.stopPropagation()}
+                    onChange={e => toggleGlobalTodoDone(todo.id, e.target.checked)}
+                    style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
+                      {clientsById[row.client_id] || 'Unknown client'} · {row.request_type}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>{todo.text}</div>
+                  </div>
+                  <div style={{
+                    fontSize: 10.5, fontWeight: label.kind === 'upcoming' || label.kind === 'none' ? 400 : 700,
+                    color: badgeColor, background: badgeBg, padding: badgeBg === 'transparent' ? 0 : '3px 9px',
+                    borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
+                    {label.text || 'No due date'}
+                  </div>
+                </div>
+              )
+            }
+            return (
+              <>
+                {todayRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                      Today · {todayRows.length}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {todayRows.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+                {needsFollowupRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.rose, marginBottom: 3 }}>
+                      Needs a follow-up · {needsFollowupRows.length}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
+                      Idle 14+ days with nothing being tracked to chase it — set a reminder or update its stage.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {needsFollowupRows.map(row => {
+                        const days = daysSince(row.updated_at)
+                        return (
+                          <div key={row.id} onClick={() => setEditingId(row.id)} style={{
+                            background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${T.rose}`,
+                            borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                          }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
+                                {clientsById[row.client_id] || 'Unknown client'} · {row.request_type}
+                              </div>
+                              <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2, fontStyle: 'italic' }}>No follow-up set</div>
+                            </div>
+                            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              {days}d idle
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                {weekRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                      This week · {weekRows.length}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {weekRows.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </div>
+      )}
+
+      {activeTab === 'board' && (
+      <>
       {/* ── Quick capture ── */}
       <div style={{ background: 'white', border: `1px solid ${T.line}`, borderRadius: 12, padding: '12px 14px', marginBottom: 18 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -603,6 +790,8 @@ export default function BusinessServiceRequestsPage() {
             </div>
           </div>
         </>
+      )}
+      </>
       )}
 
       {/* ── edit modal ── */}
