@@ -83,6 +83,7 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
   const [loading, setLoading] = useState(true)
   const [driveFolder, setDriveFolder] = useState<{ id: string; name: string } | null>(null)
   const [dragActive, setDragActive] = useState(false)
+  const [meetingsOpen, setMeetingsOpen] = useState(true)
 
   // meeting form
   const [meetingMode, setMeetingMode] = useState<'log' | 'schedule' | null>(null)
@@ -291,6 +292,35 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
 
   return (
     <div>
+      {/* ── activity log ── (sits directly below the host page's To-dos block) */}
+      <SectionLabel>Activity log</SectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+        {activity.length === 0 && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>No entries yet.</div>}
+        {activity.map(a => (
+          editingActivityId === a.id ? (
+            <div key={a.id} style={{ display: 'flex', gap: 6, padding: '6px 0' }}>
+              <input type="date" value={editActivityDate} onChange={e => setEditActivityDate(e.target.value)} style={{ ...inputStyle, width: 128 }} />
+              <input value={editActivityText} onChange={e => setEditActivityText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveEditActivity() }}
+                style={{ ...inputStyle, flex: 1 }} />
+              <button onClick={saveEditActivity} style={{ fontSize: 11, color: T.gold, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>Save</button>
+            </div>
+          ) : (
+            <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 11.5, color: T.textFaint, whiteSpace: 'nowrap', minWidth: 52, paddingTop: 1 }}>{fmtDate(a.activity_date)}</span>
+              <span style={{ flex: 1, fontSize: 12.5, color: T.text, lineHeight: 1.5 }}>{a.description}</span>
+              <button onClick={() => startEditActivity(a)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>Edit</button>
+              <button onClick={() => deleteActivity(a.id)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+            </div>
+          )
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        <input type="date" value={activityDateDraft} onChange={e => setActivityDateDraft(e.target.value)} style={{ ...inputStyle, width: 128 }} />
+        <input value={activityDraft} onChange={e => setActivityDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addActivity() }}
+          placeholder="What did you do?" style={{ ...inputStyle, flex: 1 }} />
+        <button onClick={addActivity} style={btnStyle}>Add</button>
+      </div>
+
       {/* ── attachments ── */}
       <SectionLabel>Attachments</SectionLabel>
       {loading ? (
@@ -334,134 +364,116 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
         </button>
       )}
 
-      {/* ── meetings ── */}
-      <SectionLabel>Meetings</SectionLabel>
-      {meetings.length === 0 && meetingMode === null && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', marginBottom: 8 }}>No meetings yet.</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-        {meetings.map(m => (
-          <div key={m.id} style={{ padding: '8px 10px', background: 'var(--cream2)', borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{m.title}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: T.textFaint, whiteSpace: 'nowrap' }}>{fmtDate(m.meeting_date)}{m.meeting_time ? `, ${m.meeting_time.slice(0, 5)}` : ''}</span>
-                <button onClick={() => deleteMeeting(m.id)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+      {/* ── meetings (collapsible) ── */}
+      <button type="button" onClick={() => setMeetingsOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 0, margin: '14px 0 8px', textAlign: 'left' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint }}>
+          Meetings{meetings.length > 0 ? ` (${meetings.length})` : ''}
+        </span>
+        <span style={{ color: T.textFaint, fontSize: 12, transform: meetingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
+      </button>
+
+      {meetingsOpen && (
+        <>
+          {meetings.length === 0 && meetingMode === null && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', marginBottom: 8 }}>No meetings yet.</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+            {meetings.map(m => (
+              <div key={m.id} style={{ padding: '8px 10px', background: 'var(--cream2)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{m.title}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: T.textFaint, whiteSpace: 'nowrap' }}>{fmtDate(m.meeting_date)}{m.meeting_time ? `, ${m.meeting_time.slice(0, 5)}` : ''}</span>
+                    <button onClick={() => deleteMeeting(m.id)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10.5, color: T.textFaint }}>
+                    {m.meeting_type === 'video_call' ? '💻 Video call' : m.meeting_type === 'phone_call' ? '📞 Phone call' : '📍 In person'}
+                    {m.duration_minutes ? ` · ${m.duration_minutes} min` : ''}
+                    {m.meeting_type === 'video_call' && m.video_platform ? ` · ${VIDEO_PLATFORM_LABELS[m.video_platform]}` : ''}
+                  </span>
+                  {m.meeting_type === 'video_call' && m.meeting_link && (
+                    <a href={m.meeting_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, color: T.gold, textDecoration: 'none' }}>Join link ↗</a>
+                  )}
+                  {m.meeting_type === 'in_person' && m.location && (
+                    <span style={{ fontSize: 10.5, color: T.textDim }}>{m.location}</span>
+                  )}
+                  {m.meeting_type === 'phone_call' && m.phone_number && (
+                    <span style={{ fontSize: 10.5, color: T.textDim }}>{m.phone_number}</span>
+                  )}
+                </div>
+                {m.notes && <p style={{ fontSize: 12, color: T.textDim, margin: '4px 0 0' }}>{m.notes}</p>}
+                {m.is_scheduled && (
+                  <p style={{ fontSize: 10.5, color: m.google_calendar_event_id ? 'var(--emerald)' : T.textFaint, margin: '4px 0 0' }}>
+                    {m.google_calendar_event_id ? '✓ synced to calendar' : 'scheduled — calendar not connected'}
+                  </p>
+                )}
               </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 10.5, color: T.textFaint }}>
-                {m.meeting_type === 'video_call' ? '💻 Video call' : m.meeting_type === 'phone_call' ? '📞 Phone call' : '📍 In person'}
-                {m.duration_minutes ? ` · ${m.duration_minutes} min` : ''}
-                {m.meeting_type === 'video_call' && m.video_platform ? ` · ${VIDEO_PLATFORM_LABELS[m.video_platform]}` : ''}
-              </span>
-              {m.meeting_type === 'video_call' && m.meeting_link && (
-                <a href={m.meeting_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, color: T.gold, textDecoration: 'none' }}>Join link ↗</a>
-              )}
-              {m.meeting_type === 'in_person' && m.location && (
-                <span style={{ fontSize: 10.5, color: T.textDim }}>{m.location}</span>
-              )}
-              {m.meeting_type === 'phone_call' && m.phone_number && (
-                <span style={{ fontSize: 10.5, color: T.textDim }}>{m.phone_number}</span>
-              )}
-            </div>
-            {m.notes && <p style={{ fontSize: 12, color: T.textDim, margin: '4px 0 0' }}>{m.notes}</p>}
-            {m.is_scheduled && (
-              <p style={{ fontSize: 10.5, color: m.google_calendar_event_id ? 'var(--emerald)' : T.textFaint, margin: '4px 0 0' }}>
-                {m.google_calendar_event_id ? '✓ synced to calendar' : 'scheduled — calendar not connected'}
-              </p>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {meetingMode === null ? (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => openMeetingForm('log')} style={ghostBtnStyle}>Log past meeting</button>
-          <button onClick={() => openMeetingForm('schedule')} style={ghostBtnStyle}>Schedule meeting</button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cream2)', borderRadius: 8 }}>
-          <input value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="What's this meeting about?" style={inputStyle} />
-
-          <div style={{ display: 'flex', gap: 4 }}>
-            {(['in_person', 'video_call', 'phone_call'] as MeetingType[]).map(t => (
-              <button key={t} type="button" onClick={() => setMeetingTypeSel(t)}
-                style={{
-                  flex: 1, fontSize: 11.5, fontWeight: 600, padding: '6px 4px', borderRadius: 7, cursor: 'pointer',
-                  border: `1px solid ${meetingTypeSel === t ? T.gold : T.line}`,
-                  background: meetingTypeSel === t ? T.goldSoft : 'var(--cream)',
-                  color: meetingTypeSel === t ? T.goldText : T.textDim,
-                }}>
-                {t === 'in_person' ? '📍 In person' : t === 'video_call' ? '💻 Video call' : '📞 Phone call'}
-              </button>
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-            <input type="time" value={meetingTime} onChange={e => setMeetingTime(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-            <select value={durationMinutes} onChange={e => setDurationMinutes(Number(e.target.value))} style={{ ...inputStyle, width: 92 }}>
-              {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} min</option>)}
-            </select>
-          </div>
-
-          {meetingTypeSel === 'in_person' && (
-            <input value={locationDraft} onChange={e => setLocationDraft(e.target.value)} placeholder="Location (address, office, etc. — optional)" style={inputStyle} />
-          )}
-
-          {meetingTypeSel === 'video_call' && (
+          {meetingMode === null ? (
             <div style={{ display: 'flex', gap: 6 }}>
-              <select value={videoPlatformSel} onChange={e => setVideoPlatformSel(e.target.value as VideoPlatform)} style={{ ...inputStyle, width: 128 }}>
-                {(Object.keys(VIDEO_PLATFORM_LABELS) as VideoPlatform[]).map(p => <option key={p} value={p}>{VIDEO_PLATFORM_LABELS[p]}</option>)}
-              </select>
-              <input value={meetingLinkDraft} onChange={e => setMeetingLinkDraft(e.target.value)}
-                placeholder={videoPlatformSel === 'google_meet' ? 'Leave blank to auto-generate a Meet link' : 'Paste the meeting link (optional)'}
-                style={{ ...inputStyle, flex: 1 }} />
-            </div>
-          )}
-
-          {meetingTypeSel === 'phone_call' && (
-            <input value={phoneDraft} onChange={e => setPhoneDraft(e.target.value)} placeholder="Phone number (optional)" style={inputStyle} />
-          )}
-
-          <textarea value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} rows={2} placeholder="Notes (optional)"
-            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-            <button onClick={() => setMeetingMode(null)} style={{ ...ghostBtnStyle, background: 'transparent' }}>Cancel</button>
-            <button onClick={saveMeeting} disabled={savingMeeting || !meetingTitle.trim() || !meetingDate} style={{ ...btnStyle, opacity: savingMeeting || !meetingTitle.trim() ? 0.6 : 1 }}>
-              {savingMeeting ? 'Saving…' : meetingMode === 'schedule' ? 'Schedule' : 'Log meeting'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── activity log ── */}
-      <SectionLabel>Activity log</SectionLabel>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-        {activity.length === 0 && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>No entries yet.</div>}
-        {activity.map(a => (
-          editingActivityId === a.id ? (
-            <div key={a.id} style={{ display: 'flex', gap: 6, padding: '6px 0' }}>
-              <input type="date" value={editActivityDate} onChange={e => setEditActivityDate(e.target.value)} style={{ ...inputStyle, width: 128 }} />
-              <input value={editActivityText} onChange={e => setEditActivityText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveEditActivity() }}
-                style={{ ...inputStyle, flex: 1 }} />
-              <button onClick={saveEditActivity} style={{ fontSize: 11, color: T.gold, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>Save</button>
+              <button onClick={() => openMeetingForm('log')} style={ghostBtnStyle}>Log past meeting</button>
+              <button onClick={() => openMeetingForm('schedule')} style={ghostBtnStyle}>Schedule meeting</button>
             </div>
           ) : (
-            <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 11.5, color: T.textFaint, whiteSpace: 'nowrap', minWidth: 52, paddingTop: 1 }}>{fmtDate(a.activity_date)}</span>
-              <span style={{ flex: 1, fontSize: 12.5, color: T.text, lineHeight: 1.5 }}>{a.description}</span>
-              <button onClick={() => startEditActivity(a)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>Edit</button>
-              <button onClick={() => deleteActivity(a.id)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cream2)', borderRadius: 8 }}>
+              <input value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="What's this meeting about?" style={inputStyle} />
+
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['in_person', 'video_call', 'phone_call'] as MeetingType[]).map(t => (
+                  <button key={t} type="button" onClick={() => setMeetingTypeSel(t)}
+                    style={{
+                      flex: 1, fontSize: 11.5, fontWeight: 600, padding: '6px 4px', borderRadius: 7, cursor: 'pointer',
+                      border: `1px solid ${meetingTypeSel === t ? T.gold : T.line}`,
+                      background: meetingTypeSel === t ? T.goldSoft : 'var(--cream)',
+                      color: meetingTypeSel === t ? T.goldText : T.textDim,
+                    }}>
+                    {t === 'in_person' ? '📍 In person' : t === 'video_call' ? '💻 Video call' : '📞 Phone call'}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                <input type="time" value={meetingTime} onChange={e => setMeetingTime(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                <select value={durationMinutes} onChange={e => setDurationMinutes(Number(e.target.value))} style={{ ...inputStyle, width: 92 }}>
+                  {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} min</option>)}
+                </select>
+              </div>
+
+              {meetingTypeSel === 'in_person' && (
+                <input value={locationDraft} onChange={e => setLocationDraft(e.target.value)} placeholder="Location (address, office, etc. — optional)" style={inputStyle} />
+              )}
+
+              {meetingTypeSel === 'video_call' && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <select value={videoPlatformSel} onChange={e => setVideoPlatformSel(e.target.value as VideoPlatform)} style={{ ...inputStyle, width: 128 }}>
+                    {(Object.keys(VIDEO_PLATFORM_LABELS) as VideoPlatform[]).map(p => <option key={p} value={p}>{VIDEO_PLATFORM_LABELS[p]}</option>)}
+                  </select>
+                  <input value={meetingLinkDraft} onChange={e => setMeetingLinkDraft(e.target.value)}
+                    placeholder={videoPlatformSel === 'google_meet' ? 'Leave blank to auto-generate a Meet link' : 'Paste the meeting link (optional)'}
+                    style={{ ...inputStyle, flex: 1 }} />
+                </div>
+              )}
+
+              {meetingTypeSel === 'phone_call' && (
+                <input value={phoneDraft} onChange={e => setPhoneDraft(e.target.value)} placeholder="Phone number (optional)" style={inputStyle} />
+              )}
+
+              <textarea value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} rows={2} placeholder="Notes (optional)"
+                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button onClick={() => setMeetingMode(null)} style={{ ...ghostBtnStyle, background: 'transparent' }}>Cancel</button>
+                <button onClick={saveMeeting} disabled={savingMeeting || !meetingTitle.trim() || !meetingDate} style={{ ...btnStyle, opacity: savingMeeting || !meetingTitle.trim() ? 0.6 : 1 }}>
+                  {savingMeeting ? 'Saving…' : meetingMode === 'schedule' ? 'Schedule' : 'Log meeting'}
+                </button>
+              </div>
             </div>
-          )
-        ))}
-      </div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <input type="date" value={activityDateDraft} onChange={e => setActivityDateDraft(e.target.value)} style={{ ...inputStyle, width: 128 }} />
-        <input value={activityDraft} onChange={e => setActivityDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addActivity() }}
-          placeholder="What did you do?" style={{ ...inputStyle, flex: 1 }} />
-        <button onClick={addActivity} style={btnStyle}>Add</button>
-      </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
