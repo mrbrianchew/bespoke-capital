@@ -6,6 +6,7 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import ServiceRequestExtras from '@/components/ServiceRequestExtras'
 import { needsFollowupRequests } from '@/lib/serviceRequestsAttention'
+import { logServiceResolution } from '@/lib/policyServiceHistory'
 import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -413,6 +414,18 @@ export default function BusinessServiceRequestsPage() {
     if (status === 'done') patch.resolved_at = new Date().toISOString()
     else patch.resolved_at = null // un-resolving clears it, matches Claims' un-resolve behaviour
     await patchRow(id, patch)
+    if (status === 'done') await logResolutionFor(id)
+  }
+
+  // Shared by moveTo and moveToZone — logs to the linked policy's Servicing
+  // History when a request resolves. No-ops if the request has no policy_id.
+  async function logResolutionFor(id: string) {
+    const row = rows.find(r => r.id === id)
+    if (!row) return
+    await logServiceResolution(supabase, {
+      id: row.id, client_id: row.client_id, policy_id: row.policy_id,
+      policy_label: row.policy_label, request_type: row.request_type, description: row.description,
+    })
   }
 
   // Board-only drag target. Dropping on 'waiting' doesn't change status (it's
@@ -427,6 +440,7 @@ export default function BusinessServiceRequestsPage() {
       await patchRow(id, { status: 'in_progress', waiting_on: row.waiting_on || 'client', resolved_at: null })
     } else {
       await patchRow(id, { status: zone, waiting_on: null, resolved_at: zone === 'done' ? new Date().toISOString() : null })
+      if (zone === 'done') await logResolutionFor(id)
     }
   }
 

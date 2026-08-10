@@ -7,6 +7,7 @@ import GmailClaimSearch from '@/components/GmailClaimSearch'
 import ServiceRequestExtras from '@/components/ServiceRequestExtras'
 import { needsFollowupRequests } from '@/lib/serviceRequestsAttention'
 import { useDriveUpload } from '@/lib/useDriveUpload'
+import { logServiceResolution } from '@/lib/policyServiceHistory'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -193,6 +194,19 @@ export default function ServiceRequestsServicingPage() {
     const patch: Partial<ServiceRequestRow> = { status }
     patch.resolved_at = status === 'done' ? new Date().toISOString() : null
     await patchRow(id, patch)
+    // Log to the linked policy's Servicing History — no-ops if this request
+    // isn't linked to a policy. Un-resolving (status !== 'done') doesn't
+    // remove the history entry; the entry records that a resolution
+    // happened, which stays true even if the request is later reopened.
+    if (status === 'done') {
+      const row = rows.find(r => r.id === id)
+      if (row) {
+        await logServiceResolution(supabase, {
+          id: row.id, client_id: row.client_id, policy_id: row.policy_id,
+          policy_label: row.policy_label, request_type: row.request_type, description: row.description,
+        })
+      }
+    }
   }
 
   async function addTodo() {

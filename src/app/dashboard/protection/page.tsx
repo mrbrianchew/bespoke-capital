@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { getUsdSgdRate } from '@/lib/fxRate'
+import { getLatestHistoryByPolicy, getHistoryForPolicy, addCorrection, PolicyHistoryEntry } from '@/lib/policyServiceHistory'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
 import { useDashboard } from '@/contexts/DashboardContext'
@@ -169,6 +170,24 @@ function ProtectionPage() {
   const supabase = createClient()
   const { activeClient, authLoading } = useDashboard()
   const [error, setError] = useState<string | null>(null)
+
+  // Servicing History — latest non-superseded entry per policy_id, keyed for
+  // the Variant D row indicator. Refetched whenever the client changes or a
+  // resolution/correction happens elsewhere (window focus is a cheap proxy
+  // for "might have changed since a Service Request was resolved on
+  // another tab/page" — RLS keeps this scoped to the advisor's own clients).
+  const [policyHistoryMap, setPolicyHistoryMap] = useState<Record<string, PolicyHistoryEntry>>({})
+  async function refreshPolicyHistory(cid: string) {
+    const map = await getLatestHistoryByPolicy(supabase, cid)
+    setPolicyHistoryMap(map)
+  }
+  useEffect(() => {
+    if (!activeClient?.id) { setPolicyHistoryMap({}); return }
+    refreshPolicyHistory(activeClient.id)
+    const onFocus = () => refreshPolicyHistory(activeClient.id)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [activeClient?.id])
 
   // Client / family
   const [clientId,   setClientId]   = useState<string | null>(null)
@@ -907,6 +926,7 @@ async function revokeShare(token: string, clear: () => void) {
                             onEdit={openEdit}
                             onDelete={delPolicy}
                             onReorder={reorderPolicies}
+                            historyMap={policyHistoryMap}
                           />
                           
                           {/* Policy Remarks - Attached to table */}
@@ -977,6 +997,7 @@ async function revokeShare(token: string, clear: () => void) {
                                 catColors={CAT_COLORS}
                                 onEdit={openEdit}
                                 onDelete={delPolicy}
+                                historyMap={policyHistoryMap}
                               />
                             </div>
                           )
@@ -1051,6 +1072,8 @@ async function revokeShare(token: string, clear: () => void) {
           products={refProducts}
           onSave={savePolicy}
           onClose={()=>{ setShowModal(false); setEditingPolicy(null) }}
+          clientId={activeClient?.id || null}
+          onHistoryChanged={()=>{ if (activeClient?.id) refreshPolicyHistory(activeClient.id) }}
         />
       )}
 {showPaymentShareModal && (
@@ -1737,7 +1760,20 @@ function SortablePolicyRow({id,cols,zebra,isLast,disabled,children}:{id:string;c
   )
 }
 
-function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void;onReorder?:(orderedIds:string[])=>void}) {
+function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,historyMap}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void;onReorder?:(orderedIds:string[])=>void;historyMap?:Record<string,PolicyHistoryEntry>}) {
+  // Variant D — quiet line under PH/LA, only rendered when a policy has a
+  // logged Servicing History entry. Shared by all three layout branches below.
+  function ServicingUpdateLine({policyId}:{policyId:string}) {
+    const entry = historyMap?.[policyId]
+    if (!entry) return null
+    const dateLabel = new Date(entry.occurred_at).toLocaleDateString('en-SG',{day:'numeric',month:'short'})
+    return (
+      <div style={{display:'flex',alignItems:'center',gap:5,marginTop:3,fontSize:10,color:'var(--emerald)'}}>
+        <span style={{width:5,height:5,borderRadius:'50%',background:'var(--emerald)',flexShrink:0}} />
+        <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{entry.description} · {dateLabel}</span>
+      </div>
+    )
+  }
   // Drag-to-reorder — only active when onReorder is supplied (inactive/terminated
   // policy tables render read-only). Requires a small pointer-move threshold so a
   // plain click on Edit/Delete doesn't get swallowed as a drag.
@@ -1839,6 +1875,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder}:{po
                 {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+              <ServicingUpdateLine policyId={p.id}/>
             </div>
             {/* Brief description */}
             <div style={{fontSize:11,color:'var(--ink3)',lineHeight:1.4,paddingRight:8}}>
@@ -1937,6 +1974,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder}:{po
                   {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
                 </div>}
                 {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+              <ServicingUpdateLine policyId={p.id}/>
               </div>
               {/* Death Benefit */}
               <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:deathBen>0?'var(--ink)':'var(--ink3)'}}>
@@ -2052,6 +2090,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder}:{po
                 {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+              <ServicingUpdateLine policyId={p.id}/>
             </div>
             {/* Death Benefit */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
@@ -2101,12 +2140,13 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder}:{po
 }
 
 // ─── Policy Modal (cascading dropdowns) ──────────────────────────────────────
-function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,companies,products,onSave,onClose}:{
+function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,companies,products,onSave,onClose,clientId,onHistoryChanged}:{
   policy:Policy; personLabel:string
   allPeople:{key:string;label:string}[]
   categories:InsCategory[]; policyTypes:InsPolicyType[]
   companies:InsCompany[]; products:InsProduct[]
   onSave:(p:Policy)=>void; onClose:()=>void
+  clientId:string|null; onHistoryChanged:()=>void
 }) {
   const [form, setForm] = useState<Policy>({...policy})
   const f=(k:keyof Policy,v:any)=>setForm(prev=>({...prev,[k]:v}))
@@ -2732,6 +2772,10 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
               />
             </div>
           </div>
+
+          {!isNew && clientId && (
+            <ServicingHistorySection clientId={clientId} policyId={policy.id} onChanged={onHistoryChanged} />
+          )}
         </div>
 
         <div style={{padding:'14px 26px',borderTop:'1px solid var(--line)',display:'flex',justifyContent:'flex-end',gap:10}}>
@@ -2741,6 +2785,170 @@ function PolicyModal({policy,personLabel,allPeople,categories,policyTypes,compan
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Servicing History ────────────────────────────────────────────────────
+// Collapsible section inside PolicyModal, sitting below Remarks. Shows the
+// append-only history of changes made to this policy via resolved Service
+// Requests, plus any manual entries. Collapsed by default — the count and
+// last-update date are visible in the header without opening it.
+//
+// Correction, not editing: an entry can never be edited in place. "Correct
+// this entry" inserts a new entry that supersedes the old one; the old one
+// stays visible, struck through, with the reason attached. This is what
+// keeps the log trustworthy as an audit trail rather than just another
+// editable notes field. See policyServiceHistory.ts for the write logic.
+function ServicingHistorySection({clientId, policyId, onChanged}:{clientId:string; policyId:string; onChanged:()=>void}) {
+  const supabase = createClient()
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [entries, setEntries] = useState<PolicyHistoryEntry[]>([])
+  const [correctingId, setCorrectingId] = useState<string | null>(null)
+  const [correctionText, setCorrectionText] = useState('')
+  const [correctionReason, setCorrectionReason] = useState('Wrong date entered')
+  const [saving, setSaving] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    const rows = await getHistoryForPolicy(supabase, clientId, policyId)
+    setEntries(rows)
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [clientId, policyId])
+
+  const active = entries.filter(e => !e.is_superseded)
+  const lastUpdate = active[0] || entries[0]
+
+  function startCorrection(entry: PolicyHistoryEntry) {
+    setCorrectingId(entry.id)
+    setCorrectionText(entry.description)
+    setCorrectionReason('Wrong date entered')
+  }
+
+  async function submitCorrection() {
+    const original = entries.find(e => e.id === correctingId)
+    if (!original || !correctionText.trim()) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await addCorrection(supabase, original, {
+      description: correctionText.trim(),
+      reason: correctionReason,
+      createdBy: user?.id || null,
+    })
+    setSaving(false)
+    if (error) { alert('Could not save correction: ' + error); return }
+    setCorrectingId(null)
+    await load()
+    onChanged()
+  }
+
+  const lbl: React.CSSProperties = {fontFamily:'DM Mono,monospace',fontSize:10,letterSpacing:'0.05em',textTransform:'uppercase',color:'var(--ink3)'}
+
+  return (
+    <div style={{marginTop:20,border:'1px solid var(--line)',borderRadius:8,overflow:'hidden'}}>
+      <div
+        onClick={()=>setOpen(o=>!o)}
+        style={{display:'flex',alignItems:'center',gap:8,padding:'12px 14px',cursor:'pointer',background:'white'}}
+      >
+        <span style={{fontSize:11,color:'var(--ink3)',transition:'transform 0.15s ease',transform:open?'rotate(90deg)':'none',display:'inline-block'}}>▶</span>
+        <span style={lbl}>Servicing History</span>
+        {entries.length > 0 && (
+          <span style={{fontSize:10,fontWeight:600,color:'var(--emerald)',background:'rgba(45,90,78,.12)',padding:'1px 7px',borderRadius:10,fontFamily:'Inter,sans-serif'}}>
+            {entries.length}
+          </span>
+        )}
+        <span style={{flex:1}} />
+        {lastUpdate && (
+          <span style={{fontSize:11,color:'var(--ink3)'}}>
+            Last update {new Date(lastUpdate.occurred_at).toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'})}
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div style={{padding:'4px 14px 12px',background:'#FAFAF8'}}>
+          {loading && <div style={{padding:'14px 4px',fontSize:12,color:'var(--ink3)'}}>Loading…</div>}
+          {!loading && entries.length === 0 && (
+            <div style={{padding:'14px 4px',fontSize:12,color:'var(--ink3)'}}>No servicing history yet for this policy.</div>
+          )}
+          {!loading && entries.map((entry, i) => {
+            const isLast = i === entries.length - 1
+            return (
+              <div key={entry.id} style={{display:'flex',gap:10,padding:'10px 0',borderBottom:isLast?'none':'1px solid var(--line)'}}>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'center',paddingTop:3}}>
+                  <span style={{width:7,height:7,borderRadius:'50%',background:entry.is_superseded?'var(--ink3)':'var(--emerald)',flexShrink:0}} />
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{
+                    fontSize:13,
+                    color: entry.is_superseded ? 'var(--ink3)' : 'var(--ink)',
+                    textDecoration: entry.is_superseded ? 'line-through' : 'none',
+                    textDecorationColor: '#C9C3B3',
+                  }}>
+                    {entry.description}
+                  </div>
+                  <div style={{fontFamily:'DM Mono,monospace',fontSize:10.5,color:'var(--ink3)',marginTop:2}}>
+                    {new Date(entry.occurred_at).toLocaleDateString('en-SG',{day:'2-digit',month:'short',year:'numeric'}).toUpperCase()}
+                    {entry.entry_type === 'correction' && ' · Correction'}
+                  </div>
+                  {entry.is_superseded && (
+                    <div style={{fontSize:12,color:'var(--ink2)',marginTop:5,padding:'8px 10px',background:'white',borderRadius:6,borderLeft:'2px solid var(--rouge)'}}>
+                      <div style={{fontFamily:'DM Mono,monospace',fontSize:9.5,color:'var(--rouge)',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:2}}>Superseded</div>
+                      {entries.find(e => e.supersedes_id === entry.id)?.correction_reason || 'Corrected'}
+                    </div>
+                  )}
+                  {/* Only system-generated / correction entries linked to a Service Request are eligible for
+                      correction — the onboarding entry (no service_request_id, entry_type='onboarded') isn't. */}
+                  {!entry.is_superseded && entry.entry_type !== 'manual' && entry.entry_type !== 'onboarded' && correctingId !== entry.id && (
+                    <button
+                      onClick={()=>startCorrection(entry)}
+                      style={{marginTop:5,fontSize:11,fontWeight:600,color:'var(--ink3)',background:'none',border:'none',cursor:'pointer',padding:0}}
+                    >
+                      Correct this entry
+                    </button>
+                  )}
+                  {correctingId === entry.id && (
+                    <div style={{marginTop:8,padding:'10px 12px',background:'white',border:'1px solid var(--line)',borderRadius:6}}>
+                      <div style={{fontSize:11,color:'var(--ink3)',marginBottom:8}}>The original entry stays visible, struck through. This adds a new entry that supersedes it.</div>
+                      <label style={{...lbl,display:'block',marginBottom:4}}>What actually happened</label>
+                      <textarea
+                        value={correctionText}
+                        onChange={e=>setCorrectionText(e.target.value)}
+                        rows={2}
+                        style={{width:'100%',padding:'8px 9px',background:'var(--cream2)',border:'1px solid var(--line)',borderRadius:6,fontFamily:'inherit',fontSize:13,resize:'vertical'}}
+                      />
+                      <label style={{...lbl,display:'block',margin:'8px 0 4px'}}>Reason for correction</label>
+                      <select
+                        value={correctionReason}
+                        onChange={e=>setCorrectionReason(e.target.value)}
+                        style={{width:'100%',padding:'8px 9px',background:'var(--cream2)',border:'1px solid var(--line)',borderRadius:6,fontFamily:'inherit',fontSize:13}}
+                      >
+                        <option>Wrong date entered</option>
+                        <option>Wrong policy linked</option>
+                        <option>Wrong Service Request linked</option>
+                        <option>Other — explain above</option>
+                      </select>
+                      <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:10}}>
+                        <button onClick={()=>setCorrectingId(null)} style={{padding:'7px 14px',background:'none',border:'1px solid var(--line)',color:'var(--ink3)',cursor:'pointer',fontSize:12}}>Cancel</button>
+                        <button
+                          onClick={submitCorrection}
+                          disabled={saving || !correctionText.trim()}
+                          style={{padding:'7px 14px',background:'var(--rouge)',color:'white',border:'none',cursor:saving?'default':'pointer',fontSize:12,fontWeight:500,opacity:saving?0.6:1}}
+                        >
+                          {saving ? 'Saving…' : 'Save Correction'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
