@@ -23,6 +23,12 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
 type RequestType = string // open list — see service_request_types table
 type Status = 'requested' | 'in_progress' | 'done'
+// Board-only view of Status: 'waiting' isn't a DB value, it's status='in_progress'
+// with waiting_on set — surfaced as its own column so "actively working" and
+// "blocked on someone else" don't look identical on the board. The modal's
+// Status selector still only offers the 3 real Status values; ZoneId only
+// governs how the board buckets and drags cards.
+type ZoneId = Status | 'waiting'
 type WaitingOn = 'client' | 'firm' | null
 type FieldKind = 'text' | 'number' | 'date'
 
@@ -128,17 +134,28 @@ function daysSince(iso: string | null): number | null {
   return Math.floor((Date.now() - d.getTime()) / 86400000)
 }
 
-function columnFor(row: ServiceRequestRow): Status | null {
+function columnFor(row: ServiceRequestRow): ZoneId | null {
   if (row.status === 'done') {
     const daysAgo = daysSince(row.resolved_at || row.updated_at)
     return daysAgo !== null && daysAgo <= RESOLVED_VISIBLE_DAYS ? 'done' : null // drops off the board
   }
+  if (row.status === 'in_progress' && row.waiting_on) return 'waiting'
   return row.status
 }
 
+// Used only by the modal's Status selector — deliberately just the 3 real
+// DB values, since waiting_on is a separate picker right below it there.
 const COLUMNS: { id: Status; title: string; hint: string }[] = [
   { id: 'requested', title: 'Requested', hint: 'Not yet started' },
-  { id: 'in_progress', title: 'In Progress', hint: 'Waiting on someone' },
+  { id: 'in_progress', title: 'In Progress', hint: 'Actively being worked' },
+  { id: 'done', title: 'Done', hint: `Last ${RESOLVED_VISIBLE_DAYS} days` },
+]
+
+// The actual 4-column board — In Progress split by whether waiting_on is set.
+const BOARD_ZONES: { id: ZoneId; title: string; hint: string }[] = [
+  { id: 'requested', title: 'Requested', hint: 'Not yet started' },
+  { id: 'in_progress', title: 'In Progress', hint: 'Actively being worked' },
+  { id: 'waiting', title: 'Waiting', hint: 'Blocked on client or 3rd party' },
   { id: 'done', title: 'Done', hint: `Last ${RESOLVED_VISIBLE_DAYS} days` },
 ]
 
@@ -174,7 +191,7 @@ export default function BusinessServiceRequestsPage() {
   const [pendingTodos, setPendingTodos] = useState<TodoRow[]>([]) // firm-wide, done=false — feeds the follow-ups tab, same shape as Claims Board's pendingTodos
   const [activeTab, setActiveTab] = useState<'followups' | 'board'>('followups')
   const [typeFilter, setTypeFilter] = useState<RequestType | 'all'>('all')
-  const [mobileCol, setMobileCol] = useState<Status>('requested')
+  const [mobileCol, setMobileCol] = useState<ZoneId>('requested')
 
   // ── drag state ──
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -330,13 +347,13 @@ export default function BusinessServiceRequestsPage() {
   }, [rows, typeFilter])
 
   const columns = useMemo(() => {
-    const buckets: Record<Status, ServiceRequestRow[]> = { requested: [], in_progress: [], done: [] }
+    const buckets: Record<ZoneId, ServiceRequestRow[]> = { requested: [], in_progress: [], waiting: [], done: [] }
     filteredRows.forEach(row => {
       const col = columnFor(row)
       if (!col) return
       buckets[col].push(row)
     })
-    ;(Object.keys(buckets) as Status[]).forEach(col => {
+    ;(Object.keys(buckets) as ZoneId[]).forEach(col => {
       buckets[col].sort((a, b) => {
         if (col === 'done') return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime() // oldest first — most idle at top
@@ -398,15 +415,30 @@ export default function BusinessServiceRequestsPage() {
     await patchRow(id, patch)
   }
 
+  // Board-only drag target. Dropping on 'waiting' doesn't change status (it's
+  // still in_progress) — it sets waiting_on, defaulting to 'client' if it
+  // wasn't already set (e.g. dragged straight from Requested). Dropping
+  // anywhere else clears waiting_on, so a card dragged out of Waiting doesn't
+  // silently stay flagged as blocked.
+  async function moveToZone(id: string, zone: ZoneId) {
+    const row = rows.find(r => r.id === id)
+    if (!row) return
+    if (zone === 'waiting') {
+      await patchRow(id, { status: 'in_progress', waiting_on: row.waiting_on || 'client', resolved_at: null })
+    } else {
+      await patchRow(id, { status: zone, waiting_on: null, resolved_at: zone === 'done' ? new Date().toISOString() : null })
+    }
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     setDraggingId(null)
     const { active, over } = event
     if (!over) return
     const id = active.id as string
-    const zone = over.id as Status
+    const zone = over.id as ZoneId
     const row = rows.find(r => r.id === id)
-    if (!row || row.status === zone) return
-    moveTo(id, zone)
+    if (!row || columnFor(row) === zone) return
+    moveToZone(id, zone)
   }
 
   // Adds a new type to the shared picklist if it doesn't already exist
@@ -550,7 +582,7 @@ export default function BusinessServiceRequestsPage() {
 
   if (!hasAccess) return null
 
-  const openCount = columns.requested.length + columns.in_progress.length
+  const openCount = columns.requested.length + columns.in_progress.length + columns.waiting.length
   const editingFields = editingRow ? fieldsForType(editingRow.request_type) : []
   const editingPolicy = editingRow ? resolvedPolicy(editingRow) : null
 
@@ -724,10 +756,13 @@ export default function BusinessServiceRequestsPage() {
 
       {/* ── type filter chips + manage types ── */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 18, alignItems: 'center' }}>
-        <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>All types</FilterChip>
-        {typeOptions.map(t => (
-          <FilterChip key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>{t}</FilterChip>
-        ))}
+        <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>All types{openCount > 0 ? ` (${openCount})` : ''}</FilterChip>
+        {typeOptions.map(t => {
+          const openForType = rows.filter(r => r.request_type === t && r.status !== 'done').length
+          return (
+            <FilterChip key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>{t}{openForType > 0 ? ` (${openForType})` : ''}</FilterChip>
+          )
+        })}
         <button onClick={() => setShowManageTypes(true)}
           style={{ marginLeft: 4, padding: '6px 13px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px dashed ${T.textFaint}`, background: 'none', color: T.textFaint }}>
           ⚙ Manage types
@@ -741,7 +776,7 @@ export default function BusinessServiceRequestsPage() {
           {/* ── DESKTOP: drag-and-drop board ── */}
           <div className="hidden md:flex" style={{ gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
             <DndContext sensors={dndSensors} onDragStart={e => setDraggingId(e.active.id as string)} onDragEnd={handleDragEnd}>
-              {COLUMNS.map(col => (
+              {BOARD_ZONES.map(col => (
                 <div key={col.id} style={{ flex: '0 0 300px', minWidth: 300 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '2px 4px 10px' }}>
                     <div>
@@ -770,7 +805,7 @@ export default function BusinessServiceRequestsPage() {
           {/* ── MOBILE: segmented single-column view ── */}
           <div className="flex md:hidden" style={{ flexDirection: 'column' }}>
             <div style={{ display: 'flex', background: 'white', border: `1px solid ${T.line}`, borderRadius: 10, padding: 3, marginBottom: 14, gap: 2 }}>
-              {COLUMNS.map(col => (
+              {BOARD_ZONES.map(col => (
                 <button key={col.id} onClick={() => setMobileCol(col.id)}
                   style={{ flex: 1, border: 'none', background: mobileCol === col.id ? 'var(--charcoal)' : 'none', color: mobileCol === col.id ? 'white' : T.textDim, fontSize: 11.5, fontWeight: 700, padding: '9px 4px', borderRadius: 7, cursor: 'pointer' }}>
                   {col.title}
@@ -1057,7 +1092,7 @@ function WaitingButton({ active, kind, onClick, children }: { active: boolean; k
   )
 }
 
-function DropZone({ id, children }: { id: Status; children: React.ReactNode }) {
+function DropZone({ id, children }: { id: ZoneId; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id })
   return (
     <div ref={setNodeRef} style={{
@@ -1102,9 +1137,17 @@ function RequestCard({ row, clientName, policyLabel, dragging, onClick }: {
             color: row.waiting_on === 'client' ? T.rose : T.goldText,
           }}>{waitingLabel}</span>
         ) : <span />}
-        <span className="font-mono">
-          {row.status === 'done' ? `Completed ${daysSince(row.resolved_at) ?? 0}d ago` : days !== null ? `${days}d old` : ''}
-        </span>
+        {row.status === 'done' ? (
+          <span className="font-mono">Completed {daysSince(row.resolved_at) ?? 0}d ago</span>
+        ) : days !== null ? (
+          <span className="font-mono" style={{
+            fontWeight: days >= 7 ? 700 : 400,
+            padding: days >= 7 ? '2px 7px' : 0,
+            borderRadius: days >= 7 ? 5 : 0,
+            background: days >= 14 ? T.roseSoft : days >= 7 ? T.goldSoft : 'transparent',
+            color: days >= 14 ? T.rose : days >= 7 ? T.goldText : T.textFaint,
+          }}>{days}d old</span>
+        ) : <span />}
       </div>
     </button>
   )
