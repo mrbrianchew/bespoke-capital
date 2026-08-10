@@ -6,6 +6,7 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import ServiceRequestExtras from '@/components/ServiceRequestExtras'
 import { needsFollowupRequests } from '@/lib/serviceRequestsAttention'
+import { useDriveUpload } from '@/lib/useDriveUpload'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -71,6 +72,7 @@ export default function ServiceRequestsServicingPage() {
   const { activeClient, advisor, authLoading, clients } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
+  const drive = useDriveUpload()
 
   const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
 
@@ -90,6 +92,12 @@ export default function ServiceRequestsServicingPage() {
   const [newDesc, setNewDesc] = useState('')
   const [savingNew, setSavingNew] = useState(false)
 
+  // Same clients.service_requests_drive_folder_link ServiceRequestExtras
+  // reads inside a request's modal — surfaced here too so the folder is
+  // visible and manageable from the list itself, not only discoverable by
+  // opening a request and trying to upload something.
+  const [driveFolder, setDriveFolder] = useState<{ id: string; name: string } | null>(null)
+
   useEffect(() => {
     if (!authLoading && advisor && !hasAccess) router.replace('/dashboard')
   }, [authLoading, advisor, hasAccess, router])
@@ -99,10 +107,11 @@ export default function ServiceRequestsServicingPage() {
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [reqRes, typesRes, ffRes] = await Promise.all([
+      const [reqRes, typesRes, ffRes, clientRes] = await Promise.all([
         supabase.from('service_requests').select('*').eq('client_id', activeClient!.id).order('created_at', { ascending: false }),
         supabase.from('service_request_types').select('*').order('created_at', { ascending: true }),
         supabase.from('fact_finding').select('data').eq('client_id', activeClient!.id).eq('section', 'protection_portfolio').maybeSingle(),
+        supabase.from('clients').select('service_requests_drive_folder_link').eq('id', activeClient!.id).maybeSingle(),
       ])
       if (cancelled) return
       const rowsData = ((reqRes.data || []) as any[]).map(r => ({ ...r, field_values: r.field_values || {} })) as ServiceRequestRow[]
@@ -119,6 +128,9 @@ export default function ServiceRequestsServicingPage() {
         id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
       }))
       setPolicies(list)
+      const rawFolder = (clientRes.data as any)?.service_requests_drive_folder_link as string | undefined
+      if (rawFolder) { try { const parsed = JSON.parse(rawFolder); setDriveFolder(parsed?.id && parsed?.name ? parsed : null) } catch { setDriveFolder(null) } }
+      else setDriveFolder(null)
       if (!newType && ((typesRes.data || []) as any[]).length > 0) setNewType((typesRes.data as any[])[0].label)
       setLoading(false)
     }
@@ -126,6 +138,12 @@ export default function ServiceRequestsServicingPage() {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, hasAccess, activeClient?.id])
+
+  async function connectDrive() {
+    if (!activeClient) return
+    const folder = await drive.connectDriveFolder({ table: 'clients', idColumn: 'id', id: activeClient.id }, 'service_requests_drive_folder_link')
+    if (folder) setDriveFolder(folder)
+  }
 
   const staleIds = useMemo(() => new Set(needsFollowupRequests(rows, openTodos).map(r => r.id)), [rows, openTodos])
   const typeOptions = useMemo(() => typeDefs.map(t => t.label), [typeDefs])
@@ -243,6 +261,18 @@ export default function ServiceRequestsServicingPage() {
           + New request
         </button>
       </div>
+
+      {/* ── Drive folder for this client's service requests ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+        <span style={{ fontSize: 11, color: T.textFaint }}>
+          {driveFolder ? <>📁 Attachments save to <strong style={{ color: T.textDim }}>{driveFolder.name}</strong></> : 'No folder linked yet for this client\'s service requests'}
+        </span>
+        <button onClick={connectDrive} disabled={drive.connecting}
+          style={{ fontSize: 11, color: T.gold, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+          {drive.connecting ? 'Connecting…' : driveFolder ? 'Change' : 'Connect folder'}
+        </button>
+      </div>
+      {drive.uploadError && <div style={{ fontSize: 11.5, color: T.rose, marginBottom: 12 }}>{drive.uploadError}</div>}
 
       {showNew && (
         <div style={{ background: 'var(--cream2)', borderRadius: 10, padding: 14, marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
