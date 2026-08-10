@@ -286,6 +286,9 @@ function MedicalClaimsPage() {
   const [resolvedOpen, setResolvedOpen] = useState(false)
   const [pendingCountByClaim, setPendingCountByClaim] = useState<Record<string, number>>({})
 
+  // ── New claim — life assured picker (shown only when more than one person on the case has a medical policy) ──
+  const [showNewClaimPicker, setShowNewClaimPicker] = useState(false)
+
   // ── Share modal state ──
   const [showShareModal, setShowShareModal] = useState(false)
   const [shareSelectedIds, setShareSelectedIds] = useState<string[]>([])
@@ -580,11 +583,28 @@ function MedicalClaimsPage() {
   }
 
   // ── Claim mutations ──
-  async function createClaim() {
+  // People on this case who actually have a medical policy on file. "+ New" used to
+  // assume the main client (allPeople[0]) and block if only the spouse/a child had
+  // cover — this checks everyone instead.
+  const peopleWithMedicalPolicy = allPeople.filter(p => policiesForPerson(p.key).length > 0)
+
+  async function createClaim(personKeyOverride?: string) {
     if (!activeClient) return
-    const person = allPeople[0]?.key || 'client'
+    let person = personKeyOverride
+    if (!person) {
+      if (peopleWithMedicalPolicy.length === 0) {
+        alert('No one on this case has a medical policy on file yet — add one on the Protection page first.')
+        return
+      }
+      if (peopleWithMedicalPolicy.length > 1) {
+        setShowNewClaimPicker(true)
+        return
+      }
+      person = peopleWithMedicalPolicy[0].key
+    }
     const firstMain = policiesForPerson(person).find(p => p.policyTypeCode?.toLowerCase() === 'main') || policiesForPerson(person)[0]
     if (!firstMain) { alert('This person has no medical policy on file yet — add one on the Protection page first.'); return }
+    setShowNewClaimPicker(false)
     setSaving(true)
     const { data, error } = await supabase.from('claims').insert({
       client_id: activeClient.id, policy_id: firstMain.id, life_assured_person: person,
@@ -1103,7 +1123,7 @@ function MedicalClaimsPage() {
             </button>
           )
         })}
-        <button onClick={createClaim} disabled={saving} style={{ ...pillBase, border: `1.5px dashed ${T.gold}`, background: T.goldSoft, color: T.goldText, fontSize: 12.5, fontWeight: 700 }}>+ New</button>
+        <button onClick={() => createClaim()} disabled={saving} style={{ ...pillBase, border: `1.5px dashed ${T.gold}`, background: T.goldSoft, color: T.goldText, fontSize: 12.5, fontWeight: 700 }}>+ New</button>
         {claims.length > 0 && (
           <button onClick={() => { setShowShareModal(true); setShareSelectedIds(selectedClaimId ? [selectedClaimId] : []); setShareLink(''); setSharePassword(''); setShareCopied(false) }}
             style={{ ...pillBase, border: `1px solid ${T.line}`, background: 'var(--cream)', color: T.textDim, fontSize: 12.5, fontWeight: 700, marginLeft: 'auto' }}>Share</button>
@@ -1484,6 +1504,27 @@ function MedicalClaimsPage() {
           onCancel={() => setAddModalSection(null)}
           onCreate={fields => createLineItem(addModalSection, fields)}
         />
+      )}
+
+      {showNewClaimPicker && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.7)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'white', width: '100%', maxWidth: 420, boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
+            <div style={{ padding: '18px 26px', borderBottom: `1px solid ${T.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="claims-serif" style={{ fontSize: 20, color: T.text }}>Who is this claim for?</div>
+              <button onClick={() => setShowNewClaimPicker(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: T.textFaint }}>✕</button>
+            </div>
+            <div style={{ padding: '20px 26px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {peopleWithMedicalPolicy.map(p => (
+                <button key={p.key} disabled={saving} onClick={() => createClaim(p.key)}
+                  style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, border: `1px solid ${T.line}`,
+                    background: 'white', color: T.text, cursor: 'pointer', textAlign: 'left' }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {showShareModal && (
