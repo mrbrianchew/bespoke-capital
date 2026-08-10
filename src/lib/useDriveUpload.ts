@@ -28,6 +28,28 @@ export interface DriveDocument {
   uploaded_at: string
 }
 
+// Generic version used by anything that isn't Claims (e.g. Service Request
+// attachments) — same columns minus the claim-specific line_item_id, plus
+// whatever the target table calls its own foreign key.
+export interface DriveDocumentGeneric {
+  id: string
+  file_name: string
+  mime_type: string | null
+  file_size: number | null
+  drive_file_id: string | null
+  drive_view_url: string | null
+  uploaded_at: string
+  [key: string]: any // the target table's own id column, e.g. service_request_id
+}
+
+// Which table + FK column to write into. Lets any feature reuse the same
+// OAuth/Picker/upload/delete mechanics as Claims without forking the hook.
+export interface UploadTarget {
+  table: string
+  idColumn: string
+  id: string
+}
+
 export function useDriveUpload() {
   const supabase = createClient()
   const [googleReady, setGoogleReady] = useState(false)
@@ -220,6 +242,70 @@ export function useDriveUpload() {
     return uploaded
   }
 
+  // Generic single-file upload for any non-Claims target table (Service
+  // Request attachments, etc). Same Drive mechanics as uploadDocument above,
+  // just writing into whatever table/column the caller specifies instead of
+  // hardcoding claim_documents/claim_id.
+  async function uploadDocumentGeneric(file: File, target: UploadTarget, folder: { id: string; name: string }): Promise<DriveDocumentGeneric | null> {
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const token = await ensureAccessToken()
+      const initRes = await fetchWithTimeout('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink,size', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ name: file.name, parents: [folder.id] }),
+      }, 20000, 'Starting the upload')
+      if (!initRes.ok) throw new Error('Could not start upload (status ' + initRes.status + ')')
+      const uploadUrl = initRes.headers.get('Location')
+      if (!uploadUrl) throw new Error('Drive did not return an upload session — this can happen if the browser blocked reading the response. Try a different browser if this repeats.')
+
+      const putRes = await fetchWithTimeout(uploadUrl, {
+        method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
+      }, 120000, 'Uploading the file')
+      if (!putRes.ok) throw new Error('Upload to Drive failed (status ' + putRes.status + ')')
+      const driveFile = await putRes.json()
+
+      const { data, error } = await supabase.from(target.table).insert({
+        [target.idColumn]: target.id,
+        file_name: driveFile.name || file.name, mime_type: file.type || null,
+        file_size: driveFile.size ? +driveFile.size : file.size,
+        drive_file_id: driveFile.id, drive_view_url: driveFile.webViewLink || null,
+      }).select().maybeSingle()
+      if (error || !data) throw new Error(error?.message || 'Uploaded to Drive but could not save the record')
+      return data as DriveDocumentGeneric
+    } catch (err: any) {
+      setUploadError(err?.message || 'Upload failed')
+      return null
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function uploadFilesGeneric(files: FileList | File[], target: UploadTarget, folder: { id: string; name: string }): Promise<DriveDocumentGeneric[]> {
+    const uploaded: DriveDocumentGeneric[] = []
+    for (const f of Array.from(files)) {
+      const doc = await uploadDocumentGeneric(f, target, folder)
+      if (doc) uploaded.push(doc)
+    }
+    return uploaded
+  }
+
+  async function deleteDocumentGeneric(doc: Pick<DriveDocumentGeneric, 'id' | 'file_name' | 'drive_file_id'>, table: string): Promise<boolean> {
+    if (!window.confirm(`Delete "${doc.file_name}"? This removes it from Drive too.`)) return false
+    try {
+      if (doc.drive_file_id) {
+        const token = await ensureAccessToken()
+        await fetch(`https://www.googleapis.com/drive/v3/files/${doc.drive_file_id}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+    } catch { /* proceed to remove the app-side record regardless */ }
+    const { error } = await supabase.from(table).delete().eq('id', doc.id)
+    if (error) { alert('Delete failed: ' + error.message); return false }
+    return true
+  }
+
   async function deleteDocument(doc: Pick<DriveDocument, 'id' | 'file_name' | 'drive_file_id'>): Promise<boolean> {
     if (!window.confirm(`Delete "${doc.file_name}"? This removes it from Drive too.`)) return false
     try {
@@ -238,5 +324,6 @@ export function useDriveUpload() {
   return {
     googleReady, pickerReady, connecting, uploading, uploadError, setUploadError,
     ensureAccessToken, pickFolder, connectDriveForClient, uploadFiles, deleteDocument,
+    uploadFilesGeneric, deleteDocumentGeneric,
   }
 }

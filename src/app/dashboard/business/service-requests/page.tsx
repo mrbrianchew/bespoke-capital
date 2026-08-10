@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
+import ServiceRequestExtras from '@/components/ServiceRequestExtras'
 import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -744,6 +745,10 @@ export default function BusinessServiceRequestsPage() {
                   style={{ padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5, width: 130 }} />
                 <button onClick={addTodo} style={{ padding: '7px 14px', fontSize: 12.5, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Add</button>
               </div>
+
+              <ModalSection title="Attachments, meetings, activity" defaultOpen={true}>
+                <ServiceRequestExtras serviceRequestId={editingRow.id} clientId={editingRow.client_id} />
+              </ModalSection>
 
               <ModalSection title="Related emails" defaultOpen={false}>
                 <GmailClaimSearch serviceRequestId={editingRow.id} defaultTerms={[editingPolicy?.policyNo].filter((v): v is string => !!v)} />

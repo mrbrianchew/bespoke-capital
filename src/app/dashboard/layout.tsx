@@ -34,6 +34,7 @@ const NAV_PLANNING = [
 const NAV_SERVICING = [
   { href: '/dashboard/servicing/contact-report', label: 'Contact Report', icon: '☎', id: 'contact-report' },
   { href: '/dashboard/servicing/claims', label: 'Medical Claims', icon: '⚑', id: 'claims' },
+  { href: '/dashboard/servicing/service-requests', label: 'Service Requests', icon: '◑', id: 'servicing-service-requests' },
 ]
 
 type NavGroupId = 'planning' | 'servicing'
