@@ -81,13 +81,17 @@ export async function revokeGoogleToken(token: string): Promise<void> {
 }
 
 export async function getCalendarProfile(accessToken: string): Promise<{ email: string }> {
-  // Calendar API has no direct "whoami" — the primary calendar's own id IS
-  // the account's email address, which is the simplest way to confirm which
-  // account just connected.
-  const res = await fetch(`${CALENDAR_API}/calendars/primary`, { headers: { Authorization: `Bearer ${accessToken}` } })
+  // NOT calendars/primary — that's a Calendars-resource read, which the
+  // calendar.events scope does not cover (events-only), and was throwing a
+  // 403 here that surfaced to the advisor as a generic "something went
+  // wrong" on /connect. userinfo is a separate, non-sensitive endpoint that
+  // only needs the basic 'email' scope requested alongside calendar.events
+  // in /api/calendar/connect — no additional Console consent-screen scope
+  // needed for it, unlike calendar.events itself.
+  const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: `Bearer ${accessToken}` } })
   if (!res.ok) throw new Error(`Calendar profile fetch failed: ${res.status}`)
   const data = await res.json()
-  return { email: data.id }
+  return { email: data.email }
 }
 
 export interface CreateEventInput {
