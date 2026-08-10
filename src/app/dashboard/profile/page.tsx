@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import GmailConnectCard from '@/components/GmailConnectCard'
+import CalendarConnectCard from '@/components/CalendarConnectCard'
 
 export default function ProfilePage() {
   const { user, advisor, authLoading, setAdvisor } = useDashboard()
@@ -93,6 +94,7 @@ export default function ProfilePage() {
         </button>
       </div>
       <GmailConnectCard />
+      <CalendarConnectCard />
     </div>
   )
 }

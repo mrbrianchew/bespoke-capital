@@ -193,9 +193,18 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
 
   async function deleteMeeting(id: string) {
     if (!window.confirm('Delete this meeting?')) return
+    const meeting = meetings.find(m => m.id === id)
     setMeetings(prev => prev.filter(m => m.id !== id))
     const { error } = await supabase.from('service_request_meetings').delete().eq('id', id)
     if (error) alert('Delete failed: ' + error.message)
+    // Best-effort cleanup on the Calendar side too, so a deleted meeting
+    // doesn't leave a stray event sitting on the advisor's actual calendar.
+    if (meeting?.google_calendar_event_id) {
+      fetch('/api/service-requests/schedule-meeting', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: meeting.google_calendar_event_id }),
+      }).catch(() => {})
+    }
   }
 
   // ── activity log ──
