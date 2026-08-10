@@ -43,8 +43,12 @@ export async function POST(req: NextRequest) {
       description: body.notes || undefined,
       date: body.date,
       time: body.time || null,
+      durationMinutes: body.durationMinutes || undefined,
+      location: body.location || null,
+      videoPlatform: body.videoPlatform || null,
+      meetingLink: body.meetingLink || null,
     })
-    return NextResponse.json({ eventId: event.id, htmlLink: event.htmlLink })
+    return NextResponse.json({ eventId: event.id, htmlLink: event.htmlLink, meetLink: event.meetLink })
   } catch (e: any) {
     console.error('[schedule-meeting]', e?.message || e)
     return NextResponse.json({ error: 'Could not create the calendar event.' }, { status: 500 })

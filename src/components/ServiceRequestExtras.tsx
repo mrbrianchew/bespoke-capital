@@ -22,6 +22,9 @@ interface AttachmentRow extends DriveDocumentGeneric {
   service_request_id: string
 }
 
+type MeetingType = 'in_person' | 'video_call' | 'phone_call'
+type VideoPlatform = 'google_meet' | 'zoom' | 'teams' | 'other'
+
 interface MeetingRow {
   id: string
   service_request_id: string
@@ -32,7 +35,18 @@ interface MeetingRow {
   is_scheduled: boolean
   google_calendar_event_id: string | null
   created_at: string
+  meeting_type: MeetingType
+  video_platform: VideoPlatform | null
+  meeting_link: string | null
+  location: string | null
+  phone_number: string | null
+  duration_minutes: number
 }
+
+const VIDEO_PLATFORM_LABELS: Record<VideoPlatform, string> = {
+  google_meet: 'Google Meet', zoom: 'Zoom', teams: 'MS Teams', other: 'Other',
+}
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120]
 
 interface ActivityRow {
   id: string
@@ -77,6 +91,12 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
   const [meetingTime, setMeetingTime] = useState('')
   const [meetingNotes, setMeetingNotes] = useState('')
   const [savingMeeting, setSavingMeeting] = useState(false)
+  const [meetingTypeSel, setMeetingTypeSel] = useState<MeetingType>('in_person')
+  const [videoPlatformSel, setVideoPlatformSel] = useState<VideoPlatform>('google_meet')
+  const [meetingLinkDraft, setMeetingLinkDraft] = useState('')
+  const [locationDraft, setLocationDraft] = useState('')
+  const [phoneDraft, setPhoneDraft] = useState('')
+  const [durationMinutes, setDurationMinutes] = useState(30)
 
   // activity form
   const [activityDraft, setActivityDraft] = useState('')
@@ -160,6 +180,12 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     setMeetingDate(new Date().toISOString().slice(0, 10))
     setMeetingTime('')
     setMeetingNotes('')
+    setMeetingTypeSel('in_person')
+    setVideoPlatformSel('google_meet')
+    setMeetingLinkDraft('')
+    setLocationDraft('')
+    setPhoneDraft('')
+    setDurationMinutes(30)
   }
 
   async function saveMeeting() {
@@ -167,6 +193,11 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     setSavingMeeting(true)
     const isScheduled = meetingMode === 'schedule'
     let calendarEventId: string | null = null
+    // What actually gets stored/shown as the "join info" for this meeting —
+    // starts as whatever the advisor typed; if they picked Google Meet and
+    // left it blank, this gets overwritten below with the auto-generated
+    // link once the calendar event comes back.
+    let finalMeetingLink = meetingTypeSel === 'video_call' ? meetingLinkDraft.trim() || null : null
     if (isScheduled) {
       // Creates the event on the advisor's connected Google Calendar. Uses
       // the same MCP Calendar connector already wired up for the account —
@@ -175,15 +206,26 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
       try {
         const res = await fetch('/api/service-requests/schedule-meeting', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: meetingTitle.trim(), date: meetingDate, time: meetingTime || null, notes: meetingNotes.trim() || null }),
+          body: JSON.stringify({
+            title: meetingTitle.trim(), date: meetingDate, time: meetingTime || null, notes: meetingNotes.trim() || null,
+            durationMinutes,
+            location: meetingTypeSel === 'in_person' ? locationDraft.trim() || null : meetingTypeSel === 'phone_call' ? (phoneDraft.trim() ? `Phone: ${phoneDraft.trim()}` : null) : null,
+            videoPlatform: meetingTypeSel === 'video_call' ? videoPlatformSel : null,
+            meetingLink: meetingTypeSel === 'video_call' ? (meetingLinkDraft.trim() || null) : null,
+          }),
         })
-        if (res.ok) { const d = await res.json(); calendarEventId = d.eventId || null }
+        if (res.ok) { const d = await res.json(); calendarEventId = d.eventId || null; if (d.meetLink) finalMeetingLink = d.meetLink }
       } catch { /* non-fatal — meeting still saves below */ }
     }
     const { data, error } = await supabase.from('service_request_meetings').insert({
       service_request_id: serviceRequestId, title: meetingTitle.trim(), meeting_date: meetingDate,
       meeting_time: meetingTime || null, notes: meetingNotes.trim() || null,
       is_scheduled: isScheduled, google_calendar_event_id: calendarEventId,
+      meeting_type: meetingTypeSel, duration_minutes: durationMinutes,
+      video_platform: meetingTypeSel === 'video_call' ? videoPlatformSel : null,
+      meeting_link: finalMeetingLink,
+      location: meetingTypeSel === 'in_person' ? (locationDraft.trim() || null) : null,
+      phone_number: meetingTypeSel === 'phone_call' ? (phoneDraft.trim() || null) : null,
     }).select().maybeSingle()
     setSavingMeeting(false)
     if (error) { alert('Could not save meeting: ' + error.message); return }
@@ -305,6 +347,22 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
                 <button onClick={() => deleteMeeting(m.id)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
               </div>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10.5, color: T.textFaint }}>
+                {m.meeting_type === 'video_call' ? '💻 Video call' : m.meeting_type === 'phone_call' ? '📞 Phone call' : '📍 In person'}
+                {m.duration_minutes ? ` · ${m.duration_minutes} min` : ''}
+                {m.meeting_type === 'video_call' && m.video_platform ? ` · ${VIDEO_PLATFORM_LABELS[m.video_platform]}` : ''}
+              </span>
+              {m.meeting_type === 'video_call' && m.meeting_link && (
+                <a href={m.meeting_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, color: T.gold, textDecoration: 'none' }}>Join link ↗</a>
+              )}
+              {m.meeting_type === 'in_person' && m.location && (
+                <span style={{ fontSize: 10.5, color: T.textDim }}>{m.location}</span>
+              )}
+              {m.meeting_type === 'phone_call' && m.phone_number && (
+                <span style={{ fontSize: 10.5, color: T.textDim }}>{m.phone_number}</span>
+              )}
+            </div>
             {m.notes && <p style={{ fontSize: 12, color: T.textDim, margin: '4px 0 0' }}>{m.notes}</p>}
             {m.is_scheduled && (
               <p style={{ fontSize: 10.5, color: m.google_calendar_event_id ? 'var(--emerald)' : T.textFaint, margin: '4px 0 0' }}>
@@ -323,10 +381,48 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cream2)', borderRadius: 8 }}>
           <input value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="What's this meeting about?" style={inputStyle} />
+
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['in_person', 'video_call', 'phone_call'] as MeetingType[]).map(t => (
+              <button key={t} type="button" onClick={() => setMeetingTypeSel(t)}
+                style={{
+                  flex: 1, fontSize: 11.5, fontWeight: 600, padding: '6px 4px', borderRadius: 7, cursor: 'pointer',
+                  border: `1px solid ${meetingTypeSel === t ? T.gold : T.line}`,
+                  background: meetingTypeSel === t ? T.goldSoft : 'var(--cream)',
+                  color: meetingTypeSel === t ? T.goldText : T.textDim,
+                }}>
+                {t === 'in_person' ? '📍 In person' : t === 'video_call' ? '💻 Video call' : '📞 Phone call'}
+              </button>
+            ))}
+          </div>
+
           <div style={{ display: 'flex', gap: 6 }}>
             <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
             <input type="time" value={meetingTime} onChange={e => setMeetingTime(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+            <select value={durationMinutes} onChange={e => setDurationMinutes(Number(e.target.value))} style={{ ...inputStyle, width: 92 }}>
+              {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} min</option>)}
+            </select>
           </div>
+
+          {meetingTypeSel === 'in_person' && (
+            <input value={locationDraft} onChange={e => setLocationDraft(e.target.value)} placeholder="Location (address, office, etc. — optional)" style={inputStyle} />
+          )}
+
+          {meetingTypeSel === 'video_call' && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select value={videoPlatformSel} onChange={e => setVideoPlatformSel(e.target.value as VideoPlatform)} style={{ ...inputStyle, width: 128 }}>
+                {(Object.keys(VIDEO_PLATFORM_LABELS) as VideoPlatform[]).map(p => <option key={p} value={p}>{VIDEO_PLATFORM_LABELS[p]}</option>)}
+              </select>
+              <input value={meetingLinkDraft} onChange={e => setMeetingLinkDraft(e.target.value)}
+                placeholder={videoPlatformSel === 'google_meet' ? 'Leave blank to auto-generate a Meet link' : 'Paste the meeting link (optional)'}
+                style={{ ...inputStyle, flex: 1 }} />
+            </div>
+          )}
+
+          {meetingTypeSel === 'phone_call' && (
+            <input value={phoneDraft} onChange={e => setPhoneDraft(e.target.value)} placeholder="Phone number (optional)" style={inputStyle} />
+          )}
+
           <textarea value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} rows={2} placeholder="Notes (optional)"
             style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
