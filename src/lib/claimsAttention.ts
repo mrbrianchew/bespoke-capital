@@ -26,6 +26,13 @@ export interface AttentionTodo {
   line_item_id: string
   due_date: string | null
   done: boolean
+  created_at?: string
+  done_at?: string | null
+}
+
+export interface AttentionNote {
+  line_item_id: string
+  created_at: string
 }
 
 function daysIdle(item: AttentionLineItem): number | null {
@@ -34,6 +41,32 @@ function daysIdle(item: AttentionLineItem): number | null {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return null
   return Math.floor((Date.now() - d.getTime()) / 86400000)
+}
+
+function daysSinceIso(iso: string | null): number | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  return Math.floor((Date.now() - d.getTime()) / 86400000)
+}
+
+// The most recent point of contact on this item: submission (or treatment
+// date as a fallback, same as daysIdle above), a follow-up note being added,
+// or a to-do being created or ticked off. Falls back to the same date
+// daysIdle() uses if nothing else is on file for this item yet.
+export function lastActivityIso(item: AttentionLineItem, notes: AttentionNote[], todos: AttentionTodo[]): string | null {
+  let latest: string | null = item.submitted_date || item.date_from || null
+  const consider = (iso: string | null | undefined) => {
+    if (!iso) return
+    if (!latest || new Date(iso).getTime() > new Date(latest).getTime()) latest = iso
+  }
+  notes.forEach(n => { if (n.line_item_id === item.id) consider(n.created_at) })
+  todos.forEach(t => { if (t.line_item_id === item.id) { consider(t.created_at); consider(t.done_at) } })
+  return latest
+}
+
+export function daysSinceLastActivity(item: AttentionLineItem, notes: AttentionNote[], todos: AttentionTodo[]): number | null {
+  return daysSinceIso(lastActivityIso(item, notes, todos))
 }
 
 function isUrgentTodo(todo: AttentionTodo): boolean {

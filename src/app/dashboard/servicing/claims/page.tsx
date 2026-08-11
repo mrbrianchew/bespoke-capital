@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
+import { daysSinceLastActivity } from '@/lib/claimsAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -89,6 +90,7 @@ interface FollowupTodo {
   task: string
   due_date: string | null
   done: boolean
+  done_at?: string | null
   created_at: string
 }
 
@@ -786,8 +788,9 @@ function MedicalClaimsPage() {
   }
 
   async function toggleTodo(lineItemId: string, todoId: string, done: boolean) {
-    setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).map(t => t.id === todoId ? { ...t, done } : t) }))
-    const { error } = await supabase.from('claim_followup_todos').update({ done }).eq('id', todoId)
+    const doneAt = done ? new Date().toISOString() : null
+    setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).map(t => t.id === todoId ? { ...t, done, done_at: doneAt } : t) }))
+    const { error } = await supabase.from('claim_followup_todos').update({ done, done_at: doneAt }).eq('id', todoId)
     if (error) alert('Could not update: ' + error.message)
   }
 
@@ -1899,7 +1902,8 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
   onStartEditTodo: (t: FollowupTodo) => void; onSaveEditTodo: () => void; onCancelEditTodo: () => void
 }) {
   const days = daysSince(item.submitted_date || item.date_from)
-  const stale = !resolved && days !== null && days >= 14
+  const lastActivityDays = daysSinceLastActivity(item, notes, todos)
+  const stale = !resolved && lastActivityDays !== null && lastActivityDays >= 14
   const openTodos = todos.filter(t => !t.done)
 
   return (
@@ -1912,7 +1916,13 @@ function FollowupCard({ item, notes, resolved, draft, onDraftChange, onAddNote, 
           </div>
           <div className="claims-mono" style={{ fontSize: 10.5, color: T.textFaint, marginTop: 3 }}>
             {item.invoice_no || '—'} · {money(item.amount_claimed)}
-            {days !== null && !resolved && <span style={{ color: stale ? T.rose : T.textFaint, fontWeight: stale ? 700 : 400 }}> · {days}d idle</span>}
+            {days !== null && !resolved && (
+              lastActivityDays !== null && lastActivityDays < days ? (
+                <span style={{ color: stale ? T.rose : T.textFaint, fontWeight: stale ? 700 : 400 }}> · {days}d since submission · {lastActivityDays}d since last touch</span>
+              ) : (
+                <span style={{ color: stale ? T.rose : T.textFaint, fontWeight: stale ? 700 : 400 }}> · {days}d idle</span>
+              )
+            )}
           </div>
         </div>
         {!resolved ? (

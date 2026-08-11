@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard, ClientRow } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import { useDriveUpload } from '@/lib/useDriveUpload'
-import { needsFollowupItems } from '@/lib/claimsAttention'
+import { needsFollowupItems, daysSinceLastActivity } from '@/lib/claimsAttention'
 import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -82,6 +82,7 @@ interface FollowupTodo {
   task: string
   due_date: string | null
   done: boolean
+  done_at?: string | null
   created_at: string
 }
 
@@ -180,6 +181,7 @@ interface CardData {
   policyholderLabel: string
   lifeAssuredLabel: string
   policyLabel: string
+  lastActivityDays: number | null
 }
 
 const T = {
@@ -258,6 +260,13 @@ export default function BusinessClaimsBoardPage() {
   const [activeTab, setActiveTab] = useState<'board' | 'followups'>('board')
   const [pendingTodos, setPendingTodos] = useState<FollowupTodo[]>([])
 
+  // ── Lightweight, firm-wide activity data for the "last touched" badge on
+  // every card (separate from pendingTodos above, which is open-todos-only
+  // and drives the follow-up flagging logic — untouched). Minimal columns
+  // only: this is read on every board load, not just when a card is opened. ──
+  const [allTodosLite, setAllTodosLite] = useState<FollowupTodo[]>([])
+  const [notesLite, setNotesLite] = useState<{ line_item_id: string; created_at: string }[]>([])
+
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
   useEffect(() => {
@@ -293,12 +302,19 @@ export default function BusinessClaimsBoardPage() {
 
         const itemIds = itemRows.map(i => i.id)
         if (itemIds.length > 0) {
-          const todosRes = await supabase.from('claim_followup_todos')
-            .select('*').in('line_item_id', itemIds).eq('done', false)
+          const [todosRes, allTodosRes, notesRes] = await Promise.all([
+            supabase.from('claim_followup_todos').select('*').in('line_item_id', itemIds).eq('done', false),
+            supabase.from('claim_followup_todos').select('id, line_item_id, task, due_date, done, done_at, created_at').in('line_item_id', itemIds),
+            supabase.from('claim_followup_notes').select('line_item_id, created_at').in('line_item_id', itemIds),
+          ])
           if (cancelled) return
           setPendingTodos((todosRes.data || []) as FollowupTodo[])
+          setAllTodosLite((allTodosRes.data || []) as FollowupTodo[])
+          setNotesLite((notesRes.data || []) as { line_item_id: string; created_at: string }[])
         } else {
           setPendingTodos([])
+          setAllTodosLite([])
+          setNotesLite([])
         }
       } else {
         setLineItems([])
@@ -390,13 +406,14 @@ export default function BusinessClaimsBoardPage() {
           policyholderLabel: policyholderLabel(claim.client_id, claim.policy_id),
           lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
           policyLabel: policyLabel(claim.client_id, claim.policy_id),
+          lastActivityDays: daysSinceLastActivity(item, notesLite, allTodosLite),
         }
         return { todo, card }
       })
       .filter((r): r is { todo: FollowupTodo; card: CardData } => r !== null)
       .sort((a, b) => (a.todo.due_date || '9999-12-31').localeCompare(b.todo.due_date || '9999-12-31'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingTodos, itemsById, claimsById, clientsById, familyByClient, policiesByClient])
+  }, [pendingTodos, itemsById, claimsById, clientsById, familyByClient, policiesByClient, notesLite, allTodosLite])
 
   // Stale in-progress line items with zero open follow-ups tracked at all —
   // the case a due-date list can never show, since there's no todo row to
@@ -416,13 +433,14 @@ export default function BusinessClaimsBoardPage() {
           policyholderLabel: policyholderLabel(claim.client_id, claim.policy_id),
           lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
           policyLabel: policyLabel(claim.client_id, claim.policy_id),
+          lastActivityDays: daysSinceLastActivity(item, notesLite, allTodosLite),
         }
         return card
       })
       .filter((c): c is CardData => c !== null)
       .sort((a, b) => daysSince(b.item.submitted_date || b.item.date_from)! - daysSince(a.item.submitted_date || a.item.date_from)!)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineItems, pendingTodos, claimsById, clientsById, familyByClient, policiesByClient])
+  }, [lineItems, pendingTodos, claimsById, clientsById, familyByClient, policiesByClient, notesLite, allTodosLite])
 
   function dueLabel(dueDate: string | null): { text: string; kind: 'overdue' | 'today' | 'upcoming' | 'none' } {
     if (!dueDate) return { text: 'No due date', kind: 'none' }
@@ -455,9 +473,11 @@ export default function BusinessClaimsBoardPage() {
   // keeps the per-card modal's todo list in sync if that same card happens
   // to be open at the same time.
   async function toggleGlobalTodoDone(todoId: string, done: boolean) {
+    const doneAt = done ? new Date().toISOString() : null
     setPendingTodos(prev => done ? prev.filter(t => t.id !== todoId) : prev)
-    setModalTodos(prev => prev.map(t => t.id === todoId ? { ...t, done } : t))
-    const { error } = await supabase.from('claim_followup_todos').update({ done }).eq('id', todoId)
+    setModalTodos(prev => prev.map(t => t.id === todoId ? { ...t, done, done_at: doneAt } : t))
+    setAllTodosLite(prev => prev.map(t => t.id === todoId ? { ...t, done, done_at: doneAt } : t))
+    const { error } = await supabase.from('claim_followup_todos').update({ done, done_at: doneAt }).eq('id', todoId)
     if (error) alert('Could not update: ' + error.message)
   }
 
@@ -475,6 +495,7 @@ export default function BusinessClaimsBoardPage() {
         policyholderLabel: policyholderLabel(claim.client_id, claim.policy_id),
         lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
         policyLabel: policyLabel(claim.client_id, claim.policy_id),
+        lastActivityDays: daysSinceLastActivity(item, notesLite, allTodosLite),
       })
     })
     ;(Object.keys(buckets) as ColumnId[]).forEach(col => {
@@ -487,7 +508,7 @@ export default function BusinessClaimsBoardPage() {
     })
     return buckets
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineItems, claimsById, clientsById, familyByClient, policiesByClient])
+  }, [lineItems, claimsById, clientsById, familyByClient, policiesByClient, notesLite, allTodosLite])
 
   // Same pattern as saveLineItem on the per-client Medical Claims page:
   // optimistic local update first, then the write, alert() on failure. No
@@ -627,7 +648,10 @@ export default function BusinessClaimsBoardPage() {
       .insert({ line_item_id: editingCard.item.id, note_date: noteDate, text: noteDraft.trim() })
       .select().maybeSingle()
     if (error) { alert('Could not add note: ' + error.message); return }
-    if (data) setModalNotes(prev => [data as FollowupNote, ...prev])
+    if (data) {
+      setModalNotes(prev => [data as FollowupNote, ...prev])
+      setNotesLite(prev => [...prev, { line_item_id: (data as FollowupNote).line_item_id, created_at: (data as FollowupNote).created_at }])
+    }
     setNoteDraft('')
   }
 
@@ -637,14 +661,19 @@ export default function BusinessClaimsBoardPage() {
       .insert({ line_item_id: editingCard.item.id, task: todoDraft.trim(), due_date: todoDueDate || null })
       .select().maybeSingle()
     if (error) { alert('Could not add to-do: ' + error.message); return }
-    if (data) setModalTodos(prev => [...prev, data as FollowupTodo])
+    if (data) {
+      setModalTodos(prev => [...prev, data as FollowupTodo])
+      setAllTodosLite(prev => [...prev, data as FollowupTodo])
+    }
     setTodoDraft('')
     setTodoDueDate('')
   }
 
   async function toggleTodo(id: string, done: boolean) {
-    setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done } : t))
-    const { error } = await supabase.from('claim_followup_todos').update({ done }).eq('id', id)
+    const doneAt = done ? new Date().toISOString() : null
+    setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done, done_at: doneAt } : t))
+    setAllTodosLite(prev => prev.map(t => t.id === id ? { ...t, done, done_at: doneAt } : t))
+    const { error } = await supabase.from('claim_followup_todos').update({ done, done_at: doneAt }).eq('id', id)
     if (error) alert('Save failed: ' + error.message)
   }
 
@@ -822,6 +851,7 @@ export default function BusinessClaimsBoardPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {needsFollowupRows.map(card => {
                         const days = daysSince(card.item.submitted_date || card.item.date_from)
+                        const lastActivityDays = card.lastActivityDays
                         return (
                           <div key={card.item.id} onClick={() => setEditingCard(card)} style={{
                             background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${T.rose}`,
@@ -834,7 +864,9 @@ export default function BusinessClaimsBoardPage() {
                               <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2, fontStyle: 'italic' }}>No follow-up set</div>
                             </div>
                             <div style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                              {days}d idle
+                              {lastActivityDays !== null && days !== null && lastActivityDays < days
+                                ? `${days}d since submission · ${lastActivityDays}d since last touch`
+                                : `${days}d idle`}
                             </div>
                           </div>
                         )
@@ -1226,7 +1258,8 @@ function ClaimCard({ card, dragging, onClick }: {
   const { item } = card
   const resolved = item.approved || item.rejected
   const days = daysSince(item.submitted_date || item.date_from)
-  const stale = !resolved && days !== null && days >= STALE_DAYS
+  const lastActivityDays = card.lastActivityDays
+  const stale = !resolved && lastActivityDays !== null && lastActivityDays >= STALE_DAYS
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id })
 
   return (
@@ -1263,7 +1296,9 @@ function ClaimCard({ card, dragging, onClick }: {
         ) : (
           days !== null && (
             <span style={{ fontSize: 10.5, fontWeight: stale ? 700 : 400, color: stale ? T.rose : T.textFaint }}>
-              {days}d idle
+              {lastActivityDays !== null && lastActivityDays < days
+                ? `${days}d since submission · ${lastActivityDays}d since last touch`
+                : `${days}d idle`}
             </span>
           )
         )}
