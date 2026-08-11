@@ -29,6 +29,7 @@ interface PolicyLite {
   policyTypeCode: string
   companyName: string
   productName: string
+  policyholder: string
   person: string
 }
 
@@ -176,6 +177,7 @@ interface CardData {
   claim: ClaimRow
   clientId: string
   clientName: string
+  policyholderLabel: string
   lifeAssuredLabel: string
   policyLabel: string
 }
@@ -351,6 +353,15 @@ export default function BusinessClaimsBoardPage() {
     return p?.productName || p?.companyName || '—'
   }
 
+  // The policy's actual policyholder (who owns/pays for the policy) — can differ
+  // from both the CRM client record and the life assured (e.g. a policy the
+  // spouse holds with the client as life assured, or vice versa). Falls back to
+  // the CRM client name if the policyholder field was left blank on the policy.
+  function policyholderLabel(clientId: string, policyId: string): string {
+    const p = (policiesByClient[clientId] || []).find(pp => pp.id === policyId)
+    return p?.policyholder || clientsById[clientId] || 'Unknown'
+  }
+
   const claimsById = useMemo(() => {
     const map: Record<string, ClaimRow> = {}
     claims.forEach(c => { map[c.id] = c })
@@ -376,6 +387,7 @@ export default function BusinessClaimsBoardPage() {
           item, claim,
           clientId: claim.client_id,
           clientName: clientsById[claim.client_id] || 'Unknown client',
+          policyholderLabel: policyholderLabel(claim.client_id, claim.policy_id),
           lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
           policyLabel: policyLabel(claim.client_id, claim.policy_id),
         }
@@ -401,6 +413,7 @@ export default function BusinessClaimsBoardPage() {
           item, claim,
           clientId: claim.client_id,
           clientName: clientsById[claim.client_id] || 'Unknown client',
+          policyholderLabel: policyholderLabel(claim.client_id, claim.policy_id),
           lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
           policyLabel: policyLabel(claim.client_id, claim.policy_id),
         }
@@ -459,6 +472,7 @@ export default function BusinessClaimsBoardPage() {
         item, claim,
         clientId: claim.client_id,
         clientName: clientsById[claim.client_id] || 'Unknown client',
+        policyholderLabel: policyholderLabel(claim.client_id, claim.policy_id),
         lifeAssuredLabel: lifeAssuredLabel(claim.client_id, claim.life_assured_person),
         policyLabel: policyLabel(claim.client_id, claim.policy_id),
       })
@@ -983,8 +997,8 @@ export default function BusinessClaimsBoardPage() {
           <div style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto', background: 'white', borderRadius: 14 }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '20px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div className="font-serif" style={{ fontSize: 21, color: T.text }}>{editingCard.clientName}</div>
-                <div style={{ fontSize: 12, color: T.textFaint, marginTop: 3 }}>{editingCard.lifeAssuredLabel} · {editingCard.policyLabel}</div>
+                <div className="font-serif" style={{ fontSize: 21, color: T.text }}>{editingCard.policyholderLabel}</div>
+                <div style={{ fontSize: 12, color: T.textFaint, marginTop: 3 }}>Claim for {editingCard.lifeAssuredLabel} · {editingCard.policyLabel}</div>
               </div>
               <button onClick={() => setEditingCard(null)} style={{ background: 'none', border: 'none', color: T.textFaint, fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 2 }}>×</button>
             </div>
