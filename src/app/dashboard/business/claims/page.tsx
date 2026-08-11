@@ -785,7 +785,7 @@ export default function BusinessClaimsBoardPage() {
                     style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
-                      {card.clientName} · {card.lifeAssuredLabel !== card.clientName ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
+                      {card.policyholderLabel} · {card.lifeAssuredLabel !== card.policyholderLabel ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
                     </div>
                     <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>{todo.task}</div>
                   </div>
@@ -829,7 +829,7 @@ export default function BusinessClaimsBoardPage() {
                           }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
-                                {card.clientName} · {card.lifeAssuredLabel !== card.clientName ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
+                                {card.policyholderLabel} · {card.lifeAssuredLabel !== card.policyholderLabel ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
                               </div>
                               <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2, fontStyle: 'italic' }}>No follow-up set</div>
                             </div>
@@ -1237,7 +1237,7 @@ function ClaimCard({ card, dragging, onClick }: {
       transform: transform ? CSS.Translate.toString(transform) : undefined,
       zIndex: isDragging ? 10 : undefined, position: isDragging ? 'relative' : undefined,
     }}>
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{card.clientName}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{card.policyholderLabel}</div>
       <div style={{ fontSize: 11, color: T.textFaint, marginTop: 1 }}>{card.lifeAssuredLabel} · {card.policyLabel}</div>
 
       <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap', marginTop: 8 }}>
