@@ -151,6 +151,17 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, advisor?.beta_features, advisor?.id])
 
+  // Badge refresh cadence. These three counts used to be refetched on every
+  // single navigation (keyed on `pathname`), which meant 5 DB queries + 1
+  // auth-server round trip + 1 serverless invocation firing in the background
+  // on every nav click, app-wide — not just on the pages the badges are
+  // about. On a 60-max-connection Supabase tier that queues behind the
+  // page's own data fetch and was the direct cause of the 10s+ load times
+  // reported Aug 2026. Fixed by fetching once on mount, then refreshing on
+  // an interval + tab-focus instead of on every route change. A badge count
+  // does not need to be accurate to the second.
+  const BADGE_REFRESH_MS = 3 * 60 * 1000
+
   // Claims attention badge — overdue/due-today follow-ups plus stale claim
   // line items with no follow-up tracked at all (see claimsAttention.ts).
   // Shown on the Business Dashboard toggle (visible in either mode) and on
@@ -159,10 +170,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!businessAccess) { setClaimsBadgeCount(0); return }
     let cancelled = false
-    fetchClaimsAttentionCount(supabase).then(count => { if (!cancelled) setClaimsBadgeCount(count) }).catch(() => {})
-    return () => { cancelled = true }
+    const refresh = () => fetchClaimsAttentionCount(supabase).then(count => { if (!cancelled) setClaimsBadgeCount(count) }).catch(() => {})
+    refresh()
+    const interval = setInterval(refresh, BADGE_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('focus', refresh) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, businessAccess])
+  }, [businessAccess])
 
   // Service Requests badge — count of open (not-done) requests. Same
   // firm-wide-via-RLS pattern as the claims badge above; shown on the
@@ -171,21 +185,33 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!businessAccess) { setServiceRequestsBadgeCount(0); return }
     let cancelled = false
-    fetchServiceRequestsAttentionCount(supabase).then(count => { if (!cancelled) setServiceRequestsBadgeCount(count) }).catch(() => {})
-    return () => { cancelled = true }
+    const refresh = () => fetchServiceRequestsAttentionCount(supabase).then(count => { if (!cancelled) setServiceRequestsBadgeCount(count) }).catch(() => {})
+    refresh()
+    const interval = setInterval(refresh, BADGE_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('focus', refresh) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, businessAccess])
+  }, [businessAccess])
 
   // Admin Hub notification badge — pending advisor approvals + unresolved
-  // bug reports. Creator-only, refetched on every navigation so it clears
-  // shortly after visiting /admin and resolving/approving things there.
+  // bug reports. Creator-only. Refreshed on mount + interval + tab focus
+  // rather than on every navigation (see BADGE_REFRESH_MS note above) — the
+  // /api/get-admin-badge-counts route is the most expensive of the three,
+  // since requireCreator() makes a real network round trip to Supabase's
+  // auth server (auth.getUser()) on top of its own 2 DB queries.
   useEffect(() => {
     if (!user?.id || user.id !== CREATOR_ID) return
-    fetch('/api/get-admin-badge-counts')
+    let cancelled = false
+    const refresh = () => fetch('/api/get-admin-badge-counts')
       .then(r => r.json())
-      .then(data => setAdminBadgeCount((data?.pendingAdvisors || 0) + (data?.newBugReports || 0)))
+      .then(data => { if (!cancelled) setAdminBadgeCount((data?.pendingAdvisors || 0) + (data?.newBugReports || 0)) })
       .catch(() => {})
-  }, [pathname, user?.id])
+    refresh()
+    const interval = setInterval(refresh, BADGE_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('focus', refresh) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   async function deleteClient(clientId: string) {
     if (!confirm('Delete this client? This cannot be undone.')) return
