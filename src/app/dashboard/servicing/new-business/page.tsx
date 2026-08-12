@@ -116,6 +116,14 @@ export default function NewApplicationsServicingPage() {
     setCases(prev => prev.map(c => c.id === id ? { ...c, outcome: null, outcome_reason: null, outcome_at_stage: null, revisit_date: null } : c))
   }
 
+  async function deleteCase(id: string) {
+    const { error } = await supabase.from('new_business_cases').delete().eq('id', id)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    setCases(prev => prev.filter(c => c.id !== id))
+    setEditingId(null)
+    setOutcomeDraft(null)
+  }
+
   function handleCaseCreated(newCase: CaseRow) {
     setCases(prev => [newCase, ...prev])
     setShowNewCase(false)
@@ -186,6 +194,7 @@ export default function NewApplicationsServicingPage() {
               onSubmitOutcome={submitOutcome}
               savingOutcome={savingOutcome}
               onReopen={() => reopenCase(editingRow.id)}
+              onDelete={() => deleteCase(editingRow.id)}
             />
           </div>
         </div>

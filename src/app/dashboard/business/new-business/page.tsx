@@ -167,6 +167,18 @@ export default function NewBusinessPipelinePage() {
     setCases(prev => prev.map(c => c.id === id ? { ...c, outcome: null, outcome_reason: null, outcome_at_stage: null, revisit_date: null } : c))
   }
 
+  async function deleteCase(id: string) {
+    // Child rows (products, todos, meetings, activity log) cascade-delete;
+    // gmail_search_log rows are kept for audit purposes with case_id set
+    // to null (fixed via migration — the FK previously had no ON DELETE
+    // clause and would have blocked this).
+    const { error } = await supabase.from('new_business_cases').delete().eq('id', id)
+    if (error) { alert('Delete failed: ' + error.message); return }
+    setCases(prev => prev.filter(c => c.id !== id))
+    setEditingId(null)
+    setOutcomeDraft(null)
+  }
+
   const editingRow = editingId ? cases.find(c => c.id === editingId) || null : null
 
   function handleCaseCreated(newCase: CaseRow) {
@@ -185,7 +197,7 @@ export default function NewBusinessPipelinePage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 32px 18px', borderBottom: `1px solid ${T.line}` }}>
         <div>
           <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.gold }}>Business Dashboard</div>
-          <h1 className="font-serif" style={{ fontSize: 32, fontWeight: 600, margin: 0, color: T.text, letterSpacing: '-0.01em' }}>New Business Pipeline</h1>
+          <h1 className="font-serif" style={{ fontSize: 32, fontWeight: 600, margin: 0, color: T.text, letterSpacing: '-0.01em' }}>New Business and Review</h1>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={() => setShowDeferred(v => !v)}
@@ -265,6 +277,7 @@ export default function NewBusinessPipelinePage() {
               onSubmitOutcome={submitOutcome}
               savingOutcome={savingOutcome}
               onReopen={() => reopenCase(editingRow.id)}
+              onDelete={() => deleteCase(editingRow.id)}
             />
           </div>
         </div>

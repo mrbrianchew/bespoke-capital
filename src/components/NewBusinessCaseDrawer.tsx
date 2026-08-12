@@ -85,7 +85,7 @@ const OUTCOME_REASON_PLACEHOLDER: Record<'lost' | 'deferred', string> = {
 
 export default function NewBusinessCaseDrawer({
   row, clientName, spouseName, products, onClose, onMoveStage,
-  outcomeDraft, onStartOutcome, onCancelOutcome, onChangeOutcomeDraft, onSubmitOutcome, savingOutcome, onReopen,
+  outcomeDraft, onStartOutcome, onCancelOutcome, onChangeOutcomeDraft, onSubmitOutcome, savingOutcome, onReopen, onDelete,
 }: {
   row: CaseRow
   clientName: string | null
@@ -100,6 +100,7 @@ export default function NewBusinessCaseDrawer({
   onSubmitOutcome: () => void
   savingOutcome: boolean
   onReopen: () => void
+  onDelete: () => void
 }) {
   const stageIdx = STAGES.findIndex(s => s.key === row.stage)
   const isProspect = !row.client_id
@@ -263,6 +264,19 @@ export default function NewBusinessCaseDrawer({
             )}
           </div>
         )}
+
+        {/* Delete — separate from Lost/Deferred: those are recoverable
+            outcomes (Reopen brings them back), this is permanent. Always
+            available, active or not, so a mis-created case can be cleaned
+            up regardless of stage. */}
+        <div style={{ marginTop: 28, paddingTop: 16, borderTop: `1px solid ${T.line}` }}>
+          <button
+            onClick={() => { if (window.confirm(`Permanently delete "${row.case_title}"? This removes the case and all its products, meetings, to-dos, and email search history. This cannot be undone.`)) onDelete() }}
+            style={{ ...btnSmStyle, border: 'none', background: 'none', color: T.textFaint, padding: '4px 0' }}
+          >
+            Delete this case
+          </button>
+        </div>
       </div>
     </div>
   )
