@@ -48,13 +48,10 @@ const NAV_GROUPS_ALL: { id: NavGroupId; label: string; items: typeof NAV_PLANNIN
 // below). Naming convention going forward: plain noun, no UI-shape suffix
 // ("Board," "Pipeline," "Desk") — plural for discrete trackable items
 // (Claims, Service Requests), singular/gerund for ongoing process categories.
-// New Business Pipeline remains a placeholder reserved for a future build —
-// rendered disabled rather than omitted so the shape of the section stays
-// visible. Its label will need the same cleanup once that feature is built.
 const NAV_BUSINESS: { href: string; label: string; icon: string; id: string; disabled?: boolean }[] = [
   { href: '/dashboard/business/claims', label: 'Claims', icon: '▤', id: 'claims-board' },
   { href: '/dashboard/business/service-requests', label: 'Service Requests', icon: '◑', id: 'service-requests' },
-  { href: '#', label: 'New Business Pipeline', icon: '◐', id: 'new-business-pipeline', disabled: true },
+  { href: '/dashboard/business/new-business', label: 'New Business', icon: '◐', id: 'new-business' },
 ]
 
 // Business Dashboard gating is intentionally stricter than a single flag:
