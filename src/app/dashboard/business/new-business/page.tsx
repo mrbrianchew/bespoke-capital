@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { STAGES, Stage, daysInStage, hasUpcomingMeeting, staleLevel, AttentionCase, AttentionMeeting } from '@/lib/newBusinessAttention'
+import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -100,7 +101,7 @@ const OUTCOME_REASON_PLACEHOLDER: Record<'lost' | 'deferred', string> = {
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
 export default function NewBusinessPipelinePage() {
-  const { advisor, clients, authLoading } = useDashboard()
+  const { advisor, clients, setClients, authLoading } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
 
@@ -114,6 +115,7 @@ export default function NewBusinessPipelinePage() {
   const [showLost, setShowLost] = useState(false)
   const [showDeferred, setShowDeferred] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [showNewCase, setShowNewCase] = useState(false)
   const [savingOutcome, setSavingOutcome] = useState(false)
   const [outcomeDraft, setOutcomeDraft] = useState<{ type: 'lost' | 'deferred'; reason: string; revisitDate: string } | null>(null)
 
@@ -234,6 +236,11 @@ export default function NewBusinessPipelinePage() {
 
   const editingRow = editingId ? cases.find(c => c.id === editingId) || null : null
 
+  function handleCaseCreated(newCase: CaseRow) {
+    setCases(prev => [...prev, newCase])
+    setShowNewCase(false)
+  }
+
   if (authLoading || loading) {
     return <div style={{ padding: 40, color: T.textFaint, fontSize: 13 }}>Loading pipeline…</div>
   }
@@ -255,6 +262,9 @@ export default function NewBusinessPipelinePage() {
           <button onClick={() => setShowLost(v => !v)}
             style={{ ...btnSmStyle, ...(showLost ? { background: T.roseSoft, borderColor: T.rose, color: T.rose } : {}) }}>
             {showLost ? 'Hide Lost' : `Show Lost (${lostCases.length})`}
+          </button>
+          <button onClick={() => setShowNewCase(true)} style={{ ...btnSmStyle, background: T.text, color: 'var(--cream)', borderColor: T.text }}>
+            + New Case
           </button>
         </div>
       </div>
@@ -324,6 +334,16 @@ export default function NewBusinessPipelinePage() {
             />
           </div>
         </div>
+      )}
+
+      {showNewCase && advisor && (
+        <NewBusinessCaseModal
+          advisorId={advisor.id}
+          clients={clients}
+          setClients={setClients}
+          onClose={() => setShowNewCase(false)}
+          onCreated={handleCaseCreated}
+        />
       )}
     </div>
   )
