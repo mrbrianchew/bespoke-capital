@@ -78,7 +78,8 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
   const [todos, setTodos] = useState<TodoRow[]>([])
 
   // meeting form
-  const [meetingMode, setMeetingMode] = useState<'log' | 'schedule' | null>(null)
+  const [meetingMode, setMeetingMode] = useState<'log' | 'schedule' | 'edit' | null>(null)
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null)
   const [meetingTitle, setMeetingTitle] = useState('')
   const [purpose, setPurpose] = useState<MeetingRow['meeting_type']>('fact_find')
   const [channel, setChannel] = useState<'in_person' | 'video_call' | 'phone_call'>('video_call')
@@ -95,6 +96,9 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
   // todo form
   const [todoDraft, setTodoDraft] = useState('')
   const [todoDueDraft, setTodoDueDraft] = useState('')
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
+  const [editTodoText, setEditTodoText] = useState('')
+  const [editTodoDue, setEditTodoDue] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -116,6 +120,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
 
   function openMeetingForm(mode: 'log' | 'schedule') {
     setMeetingMode(mode)
+    setEditingMeetingId(null)
     setMeetingTitle('')
     setPurpose('fact_find')
     setChannel('video_call')
@@ -129,9 +134,51 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     setPhoneDraft('')
   }
 
+  // Edits the DB row in place — does not touch the synced Calendar event
+  // (the schedule-meeting API only supports create/delete, no update), so
+  // a calendar-synced meeting's invite won't reflect edits made here. That's
+  // an acceptable gap for now: delete + reschedule still works for changes
+  // that need to hit the calendar.
+  function openEditMeetingForm(m: MeetingRow) {
+    setMeetingMode('edit')
+    setEditingMeetingId(m.id)
+    setMeetingTitle(m.title)
+    setPurpose(m.meeting_type)
+    setChannel((m.video_platform ? 'video_call' : m.phone_number ? 'phone_call' : 'in_person'))
+    setMeetingDate(m.meeting_date)
+    setMeetingTime(m.meeting_time ? m.meeting_time.slice(0, 5) : '')
+    setDurationMinutes(m.duration_minutes || 30)
+    setMeetingNotes(m.notes || '')
+    setVideoPlatformSel((m.video_platform as VideoPlatform) || 'google_meet')
+    setMeetingLinkDraft(m.meeting_link || '')
+    setLocationDraft(m.location || '')
+    setPhoneDraft(m.phone_number || '')
+  }
+
   async function saveMeeting() {
     if (!meetingTitle.trim() || !meetingDate) return
     setSavingMeeting(true)
+
+    if (editingMeetingId) {
+      const patch = {
+        title: meetingTitle.trim(), meeting_type: purpose,
+        meeting_date: meetingDate, meeting_time: meetingTime || null, duration_minutes: durationMinutes,
+        notes: meetingNotes.trim() || null,
+        video_platform: channel === 'video_call' ? videoPlatformSel : null,
+        meeting_link: channel === 'video_call' ? (meetingLinkDraft.trim() || null) : null,
+        location: channel === 'in_person' ? (locationDraft.trim() || null) : null,
+        phone_number: channel === 'phone_call' ? (phoneDraft.trim() || null) : null,
+      }
+      const { error } = await supabase.from('new_business_case_meetings').update(patch).eq('id', editingMeetingId)
+      setSavingMeeting(false)
+      if (error) { alert('Could not save changes: ' + error.message); return }
+      setMeetings(prev => prev.map(m => m.id === editingMeetingId ? { ...m, ...patch } : m))
+      onMeetingsChanged?.()
+      setMeetingMode(null)
+      setEditingMeetingId(null)
+      return
+    }
+
     const isScheduled = meetingMode === 'schedule'
     let calendarEventId: string | null = null
     let finalMeetingLink = channel === 'video_call' ? meetingLinkDraft.trim() || null : null
@@ -206,6 +253,22 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     if (error) alert('Delete failed: ' + error.message)
   }
 
+  function openEditTodo(t: TodoRow) {
+    setEditingTodoId(t.id)
+    setEditTodoText(t.text)
+    setEditTodoDue(t.due_date || '')
+  }
+
+  async function saveTodoEdit() {
+    if (!editingTodoId || !editTodoText.trim()) return
+    const patch = { text: editTodoText.trim(), due_date: editTodoDue || null }
+    setTodos(prev => prev.map(t => t.id === editingTodoId ? { ...t, ...patch } : t))
+    const id = editingTodoId
+    setEditingTodoId(null)
+    const { error } = await supabase.from('new_business_case_todos').update(patch).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
   if (loading) return <div style={{ fontSize: 12, color: T.textFaint }}>Loading…</div>
 
   return (
@@ -229,6 +292,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 11, color: T.textFaint, whiteSpace: 'nowrap' }}>{fmtDate(m.meeting_date)}{m.meeting_time ? `, ${m.meeting_time.slice(0, 5)}` : ''}</span>
+                <button onClick={() => openEditMeetingForm(m)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }} title="Edit">✎</button>
                 <button onClick={() => deleteMeeting(m.id)} style={{ fontSize: 13, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
               </div>
             </div>
@@ -252,6 +316,11 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: T.cream2, borderRadius: 9, marginBottom: 28 }}>
+          {editingMeetingId && meetings.find(m => m.id === editingMeetingId)?.google_calendar_event_id && (
+            <div style={{ fontSize: 10.5, color: T.textFaint, fontStyle: 'italic' }}>
+              This meeting is synced to Google Calendar — changes here update the case record but not the calendar invite. Delete and reschedule to change the invite itself.
+            </div>
+          )}
           <input value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="What's this meeting about?" style={inputStyle} />
 
           <select value={purpose} onChange={e => setPurpose(e.target.value as MeetingRow['meeting_type'])} style={inputStyle}>
@@ -300,9 +369,9 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
           <textarea value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} rows={2} placeholder="Notes (optional)"
             style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-            <button onClick={() => setMeetingMode(null)} style={{ ...ghostBtnStyle, flex: 'none' }}>Cancel</button>
+            <button onClick={() => { setMeetingMode(null); setEditingMeetingId(null) }} style={{ ...ghostBtnStyle, flex: 'none' }}>Cancel</button>
             <button onClick={saveMeeting} disabled={savingMeeting || !meetingTitle.trim() || !meetingDate} style={{ ...btnStyle, opacity: savingMeeting || !meetingTitle.trim() ? 0.6 : 1 }}>
-              {savingMeeting ? 'Saving…' : meetingMode === 'schedule' ? 'Schedule' : 'Log meeting'}
+              {savingMeeting ? 'Saving…' : editingMeetingId ? 'Save changes' : meetingMode === 'schedule' ? 'Schedule' : 'Log meeting'}
             </button>
           </div>
         </div>
@@ -314,11 +383,20 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
       </div>
       {todos.length === 0 && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', marginBottom: 10 }}>No to-dos yet.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 10 }}>
-        {todos.map(t => (
+        {todos.map(t => editingTodoId === t.id ? (
+          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 0', borderBottom: `1px solid ${T.cream2}` }}>
+            <input value={editTodoText} onChange={e => setEditTodoText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveTodoEdit(); if (e.key === 'Escape') setEditingTodoId(null) }}
+              autoFocus style={{ ...inputStyle, flex: 1 }} />
+            <input type="date" value={editTodoDue} onChange={e => setEditTodoDue(e.target.value)} style={inputStyle} />
+            <button onClick={saveTodoEdit} style={{ fontSize: 11, color: T.gold, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Save</button>
+            <button onClick={() => setEditingTodoId(null)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        ) : (
           <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${T.cream2}`, fontSize: 12.5 }}>
             <input type="checkbox" checked={t.done} onChange={e => toggleTodo(t.id, e.target.checked)} style={{ width: 15, height: 15, flexShrink: 0 }} />
             <span style={{ flex: 1, textDecoration: t.done ? 'line-through' : 'none', color: t.done ? T.textFaint : T.text }}>{t.text}</span>
             {t.due_date && <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.textFaint }}>{fmtDate(t.due_date)}</span>}
+            <button onClick={() => openEditTodo(t)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }} title="Edit">✎</button>
             <button onClick={() => deleteTodo(t.id)} style={{ fontSize: 13, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
           </div>
         ))}

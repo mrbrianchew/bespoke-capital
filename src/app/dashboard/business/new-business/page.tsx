@@ -6,6 +6,8 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import { STAGES, Stage, daysInStage, hasUpcomingMeeting, staleLevel, AttentionCase, AttentionMeeting } from '@/lib/newBusinessAttention'
 import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
 import CaseDrawer, { CaseRow, ProductRow, T, btnSmStyle } from '@/components/NewBusinessCaseDrawer'
+import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, closestCenter } from '@dnd-kit/core'
+import { GripVertical } from 'lucide-react'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -51,6 +53,20 @@ export default function NewBusinessPipelinePage() {
   const [showNewCase, setShowNewCase] = useState(false)
   const [savingOutcome, setSavingOutcome] = useState(false)
   const [outcomeDraft, setOutcomeDraft] = useState<{ type: 'lost' | 'deferred'; reason: string; revisitDate: string } | null>(null)
+
+  // Drag-and-drop stage moves — distance threshold keeps a plain click on
+  // the card (opens the drawer) from being swallowed as a drag; only the
+  // grip handle on the card actually starts a drag (see CaseCard below),
+  // same convention as SortablePolicyRow on the Protection page.
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over) return
+    const targetStage = over.id as Stage
+    const row = cases.find(c => c.id === active.id)
+    if (!row || row.outcome || row.stage === targetStage) return
+    moveStage(row.id, targetStage)
+  }
 
   useEffect(() => {
     if (!authLoading && advisor && !hasAccess) router.replace('/dashboard')
@@ -225,36 +241,38 @@ export default function NewBusinessPipelinePage() {
 
       {/* Board */}
       <div style={{ overflowX: 'auto', padding: '22px 32px 40px' }}>
-        <div style={{ display: 'flex', gap: 16, minWidth: 'max-content' }}>
-          {STAGES.map(stage => {
-            const stageCases = columns[stage.key]
-            const stageLost = showLost ? lostCases.filter(c => c.outcome_at_stage === stage.label) : []
-            const stageDeferred = showDeferred ? deferredCases.filter(c => c.outcome_at_stage === stage.label) : []
-            return (
-              <div key={stage.key} style={{ width: 264, flexShrink: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 4px 12px', borderBottom: `2px solid ${T.text}`, marginBottom: 12 }}>
-                  <div style={{ fontWeight: 600, fontSize: 12.5, color: T.text }}>{stage.label}</div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: T.textFaint }}>{stageCases.length}</div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 60 }}>
-                  {stageCases.length === 0 && stageLost.length === 0 && stageDeferred.length === 0 && (
-                    <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', padding: '10px 2px' }}>No cases</div>
-                  )}
-                  {stageCases.map(c => (
-                    <CaseCard key={c.id} row={c} clientsById={clientsById} products={productsByCase[c.id] || []} meetings={meetings}
-                      onClick={() => setEditingId(c.id)} />
-                  ))}
-                  {stageDeferred.map(c => (
-                    <OutcomeCard key={c.id} row={c} kind="deferred" onClick={() => setEditingId(c.id)} />
-                  ))}
-                  {stageLost.map(c => (
-                    <OutcomeCard key={c.id} row={c} kind="lost" onClick={() => setEditingId(c.id)} />
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+        <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <div style={{ display: 'flex', gap: 16, minWidth: 'max-content' }}>
+            {STAGES.map(stage => {
+              const stageCases = columns[stage.key]
+              const stageLost = showLost ? lostCases.filter(c => c.outcome_at_stage === stage.label) : []
+              const stageDeferred = showDeferred ? deferredCases.filter(c => c.outcome_at_stage === stage.label) : []
+              return (
+                <DroppableColumn key={stage.key} stageKey={stage.key}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 4px 12px', borderBottom: `2px solid ${T.text}`, marginBottom: 12 }}>
+                    <div style={{ fontWeight: 600, fontSize: 12.5, color: T.text }}>{stage.label}</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: T.textFaint }}>{stageCases.length}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 60 }}>
+                    {stageCases.length === 0 && stageLost.length === 0 && stageDeferred.length === 0 && (
+                      <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', padding: '10px 2px' }}>No cases</div>
+                    )}
+                    {stageCases.map(c => (
+                      <DraggableCaseCard key={c.id} row={c} clientsById={clientsById} products={productsByCase[c.id] || []} meetings={meetings}
+                        onClick={() => setEditingId(c.id)} />
+                    ))}
+                    {stageDeferred.map(c => (
+                      <OutcomeCard key={c.id} row={c} kind="deferred" onClick={() => setEditingId(c.id)} />
+                    ))}
+                    {stageLost.map(c => (
+                      <OutcomeCard key={c.id} row={c} kind="lost" onClick={() => setEditingId(c.id)} />
+                    ))}
+                  </div>
+                </DroppableColumn>
+              )
+            })}
+          </div>
+        </DndContext>
       </div>
 
       {/* Detail drawer */}
@@ -309,8 +327,44 @@ function Metric({ label, value, flag, last }: { label: string; value: string; fl
   )
 }
 
-function CaseCard({ row, clientsById, products, meetings, onClick }: {
+// Droppable stage column — highlights while a card is dragged over it.
+function DroppableColumn({ stageKey, children }: { stageKey: Stage; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: stageKey })
+  return (
+    <div ref={setNodeRef} style={{
+      width: 264, flexShrink: 0, borderRadius: 8,
+      background: isOver ? T.goldSoft : 'transparent',
+      transition: 'background 0.12s',
+    }}>
+      {children}
+    </div>
+  )
+}
+
+// Wraps CaseCard with drag behavior. Only the grip handle inside CaseCard
+// starts a drag (see activationConstraint on the sensor + listeners scoped
+// to the handle) — clicking anywhere else on the card still opens the
+// drawer, same convention as SortablePolicyRow on the Protection page.
+function DraggableCaseCard(props: {
   row: CaseRow; clientsById: Record<string, string>; products: ProductRow[]; meetings: AttentionMeeting[]; onClick: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: props.row.id })
+  const style: React.CSSProperties = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    zIndex: isDragging ? 50 : 'auto',
+    position: 'relative',
+    opacity: isDragging ? 0.6 : 1,
+  }
+  return (
+    <div ref={setNodeRef} style={style}>
+      <CaseCard {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  )
+}
+
+function CaseCard({ row, clientsById, products, meetings, onClick, dragHandleProps }: {
+  row: CaseRow; clientsById: Record<string, string>; products: ProductRow[]; meetings: AttentionMeeting[]; onClick: () => void
+  dragHandleProps?: Record<string, any>
 }) {
   const level = staleLevel(row, meetings)
   const badge = staleBadge(level, row, meetings)
@@ -333,7 +387,16 @@ function CaseCard({ row, clientsById, products, meetings, onClick }: {
           </div>
           <div style={{ fontSize: 11.5, color: T.textFaint, marginTop: 2 }}>{row.source || (row.client_id ? 'Existing client' : '—')}</div>
         </div>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, padding: '3px 7px', borderRadius: 5, whiteSpace: 'nowrap', flexShrink: 0, background: badge.bg, color: badge.fg }}>{badge.text}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, padding: '3px 7px', borderRadius: 5, whiteSpace: 'nowrap', background: badge.bg, color: badge.fg }}>{badge.text}</span>
+          {dragHandleProps && (
+            <div {...dragHandleProps} onClick={e => e.stopPropagation()}
+              style={{ cursor: 'grab', color: T.textFaint, display: 'flex', alignItems: 'center', touchAction: 'none' }}
+              title="Drag to move stage">
+              <GripVertical size={13} strokeWidth={2} />
+            </div>
+          )}
+        </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 9, borderTop: `1px solid ${T.cream2}` }}>
         <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: T.textDim }}>{productLabel}</div>
