@@ -1,6 +1,7 @@
 'use client'
 import { STAGES, Stage } from '@/lib/newBusinessAttention'
 import NewBusinessCaseExtras from '@/components/NewBusinessCaseExtras'
+import NewBusinessCaseDocuments from '@/components/NewBusinessCaseDocuments'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 
 // Shared between the firm-wide Business Dashboard board
@@ -218,6 +219,10 @@ export default function NewBusinessCaseDrawer({
 
         <div style={{ marginBottom: 28 }}>
           <NewBusinessCaseExtras caseId={row.id} />
+        </div>
+
+        <div style={{ marginBottom: 28 }}>
+          <NewBusinessCaseDocuments caseId={row.id} clientId={row.client_id} />
         </div>
 
         <div style={{ marginBottom: 28 }}>
