@@ -5,74 +5,16 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { STAGES, Stage, daysInStage, hasUpcomingMeeting, staleLevel, AttentionCase, AttentionMeeting } from '@/lib/newBusinessAttention'
 import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
-import NewBusinessCaseExtras from '@/components/NewBusinessCaseExtras'
-import GmailClaimSearch from '@/components/GmailClaimSearch'
+import CaseDrawer, { CaseRow, ProductRow, T, btnSmStyle } from '@/components/NewBusinessCaseDrawer'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
-// Firm-wide Kanban over new_business_cases. Slice 1 of the New Business
-// Pipeline build: board + stage moves + Lost/Deferred + a read-only-ish
-// detail drawer covering case info and products. Meetings, Gmail search,
-// and to-dos are the next slice (Brian confirmed board-first sequencing,
-// Aug 2026) — the drawer has placeholders noting this rather than silently
-// omitting them.
+// Firm-wide Kanban over new_business_cases. The detail drawer itself lives
+// in components/NewBusinessCaseDrawer.tsx, shared with the per-client list
+// at dashboard/servicing/new-business — same case, same drawer, two entry
+// points.
 
-// ─── TYPES ──────────────────────────────────────────────────────────────────
-
-type CaseParty = 'client' | 'spouse' | 'both'
-type Outcome = 'lost' | 'deferred' | null
-type ProductStatus = 'active' | 'withdrawn' | 'declined_by_insurer' | 'declined_by_client' | 'issued'
-
-interface CaseRow {
-  id: string
-  advisor_id: string
-  client_id: string | null
-  prospect_name: string | null
-  prospect_contact: string | null
-  prospect_email: string | null
-  case_party: CaseParty
-  spouse_family_member_id: string | null
-  case_title: string
-  stage: Stage
-  stage_changed_at: string
-  outcome: Outcome
-  outcome_reason: string | null
-  outcome_at_stage: string | null
-  revisit_date: string | null
-  source: string | null
-  referred_by: string | null
-  notes: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface ProductRow {
-  id: string
-  case_id: string
-  life_assured_family_member_id: string | null
-  life_assured_role: 'self' | 'spouse' | 'child' | 'other'
-  life_assured_name: string
-  product_type: string | null
-  product_name: string | null
-  insurer: string | null
-  premium: number | null
-  premium_frequency: string | null
-  status: ProductStatus
-  status_note: string | null
-  reference_number: string | null
-  linked_policy_id: string | null
-  submitted_at: string | null
-  issued_at: string | null
-}
-
-const T = {
-  gold: 'var(--gold)', goldText: 'var(--gold-tag)', goldSoft: 'rgba(168,131,74,.12)',
-  emerald: 'var(--emerald)', emeraldSoft: 'rgba(45,90,78,.12)',
-  rose: 'var(--rouge)', roseSoft: 'rgba(138,40,40,.10)',
-  slate: '#5C6B73', slateSoft: 'rgba(92,107,115,.12)',
-  text: 'var(--ink)', textDim: 'var(--ink2)', textFaint: 'var(--ink3)',
-  line: 'var(--line)', cream2: 'var(--cream2)',
-}
+// ─── TYPES (board-local only — CaseRow/ProductRow now live in the shared drawer) ──
 
 function staleBadge(level: 'ok' | 'warn' | 'stale' | 'meeting', row: CaseRow, meetings: AttentionMeeting[]) {
   if (level === 'meeting') {
@@ -87,18 +29,7 @@ function staleBadge(level: 'ok' | 'warn' | 'stale' | 'meeting', row: CaseRow, me
   return { text, bg: T.emeraldSoft, fg: T.emerald }
 }
 
-const PRODUCT_STATUS_LABEL: Record<ProductStatus, { label: string; bg: string; fg: string }> = {
-  active: { label: 'In Progress', bg: T.emeraldSoft, fg: T.emerald },
-  issued: { label: 'Issued', bg: T.goldSoft, fg: T.goldText },
-  withdrawn: { label: 'Withdrawn', bg: T.cream2, fg: T.textFaint },
-  declined_by_insurer: { label: 'Declined (Insurer)', bg: T.roseSoft, fg: T.rose },
-  declined_by_client: { label: 'Declined (Client)', bg: T.roseSoft, fg: T.rose },
-}
 
-const OUTCOME_REASON_PLACEHOLDER: Record<'lost' | 'deferred', string> = {
-  lost: 'Why did this not proceed?',
-  deferred: 'What are you waiting on before revisiting?',
-}
 
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
@@ -354,11 +285,6 @@ export default function NewBusinessPipelinePage() {
 
 // ─── SUBCOMPONENTS ──────────────────────────────────────────────────────────
 
-const btnSmStyle: React.CSSProperties = {
-  fontFamily: 'Inter, sans-serif', fontSize: 12.5, fontWeight: 600, padding: '6px 11px',
-  borderRadius: 7, border: `1px solid ${T.line}`, background: '#fff', color: T.text, cursor: 'pointer',
-}
-
 function Metric({ label, value, flag, last }: { label: string; value: string; flag?: string; last?: boolean }) {
   return (
     <div style={{ padding: '0 28px', borderRight: last ? 'none' : `1px solid ${T.line}` }}>
@@ -368,10 +294,6 @@ function Metric({ label, value, flag, last }: { label: string; value: string; fl
       <div className="font-serif" style={{ fontSize: 26, fontWeight: 600, color: T.text }}>{value}</div>
     </div>
   )
-}
-
-function displayName(row: { case_title: string; prospect_name: string | null; client_id: string | null }, clientsById: Record<string, string>): string {
-  return row.case_title
 }
 
 function CaseCard({ row, clientsById, products, meetings, onClick }: {
@@ -425,191 +347,6 @@ function OutcomeCard({ row, kind, onClick }: { row: CaseRow; kind: 'lost' | 'def
           {row.outcome_reason}
         </div>
       )}
-    </div>
-  )
-}
-
-function CaseDrawer({
-  row, clientName, spouseName, products, onClose, onMoveStage,
-  outcomeDraft, onStartOutcome, onCancelOutcome, onChangeOutcomeDraft, onSubmitOutcome, savingOutcome, onReopen,
-}: {
-  row: CaseRow
-  clientName: string | null
-  spouseName: string | null
-  products: ProductRow[]
-  onClose: () => void
-  onMoveStage: (stage: Stage) => void
-  outcomeDraft: { type: 'lost' | 'deferred'; reason: string; revisitDate: string } | null
-  onStartOutcome: (type: 'lost' | 'deferred') => void
-  onCancelOutcome: () => void
-  onChangeOutcomeDraft: (d: { type: 'lost' | 'deferred'; reason: string; revisitDate: string }) => void
-  onSubmitOutcome: () => void
-  savingOutcome: boolean
-  onReopen: () => void
-}) {
-  const stageIdx = STAGES.findIndex(s => s.key === row.stage)
-  const isProspect = !row.client_id
-
-  // Client + spouse first names (only spouse when case_party includes them)
-  // plus any application/policy reference numbers already on the products —
-  // matches the Claims dashboard's Gmail search scope: client/spouse only,
-  // never children, per Brian's call (Aug 2026).
-  const emailSearchTerms = (() => {
-    const terms: string[] = []
-    const clientFirst = (clientName || row.prospect_name || '').split(' ')[0]
-    if (clientFirst) terms.push(clientFirst)
-    if (spouseName && (row.case_party === 'spouse' || row.case_party === 'both')) {
-      const spouseFirst = spouseName.split(' ')[0]
-      if (spouseFirst && spouseFirst !== clientFirst) terms.push(spouseFirst)
-    }
-    products.forEach(p => {
-      if (p.reference_number) terms.push(p.reference_number)
-    })
-    return Array.from(new Set(terms)).slice(0, 5)
-  })()
-
-  return (
-    <div>
-      <div style={{ padding: '26px 32px 20px', borderBottom: `1px solid ${T.line}`, position: 'sticky', top: 0, background: 'var(--cream)', zIndex: 5 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <div className="font-serif" style={{ fontSize: 28, fontWeight: 600, color: T.text, margin: '0 0 4px' }}>{row.case_title}</div>
-            <div style={{ fontSize: 12.5, color: T.textDim, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <span>{clientName || row.prospect_name || 'Unnamed'}</span>
-              {row.source && <span style={{ fontFamily: 'DM Mono, monospace' }}>· {row.source}</span>}
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textFaint, fontSize: 22, lineHeight: 1, padding: 2 }}>×</button>
-        </div>
-
-        {row.outcome && (
-          <div style={{ marginTop: 16, background: row.outcome === 'lost' ? T.roseSoft : T.slateSoft, border: `1px solid ${row.outcome === 'lost' ? 'rgba(138,40,40,.25)' : 'rgba(92,107,115,.25)'}`, borderRadius: 10, padding: '12px 14px' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: row.outcome === 'lost' ? T.rose : T.slate, marginBottom: 3 }}>
-              {row.outcome === 'lost' ? 'Marked Lost / Not Proceeded' : 'Deferred'}
-              {row.outcome === 'deferred' && row.revisit_date && ` — revisit ${new Date(row.revisit_date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}`}
-            </div>
-            {row.outcome_reason && <div style={{ fontSize: 12.5, color: T.textDim }}>{row.outcome_reason}</div>}
-            <button onClick={onReopen} style={{ marginTop: 8, ...btnSmStyle }}>Reopen Case</button>
-          </div>
-        )}
-
-        {!row.outcome && (
-          <div style={{ display: 'flex', marginTop: 20, borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.line}` }}>
-            {STAGES.map((s, i) => {
-              const done = i < stageIdx, current = i === stageIdx
-              return (
-                <button key={s.key} onClick={() => onMoveStage(s.key)} title={`Move to ${s.label}`}
-                  style={{
-                    flex: 1, padding: '8px 4px', textAlign: 'center', fontFamily: 'DM Mono, monospace', fontSize: 9, cursor: 'pointer', border: 'none',
-                    borderRight: i < STAGES.length - 1 ? `1px solid ${T.line}` : 'none',
-                    background: done ? T.emerald : current ? T.gold : '#fff', color: done || current ? '#fff' : T.textFaint,
-                    fontWeight: current ? 700 : 400,
-                  }}>{s.label}</button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      <div style={{ padding: '24px 32px 60px' }}>
-        {isProspect && !row.outcome && (
-          <div style={{ marginBottom: 28, background: T.goldSoft, border: '1px solid rgba(168,131,74,.3)', borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <p style={{ margin: 0, fontSize: 12.5, color: '#6B5225', lineHeight: 1.4 }}>
-              <b style={{ display: 'block', marginBottom: 3 }}>Not yet a client record.</b>
-              Convert once they agree to proceed, or automatically on first product inception.
-            </p>
-            <button style={{ ...btnSmStyle, background: T.text, color: 'var(--cream)', whiteSpace: 'nowrap' }} disabled title="Convert-to-client action lands with the case-creation flow">Convert to Client</button>
-          </div>
-        )}
-
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 12 }}>
-            Products &amp; Life Assured <span style={{ fontWeight: 400, fontSize: 11.5, color: T.textFaint }}>{products.length} line item{products.length === 1 ? '' : 's'}</span>
-          </div>
-          {products.length === 0 ? (
-            <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>No products added yet.</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden' }}>
-              <thead>
-                <tr>
-                  {['Life Assured / Holder', 'Product', 'Status', 'Reference / Policy'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.textFaint, background: T.cream2, padding: '9px 12px', fontWeight: 500 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {products.map(p => {
-                  const st = PRODUCT_STATUS_LABEL[p.status]
-                  return (
-                    <tr key={p.id}>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}` }}>
-                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 9.5, padding: '2px 6px', borderRadius: 4, background: T.cream2, color: T.textDim, marginRight: 6 }}>{p.life_assured_role.toUpperCase().slice(0, 4)}</span>
-                        {p.life_assured_name}
-                      </td>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}` }}>{p.product_name || p.product_type || '—'}</td>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}` }}>
-                        <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: st.bg, color: st.fg }}>{st.label}</span>
-                      </td>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}`, color: T.textDim }}>
-                        {p.linked_policy_id ? p.reference_number || '—' : p.reference_number ? `${p.reference_number} (application)` : (p.status_note || '—')}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div style={{ marginBottom: 28 }}>
-          <NewBusinessCaseExtras caseId={row.id} />
-        </div>
-
-        <div style={{ marginBottom: 28 }}>
-          <GmailClaimSearch newBusinessCaseId={row.id} defaultTerms={emailSearchTerms} />
-        </div>
-
-        {row.notes && (
-          <div style={{ marginBottom: 28 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 8 }}>Notes</div>
-            <div style={{ fontSize: 12.5, color: T.textDim, background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>{row.notes}</div>
-          </div>
-        )}
-
-        {!row.outcome && (
-          <div>
-            {!outcomeDraft ? (
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => onStartOutcome('deferred')} style={{ ...btnSmStyle, borderColor: T.slate, color: T.slate }}>Mark as Deferred</button>
-                <button onClick={() => onStartOutcome('lost')} style={{ ...btnSmStyle, borderColor: T.rose, color: T.rose }}>Mark as Lost / Not Proceeded</button>
-              </div>
-            ) : (
-              <div style={{ background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
-                <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 10 }}>
-                  {outcomeDraft.type === 'lost' ? 'Mark as Lost / Not Proceeded' : 'Mark as Deferred'}
-                </div>
-                <textarea value={outcomeDraft.reason} onChange={e => onChangeOutcomeDraft({ ...outcomeDraft, reason: e.target.value })}
-                  placeholder={OUTCOME_REASON_PLACEHOLDER[outcomeDraft.type]}
-                  style={{ width: '100%', minHeight: 64, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px', fontFamily: 'Inter, sans-serif', fontSize: 13, color: T.text, background: 'var(--cream)', marginBottom: 10 }} />
-                {outcomeDraft.type === 'deferred' && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.textFaint, marginBottom: 6 }}>Revisit Date <span style={{ textTransform: 'none', fontStyle: 'italic' }}>optional</span></div>
-                    <input type="date" value={outcomeDraft.revisitDate} onChange={e => onChangeOutcomeDraft({ ...outcomeDraft, revisitDate: e.target.value })}
-                      style={{ border: `1px solid ${T.line}`, borderRadius: 8, padding: '9px 12px', fontFamily: 'Inter, sans-serif', fontSize: 13, color: T.text, background: 'var(--cream)' }} />
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button onClick={onCancelOutcome} style={btnSmStyle}>Cancel</button>
-                  <button onClick={onSubmitOutcome} disabled={savingOutcome}
-                    style={{ ...btnSmStyle, background: T.text, color: 'var(--cream)', opacity: savingOutcome ? 0.6 : 1 }}>
-                    {savingOutcome ? 'Saving…' : 'Confirm'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   )
 }

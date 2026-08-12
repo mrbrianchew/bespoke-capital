@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { ClientRow } from '@/contexts/DashboardContext'
 
@@ -42,13 +42,17 @@ const btnStyle: React.CSSProperties = {
 }
 
 export default function NewBusinessCaseModal({
-  advisorId, clients, setClients, onClose, onCreated,
+  advisorId, clients, setClients, onClose, onCreated, presetClient,
 }: {
   advisorId: string
   clients: ClientRow[]
   setClients: (updater: (prev: ClientRow[]) => ClientRow[]) => void
   onClose: () => void
   onCreated: (newCase: any) => void
+  // When opened from a client's own workspace (Client Servicing), the
+  // client is already known — skip the Existing Client/New Prospect toggle
+  // and the search entirely, go straight to the spouse-detection step.
+  presetClient?: ClientRow
 }) {
   const supabase = createClient()
 
@@ -96,6 +100,11 @@ export default function NewBusinessCaseModal({
     setSpouse(data ? (data as SpouseInfo) : null)
     setSpouseLoading(false)
   }
+
+  useEffect(() => {
+    if (presetClient) selectClient(presetClient)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetClient?.id])
 
   function clearSelection() {
     setSelectedClient(null)
@@ -184,26 +193,28 @@ export default function NewBusinessCaseModal({
         </div>
 
         <div style={{ padding: '20px 26px 6px' }}>
-          <div style={{ display: 'flex', background: '#fff', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3, marginBottom: 20 }}>
-            {(['client', 'prospect'] as const).map(t => (
-              <div key={t} onClick={() => setCaseType(t)}
-                style={{
-                  flex: 1, textAlign: 'center', padding: '8px 10px', fontSize: 12.5, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
-                  background: caseType === t ? T.text : 'transparent', color: caseType === t ? 'var(--cream)' : T.textFaint,
-                }}>
-                {t === 'client' ? 'Existing Client' : 'New Prospect'}
-              </div>
-            ))}
-          </div>
+          {!presetClient && (
+            <div style={{ display: 'flex', background: '#fff', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3, marginBottom: 20 }}>
+              {(['client', 'prospect'] as const).map(t => (
+                <div key={t} onClick={() => setCaseType(t)}
+                  style={{
+                    flex: 1, textAlign: 'center', padding: '8px 10px', fontSize: 12.5, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+                    background: caseType === t ? T.text : 'transparent', color: caseType === t ? 'var(--cream)' : T.textFaint,
+                  }}>
+                  {t === 'client' ? 'Existing Client' : 'New Prospect'}
+                </div>
+              ))}
+            </div>
+          )}
 
           {caseType === 'client' && (
             <div style={{ marginBottom: 16 }}>
-              <div style={labelStyle}>Search Client</div>
-              {!selectedClient && (
+              {!presetClient && <div style={labelStyle}>Search Client</div>}
+              {!presetClient && !selectedClient && (
                 <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Type a name..." style={inputStyle} />
               )}
 
-              {!selectedClient && query.trim() && (
+              {!presetClient && !selectedClient && query.trim() && (
                 <div>
                   {matches.map(c => (
                     <div key={c.id} onClick={() => selectClient(c)}
@@ -253,7 +264,9 @@ export default function NewBusinessCaseModal({
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: `1px solid ${T.gold}`, background: T.goldSoft, borderRadius: 8 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: '#6B5225' }}>{selectedClient.name}</div>
-                    <button onClick={clearSelection} style={{ background: 'none', border: 'none', color: '#6B5225', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+                    {!presetClient && (
+                      <button onClick={clearSelection} style={{ background: 'none', border: 'none', color: '#6B5225', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+                    )}
                   </div>
 
                   {spouseLoading && <div style={{ fontSize: 11, color: T.textFaint, marginTop: 8 }}>Checking for spouse…</div>}
@@ -271,7 +284,7 @@ export default function NewBusinessCaseModal({
                       <div style={labelStyle}>This case is for</div>
                       <div style={{ display: 'flex', background: '#fff', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3 }}>
                         {([
-                          { key: 'client', label: `${selectedClient.name.split(' ')[0]} only` },
+                          { key: 'client', label: 'Client only' },
                           { key: 'spouse', label: 'Spouse only' },
                           { key: 'both', label: 'Both' },
                         ] as const).map(opt => (
