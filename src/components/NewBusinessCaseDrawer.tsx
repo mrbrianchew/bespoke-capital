@@ -2,7 +2,9 @@
 import { STAGES, Stage } from '@/lib/newBusinessAttention'
 import NewBusinessCaseExtras from '@/components/NewBusinessCaseExtras'
 import NewBusinessCaseDocuments from '@/components/NewBusinessCaseDocuments'
+import NewBusinessCaseProducts from '@/components/NewBusinessCaseProducts'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
+import type { Policy } from '@/components/PolicyModal'
 
 // Shared between the firm-wide Business Dashboard board
 // (dashboard/business/new-business) and the per-client Client Servicing
@@ -55,6 +57,7 @@ export interface ProductRow {
   linked_policy_id: string | null
   submitted_at: string | null
   issued_at: string | null
+  policy_draft: Policy | null
 }
 
 export const T = {
@@ -71,13 +74,9 @@ export const btnSmStyle: React.CSSProperties = {
   borderRadius: 7, border: `1px solid ${T.line}`, background: '#fff', color: T.text, cursor: 'pointer',
 }
 
-const PRODUCT_STATUS_LABEL: Record<ProductStatus, { label: string; bg: string; fg: string }> = {
-  active: { label: 'In Progress', bg: T.emeraldSoft, fg: T.emerald },
-  issued: { label: 'Issued', bg: T.goldSoft, fg: T.goldText },
-  withdrawn: { label: 'Withdrawn', bg: T.cream2, fg: T.textFaint },
-  declined_by_insurer: { label: 'Declined (Insurer)', bg: T.roseSoft, fg: T.rose },
-  declined_by_client: { label: 'Declined (Client)', bg: T.roseSoft, fg: T.rose },
-}
+// Product status label/color mapping now lives in NewBusinessCaseProducts.tsx
+// (which owns the products table since the add/edit/delete rework), kept
+// out of here to avoid two copies drifting.
 
 const OUTCOME_REASON_PLACEHOLDER: Record<'lost' | 'deferred', string> = {
   lost: 'Why did this not proceed?',
@@ -87,6 +86,7 @@ const OUTCOME_REASON_PLACEHOLDER: Record<'lost' | 'deferred', string> = {
 export default function NewBusinessCaseDrawer({
   row, clientName, spouseName, products, onClose, onMoveStage,
   outcomeDraft, onStartOutcome, onCancelOutcome, onChangeOutcomeDraft, onSubmitOutcome, savingOutcome, onReopen, onDelete,
+  onProductAdded, onProductUpdated, onProductDeleted,
 }: {
   row: CaseRow
   clientName: string | null
@@ -102,6 +102,9 @@ export default function NewBusinessCaseDrawer({
   savingOutcome: boolean
   onReopen: () => void
   onDelete: () => void
+  onProductAdded: (p: ProductRow) => void
+  onProductUpdated: (p: ProductRow) => void
+  onProductDeleted: (id: string) => void
 }) {
   const stageIdx = STAGES.findIndex(s => s.key === row.stage)
   const isProspect = !row.client_id
@@ -179,42 +182,17 @@ export default function NewBusinessCaseDrawer({
         )}
 
         <div style={{ marginBottom: 28 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 12 }}>
-            Products &amp; Life Assured <span style={{ fontWeight: 400, fontSize: 11.5, color: T.textFaint }}>{products.length} line item{products.length === 1 ? '' : 's'}</span>
-          </div>
-          {products.length === 0 ? (
-            <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>No products added yet.</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden' }}>
-              <thead>
-                <tr>
-                  {['Life Assured / Holder', 'Product', 'Status', 'Reference / Policy'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.textFaint, background: T.cream2, padding: '9px 12px', fontWeight: 500 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {products.map(p => {
-                  const st = PRODUCT_STATUS_LABEL[p.status]
-                  return (
-                    <tr key={p.id}>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}` }}>
-                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 9.5, padding: '2px 6px', borderRadius: 4, background: T.cream2, color: T.textDim, marginRight: 6 }}>{p.life_assured_role.toUpperCase().slice(0, 4)}</span>
-                        {p.life_assured_name}
-                      </td>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}` }}>{p.product_name || p.product_type || '—'}</td>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}` }}>
-                        <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: st.bg, color: st.fg }}>{st.label}</span>
-                      </td>
-                      <td style={{ padding: '11px 12px', fontSize: 12.5, borderTop: `1px solid ${T.cream2}`, color: T.textDim }}>
-                        {p.linked_policy_id ? p.reference_number || '—' : p.reference_number ? `${p.reference_number} (application)` : (p.status_note || '—')}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
+          <NewBusinessCaseProducts
+            caseId={row.id}
+            clientId={row.client_id}
+            clientName={clientName}
+            spouseName={spouseName}
+            prospectName={row.prospect_name}
+            products={products}
+            onProductAdded={onProductAdded}
+            onProductUpdated={onProductUpdated}
+            onProductDeleted={onProductDeleted}
+          />
         </div>
 
         <div style={{ marginBottom: 28 }}>

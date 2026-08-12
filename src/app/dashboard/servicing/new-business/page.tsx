@@ -195,6 +195,9 @@ export default function NewApplicationsServicingPage() {
               savingOutcome={savingOutcome}
               onReopen={() => reopenCase(editingRow.id)}
               onDelete={() => deleteCase(editingRow.id)}
+              onProductAdded={p => setProducts(prev => [...prev, p])}
+              onProductUpdated={p => setProducts(prev => prev.map(x => x.id === p.id ? p : x))}
+              onProductDeleted={id => setProducts(prev => prev.filter(x => x.id !== id))}
             />
           </div>
         </div>
