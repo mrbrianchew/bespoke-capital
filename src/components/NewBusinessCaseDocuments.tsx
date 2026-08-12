@@ -120,6 +120,13 @@ export default function NewBusinessCaseDocuments({ caseId, clientId }: { caseId:
 
       {drive.uploadError && <div style={{ fontSize: 11.5, color: T.rose, marginBottom: 8 }}>{drive.uploadError}</div>}
 
+      {!driveFolder && (
+        <button onClick={connectDrive} disabled={drive.connecting}
+          style={{ width: '100%', marginBottom: 8, fontSize: 12, fontWeight: 600, padding: '8px 10px', borderRadius: 7, border: `1px solid ${T.gold}`, background: T.goldSoft, color: T.text, cursor: 'pointer' }}>
+          {drive.connecting ? 'Connecting…' : `📁 Choose a folder for ${clientId ? "this client's New Business documents" : 'this case'}`}
+        </button>
+      )}
+
       <div
         onClick={() => (document.getElementById(`nb-file-input-${caseId}`) as HTMLInputElement)?.click()}
         onDragOver={e => { e.preventDefault(); setDragActive(true) }}
@@ -133,7 +140,7 @@ export default function NewBusinessCaseDocuments({ caseId, clientId }: { caseId:
         <input id={`nb-file-input-${caseId}`} type="file" multiple disabled={drive.uploading} style={{ display: 'none' }}
           onChange={e => { if (e.target.files?.length) doUpload(e.target.files); e.target.value = '' }} />
         <p style={{ fontSize: 12, color: T.textFaint, margin: 0 }}>
-          {drive.uploading ? 'Uploading…' : driveFolder ? `Paste, drag in, or click to upload to ${driveFolder.name}` : `Paste, drag in, or click — you'll be asked to pick a folder for ${clientId ? "this client's New Business documents" : 'this case'}`}
+          {drive.uploading ? 'Uploading…' : driveFolder ? `Paste, drag in, or click to upload to ${driveFolder.name}` : 'Pick a folder above first, then paste, drag in, or click here to upload'}
         </p>
       </div>
       {driveFolder && (
