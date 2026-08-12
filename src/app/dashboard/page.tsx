@@ -126,6 +126,8 @@ export default function ExecutiveSummaryPage() {
     if (!client.id) throw new Error('No client ID found')
     const updateFields: any = { name: updatedData.name, gender: updatedData.gender }
     if (updatedData.dob) updateFields.dob = updatedData.dob
+    if (updatedData.email !== undefined) updateFields.email = updatedData.email || null
+    if (updatedData.phone !== undefined) updateFields.phone = updatedData.phone || null
     const { error } = await supabase
       .from('clients')
       .update(updateFields)
@@ -154,6 +156,8 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
       updateFields.age = getAge(updatedData.dob)
     }
     if (updatedData.citizenship) updateFields.citizenship = updatedData.citizenship
+    if (updatedData.email !== undefined) updateFields.email = updatedData.email || null
+    if (updatedData.phone !== undefined) updateFields.phone = updatedData.phone || null
     const { error } = await supabase
       .from('family_members')
       .update(updateFields)
@@ -1183,6 +1187,8 @@ function EditMemberModal({
     gender: member.gender || '',
     citizenship: member.citizenship || 'Singaporean',
     relationship: member.relationship || type,
+    email: type !== 'child' ? (member.email || '') : undefined,
+    phone: type !== 'child' ? (member.phone || '') : undefined,
   })
   const [isSaving, setIsSaving] = useState(false)
 
@@ -1272,6 +1278,69 @@ function EditMemberModal({
               required
             />
           </div>
+
+          {type !== 'child' && (
+            <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{
+                  display: 'block',
+                  fontFamily: 'Inter',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  color: '#666',
+                  marginBottom: 6
+                }}>
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={formData.phone || ''}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="+65 9xxx xxxx"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontFamily: 'Inter',
+                    fontSize: 14,
+                    border: '1px solid #E8E4DC',
+                    borderRadius: 8,
+                    outline: 'none'
+                  }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{
+                  display: 'block',
+                  fontFamily: 'Inter',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  color: '#666',
+                  marginBottom: 6
+                }}>
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={formData.email || ''}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="name@email.com"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontFamily: 'Inter',
+                    fontSize: 14,
+                    border: '1px solid #E8E4DC',
+                    borderRadius: 8,
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           <div style={{ marginBottom: 20 }}>
             <label style={{ 
