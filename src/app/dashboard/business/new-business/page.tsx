@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { STAGES, Stage, daysInStage, hasUpcomingMeeting, staleLevel, AttentionCase, AttentionMeeting } from '@/lib/newBusinessAttention'
 import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
+import NewBusinessCaseExtras from '@/components/NewBusinessCaseExtras'
+import GmailClaimSearch from '@/components/GmailClaimSearch'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -101,7 +103,7 @@ const OUTCOME_REASON_PLACEHOLDER: Record<'lost' | 'deferred', string> = {
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
 export default function NewBusinessPipelinePage() {
-  const { advisor, clients, setClients, authLoading } = useDashboard()
+  const { advisor, clients, setClients, spouseNames, authLoading } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
 
@@ -321,6 +323,7 @@ export default function NewBusinessPipelinePage() {
             <CaseDrawer
               row={editingRow}
               clientName={editingRow.client_id ? clientsById[editingRow.client_id] : null}
+              spouseName={editingRow.client_id ? spouseNames[editingRow.client_id] || null : null}
               products={productsByCase[editingRow.id] || []}
               onClose={() => { setEditingId(null); setOutcomeDraft(null) }}
               onMoveStage={stage => moveStage(editingRow.id, stage)}
@@ -427,11 +430,12 @@ function OutcomeCard({ row, kind, onClick }: { row: CaseRow; kind: 'lost' | 'def
 }
 
 function CaseDrawer({
-  row, clientName, products, onClose, onMoveStage,
+  row, clientName, spouseName, products, onClose, onMoveStage,
   outcomeDraft, onStartOutcome, onCancelOutcome, onChangeOutcomeDraft, onSubmitOutcome, savingOutcome, onReopen,
 }: {
   row: CaseRow
   clientName: string | null
+  spouseName: string | null
   products: ProductRow[]
   onClose: () => void
   onMoveStage: (stage: Stage) => void
@@ -445,6 +449,24 @@ function CaseDrawer({
 }) {
   const stageIdx = STAGES.findIndex(s => s.key === row.stage)
   const isProspect = !row.client_id
+
+  // Client + spouse first names (only spouse when case_party includes them)
+  // plus any application/policy reference numbers already on the products —
+  // matches the Claims dashboard's Gmail search scope: client/spouse only,
+  // never children, per Brian's call (Aug 2026).
+  const emailSearchTerms = (() => {
+    const terms: string[] = []
+    const clientFirst = (clientName || row.prospect_name || '').split(' ')[0]
+    if (clientFirst) terms.push(clientFirst)
+    if (spouseName && (row.case_party === 'spouse' || row.case_party === 'both')) {
+      const spouseFirst = spouseName.split(' ')[0]
+      if (spouseFirst && spouseFirst !== clientFirst) terms.push(spouseFirst)
+    }
+    products.forEach(p => {
+      if (p.reference_number) terms.push(p.reference_number)
+    })
+    return Array.from(new Set(terms)).slice(0, 5)
+  })()
 
   return (
     <div>
@@ -539,8 +561,12 @@ function CaseDrawer({
           )}
         </div>
 
-        <div style={{ marginBottom: 28, fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>
-          Meetings, emails, and to-dos land in the next build slice — flagging so this doesn't read as removed scope.
+        <div style={{ marginBottom: 28 }}>
+          <NewBusinessCaseExtras caseId={row.id} />
+        </div>
+
+        <div style={{ marginBottom: 28 }}>
+          <GmailClaimSearch newBusinessCaseId={row.id} defaultTerms={emailSearchTerms} />
         </div>
 
         {row.notes && (

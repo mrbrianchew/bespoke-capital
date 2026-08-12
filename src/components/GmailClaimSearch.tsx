@@ -26,11 +26,12 @@ const searchCache: Record<string, { terms: string[]; matches: EmailMatch[] | nul
 //
 // Reused as-is by the Service Requests board — pass serviceRequestId
 // instead of claimId and everything else (caching, rate limiting, audit
-// log) is handled identically server-side. Exactly one of the two must be
-// given; which one is present is what /api/gmail/search uses to decide
-// which table to check ownership against.
-export default function GmailClaimSearch({ claimId, serviceRequestId, defaultTerms }: { claimId?: string; serviceRequestId?: string; defaultTerms: string[] }) {
-  const cacheKey = claimId || serviceRequestId || ''
+// log) is handled identically server-side. New Business cases use
+// newBusinessCaseId the same way. Exactly one of the three must be given;
+// which one is present is what /api/gmail/search uses to decide which
+// table to check ownership against.
+export default function GmailClaimSearch({ claimId, serviceRequestId, newBusinessCaseId, defaultTerms }: { claimId?: string; serviceRequestId?: string; newBusinessCaseId?: string; defaultTerms: string[] }) {
+  const cacheKey = claimId || serviceRequestId || newBusinessCaseId || ''
   const cached = searchCache[cacheKey]
   const [expanded, setExpanded] = useState(false)
   const [terms, setTerms] = useState<string[]>(cached?.terms || defaultTerms.filter(Boolean))
@@ -66,7 +67,7 @@ export default function GmailClaimSearch({ claimId, serviceRequestId, defaultTer
       const res = await fetch('/api/gmail/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ claimId, serviceRequestId, terms }),
+        body: JSON.stringify({ claimId, serviceRequestId, newBusinessCaseId, terms }),
       })
       const data = await res.json()
       if (res.status === 409 && (data.error === 'not_connected' || data.error === 'reconnect_required')) {

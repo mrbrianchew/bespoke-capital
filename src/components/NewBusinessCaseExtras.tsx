@@ -1,0 +1,334 @@
+'use client'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase'
+
+// Meetings + to-dos for a New Business case. Meetings reuse
+// /api/service-requests/schedule-meeting as-is — that route only ever
+// creates/deletes a Calendar event and hands back an eventId; it was never
+// actually scoped to service requests, the id association happens entirely
+// client-side in whichever table the caller saves into. No new API route
+// needed. To-dos mirror the inline CRUD already in the Service Requests
+// board modal (service_request_todos) — same shape, different table.
+
+const T = {
+  gold: 'var(--gold)', goldText: 'var(--gold-tag)', goldSoft: 'rgba(168,131,74,.12)',
+  emerald: 'var(--emerald)', rose: 'var(--rouge)',
+  text: 'var(--ink)', textDim: 'var(--ink2)', textFaint: 'var(--ink3)',
+  line: 'var(--line)', cream2: 'var(--cream2)',
+}
+
+type MeetingType = 'in_person' | 'video_call' | 'phone_call' | 'clarification'
+type VideoPlatform = 'google_meet' | 'zoom' | 'teams' | 'other'
+
+interface MeetingRow {
+  id: string
+  case_id: string
+  title: string
+  meeting_type: 'fact_find' | 'presentation' | 'implementation' | 'clarification' | 'other'
+  meeting_date: string
+  meeting_time: string | null
+  duration_minutes: number
+  notes: string | null
+  is_scheduled: boolean
+  google_calendar_event_id: string | null
+  video_platform: string | null
+  meeting_link: string | null
+  location: string | null
+  phone_number: string | null
+  created_at: string
+}
+
+interface TodoRow {
+  id: string
+  case_id: string
+  text: string
+  done: boolean
+  due_date: string | null
+  created_at: string
+}
+
+const MEETING_PURPOSE_LABELS: Record<MeetingRow['meeting_type'], string> = {
+  fact_find: 'Fact-Find', presentation: 'Presentation', implementation: 'Implementation',
+  clarification: 'Clarification Call', other: 'Other',
+}
+const VIDEO_PLATFORM_LABELS: Record<VideoPlatform, string> = {
+  google_meet: 'Google Meet', zoom: 'Zoom', teams: 'MS Teams', other: 'Other',
+}
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120]
+
+function fmtDate(d: string) {
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })
+}
+
+const inputStyle: React.CSSProperties = {
+  padding: '7px 9px', fontSize: 12.5, border: `1px solid ${T.line}`, borderRadius: 7, outline: 'none', background: '#fff', color: T.text, fontFamily: 'Inter, sans-serif',
+}
+const ghostBtnStyle: React.CSSProperties = {
+  flex: 1, fontSize: 12, fontWeight: 600, padding: '7px 10px', borderRadius: 7, border: `1px solid ${T.line}`, background: '#fff', color: T.textDim, cursor: 'pointer',
+}
+const btnStyle: React.CSSProperties = {
+  padding: '7px 14px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: T.text, border: 'none', borderRadius: 7, cursor: 'pointer',
+}
+
+export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { caseId: string; onMeetingsChanged?: () => void }) {
+  const supabase = createClient()
+
+  const [loading, setLoading] = useState(true)
+  const [meetings, setMeetings] = useState<MeetingRow[]>([])
+  const [todos, setTodos] = useState<TodoRow[]>([])
+
+  // meeting form
+  const [meetingMode, setMeetingMode] = useState<'log' | 'schedule' | null>(null)
+  const [meetingTitle, setMeetingTitle] = useState('')
+  const [purpose, setPurpose] = useState<MeetingRow['meeting_type']>('fact_find')
+  const [channel, setChannel] = useState<'in_person' | 'video_call' | 'phone_call'>('video_call')
+  const [meetingDate, setMeetingDate] = useState('')
+  const [meetingTime, setMeetingTime] = useState('')
+  const [durationMinutes, setDurationMinutes] = useState(30)
+  const [meetingNotes, setMeetingNotes] = useState('')
+  const [videoPlatformSel, setVideoPlatformSel] = useState<VideoPlatform>('google_meet')
+  const [meetingLinkDraft, setMeetingLinkDraft] = useState('')
+  const [locationDraft, setLocationDraft] = useState('')
+  const [phoneDraft, setPhoneDraft] = useState('')
+  const [savingMeeting, setSavingMeeting] = useState(false)
+
+  // todo form
+  const [todoDraft, setTodoDraft] = useState('')
+  const [todoDueDraft, setTodoDueDraft] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      const [meetRes, todoRes] = await Promise.all([
+        supabase.from('new_business_case_meetings').select('*').eq('case_id', caseId).order('meeting_date', { ascending: false }),
+        supabase.from('new_business_case_todos').select('*').eq('case_id', caseId).order('created_at', { ascending: true }),
+      ])
+      if (cancelled) return
+      setMeetings((meetRes.data || []) as MeetingRow[])
+      setTodos((todoRes.data || []) as TodoRow[])
+      setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId])
+
+  function openMeetingForm(mode: 'log' | 'schedule') {
+    setMeetingMode(mode)
+    setMeetingTitle('')
+    setPurpose('fact_find')
+    setChannel('video_call')
+    setMeetingDate(new Date().toISOString().slice(0, 10))
+    setMeetingTime('')
+    setDurationMinutes(30)
+    setMeetingNotes('')
+    setVideoPlatformSel('google_meet')
+    setMeetingLinkDraft('')
+    setLocationDraft('')
+    setPhoneDraft('')
+  }
+
+  async function saveMeeting() {
+    if (!meetingTitle.trim() || !meetingDate) return
+    setSavingMeeting(true)
+    const isScheduled = meetingMode === 'schedule'
+    let calendarEventId: string | null = null
+    let finalMeetingLink = channel === 'video_call' ? meetingLinkDraft.trim() || null : null
+
+    if (isScheduled) {
+      try {
+        const res = await fetch('/api/service-requests/schedule-meeting', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: meetingTitle.trim(), date: meetingDate, time: meetingTime || null, notes: meetingNotes.trim() || null,
+            durationMinutes,
+            location: channel === 'in_person' ? locationDraft.trim() || null : channel === 'phone_call' ? (phoneDraft.trim() ? `Phone: ${phoneDraft.trim()}` : null) : null,
+            videoPlatform: channel === 'video_call' ? videoPlatformSel : null,
+            meetingLink: channel === 'video_call' ? (meetingLinkDraft.trim() || null) : null,
+          }),
+        })
+        if (res.ok) { const d = await res.json(); calendarEventId = d.eventId || null; if (d.meetLink) finalMeetingLink = d.meetLink }
+      } catch { /* non-fatal — meeting still saves below */ }
+    }
+
+    const { data, error } = await supabase.from('new_business_case_meetings').insert({
+      case_id: caseId, title: meetingTitle.trim(), meeting_type: purpose,
+      meeting_date: meetingDate, meeting_time: meetingTime || null, duration_minutes: durationMinutes,
+      notes: meetingNotes.trim() || null, is_scheduled: isScheduled, google_calendar_event_id: calendarEventId,
+      video_platform: channel === 'video_call' ? videoPlatformSel : null,
+      meeting_link: finalMeetingLink,
+      location: channel === 'in_person' ? (locationDraft.trim() || null) : null,
+      phone_number: channel === 'phone_call' ? (phoneDraft.trim() || null) : null,
+    }).select().maybeSingle()
+
+    setSavingMeeting(false)
+    if (error) { alert('Could not save meeting: ' + error.message); return }
+    if (data) { setMeetings(prev => [data as MeetingRow, ...prev]); onMeetingsChanged?.() }
+    setMeetingMode(null)
+  }
+
+  async function deleteMeeting(id: string) {
+    if (!window.confirm('Delete this meeting?')) return
+    const meeting = meetings.find(m => m.id === id)
+    setMeetings(prev => prev.filter(m => m.id !== id))
+    const { error } = await supabase.from('new_business_case_meetings').delete().eq('id', id)
+    if (error) alert('Delete failed: ' + error.message)
+    if (meeting?.google_calendar_event_id) {
+      fetch('/api/service-requests/schedule-meeting', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: meeting.google_calendar_event_id }),
+      }).catch(() => {})
+    }
+    onMeetingsChanged?.()
+  }
+
+  async function addTodo() {
+    if (!todoDraft.trim()) return
+    const { data, error } = await supabase.from('new_business_case_todos')
+      .insert({ case_id: caseId, text: todoDraft.trim(), due_date: todoDueDraft || null }).select().maybeSingle()
+    if (error) { alert('Could not add: ' + error.message); return }
+    if (data) setTodos(prev => [...prev, data as TodoRow])
+    setTodoDraft('')
+    setTodoDueDraft('')
+  }
+
+  async function toggleTodo(id: string, done: boolean) {
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, done, done_at: done ? new Date().toISOString() : null } as any : t))
+    const { error } = await supabase.from('new_business_case_todos').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
+  async function deleteTodo(id: string) {
+    setTodos(prev => prev.filter(t => t.id !== id))
+    const { error } = await supabase.from('new_business_case_todos').delete().eq('id', id)
+    if (error) alert('Delete failed: ' + error.message)
+  }
+
+  if (loading) return <div style={{ fontSize: 12, color: T.textFaint }}>Loading…</div>
+
+  return (
+    <div>
+      {/* ── Meetings ── */}
+      <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 12 }}>
+        Meetings <span style={{ fontWeight: 400, fontSize: 11.5, color: T.textFaint }}>{meetings.length > 0 ? `${meetings.length} logged` : ''}</span>
+      </div>
+
+      {meetings.length === 0 && meetingMode === null && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', marginBottom: 10 }}>No meetings yet.</div>}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+        {meetings.map(m => (
+          <div key={m.id} style={{ padding: '10px 12px', background: '#fff', border: `1px solid ${T.line}`, borderRadius: 9 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{m.title}</span>
+                <span style={{ marginLeft: 8, fontFamily: 'DM Mono, monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 4, background: T.cream2, color: T.textDim }}>
+                  {MEETING_PURPOSE_LABELS[m.meeting_type]}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: T.textFaint, whiteSpace: 'nowrap' }}>{fmtDate(m.meeting_date)}{m.meeting_time ? `, ${m.meeting_time.slice(0, 5)}` : ''}</span>
+                <button onClick={() => deleteMeeting(m.id)} style={{ fontSize: 13, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+              </div>
+            </div>
+            {m.meeting_link && <a href={m.meeting_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, color: T.gold, textDecoration: 'none' }}>Join link ↗</a>}
+            {m.location && <div style={{ fontSize: 10.5, color: T.textDim }}>{m.location}</div>}
+            {m.phone_number && <div style={{ fontSize: 10.5, color: T.textDim }}>{m.phone_number}</div>}
+            {m.notes && <p style={{ fontSize: 12, color: T.textDim, margin: '4px 0 0' }}>{m.notes}</p>}
+            {m.is_scheduled && (
+              <p style={{ fontSize: 10.5, color: m.google_calendar_event_id ? T.emerald : T.textFaint, margin: '4px 0 0' }}>
+                {m.google_calendar_event_id ? '✓ synced to calendar' : 'scheduled — calendar not connected'}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {meetingMode === null ? (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 28 }}>
+          <button onClick={() => openMeetingForm('log')} style={ghostBtnStyle}>Log past meeting</button>
+          <button onClick={() => openMeetingForm('schedule')} style={ghostBtnStyle}>Schedule meeting</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: T.cream2, borderRadius: 9, marginBottom: 28 }}>
+          <input value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="What's this meeting about?" style={inputStyle} />
+
+          <select value={purpose} onChange={e => setPurpose(e.target.value as MeetingRow['meeting_type'])} style={inputStyle}>
+            {(Object.keys(MEETING_PURPOSE_LABELS) as MeetingRow['meeting_type'][]).map(p => <option key={p} value={p}>{MEETING_PURPOSE_LABELS[p]}</option>)}
+          </select>
+
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['in_person', 'video_call', 'phone_call'] as const).map(t => (
+              <button key={t} type="button" onClick={() => setChannel(t)}
+                style={{
+                  flex: 1, fontSize: 11.5, fontWeight: 600, padding: '6px 4px', borderRadius: 7, cursor: 'pointer',
+                  border: `1px solid ${channel === t ? T.gold : T.line}`,
+                  background: channel === t ? T.goldSoft : '#fff',
+                  color: channel === t ? T.goldText : T.textDim,
+                }}>
+                {t === 'in_person' ? '📍 In person' : t === 'video_call' ? '💻 Video call' : '📞 Phone call'}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+            <input type="time" value={meetingTime} onChange={e => setMeetingTime(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+            <select value={durationMinutes} onChange={e => setDurationMinutes(Number(e.target.value))} style={{ ...inputStyle, width: 92 }}>
+              {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} min</option>)}
+            </select>
+          </div>
+
+          {channel === 'in_person' && (
+            <input value={locationDraft} onChange={e => setLocationDraft(e.target.value)} placeholder="Location (optional)" style={inputStyle} />
+          )}
+          {channel === 'video_call' && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select value={videoPlatformSel} onChange={e => setVideoPlatformSel(e.target.value as VideoPlatform)} style={{ ...inputStyle, width: 128 }}>
+                {(Object.keys(VIDEO_PLATFORM_LABELS) as VideoPlatform[]).map(p => <option key={p} value={p}>{VIDEO_PLATFORM_LABELS[p]}</option>)}
+              </select>
+              <input value={meetingLinkDraft} onChange={e => setMeetingLinkDraft(e.target.value)}
+                placeholder={videoPlatformSel === 'google_meet' ? 'Leave blank to auto-generate a Meet link' : 'Paste the meeting link (optional)'}
+                style={{ ...inputStyle, flex: 1 }} />
+            </div>
+          )}
+          {channel === 'phone_call' && (
+            <input value={phoneDraft} onChange={e => setPhoneDraft(e.target.value)} placeholder="Phone number (optional)" style={inputStyle} />
+          )}
+
+          <textarea value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} rows={2} placeholder="Notes (optional)"
+            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button onClick={() => setMeetingMode(null)} style={{ ...ghostBtnStyle, flex: 'none' }}>Cancel</button>
+            <button onClick={saveMeeting} disabled={savingMeeting || !meetingTitle.trim() || !meetingDate} style={{ ...btnStyle, opacity: savingMeeting || !meetingTitle.trim() ? 0.6 : 1 }}>
+              {savingMeeting ? 'Saving…' : meetingMode === 'schedule' ? 'Schedule' : 'Log meeting'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── To-dos ── */}
+      <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 12 }}>
+        To-Dos <span style={{ fontWeight: 400, fontSize: 11.5, color: T.textFaint }}>{todos.filter(t => !t.done).length} open</span>
+      </div>
+      {todos.length === 0 && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', marginBottom: 10 }}>No to-dos yet.</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 10 }}>
+        {todos.map(t => (
+          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: `1px solid ${T.cream2}`, fontSize: 12.5 }}>
+            <input type="checkbox" checked={t.done} onChange={e => toggleTodo(t.id, e.target.checked)} style={{ width: 15, height: 15, flexShrink: 0 }} />
+            <span style={{ flex: 1, textDecoration: t.done ? 'line-through' : 'none', color: t.done ? T.textFaint : T.text }}>{t.text}</span>
+            {t.due_date && <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.textFaint }}>{fmtDate(t.due_date)}</span>}
+            <button onClick={() => deleteTodo(t.id)} style={{ fontSize: 13, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input value={todoDraft} onChange={e => setTodoDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTodo() }}
+          placeholder="Add a to-do..." style={{ ...inputStyle, flex: 1 }} />
+        <input type="date" value={todoDueDraft} onChange={e => setTodoDueDraft(e.target.value)} style={inputStyle} />
+        <button onClick={addTodo} style={btnStyle}>Add</button>
+      </div>
+    </div>
+  )
+}

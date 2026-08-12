@@ -17,9 +17,11 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null)
   const claimId = body?.claimId
   const serviceRequestId = body?.serviceRequestId
-  // Exactly one target — mirrors the gmail_search_log check constraint.
-  if ((!claimId && !serviceRequestId) || (claimId && serviceRequestId)) {
-    return NextResponse.json({ error: 'Exactly one of claimId or serviceRequestId is required' }, { status: 400 })
+  const newBusinessCaseId = body?.newBusinessCaseId
+  // Exactly one target — mirrors the gmail_search_log_target_check constraint.
+  const targetCount = [claimId, serviceRequestId, newBusinessCaseId].filter(Boolean).length
+  if (targetCount !== 1) {
+    return NextResponse.json({ error: 'Exactly one of claimId, serviceRequestId, or newBusinessCaseId is required' }, { status: 400 })
   }
   const rawTerms: unknown = body?.terms
   const terms = (Array.isArray(rawTerms) ? rawTerms : [])
@@ -46,10 +48,14 @@ export async function POST(req: Request) {
     if (typeof claimId !== 'string') return NextResponse.json({ error: 'claimId is required' }, { status: 400 })
     const { data: claim, error: claimErr } = await scopedSupabase.from('claims').select('id').eq('id', claimId).maybeSingle()
     if (claimErr || !claim) return NextResponse.json({ error: 'Claim not found' }, { status: 404 })
-  } else {
+  } else if (serviceRequestId) {
     if (typeof serviceRequestId !== 'string') return NextResponse.json({ error: 'serviceRequestId is required' }, { status: 400 })
     const { data: sr, error: srErr } = await scopedSupabase.from('service_requests').select('id').eq('id', serviceRequestId).maybeSingle()
     if (srErr || !sr) return NextResponse.json({ error: 'Service request not found' }, { status: 404 })
+  } else {
+    if (typeof newBusinessCaseId !== 'string') return NextResponse.json({ error: 'newBusinessCaseId is required' }, { status: 400 })
+    const { data: nbc, error: nbcErr } = await scopedSupabase.from('new_business_cases').select('id').eq('id', newBusinessCaseId).maybeSingle()
+    if (nbcErr || !nbc) return NextResponse.json({ error: 'Case not found' }, { status: 404 })
   }
 
   const supabase = createClient(
@@ -105,14 +111,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Gmail search failed' }, { status: 502 })
   }
 
-  // Audit log — who searched, which claim or service request, which terms,
-  // how many results. Never logs a subject line, sender, or any message
-  // content. Exactly one of claim_id/service_request_id is set, matching
-  // the gmail_search_log_target_check constraint.
+  // Audit log — who searched, which claim/service request/case, which
+  // terms, how many results. Never logs a subject line, sender, or any
+  // message content. Exactly one of claim_id/service_request_id/
+  // new_business_case_id is set, matching gmail_search_log_target_check.
   await supabase.from('gmail_search_log').insert({
     advisor_id: user.id,
     claim_id: claimId || null,
     service_request_id: serviceRequestId || null,
+    new_business_case_id: newBusinessCaseId || null,
     query_terms: terms.join(', '),
     result_count: matches.length,
   })
