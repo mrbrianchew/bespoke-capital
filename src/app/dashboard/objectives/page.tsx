@@ -230,6 +230,8 @@ const DETAILED_EXPENSE_CUSTOM_KEY: Record<string, keyof FactFinding> = {
 }
 
 const DETAILED_EXPENSE_LABELS: Record<string, string> = {
+  d_vehicle_repay: 'Vehicle Loan Repayment',
+  d_personal_loan_repay: 'Personal Loan Repayment',
   d_rental_expense: 'Rental / Housing Expense',
   d_income_tax: 'Income Tax',
   d_regular_savings: 'Regular Savings / Investments',
