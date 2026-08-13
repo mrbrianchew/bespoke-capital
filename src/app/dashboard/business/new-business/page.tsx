@@ -15,6 +15,44 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 // in components/NewBusinessCaseDrawer.tsx, shared with the per-client list
 // at dashboard/servicing/new-business — same case, same drawer, two entry
 // points.
+//
+// Aug 2026: added the "This week's follow-ups" tab, same pattern as Claims/
+// Service Requests (todos due today/this week, cross-case, firm-wide) with
+// one deliberate difference — "Needs a follow-up" here reuses the
+// pipeline's own per-stage staleLevel() engine (already does per-stage
+// thresholds + upcoming-meeting suppression) instead of Claims' flat
+// 14-day-idle check, since that's already what the board's own stale
+// badges are built on. Meetings (not just to-dos) also feed into Today/
+// This Week, since New Business tracks those as their own thing unlike
+// Claims/Service Requests.
+
+interface TodoRow {
+  id: string
+  case_id: string
+  text: string
+  done: boolean
+  due_date: string | null
+}
+
+interface FullMeetingRow {
+  id: string
+  case_id: string
+  title: string
+  meeting_date: string
+  meeting_time: string | null
+  is_scheduled: boolean
+}
+
+function weekBucket(dateStr: string | null): 'today' | 'week' | 'later' {
+  if (!dateStr) return 'week'
+  const d = new Date(dateStr + 'T00:00:00')
+  if (isNaN(d.getTime())) return 'week'
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
+  if (diffDays <= 0) return 'today'
+  if (diffDays <= 7) return 'week'
+  return 'later'
+}
 
 // ─── TYPES (board-local only — CaseRow/ProductRow now live in the shared drawer) ──
 
@@ -47,6 +85,9 @@ export default function NewBusinessPipelinePage() {
   const [cases, setCases] = useState<CaseRow[]>([])
   const [products, setProducts] = useState<ProductRow[]>([])
   const [meetings, setMeetings] = useState<AttentionMeeting[]>([])
+  const [meetingsFull, setMeetingsFull] = useState<FullMeetingRow[]>([])
+  const [todos, setTodos] = useState<TodoRow[]>([])
+  const [activeTab, setActiveTab] = useState<'followups' | 'board'>('followups')
   const [showLost, setShowLost] = useState(false)
   const [showDeferred, setShowDeferred] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -87,16 +128,22 @@ export default function NewBusinessPipelinePage() {
 
       const ids = caseRows.map(c => c.id)
       if (ids.length > 0) {
-        const [productsRes, meetingsRes] = await Promise.all([
+        const [productsRes, meetingsRes, todosRes] = await Promise.all([
           supabase.from('new_business_case_products').select('*').in('case_id', ids),
-          supabase.from('new_business_case_meetings').select('case_id, meeting_date, is_scheduled').in('case_id', ids).eq('is_scheduled', true),
+          supabase.from('new_business_case_meetings').select('id, case_id, title, meeting_date, meeting_time, is_scheduled').in('case_id', ids).eq('is_scheduled', true),
+          supabase.from('new_business_case_todos').select('id, case_id, text, done, due_date').in('case_id', ids).eq('done', false),
         ])
         if (cancelled) return
         setProducts((productsRes.data || []) as ProductRow[])
-        setMeetings((meetingsRes.data || []) as AttentionMeeting[])
+        const fullMeetings = (meetingsRes.data || []) as FullMeetingRow[]
+        setMeetingsFull(fullMeetings)
+        setMeetings(fullMeetings.map(m => ({ case_id: m.case_id, meeting_date: m.meeting_date, is_scheduled: m.is_scheduled })))
+        setTodos((todosRes.data || []) as TodoRow[])
       } else {
         setProducts([])
         setMeetings([])
+        setMeetingsFull([])
+        setTodos([])
       }
       setLoading(false)
     }
@@ -153,6 +200,37 @@ export default function NewBusinessPipelinePage() {
       deferredCount: deferredCases.length,
     }
   }, [activeCases, meetings, products, cases, productsByCase, deferredCases])
+
+  const casesById = useMemo(() => {
+    const map: Record<string, CaseRow> = {}
+    cases.forEach(c => { map[c.id] = c })
+    return map
+  }, [cases])
+
+  // Cases the board's own per-stage staleness engine already flags stale,
+  // AND that have zero open to-dos tracking them — the "invisible" case,
+  // nothing is set to chase it. Reuses staleLevel()/meetings exactly as
+  // the Kanban badges do, rather than a separate flat-idle-days rule.
+  const needsFollowupCases = useMemo(() => {
+    const openTodoCaseIds = new Set(todos.map(t => t.case_id))
+    return activeCases.filter(c => staleLevel(c, meetings) === 'stale' && !openTodoCaseIds.has(c.id))
+  }, [activeCases, meetings, todos])
+
+  type FollowupEntry = { kind: 'todo' | 'meeting'; id: string; caseId: string; title: string; date: string | null; time: string | null }
+  const followupEntries = useMemo<FollowupEntry[]>(() => {
+    const todoEntries: FollowupEntry[] = todos.map(t => ({ kind: 'todo', id: t.id, caseId: t.case_id, title: t.text, date: t.due_date, time: null }))
+    const meetingEntries: FollowupEntry[] = meetingsFull.map(m => ({ kind: 'meeting', id: m.id, caseId: m.case_id, title: m.title, date: m.meeting_date, time: m.meeting_time }))
+    return [...todoEntries, ...meetingEntries].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || (a.time || '').localeCompare(b.time || ''))
+  }, [todos, meetingsFull])
+  const todayEntries = followupEntries.filter(e => weekBucket(e.date) === 'today')
+  const weekEntries = followupEntries.filter(e => weekBucket(e.date) === 'week')
+  const followupCount = todayEntries.length + weekEntries.length + needsFollowupCases.length
+
+  async function toggleTodoFromTab(id: string, done: boolean) {
+    setTodos(prev => done ? prev.filter(t => t.id !== id) : prev)
+    const { error } = await supabase.from('new_business_case_todos').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
 
   async function moveStage(id: string, stage: Stage) {
     setCases(prev => prev.map(c => c.id === id ? { ...c, stage, stage_changed_at: new Date().toISOString() } : c))
@@ -234,6 +312,101 @@ export default function NewBusinessPipelinePage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 4, padding: '14px 32px 0', borderBottom: `1px solid ${T.line}` }}>
+        <button onClick={() => setActiveTab('followups')} style={{
+          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+          background: activeTab === 'followups' ? T.goldSoft : 'none',
+          border: 'none', borderRadius: activeTab === 'followups' ? '8px 8px 0 0' : 0,
+          color: activeTab === 'followups' ? T.goldText : T.textFaint,
+          borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
+        }}>
+          This week's follow-ups{followupCount > 0 ? ` · ${followupCount}` : ''}
+        </button>
+        <button onClick={() => setActiveTab('board')} style={{
+          padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
+          color: activeTab === 'board' ? T.text : T.textFaint,
+          borderBottom: activeTab === 'board' ? `2px solid ${T.gold}` : '2px solid transparent',
+        }}>
+          Board
+        </button>
+      </div>
+
+      {activeTab === 'followups' ? (
+        <div style={{ padding: '24px 32px 40px', maxWidth: 640 }}>
+          {followupCount === 0 && (
+            <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13, fontStyle: 'italic' }}>
+              Nothing pending — every follow-up is checked off.
+            </div>
+          )}
+          {needsFollowupCases.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.rose, marginBottom: 3 }}>
+                Needs a follow-up · {needsFollowupCases.length}
+              </div>
+              <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 8 }}>
+                Stale per the board's own threshold, with nothing tracked to chase it.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {needsFollowupCases.map(c => {
+                  const badge = staleBadge(staleLevel(c, meetings), c, meetings)
+                  return (
+                    <div key={c.id} onClick={() => setEditingId(c.id)} style={{
+                      background: '#fff', border: `1px solid ${T.line}`, borderLeft: `3px solid ${T.rose}`,
+                      borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{c.case_title}</div>
+                        <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2, fontStyle: 'italic' }}>No to-do tracking a next step</div>
+                      </div>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {badge.text}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {([['Today', todayEntries], ['This week', weekEntries]] as const).map(([label, entries]) => entries.length > 0 && (
+            <div key={label} style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                {label} · {entries.length}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {entries.map(e => (
+                  <div key={`${e.kind}-${e.id}`} onClick={() => setEditingId(e.caseId)} style={{
+                    background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 14px',
+                    display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                  }}>
+                    {e.kind === 'todo' ? (
+                      <input type="checkbox" onClick={ev => ev.stopPropagation()} onChange={ev => toggleTodoFromTab(e.id, ev.target.checked)}
+                        style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+                    ) : (
+                      <span style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>📅</span>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{e.title}</div>
+                      <div style={{ fontSize: 11.5, color: T.goldText, marginTop: 2 }}>{casesById[e.caseId]?.case_title || '—'}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 4, background: e.kind === 'meeting' ? T.slateSoft : T.cream2, color: e.kind === 'meeting' ? T.slate : T.textDim }}>
+                        {e.kind === 'meeting' ? 'Meeting' : 'To-do'}
+                      </span>
+                      {e.time ? (
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.textFaint, whiteSpace: 'nowrap' }}>{e.time.slice(0, 5)}</span>
+                      ) : e.date ? (
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.textFaint, whiteSpace: 'nowrap' }}>{new Date(e.date + 'T00:00:00').toLocaleDateString('en-SG', { weekday: 'short' })}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
       {/* Metrics */}
       <div style={{ display: 'flex', padding: '16px 32px', borderBottom: `1px solid ${T.line}`, background: T.cream2, flexWrap: 'wrap', gap: 0 }}>
         <Metric label="Active Cases" value={String(metrics.activeCount)} />
@@ -278,6 +451,8 @@ export default function NewBusinessPipelinePage() {
           </div>
         </DndContext>
       </div>
+        </>
+      )}
 
       {/* Detail drawer */}
       {editingRow && (

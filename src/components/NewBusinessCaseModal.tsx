@@ -23,11 +23,11 @@ const T = {
 
 interface SpouseInfo { id: string; name: string; email: string | null; phone: string | null }
 
-function shortName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/)
-  if (parts.length === 1) return parts[0]
-  return `${parts[0]} ${parts[parts.length - 1]}`
-}
+// Brian, Aug 2026: full names only, never truncated — a Singapore name
+// like "Chia Wee Seng Wilson" or "Cindy Chew Ai Ping" isn't "first + last
+// word", the middle words matter. shortName() used to drop them
+// (case_title stored "Chia Wilson", "Cindy Ping" etc — silently wrong,
+// not just cosmetic). Removed; caseTitle below now uses the name as-is.
 
 const inputStyle: React.CSSProperties = {
   width: '100%', border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px',
@@ -130,9 +130,9 @@ export default function NewBusinessCaseModal({
   const caseTitle = useMemo(() => {
     if (caseType === 'prospect') return prospectName.trim() || 'Unnamed Prospect'
     if (!selectedClient) return ''
-    if (!spouse || caseParty === 'client') return shortName(selectedClient.name)
-    if (caseParty === 'spouse') return shortName(spouse.name)
-    return `${shortName(selectedClient.name)} & ${shortName(spouse.name)}`
+    if (!spouse || caseParty === 'client') return selectedClient.name
+    if (caseParty === 'spouse') return spouse.name
+    return `${selectedClient.name} & ${spouse.name}`
   }, [caseType, prospectName, selectedClient, spouse, caseParty])
 
   const canSubmit = caseType === 'prospect' ? prospectName.trim().length > 0 : !!selectedClient
