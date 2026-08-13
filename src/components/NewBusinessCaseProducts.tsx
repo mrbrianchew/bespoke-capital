@@ -124,6 +124,12 @@ export default function NewBusinessCaseProducts({
   const [reasonDraft, setReasonDraft] = useState<Record<string, string>>({})
   const [savingReasonFor, setSavingReasonFor] = useState<string | null>(null)
 
+  // Reference number — inline-editable directly on the card (Aug 2026).
+  // Feeds the per-product Gmail search below (defaultTerms) so the search
+  // box auto-fills once this is set, instead of always opening blank.
+  const [refDraft, setRefDraft] = useState<Record<string, string>>({})
+  const [savingRefFor, setSavingRefFor] = useState<string | null>(null)
+
   const [pushingId, setPushingId] = useState<string | null>(null)
 
   // Client Incepted / Update Policy — edits the *live* portfolio policy
@@ -255,6 +261,15 @@ export default function NewBusinessCaseProducts({
     onProductUpdated({ ...p, status_note: text || null })
   }
 
+  async function saveReference(p: ProductRow) {
+    const text = (refDraft[p.id] ?? p.reference_number ?? '').trim()
+    setSavingRefFor(p.id)
+    const { error } = await supabase.from('new_business_case_products').update({ reference_number: text || null }).eq('id', p.id)
+    setSavingRefFor(null)
+    if (error) { alert('Could not save reference number: ' + error.message); return }
+    onProductUpdated({ ...p, reference_number: text || null })
+  }
+
   // ── push to portfolio / client incepted ──
 
   async function pushToPortfolio(p: ProductRow) {
@@ -345,8 +360,14 @@ export default function NewBusinessCaseProducts({
                       {p.life_assured_name}
                     </div>
                     <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>{p.product_name || p.product_type || '—'}</div>
-                    <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>
-                      {p.linked_policy_id ? p.reference_number || '—' : p.reference_number ? `${p.reference_number} (application)` : '—'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                      <input
+                        value={refDraft[p.id] ?? p.reference_number ?? ''}
+                        onChange={e => setRefDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                        onBlur={() => { if ((refDraft[p.id] ?? '') !== (p.reference_number ?? '') && p.id in refDraft) saveReference(p) }}
+                        placeholder="Add reference number…"
+                        style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: p.reference_number ? T.textDim : T.textFaint, border: 'none', background: 'transparent', padding: '1px 0', outline: 'none', width: 150 }} />
+                      {savingRefFor === p.id && <span style={{ fontSize: 9.5, color: T.textFaint }}>Saving…</span>}
                     </div>
                   </div>
 
@@ -467,7 +488,9 @@ export default function NewBusinessCaseProducts({
                     <GmailClaimSearch
                       newBusinessCaseId={caseId}
                       keySuffix={p.id}
-                      defaultTerms={p.reference_number ? [p.reference_number] : []}
+                      defaultTerms={Array.from(new Set(
+                        [p.reference_number, isIssued ? p.policy_draft?.policyNo : null].filter((v): v is string => !!v)
+                      ))}
                     />
                   </div>
                 )}
