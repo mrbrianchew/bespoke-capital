@@ -117,6 +117,7 @@ export default function NewBusinessCaseProducts({
 
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [productsOpen, setProductsOpen] = useState(true)
 
   // Reason capture — reuses status_note, prompted for outcome=declined/
   // postponed and status=withdrawn alike.
@@ -314,13 +315,17 @@ export default function NewBusinessCaseProducts({
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: T.text }}>
-          Products &amp; Life Assured <span style={{ fontWeight: 400, fontSize: 11.5, color: T.textFaint }}>{products.length} line item{products.length === 1 ? '' : 's'}</span>
-        </div>
-        <button onClick={openAdd} disabled={loading} style={{ ...btnSmStyle, opacity: loading ? 0.6 : 1 }}>+ Add Product</button>
+        <button type="button" onClick={() => setProductsOpen(o => !o)}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+          <span style={{ fontWeight: 600, fontSize: 13, color: T.text }}>
+            Products &amp; Life Assured <span style={{ fontWeight: 400, fontSize: 11.5, color: T.textFaint }}>{products.length} line item{products.length === 1 ? '' : 's'}</span>
+          </span>
+          <span style={{ color: T.textFaint, fontSize: 12, transform: productsOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
+        </button>
+        {productsOpen && <button onClick={openAdd} disabled={loading} style={{ ...btnSmStyle, opacity: loading ? 0.6 : 1 }}>+ Add Product</button>}
       </div>
 
-      {products.length === 0 ? (
+      {productsOpen && (products.length === 0 ? (
         <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>No products added yet.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -368,11 +373,12 @@ export default function NewBusinessCaseProducts({
                     {p.outcome && (
                       <select
                         value={p.outcome}
-                        onChange={e => setOutcome(p, e.target.value as ProductOutcome)}
+                        onChange={e => setOutcome(p, (e.target.value || null) as ProductOutcome)}
                         style={{ fontFamily: 'Inter, sans-serif', fontSize: 11.5, fontWeight: 600, padding: '5px 9px', borderRadius: 20, border: `1px solid ${T.line}`, background: T.cream2, color: T.textDim, cursor: 'pointer' }}>
                         <option value="accepted">Accepted</option>
                         <option value="declined">Declined</option>
                         <option value="postponed">Postponed</option>
+                        <option value="">— Clear outcome —</option>
                       </select>
                     )}
 
@@ -469,7 +475,7 @@ export default function NewBusinessCaseProducts({
             )
           })}
         </div>
-      )}
+      ))}
 
       {showModal && (
         <PolicyModal
