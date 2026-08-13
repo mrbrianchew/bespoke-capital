@@ -182,6 +182,14 @@ export default function NewBusinessPipelinePage() {
       const parentCase = cases.find(c => c.id === p.case_id)
       return parentCase?.stage === 'processing' && p.status === 'active'
     }).length
+    // Products actually incepted (status='issued', set via Client
+    // Incepted) — scoped to non-outcome cases same as AFYP, so a product
+    // issued on a case later marked Lost/Deferred doesn't linger in a
+    // "current pipeline" metric.
+    const productsIncepted = cases
+      .filter(c => !c.outcome)
+      .flatMap(c => productsByCase[c.id] || [])
+      .filter(p => p.status === 'issued').length
     // declined_by_insurer/declined_by_client are retired (Aug 2026) — the
     // new outcome field replaces them. A declined or withdrawn product
     // never contributes to AFYP; postponed still counts since it's not a
@@ -196,6 +204,7 @@ export default function NewBusinessPipelinePage() {
       considerationCount: considerationCases.length,
       considerationStale,
       processingProducts,
+      productsIncepted,
       afyp,
       deferredCount: deferredCases.length,
     }
@@ -411,7 +420,8 @@ export default function NewBusinessPipelinePage() {
       <div style={{ display: 'flex', padding: '16px 32px', borderBottom: `1px solid ${T.line}`, background: T.cream2, flexWrap: 'wrap', gap: 0 }}>
         <Metric label="Active Cases" value={String(metrics.activeCount)} />
         <Metric label="In Consideration" value={String(metrics.considerationCount)} flag={metrics.considerationStale > 0 ? `${metrics.considerationStale} stale` : undefined} />
-        <Metric label="Active Products in Processing" value={String(metrics.processingProducts)} />
+        <Metric label="Processing" value={String(metrics.processingProducts)} />
+        <Metric label="Products Incepted" value={String(metrics.productsIncepted)} />
         <Metric label="Est. AFYP in Pipeline" value={`$${Math.round(metrics.afyp).toLocaleString('en-SG')}`} />
         <Metric label="Deferred / Revisit" value={String(metrics.deferredCount)} last />
       </div>
