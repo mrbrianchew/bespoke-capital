@@ -30,8 +30,14 @@ const searchCache: Record<string, { terms: string[]; matches: EmailMatch[] | nul
 // newBusinessCaseId the same way. Exactly one of the three must be given;
 // which one is present is what /api/gmail/search uses to decide which
 // table to check ownership against.
-export default function GmailClaimSearch({ claimId, serviceRequestId, newBusinessCaseId, defaultTerms }: { claimId?: string; serviceRequestId?: string; newBusinessCaseId?: string; defaultTerms: string[] }) {
-  const cacheKey = claimId || serviceRequestId || newBusinessCaseId || ''
+export default function GmailClaimSearch({ claimId, serviceRequestId, newBusinessCaseId, defaultTerms, keySuffix }: { claimId?: string; serviceRequestId?: string; newBusinessCaseId?: string; defaultTerms: string[]; keySuffix?: string }) {
+  // keySuffix distinguishes multiple panels that share the same underlying
+  // target id — e.g. one GmailClaimSearch per product on a New Business
+  // case, all passing the same newBusinessCaseId (that's what the API's
+  // ownership check and audit log key off), but each needing its own
+  // session cache slot so they don't show each other's search results.
+  // Never sent to the API — server-side scoping is unchanged.
+  const cacheKey = (claimId || serviceRequestId || newBusinessCaseId || '') + (keySuffix ? `:${keySuffix}` : '')
   const cached = searchCache[cacheKey]
   const [expanded, setExpanded] = useState(false)
   const [terms, setTerms] = useState<string[]>(cached?.terms || defaultTerms.filter(Boolean))

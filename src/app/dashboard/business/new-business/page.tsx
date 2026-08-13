@@ -135,10 +135,14 @@ export default function NewBusinessPipelinePage() {
       const parentCase = cases.find(c => c.id === p.case_id)
       return parentCase?.stage === 'processing' && p.status === 'active'
     }).length
+    // declined_by_insurer/declined_by_client are retired (Aug 2026) — the
+    // new outcome field replaces them. A declined or withdrawn product
+    // never contributes to AFYP; postponed still counts since it's not a
+    // rejection, just delayed.
     const afyp = cases
       .filter(c => !c.outcome)
       .flatMap(c => productsByCase[c.id] || [])
-      .filter(p => p.status !== 'withdrawn' && p.status !== 'declined_by_insurer' && p.status !== 'declined_by_client')
+      .filter(p => p.status !== 'withdrawn' && p.outcome !== 'declined')
       .reduce((sum, p) => sum + (p.premium || 0) * (p.premium_frequency === 'monthly' ? 12 : 1), 0)
     return {
       activeCount: activeCases.length,

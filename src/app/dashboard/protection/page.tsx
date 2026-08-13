@@ -8,7 +8,7 @@ import { getUsdSgdRate } from '@/lib/fxRate'
 import { getLatestHistoryByPolicy, getHistoryForPolicy, addCorrection, PolicyHistoryEntry } from '@/lib/policyServiceHistory'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
-import PolicyModal, { Policy, InsCategory, InsPolicyType, InsCompany, InsProduct, emptyPolicy, CAT_COLORS, CAT_SHORT, FREQ, STATUS_OPTS, PAY_MODES, fmt, fmtPremium } from '@/components/PolicyModal'
+import PolicyModal, { Policy, InsCategory, InsPolicyType, InsCompany, InsProduct, emptyPolicy, CAT_COLORS, CAT_SHORT, FREQ, STATUS_OPTS, PAY_MODES, fmt, fmtPremium, RiskMgmtData, EMPTY_RM } from '@/components/PolicyModal'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import { GripVertical } from 'lucide-react'
@@ -20,8 +20,9 @@ import { CSS } from '@dnd-kit/utilities'
 // fmt/fmtPremium now live in @/components/PolicyModal (imported above) so
 // the New Business Pipeline can reuse the exact same policy form and
 // display helpers instead of forking a second copy that drifts.
-interface RiskMgmtData { policies: Policy[]; advisorNotes: string; statusOverrides?: Record<string, string> }
-const EMPTY_RM: RiskMgmtData = { policies: [], advisorNotes: '', statusOverrides: {} }
+// RiskMgmtData/EMPTY_RM now live in @/components/PolicyModal (imported
+// above) so the New Business Pipeline's push-to-portfolio step shares the
+// exact same shape — no behavior change here, same type, same values.
 
 const ACTIVE_STATUSES = ['In-Force', 'Premium Holiday', 'Paid-up']
 

@@ -16,6 +16,11 @@ import type { Policy } from '@/components/PolicyModal'
 export type CaseParty = 'client' | 'spouse' | 'both'
 export type Outcome = 'lost' | 'deferred' | null
 export type ProductStatus = 'active' | 'withdrawn' | 'declined_by_insurer' | 'declined_by_client' | 'issued'
+// declined_by_insurer/declined_by_client are retired going forward — the
+// new `outcome` field below replaces them (outcome='declined' + a
+// status_note reason). Left in the DB check constraint untouched so no
+// destructive migration was needed; the UI just never writes them again.
+export type ProductOutcome = 'accepted' | 'declined' | 'postponed' | null
 
 export interface CaseRow {
   id: string
@@ -52,6 +57,7 @@ export interface ProductRow {
   premium: number | null
   premium_frequency: string | null
   status: ProductStatus
+  outcome: ProductOutcome
   status_note: string | null
   reference_number: string | null
   linked_policy_id: string | null
@@ -109,10 +115,12 @@ export default function NewBusinessCaseDrawer({
   const stageIdx = STAGES.findIndex(s => s.key === row.stage)
   const isProspect = !row.client_id
 
-  // Client + spouse first names (only spouse when case_party includes them)
-  // plus any application/policy reference numbers already on the products —
-  // matches the Claims dashboard's Gmail search scope: client/spouse only,
-  // never children, per Brian's call (Aug 2026).
+  // Client + spouse first names only (client/spouse, never children, per
+  // Brian's call — matches the Claims dashboard's Gmail search scope).
+  // Reference numbers used to be pooled in here from every product on the
+  // case; that's moved to a per-product search panel on each product row
+  // instead (Aug 2026) — searching one product's correspondence no longer
+  // means wading through every other product's matches too.
   const emailSearchTerms = (() => {
     const terms: string[] = []
     const clientFirst = (clientName || row.prospect_name || '').split(' ')[0]
@@ -121,9 +129,6 @@ export default function NewBusinessCaseDrawer({
       const spouseFirst = spouseName.split(' ')[0]
       if (spouseFirst && spouseFirst !== clientFirst) terms.push(spouseFirst)
     }
-    products.forEach(p => {
-      if (p.reference_number) terms.push(p.reference_number)
-    })
     return Array.from(new Set(terms)).slice(0, 5)
   })()
 

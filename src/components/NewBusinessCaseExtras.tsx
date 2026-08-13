@@ -47,6 +47,18 @@ interface TodoRow {
   created_at: string
 }
 
+// Ported from ServiceRequestExtras.tsx (Aug 2026) — the new_business_
+// activity_log table already existed in the schema (scaffolded alongside
+// the other New Business tables) but no component ever queried it. Same
+// shape, same edit/delete pattern as the Service Requests version.
+interface ActivityRow {
+  id: string
+  case_id: string
+  activity_date: string
+  description: string
+  created_at: string
+}
+
 const MEETING_PURPOSE_LABELS: Record<MeetingRow['meeting_type'], string> = {
   fact_find: 'Fact-Find', presentation: 'Presentation', implementation: 'Implementation',
   clarification: 'Clarification Call', other: 'Other',
@@ -76,6 +88,14 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
   const [loading, setLoading] = useState(true)
   const [meetings, setMeetings] = useState<MeetingRow[]>([])
   const [todos, setTodos] = useState<TodoRow[]>([])
+  const [activity, setActivity] = useState<ActivityRow[]>([])
+
+  // activity form
+  const [activityDraft, setActivityDraft] = useState('')
+  const [activityDateDraft, setActivityDateDraft] = useState(() => new Date().toISOString().slice(0, 10))
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
+  const [editActivityText, setEditActivityText] = useState('')
+  const [editActivityDate, setEditActivityDate] = useState('')
 
   // meeting form
   const [meetingMode, setMeetingMode] = useState<'log' | 'schedule' | 'edit' | null>(null)
@@ -104,13 +124,15 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [meetRes, todoRes] = await Promise.all([
+      const [meetRes, todoRes, actRes] = await Promise.all([
         supabase.from('new_business_case_meetings').select('*').eq('case_id', caseId).order('meeting_date', { ascending: false }),
         supabase.from('new_business_case_todos').select('*').eq('case_id', caseId).order('created_at', { ascending: true }),
+        supabase.from('new_business_activity_log').select('*').eq('case_id', caseId).order('activity_date', { ascending: false }),
       ])
       if (cancelled) return
       setMeetings((meetRes.data || []) as MeetingRow[])
       setTodos((todoRes.data || []) as TodoRow[])
+      setActivity((actRes.data || []) as ActivityRow[])
       setLoading(false)
     }
     load()
@@ -269,10 +291,74 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     if (error) alert('Save failed: ' + error.message)
   }
 
+  // ── activity log ──
+  async function addActivity() {
+    if (!activityDraft.trim()) return
+    const { data, error } = await supabase.from('new_business_activity_log')
+      .insert({ case_id: caseId, activity_date: activityDateDraft, description: activityDraft.trim() })
+      .select().maybeSingle()
+    if (error) { alert('Could not add entry: ' + error.message); return }
+    if (data) setActivity(prev => [data as ActivityRow, ...prev])
+    setActivityDraft('')
+    setActivityDateDraft(new Date().toISOString().slice(0, 10))
+  }
+
+  function startEditActivity(a: ActivityRow) {
+    setEditingActivityId(a.id)
+    setEditActivityText(a.description)
+    setEditActivityDate(a.activity_date)
+  }
+
+  async function saveEditActivity() {
+    if (!editingActivityId || !editActivityText.trim()) return
+    const id = editingActivityId
+    const patch = { description: editActivityText.trim(), activity_date: editActivityDate, updated_at: new Date().toISOString() }
+    setActivity(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
+    setEditingActivityId(null)
+    const { error } = await supabase.from('new_business_activity_log').update(patch).eq('id', id)
+    if (error) alert('Save failed: ' + error.message)
+  }
+
+  async function deleteActivity(id: string) {
+    if (!window.confirm('Delete this entry?')) return
+    setActivity(prev => prev.filter(a => a.id !== id))
+    const { error } = await supabase.from('new_business_activity_log').delete().eq('id', id)
+    if (error) alert('Delete failed: ' + error.message)
+  }
+
   if (loading) return <div style={{ fontSize: 12, color: T.textFaint }}>Loading…</div>
 
   return (
     <div>
+      {/* ── Activity log ── */}
+      <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 12 }}>Activity log</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+        {activity.length === 0 && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>No entries yet.</div>}
+        {activity.map(a => (
+          editingActivityId === a.id ? (
+            <div key={a.id} style={{ display: 'flex', gap: 6, padding: '6px 0' }}>
+              <input type="date" value={editActivityDate} onChange={e => setEditActivityDate(e.target.value)} style={{ ...inputStyle, width: 128 }} />
+              <input value={editActivityText} onChange={e => setEditActivityText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveEditActivity() }}
+                style={{ ...inputStyle, flex: 1 }} />
+              <button onClick={saveEditActivity} style={{ fontSize: 11, color: T.gold, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>Save</button>
+            </div>
+          ) : (
+            <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 11.5, color: T.textFaint, whiteSpace: 'nowrap', minWidth: 52, paddingTop: 1 }}>{fmtDate(a.activity_date)}</span>
+              <span style={{ flex: 1, fontSize: 12.5, color: T.text, lineHeight: 1.5 }}>{a.description}</span>
+              <button onClick={() => startEditActivity(a)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>Edit</button>
+              <button onClick={() => deleteActivity(a.id)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+            </div>
+          )
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 28 }}>
+        <input type="date" value={activityDateDraft} onChange={e => setActivityDateDraft(e.target.value)} style={{ ...inputStyle, width: 128 }} />
+        <input value={activityDraft} onChange={e => setActivityDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addActivity() }}
+          placeholder="What did you do?" style={{ ...inputStyle, flex: 1 }} />
+        <button onClick={addActivity} style={btnStyle}>Add</button>
+      </div>
+
       {/* ── Meetings ── */}
       <div style={{ fontWeight: 600, fontSize: 13, color: T.text, marginBottom: 12 }}>
         Meetings <span style={{ fontWeight: 400, fontSize: 11.5, color: T.textFaint }}>{meetings.length > 0 ? `${meetings.length} logged` : ''}</span>

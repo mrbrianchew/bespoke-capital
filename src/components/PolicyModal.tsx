@@ -68,6 +68,13 @@ export interface Policy {
   fxRate?: number   // USD/SGD rate stored at time of entry
 }
 
+// Shape of the protection_portfolio.risk_management JSONB blob — shared
+// here so both the Protection page and the New Business Pipeline's push-
+// to-portfolio step read/write the exact same structure instead of two
+// independently-typed copies drifting apart.
+export interface RiskMgmtData { policies: Policy[]; advisorNotes: string; statusOverrides?: Record<string, string> }
+export const EMPTY_RM: RiskMgmtData = { policies: [], advisorNotes: '', statusOverrides: {} }
+
 export function emptyPolicy(person: string, ph = '', la = ''): Policy {
   return {
     id: crypto.randomUUID(), categoryCode: 'life', policyTypeCode: '', companyName: '', productName: '',
