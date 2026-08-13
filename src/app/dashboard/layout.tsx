@@ -9,6 +9,7 @@ import { useClientTabState } from '@/hooks/useClientTabState'
 import BugReportModal from '@/components/BugReportModal'
 import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
 import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttention'
+import { fetchNewBusinessAttentionCount } from '@/lib/newBusinessAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -121,6 +122,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [adminBadgeCount, setAdminBadgeCount] = useState(0)
   const [claimsBadgeCount, setClaimsBadgeCount] = useState(0)
   const [serviceRequestsBadgeCount, setServiceRequestsBadgeCount] = useState(0)
+  const [newBusinessBadgeCount, setNewBusinessBadgeCount] = useState(0)
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -184,6 +186,20 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (!businessAccess) { setServiceRequestsBadgeCount(0); return }
     let cancelled = false
     const refresh = () => fetchServiceRequestsAttentionCount(supabase).then(count => { if (!cancelled) setServiceRequestsBadgeCount(count) }).catch(() => {})
+    refresh()
+    const interval = setInterval(refresh, BADGE_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('focus', refresh) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessAccess])
+
+  // New Business badge — overdue/due-today to-dos and meetings, plus cases
+  // needing a follow-up (see fetchNewBusinessAttentionCount). Same
+  // firm-wide-via-RLS pattern and refresh cadence as the two badges above.
+  useEffect(() => {
+    if (!businessAccess) { setNewBusinessBadgeCount(0); return }
+    let cancelled = false
+    const refresh = () => fetchNewBusinessAttentionCount(supabase).then(count => { if (!cancelled) setNewBusinessBadgeCount(count) }).catch(() => {})
     refresh()
     const interval = setInterval(refresh, BADGE_REFRESH_MS)
     window.addEventListener('focus', refresh)
@@ -281,12 +297,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, position: 'relative',
                   color: isBusinessMode ? 'white' : 'var(--ink3)', background: isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
                 Business Dashboard
-                {(claimsBadgeCount + serviceRequestsBadgeCount) > 0 && (
+                {(claimsBadgeCount + serviceRequestsBadgeCount + newBusinessBadgeCount) > 0 && (
                   <span
                     className="flex items-center justify-center text-xs font-medium"
                     style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: 'var(--rouge)', color: 'white', lineHeight: 1, fontSize: 9.5 }}
                   >
-                    {(claimsBadgeCount + serviceRequestsBadgeCount) > 99 ? '99+' : (claimsBadgeCount + serviceRequestsBadgeCount)}
+                    {(claimsBadgeCount + serviceRequestsBadgeCount + newBusinessBadgeCount) > 99 ? '99+' : (claimsBadgeCount + serviceRequestsBadgeCount + newBusinessBadgeCount)}
                   </span>
                 )}
               </button>
@@ -419,6 +435,14 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                       style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
                     >
                       {serviceRequestsBadgeCount > 99 ? '99+' : serviceRequestsBadgeCount}
+                    </span>
+                  )}
+                  {item.id === 'new-business' && newBusinessBadgeCount > 0 && (
+                    <span
+                      className="flex items-center justify-center text-xs font-medium"
+                      style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
+                    >
+                      {newBusinessBadgeCount > 99 ? '99+' : newBusinessBadgeCount}
                     </span>
                   )}
                 </Link>

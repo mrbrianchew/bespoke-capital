@@ -76,17 +76,37 @@ export function staleLevel(row: AttentionCase, meetings: AttentionMeeting[]): St
   return 'ok'
 }
 
-// Firm-wide count of active (no outcome) cases sitting stale — for the
-// sidebar badge and the metrics strip, same role as
-// fetchServiceRequestsAttentionCount / fetchClaimsAttentionCount.
+// Firm-wide count for the sidebar badge — same role as
+// fetchServiceRequestsAttentionCount / fetchClaimsAttentionCount, but
+// matches this pipeline's own "Needs a follow-up" definition (stale AND
+// zero open to-dos — see the board's needsFollowupCases) rather than pure
+// staleness, plus overdue/today to-dos and meetings. Keeps this count
+// consistent with what "This week's follow-ups" actually shows, rather
+// than two different numbers for the same idea.
 export async function fetchNewBusinessAttentionCount(supabase: any): Promise<number> {
   const { data: caseRows } = await supabase.from('new_business_cases')
     .select('id, stage, stage_changed_at, outcome').is('outcome', null)
   const rows = (caseRows || []) as AttentionCase[]
   if (rows.length === 0) return 0
   const ids = rows.map(r => r.id)
-  const { data: meetingRows } = await supabase.from('new_business_case_meetings')
-    .select('case_id, meeting_date, is_scheduled').in('case_id', ids).eq('is_scheduled', true)
-  const meetings = (meetingRows || []) as AttentionMeeting[]
-  return rows.filter(r => staleLevel(r, meetings) === 'stale').length
+  const [meetingsRes, todosRes] = await Promise.all([
+    supabase.from('new_business_case_meetings').select('case_id, meeting_date, is_scheduled').in('case_id', ids).eq('is_scheduled', true),
+    supabase.from('new_business_case_todos').select('id, case_id, due_date, done').in('case_id', ids).eq('done', false),
+  ])
+  const meetings = (meetingsRes.data || []) as AttentionMeeting[]
+  const todos = (todosRes.data || []) as { id: string; case_id: string; due_date: string | null }[]
+
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const isUrgentDate = (d: string | null) => {
+    if (!d) return false
+    const dt = new Date(d + 'T00:00:00')
+    return !isNaN(dt.getTime()) && dt.getTime() <= today.getTime()
+  }
+  const urgentTodos = todos.filter(t => isUrgentDate(t.due_date)).length
+  const urgentMeetings = meetings.filter(m => isUrgentDate(m.meeting_date)).length
+
+  const openTodoCaseIds = new Set(todos.map(t => t.case_id))
+  const needsFollowup = rows.filter(r => staleLevel(r, meetings) === 'stale' && !openTodoCaseIds.has(r.id)).length
+
+  return urgentTodos + urgentMeetings + needsFollowup
 }
