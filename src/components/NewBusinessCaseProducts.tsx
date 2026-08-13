@@ -78,6 +78,28 @@ function deriveFamilyMemberId(key: string): string | null {
   return key.startsWith('child_') ? key.slice('child_'.length) : null
 }
 
+// Pulls 6–10 digit runs out of a filename — long enough to skip years
+// ("2026") and short codes, short enough to catch typical insurer
+// reference/application numbers. Deliberately not \b-anchored: filenames
+// often join the number to underscores or text with no real word
+// boundary between them (Node's regex treats "_" as a word char).
+function numbersInFilename(name: string): string[] {
+  return Array.from(new Set(name.match(/\d{6,10}/g) || []))
+}
+
+// Which of the case's uploaded documents plausibly belong to this
+// product. With one product and one document in the whole case there's
+// nothing to disambiguate — it's the only candidate. Otherwise only
+// count a document whose filename mentions this product's name or its
+// life-assured's name; anything else is a guess we shouldn't surface.
+function referenceSuggestionsFor(p: ProductRow, docs: { file_name: string }[], productCount: number): string[] {
+  const tokens = [p.product_name, p.life_assured_name].filter(Boolean).map(t => t!.toLowerCase())
+  let matched = docs.filter(d => tokens.some(t => d.file_name.toLowerCase().includes(t)))
+  if (matched.length === 0 && docs.length === 1 && productCount === 1) matched = docs
+  const nums = matched.flatMap(d => numbersInFilename(d.file_name))
+  return Array.from(new Set(nums)).filter(n => n !== p.reference_number).slice(0, 3)
+}
+
 // Reverse of deriveRole/deriveFamilyMemberId — turns a product's stored
 // life_assured_role/life_assured_family_member_id back into the household
 // key convention Protection's rmData.policies[].person uses ('client',
@@ -141,6 +163,24 @@ export default function NewBusinessCaseProducts({
   const [loadingIncept, setLoadingIncept] = useState<string | null>(null)
 
   const [emailPanelsOpen, setEmailPanelsOpen] = useState<Record<string, boolean>>({})
+
+  // Reference-number suggestions — scans this case's uploaded document
+  // filenames (e.g. "SingLife Elite Term II 84280309 UW Req.pdf") for
+  // number-like runs so the advisor can click instead of retyping a number
+  // that's already sitting in a filename. Documents are stored at case_id
+  // level only (new_business_case_documents has no product_id), so with
+  // more than one product in the case we only offer a filename's numbers
+  // to a product if the filename text matches that product's name or life
+  // assured — otherwise it's a guess we shouldn't be making.
+  const [caseDocs, setCaseDocs] = useState<{ file_name: string }[]>([])
+  useEffect(() => {
+    let cancelled = false
+    supabase.from('new_business_case_documents').select('file_name').eq('case_id', caseId).then(({ data }) => {
+      if (!cancelled) setCaseDocs((data || []) as { file_name: string }[])
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId])
 
   useEffect(() => {
     let cancelled = false
@@ -261,8 +301,8 @@ export default function NewBusinessCaseProducts({
     onProductUpdated({ ...p, status_note: text || null })
   }
 
-  async function saveReference(p: ProductRow) {
-    const text = (refDraft[p.id] ?? p.reference_number ?? '').trim()
+  async function saveReference(p: ProductRow, override?: string) {
+    const text = (override ?? refDraft[p.id] ?? p.reference_number ?? '').trim()
     setSavingRefFor(p.id)
     const { error } = await supabase.from('new_business_case_products').update({ reference_number: text || null }).eq('id', p.id)
     setSavingRefFor(null)
@@ -350,6 +390,7 @@ export default function NewBusinessCaseProducts({
             const pushed = !!p.linked_policy_id
             const isIssued = p.status === 'issued'
             const emailOpen = !!emailPanelsOpen[p.id]
+            const refSuggestions = p.reference_number ? [] : referenceSuggestionsFor(p, caseDocs, products.length)
 
             return (
               <div key={p.id} style={{ background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -369,6 +410,19 @@ export default function NewBusinessCaseProducts({
                         style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: p.reference_number ? T.textDim : T.textFaint, border: 'none', background: 'transparent', padding: '1px 0', outline: 'none', width: 150 }} />
                       {savingRefFor === p.id && <span style={{ fontSize: 9.5, color: T.textFaint }}>Saving…</span>}
                     </div>
+                    {refSuggestions.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 3 }}>
+                        <span style={{ fontSize: 9.5, color: T.textFaint }}>From uploaded doc:</span>
+                        {refSuggestions.map(n => (
+                          <button
+                            key={n}
+                            onClick={() => { setRefDraft(prev => { const next = { ...prev }; delete next[p.id]; return next }); saveReference(p, n) }}
+                            style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, padding: '2px 8px', borderRadius: 999, border: `1px solid ${T.line}`, background: T.cream2, color: T.textDim, cursor: 'pointer' }}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
