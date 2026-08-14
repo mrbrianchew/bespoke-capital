@@ -1778,6 +1778,23 @@ function LineItemCard({ item, expanded, onToggle, onSave, onDelete, documents, p
       {expanded && (
         <div style={{ padding: '4px 15px 16px', borderTop: `1px solid ${T.line}` }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+            <div><FieldLabel>Section</FieldLabel>
+              <select className="claims-select" value={draft.section} onChange={e => {
+                const newSection = e.target.value as 'pre' | 'in' | 'post'
+                if (newSection === draft.section) return
+                // Type options differ per section (Inpatient/Surgery vs the
+                // CDL/Non-CDL/Services/Outpatient set) — moving sections can
+                // leave the old type value invalid, so reset it whenever it
+                // doesn't exist in the destination section's options.
+                const destOptions = SECTION_TYPE_OPTIONS[newSection]
+                const newType = destOptions.includes(draft.type || '') ? draft.type : (newSection === 'in' ? 'Surgery' : 'Outpatient')
+                commit({ section: newSection, type: newType })
+              }}>
+                <option value="pre">{SECTION_LABEL.pre}</option>
+                <option value="in">{SECTION_LABEL.in}</option>
+                <option value="post">{SECTION_LABEL.post}</option>
+              </select>
+            </div>
             <div><FieldLabel>Type</FieldLabel>
               <select className="claims-select" value={draft.type || ''} onChange={e => commit({ type: e.target.value })}>
                 {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
