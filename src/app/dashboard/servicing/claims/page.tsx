@@ -130,6 +130,7 @@ const MSG_VARIABLES: { key: string; label: string }[] = [
   { key: 'client_name', label: 'Client' },
   { key: 'policy_number', label: 'Policy No.' },
   { key: 'insurer', label: 'Insurer' },
+  { key: 'claim_no', label: 'Claim No.' },
   { key: 'amount_claimed', label: 'Claimed' },
   { key: 'amount_approved', label: 'Approved' },
   { key: 'approval_pct', label: 'Approval %' },
@@ -325,6 +326,9 @@ function MedicalClaimsPage() {
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
   const [composerOpen, setComposerOpen] = useState(false)
   const [msgTrigger, setMsgTrigger] = useState(CLAIM_MSG_TRIGGERS[1].key) // default 'approved'
+  // '' = combined/all line items (previous behaviour). Any other value is a
+  // claim_line_items.id — pulls amounts/status from that one line only.
+  const [msgLineItemId, setMsgLineItemId] = useState('')
   const [msgBody, setMsgBody] = useState('')
   const [msgEdited, setMsgEdited] = useState(false)
   const [msgCopied, setMsgCopied] = useState<string | null>(null)
@@ -1011,9 +1015,12 @@ function MedicalClaimsPage() {
   // Load the default the first time the composer opens, and whenever the
   // trigger changes — but never stomp on an in-progress edit on re-render.
   useEffect(() => {
-    if (composerOpen) loadTemplate(msgTrigger)
+    if (composerOpen) { loadTemplate(msgTrigger); setMsgLineItemId('') }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerOpen, templates])
+  // Selecting a different claim (selectedClaim) should drop any line-item
+  // pick from the previous claim — ids don't carry across claims.
+  useEffect(() => { setMsgLineItemId('') }, [selectedClaim?.id])
 
   const derivedStatusBadge = lineItems.length === 0 ? 'No line items yet'
     : lineItems.every(i => i.rejected) ? 'Rejected'
@@ -1022,10 +1029,27 @@ function MedicalClaimsPage() {
           : lineItems.some(i => i.approved) ? 'Partially Approved'
             : 'Pending Insurer Review'
   const latestRejectionReason = [...lineItems].reverse().find(i => i.rejected && i.rejection_reason)?.rejection_reason || ''
-  const msgVars: Record<string, string> = {
+  // Line items eligible for the "specific claim" dropdown — anything with an
+  // invoice/claim no. or a description to identify it by. Newest first.
+  const msgLineItemOptions = [...lineItems].filter(i => i.invoice_no || i.description).reverse()
+  const msgSelectedLineItem = msgLineItemId ? lineItems.find(i => i.id === msgLineItemId) || null : null
+  const msgVars: Record<string, string> = msgSelectedLineItem ? {
     client_name: allPeople.find(p => p.key === selectedClaim?.life_assured_person)?.label || clientName,
     policy_number: mainPolicy?.policyNo || '—',
     insurer: mainPolicy?.companyName || '—',
+    claim_no: msgSelectedLineItem.invoice_no || '—',
+    amount_claimed: money(msgSelectedLineItem.amount_claimed),
+    amount_approved: money(msgSelectedLineItem.amount_approved),
+    approval_pct: msgSelectedLineItem.amount_claimed > 0 ? Math.round((msgSelectedLineItem.amount_approved / msgSelectedLineItem.amount_claimed) * 100) + '%' : '0%',
+    status_badge: msgSelectedLineItem.approved ? 'Approved' : msgSelectedLineItem.rejected ? 'Rejected' : 'Pending',
+    rejection_reason: msgSelectedLineItem.rejected ? (msgSelectedLineItem.rejection_reason || '') : '',
+    advisor_name: advisor?.name || '',
+    procedure_description: msgSelectedLineItem.description || selectedClaim?.label || 'this claim',
+  } : {
+    client_name: allPeople.find(p => p.key === selectedClaim?.life_assured_person)?.label || clientName,
+    policy_number: mainPolicy?.policyNo || '—',
+    insurer: mainPolicy?.companyName || '—',
+    claim_no: lineItems.map(i => i.invoice_no).filter(Boolean).join(', ') || '—',
     amount_claimed: money(totalClaimed),
     amount_approved: money(totalApproved),
     approval_pct: pct + '%',
@@ -1294,10 +1318,23 @@ function MedicalClaimsPage() {
                 <select className="claims-select" value={msgTrigger} onChange={e => loadTemplate(e.target.value)} style={{ width: 240 }}>
                   {CLAIM_MSG_TRIGGERS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
+                <select className="claims-select" value={msgLineItemId} onChange={e => setMsgLineItemId(e.target.value)} style={{ width: 260 }}>
+                  <option value="">All Claims (Combined)</option>
+                  {msgLineItemOptions.map(i => (
+                    <option key={i.id} value={i.id}>
+                      {(i.invoice_no || 'No claim no.') + ' — ' + (i.description || SECTION_LABEL[i.section]) + ' (' + money(i.amount_claimed) + ')'}
+                    </option>
+                  ))}
+                </select>
                 <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: msgEdited ? T.gold : T.textFaint }}>
                   ● {msgEdited ? 'Edited — no longer matches default' : 'Using default template'}
                 </span>
               </div>
+              {msgSelectedLineItem && (
+                <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 10, marginTop: -4 }}>
+                  Pulling amounts and status from this claim only — switch back to "All Claims" for a combined update.
+                </div>
+              )}
 
               <FieldLabel>Template (edit freely — variables below insert at cursor)</FieldLabel>
               <textarea ref={msgTextareaRef} className="claims-input" value={msgBody}
