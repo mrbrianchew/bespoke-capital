@@ -300,7 +300,8 @@ function PageNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) 
 }
 
 function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunway }) {
-  const { fullNeed, targetNeed, currentProvision } = runway
+  const { fullNeed, targetNeed, currentProvision, assetOffsetEnabled } = runway
+  const currentLabel = assetOffsetEnabled ? 'Currently in place (insurance + assets)' : 'Currently in place (insurance only)'
   const axisMax = fullNeed
   const pct = (n: number) => axisMax > 0 ? Math.min(100, (n / axisMax) * 100) : 0
   const targetShortfall = Math.max(0, fullNeed - targetNeed)
@@ -342,7 +343,7 @@ function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunwa
 
       <Row label="Family's full need (100%)" amount={fullNeed} barColor="var(--ink)" gapColor="transparent" widthPct={100} shortfall={0} />
       <Row label="Chosen coverage target" amount={targetNeed} barColor="var(--gold)" gapColor="var(--gold-l)" widthPct={pct(targetNeed)} shortfall={targetShortfall} />
-      <Row label="Currently in place" amount={currentProvision} barColor={currentColor} gapColor="var(--rouge-l)" widthPct={pct(currentProvision)} shortfall={currentShortfall} />
+      <Row label={currentLabel} amount={currentProvision} barColor={currentColor} gapColor="var(--rouge-l)" widthPct={pct(currentProvision)} shortfall={currentShortfall} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink3)', fontFamily: 'DM Mono, monospace', paddingTop: 2, borderTop: '1px solid var(--line2)' }}>
         {ticks.map((t, i) => <span key={i}>{fmtCompact(t)}</span>)}

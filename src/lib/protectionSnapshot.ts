@@ -76,6 +76,10 @@ export interface FamilyRunway {
   // What's currently in place to fund it: existing life (death) cover plus
   // the asset offset already used against the D/TPD need.
   currentProvision: number
+  // Live Asset Offset toggle state (Strategic Objectives > Asset Offset tab)
+  // — surfaced so the report can label whether currentProvision includes
+  // assets or is insurance-only.
+  assetOffsetEnabled: boolean
 }
 
 // One point on the Death & TPD coverage-timeline chart — the capital need
@@ -728,13 +732,24 @@ export function buildProtectionSnapshot(input: {
   // 100% family need (combined household expenses, mode/% independent),
   // what the client has actually chosen to cover (dtpd.familyDependency —
   // already mode/% aware), and what's currently in place to fund it
-  // (existing life cover + the asset offset already used against D/TPD).
+  // (existing life cover + the asset offset, if switched on).
+  //
+  // dtpd.assetMitigation is normally already 0 when the toggle is off
+  // (getAssetOffset on Strategic Objectives returns 0 in that case before
+  // it's ever saved as p1/p2_dtpd_assets) — but that only holds if the
+  // objectives page was re-saved after the toggle was last changed. Rather
+  // than trust the frozen saved figure, gate on the live assetOffsetEnabled
+  // flag here too, the same convention used elsewhere (masterEnabled on
+  // Strategic Objectives' Asset Offset tab).
   function buildRunway(who: 'client' | 'spouse', dtpd: PersonProtectionBreakdown): FamilyRunway {
     const fullNeed = Math.max(0, Math.round(fv(inflation, coverageTerm, annExpTotal)))
+    const assetOffsetEnabled = p.assetOffsetEnabled !== false
+    const currentProvision = dtpd.existingCoverage + (assetOffsetEnabled ? dtpd.assetMitigation : 0)
     return {
       fullNeed,
       targetNeed: dtpd.familyDependency,
-      currentProvision: dtpd.existingCoverage + dtpd.assetMitigation,
+      currentProvision,
+      assetOffsetEnabled,
     }
   }
 
