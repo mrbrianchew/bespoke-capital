@@ -131,9 +131,13 @@ const MSG_VARIABLES: { key: string; label: string }[] = [
   { key: 'policy_number', label: 'Policy No.' },
   { key: 'insurer', label: 'Insurer' },
   { key: 'claim_no', label: 'Claim No.' },
+  { key: 'date_in', label: 'Date In' },
+  { key: 'date_out', label: 'Date Out' },
   { key: 'amount_claimed', label: 'Claimed' },
   { key: 'amount_approved', label: 'Approved' },
   { key: 'approval_pct', label: 'Approval %' },
+  { key: 'deductible_used', label: 'Deductible Used' },
+  { key: 'coinsurance_applied', label: 'Co-Insurance Applied' },
   { key: 'status_badge', label: 'Status' },
   { key: 'rejection_reason', label: 'Rejection Reason' },
   { key: 'advisor_name', label: 'Advisor' },
@@ -1033,14 +1037,25 @@ function MedicalClaimsPage() {
   // invoice/claim no. or a description to identify it by. Newest first.
   const msgLineItemOptions = [...lineItems].filter(i => i.invoice_no || i.description).reverse()
   const msgSelectedLineItem = msgLineItemId ? lineItems.find(i => i.id === msgLineItemId) || null : null
+  // Combined mode has no single "date in/out" — fall back to the earliest
+  // date_from and latest date_to across all lines, so a template still
+  // renders something sensible instead of a blank.
+  const aggDateIn = [...lineItems.map(i => i.date_from).filter((d): d is string => !!d)].sort()[0] || null
+  const aggDateOut = [...lineItems.map(i => i.date_to).filter((d): d is string => !!d)].sort().pop() || null
+  const aggDeductibleClocked = lineItems.reduce((s, i) => s + (i.deductible_clocked || 0), 0)
+  const aggCoinsuranceClocked = lineItems.reduce((s, i) => s + (i.coinsurance_clocked || 0), 0)
   const msgVars: Record<string, string> = msgSelectedLineItem ? {
     client_name: allPeople.find(p => p.key === selectedClaim?.life_assured_person)?.label || clientName,
     policy_number: mainPolicy?.policyNo || '—',
     insurer: mainPolicy?.companyName || '—',
     claim_no: msgSelectedLineItem.invoice_no || '—',
+    date_in: fmtDate(msgSelectedLineItem.date_from),
+    date_out: fmtDate(msgSelectedLineItem.date_to),
     amount_claimed: money(msgSelectedLineItem.amount_claimed),
     amount_approved: money(msgSelectedLineItem.amount_approved),
     approval_pct: msgSelectedLineItem.amount_claimed > 0 ? Math.round((msgSelectedLineItem.amount_approved / msgSelectedLineItem.amount_claimed) * 100) + '%' : '0%',
+    deductible_used: money(msgSelectedLineItem.deductible_clocked),
+    coinsurance_applied: money(msgSelectedLineItem.coinsurance_clocked),
     status_badge: msgSelectedLineItem.approved ? 'Approved' : msgSelectedLineItem.rejected ? 'Rejected' : 'Pending',
     rejection_reason: msgSelectedLineItem.rejected ? (msgSelectedLineItem.rejection_reason || '') : '',
     advisor_name: advisor?.name || '',
@@ -1050,9 +1065,13 @@ function MedicalClaimsPage() {
     policy_number: mainPolicy?.policyNo || '—',
     insurer: mainPolicy?.companyName || '—',
     claim_no: lineItems.map(i => i.invoice_no).filter(Boolean).join(', ') || '—',
+    date_in: fmtDate(aggDateIn),
+    date_out: fmtDate(aggDateOut),
     amount_claimed: money(totalClaimed),
     amount_approved: money(totalApproved),
     approval_pct: pct + '%',
+    deductible_used: money(aggDeductibleClocked),
+    coinsurance_applied: money(aggCoinsuranceClocked),
     status_badge: derivedStatusBadge,
     rejection_reason: latestRejectionReason,
     advisor_name: advisor?.name || '',
