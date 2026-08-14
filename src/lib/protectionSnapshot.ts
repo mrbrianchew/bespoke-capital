@@ -1,4 +1,4 @@
-import { ageYearOnly } from './calc'
+import { ageYearOnly, fv } from './calc'
 
 export interface PersonProtectionBreakdown {
   familyDependency: number
@@ -67,9 +67,15 @@ export interface ProtectionFrameworkStatus {
 }
 
 export interface FamilyRunway {
-  fundedYears: number
-  targetYears: number
-  status: 'covered' | 'shortfall'
+  // 100% of the family's combined household expenses, capitalised over the
+  // coverage term — the objective need, independent of fdMode/coverage %.
+  fullNeed: number
+  // Capital required for what the client has actually chosen to cover
+  // (fdMode + coverage %) — same figure as dtpd.familyDependency.
+  targetNeed: number
+  // What's currently in place to fund it: existing life (death) cover plus
+  // the asset offset already used against the D/TPD need.
+  currentProvision: number
 }
 
 // One point on the Death & TPD coverage-timeline chart — the capital need
@@ -362,14 +368,6 @@ export function buildProtectionSnapshot(input: {
   const defaultSpousePct = annExpTotal > 0 ? (annExpSpouse / annExpTotal * 100) : 100
   const clientCoverPct = !isCouple ? 1 : (p.expenseCoverPctClient ?? defaultClientPct) / 100
   const spouseCoverPct = (p.expenseCoverPctSpouse ?? defaultSpousePct) / 100
-
-  function getFdBase(who: 'client' | 'spouse'): number {
-    const annExp = who === 'client' ? annExpClient : annExpSpouse
-    const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
-    return (p[who === 'client' ? 'fdModeClient' : 'fdModeSpouse'] ?? 'combined') === 'own'
-      ? annExp
-      : annExpTotal * coverPct
-  }
 
   // ── Coverage timeline (Death & TPD chart) ───────────────────────────────────
   // Everything below this point is ported from the live Risk Management page's
@@ -725,43 +723,18 @@ export function buildProtectionSnapshot(input: {
     }
   }
 
-  // Family Financial Runway — how long the existing death benefit payout alone
-  // (no other assets) would sustain the family's current lifestyle, with that
-  // need inflating each year, versus the years actually needed (coverageTerm —
-  // same "until youngest child graduates" horizon used above). No investment
-  // growth is assumed on the payout itself, only inflation on the withdrawal —
-  // deliberately conservative, same spirit as the Emergency Cash Runway figure
-  // on the Wealth Summary tab.
-  function buildRunway(who: 'client' | 'spouse'): FamilyRunway {
-    const fdBase = getFdBase(who)
-    const existingCoverage = calcExistingLifeCover(policies, who)
-    const targetYears = coverageTerm
-
-    let fundedYears: number
-    if (fdBase <= 0) {
-      fundedYears = existingCoverage > 0 ? targetYears : 0
-    } else if (existingCoverage <= 0) {
-      fundedYears = 0
-    } else {
-      let remaining = existingCoverage
-      const maxIterations = Math.max(targetYears * 3, 100)
-      let depletedAt = maxIterations
-      for (let year = 0; year < maxIterations; year++) {
-        const needThisYear = fdBase * Math.pow(1 + inflation, year)
-        if (remaining >= needThisYear) {
-          remaining -= needThisYear
-        } else {
-          depletedAt = year + remaining / needThisYear
-          break
-        }
-      }
-      fundedYears = depletedAt
-    }
-
+  // Family Financial Runway — three capital figures, all over the same
+  // coverage term (youngest child's years to graduation): the objective
+  // 100% family need (combined household expenses, mode/% independent),
+  // what the client has actually chosen to cover (dtpd.familyDependency —
+  // already mode/% aware), and what's currently in place to fund it
+  // (existing life cover + the asset offset already used against D/TPD).
+  function buildRunway(who: 'client' | 'spouse', dtpd: PersonProtectionBreakdown): FamilyRunway {
+    const fullNeed = Math.max(0, Math.round(fv(inflation, coverageTerm, annExpTotal)))
     return {
-      fundedYears: Math.round(fundedYears * 10) / 10,
-      targetYears,
-      status: fundedYears >= targetYears ? 'covered' : 'shortfall',
+      fullNeed,
+      targetNeed: dtpd.familyDependency,
+      currentProvision: dtpd.existingCoverage + dtpd.assetMitigation,
     }
   }
 
@@ -828,7 +801,7 @@ export function buildProtectionSnapshot(input: {
       ci,
       framework: buildFramework(who),
       lifePolicies: buildLifePolicies(policies, who),
-      runway: buildRunway(who),
+      runway: buildRunway(who, dtpd),
       dtpdTimeline: buildDTPDTimeline(who, currentAge, netOfAssetsDTPD),
       ciTimeline: buildCITimeline(who, currentAge, netOfAssetsCI),
     }

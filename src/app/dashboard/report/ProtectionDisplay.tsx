@@ -300,12 +300,36 @@ function PageNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) 
 }
 
 function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunway }) {
-  const { fundedYears, targetYears, status } = runway
-  const isCovered = status === 'covered'
-  const fundedColor = isCovered ? 'var(--emerald)' : 'var(--rouge)'
-  const axisMax = Math.max(fundedYears, targetYears)
+  const { fullNeed, targetNeed, currentProvision } = runway
+  const axisMax = fullNeed
+  const pct = (n: number) => axisMax > 0 ? Math.min(100, (n / axisMax) * 100) : 0
+  const targetShortfall = Math.max(0, fullNeed - targetNeed)
+  const currentShortfall = Math.max(0, fullNeed - currentProvision)
+  const isTargetMet = currentProvision >= targetNeed && targetNeed > 0
+  const currentColor = isTargetMet ? 'var(--emerald)' : 'var(--rouge)'
   const ticks = [0, axisMax * 0.25, axisMax * 0.5, axisMax * 0.75, axisMax]
-  const fmtYrs = (n: number) => (Math.round(n * 10) / 10).toString()
+
+  const Row = ({
+    label, amount, barColor, gapColor, widthPct, shortfall,
+  }: { label: string; amount: number; barColor: string; gapColor: string; widthPct: number; shortfall: number }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--ink2)' }}>{label}</span>
+        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: barColor }}>{fmtCompact(amount)}</span>
+      </div>
+      <div style={{ height: 10, background: 'var(--cream2)', position: 'relative' }}>
+        <div style={{ height: '100%', width: `${widthPct}%`, background: barColor }} />
+        {shortfall > 0 && (
+          <div style={{ position: 'absolute', top: 0, left: `${widthPct}%`, height: '100%', width: `${100 - widthPct}%`, background: gapColor }} />
+        )}
+      </div>
+      {shortfall > 0 && (
+        <div style={{ textAlign: 'right', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--ink3)', marginTop: 4 }}>
+          −{fmtCompact(shortfall)} short of full need
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div style={{ marginBottom: 44 }}>
@@ -313,31 +337,15 @@ function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunwa
         Family financial runway
       </div>
       <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, marginBottom: 28 }}>
-        How long the existing death benefit would sustain {name}'s family at their current lifestyle, assuming inflation on that need.
+        What {name}'s family would need to maintain their current lifestyle, against what's targeted and what's currently in place.
       </div>
 
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Funded today</span>
-          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: fundedColor }}>{fmtYrs(fundedYears)} yrs</span>
-        </div>
-        <div style={{ height: 10, background: 'var(--cream2)' }}>
-          <div style={{ height: '100%', width: `${axisMax > 0 ? (fundedYears / axisMax) * 100 : 0}%`, background: fundedColor }} />
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Family's need</span>
-          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: 'var(--ink)' }}>{fmtYrs(targetYears)} yrs</span>
-        </div>
-        <div style={{ height: 10, background: 'var(--cream2)' }}>
-          <div style={{ height: '100%', width: `${axisMax > 0 ? (targetYears / axisMax) * 100 : 0}%`, background: 'var(--ink2)' }} />
-        </div>
-      </div>
+      <Row label="Family's full need (100%)" amount={fullNeed} barColor="var(--ink)" gapColor="transparent" widthPct={100} shortfall={0} />
+      <Row label="Chosen coverage target" amount={targetNeed} barColor="var(--gold)" gapColor="var(--gold-l)" widthPct={pct(targetNeed)} shortfall={targetShortfall} />
+      <Row label="Currently in place" amount={currentProvision} barColor={currentColor} gapColor="var(--rouge-l)" widthPct={pct(currentProvision)} shortfall={currentShortfall} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink3)', fontFamily: 'DM Mono, monospace', paddingTop: 2, borderTop: '1px solid var(--line2)' }}>
-        {ticks.map((t, i) => <span key={i}>{fmtYrs(t)}</span>)}
+        {ticks.map((t, i) => <span key={i}>{fmtCompact(t)}</span>)}
       </div>
     </div>
   )
