@@ -525,7 +525,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto pt-14 md:pt-0" style={{ background: 'var(--cream)' }}>
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden pt-14 md:pt-0" style={{ background: 'var(--cream)' }}>
         <div key={activeClient?.id || 'no-client'} className="contents">{children}</div>
       </main>
       {showClientDrop && (<div className="fixed inset-0 z-40" onClick={() => { setShowClientDrop(false); setClientSearch('') }} />)}
