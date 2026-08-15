@@ -7,6 +7,7 @@ import DateInput from '@/components/DateInput'
 import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import BugReportModal from '@/components/BugReportModal'
+import GlobalQuickAdd from '@/components/GlobalQuickAdd'
 import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
 import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttention'
 import { fetchNewBusinessAttentionCount } from '@/lib/newBusinessAttention'
@@ -535,6 +536,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         />
       )}
       {showBugReport && <BugReportModal onClose={() => setShowBugReport(false)} />}
+      {businessAccess && <GlobalQuickAdd clients={clients} />}
       {showFolderModal && activeClient && (
         <ClientFolderModal
           clientName={activeClient.name}

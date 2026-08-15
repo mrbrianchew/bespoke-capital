@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
@@ -71,6 +71,36 @@ function daysIdleFrom(iso: string | null): number | null {
 
 interface FeedEntry { pipe: Pipe; title: string; detail: string; date: string | null; time?: string | null; href: string }
 interface StaleEntry { pipe: Pipe; title: string; detail: string; ratio: number; badge: string; href: string }
+
+// Hover on desktop (unchanged), tap-to-toggle on mobile where hover doesn't
+// exist at all (Aug 2026 — Brian flagged AFYP's tooltip was dead on touch).
+// Click-outside dismisses so a stray tap elsewhere on the page closes it.
+function InfoTooltip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onOutside = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onOutside)
+    return () => document.removeEventListener('mousedown', onOutside)
+  }, [open])
+  return (
+    <div ref={ref} className="group relative inline-flex items-center">
+      <button type="button" onClick={() => setOpen(o => !o)} style={{
+        width: 14, height: 14, borderRadius: '50%', border: `1px solid var(--ink3)`, color: 'var(--ink3)',
+        fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help',
+        flexShrink: 0, background: 'none', padding: 0,
+      }}>?</button>
+      <div className={`${open ? 'block' : 'hidden'} group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20`} style={{
+        width: 230, padding: '10px 12px', background: 'var(--charcoal)', color: '#fff', fontSize: 11, lineHeight: 1.5,
+        borderRadius: 8, fontFamily: 'Inter, sans-serif', textTransform: 'none', letterSpacing: 'normal',
+        boxShadow: '0 10px 28px rgba(0,0,0,0.22)',
+      }}>
+        {text}
+      </div>
+    </div>
+  )
+}
 
 // SSR-safe: starts false (desktop layout), corrects on mount. Shared shape
 // reused (duplicated, matching this codebase's existing per-file pattern)
@@ -305,21 +335,7 @@ export default function BusinessOverviewPage() {
     <div style={{ flex: 1, minWidth: 130, padding: '4px 20px', borderRight: `1px solid ${T.line}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Mono, monospace', fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textFaint }}>
         {label}
-        {tooltip && (
-          <div className="group relative inline-flex items-center">
-            <span style={{
-              width: 13, height: 13, borderRadius: '50%', border: `1px solid ${T.textFaint}`, color: T.textFaint,
-              fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', flexShrink: 0,
-            }}>?</span>
-            <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20" style={{
-              width: 230, padding: '10px 12px', background: 'var(--charcoal)', color: '#fff', fontSize: 11, lineHeight: 1.5,
-              borderRadius: 8, fontFamily: 'Inter, sans-serif', textTransform: 'none', letterSpacing: 'normal',
-              boxShadow: '0 10px 28px rgba(0,0,0,0.22)',
-            }}>
-              {tooltip}
-            </div>
-          </div>
-        )}
+        {tooltip && <InfoTooltip text={tooltip} />}
       </div>
       <div className="font-serif" style={{ fontSize: 26, fontWeight: 600, color: T.text, marginTop: 2 }}>
         {value}
