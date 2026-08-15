@@ -8,6 +8,7 @@ import { DashboardProvider, useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import BugReportModal from '@/components/BugReportModal'
 import GlobalQuickAdd from '@/components/GlobalQuickAdd'
+import IdleLogoutGuard from '@/components/IdleLogoutGuard'
 import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
 import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttention'
 import { fetchNewBusinessAttentionCount } from '@/lib/newBusinessAttention'
@@ -537,6 +538,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       )}
       {showBugReport && <BugReportModal onClose={() => setShowBugReport(false)} />}
       {businessAccess && <GlobalQuickAdd />}
+      <IdleLogoutGuard />
       {showFolderModal && activeClient && (
         <ClientFolderModal
           clientName={activeClient.name}
