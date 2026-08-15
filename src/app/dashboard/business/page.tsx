@@ -298,9 +298,26 @@ export default function BusinessOverviewPage() {
     )
   }
 
-  const Kpi = ({ label, value, flag }: { label: string; value: string; flag?: string }) => (
+  const Kpi = ({ label, value, flag, tooltip }: { label: string; value: string; flag?: string; tooltip?: string }) => (
     <div style={{ flex: 1, minWidth: 130, padding: '4px 20px', borderRight: `1px solid ${T.line}` }}>
-      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textFaint }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'DM Mono, monospace', fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textFaint }}>
+        {label}
+        {tooltip && (
+          <div className="group relative inline-flex items-center">
+            <span style={{
+              width: 13, height: 13, borderRadius: '50%', border: `1px solid ${T.textFaint}`, color: T.textFaint,
+              fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'help', flexShrink: 0,
+            }}>?</span>
+            <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20" style={{
+              width: 230, padding: '10px 12px', background: 'var(--charcoal)', color: '#fff', fontSize: 11, lineHeight: 1.5,
+              borderRadius: 8, fontFamily: 'Inter, sans-serif', textTransform: 'none', letterSpacing: 'normal',
+              boxShadow: '0 10px 28px rgba(0,0,0,0.22)',
+            }}>
+              {tooltip}
+            </div>
+          </div>
+        )}
+      </div>
       <div className="font-serif" style={{ fontSize: 26, fontWeight: 600, color: T.text, marginTop: 2 }}>
         {value}
         {flag && <span style={{ marginLeft: 6, fontFamily: 'Inter, sans-serif', fontSize: 10, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '1px 6px', borderRadius: 4, verticalAlign: 'middle' }}>{flag}</span>}
@@ -320,7 +337,8 @@ export default function BusinessOverviewPage() {
       <div style={{ display: 'flex', padding: '16px 32px', borderBottom: `1px solid ${T.line}`, background: T.cream2, flexWrap: 'wrap' }}>
         <Kpi label="Active Cases" value={String(kpis.activeCases)} />
         <Kpi label="In Consideration" value={String(kpis.considerationCount)} flag={kpis.considerationStale > 0 ? `${kpis.considerationStale} stale` : undefined} />
-        <Kpi label="Est. AFYP" value={`$${Math.round(kpis.afyp).toLocaleString('en-SG')}`} />
+        <Kpi label="Est. AFYP" value={`$${Math.round(kpis.afyp).toLocaleString('en-SG')}`}
+          tooltip="Annualized First Year Premium. Sums premium across all products on active cases (not Lost/Deferred), excluding withdrawn or declined products. Monthly premiums are ×12 to annualize; yearly/single as-is. Postponed products still count." />
         <Kpi label="Claims In Progress" value={String(kpis.claimsInProgress)} />
         <Kpi label="Open Service Reqs" value={String(kpis.openServiceRequests)} />
       </div>
