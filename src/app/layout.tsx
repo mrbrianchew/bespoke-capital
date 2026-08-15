@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
 }
 
 // next/font self-hosts these at build time and inlines the @font-face rules

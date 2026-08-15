@@ -120,7 +120,7 @@ export default function GlobalQuickAdd({ clients }: { clients: ClientRow[] }) {
     <>
       <button onClick={() => setOpen(true)} title="Quick add — todo or meeting for any client"
         style={{
-          position: 'fixed', bottom: 24, right: 24, width: 52, height: 52, borderRadius: '50%',
+          position: 'fixed', bottom: 'calc(24px + env(safe-area-inset-bottom))', right: 24, width: 52, height: 52, borderRadius: '50%',
           background: 'var(--charcoal)', color: '#fff', border: 'none', fontSize: 26, fontWeight: 400,
           display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
           boxShadow: '0 8px 22px rgba(28,26,23,0.28)', zIndex: 40, lineHeight: 1, paddingBottom: 3,
@@ -139,7 +139,7 @@ export default function GlobalQuickAdd({ clients }: { clients: ClientRow[] }) {
               <button onClick={close} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textFaint, fontSize: 20, lineHeight: 1 }}>×</button>
             </div>
 
-            <div style={{ padding: 20 }}>
+            <div style={{ padding: '20px 20px calc(28px + env(safe-area-inset-bottom))' }}>
               {step === 'client' && (
                 <>
                   <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients…"
