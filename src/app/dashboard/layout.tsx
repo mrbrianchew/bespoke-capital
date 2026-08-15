@@ -536,7 +536,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         />
       )}
       {showBugReport && <BugReportModal onClose={() => setShowBugReport(false)} />}
-      {businessAccess && <GlobalQuickAdd clients={clients} />}
+      {businessAccess && <GlobalQuickAdd />}
       {showFolderModal && activeClient && (
         <ClientFolderModal
           clientName={activeClient.name}
