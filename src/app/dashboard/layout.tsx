@@ -293,7 +293,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                   color: !isBusinessMode ? 'white' : 'var(--ink3)', background: !isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
                 Client Workspace
               </button>
-              <button onClick={() => router.push('/dashboard/business/claims')}
+              <button onClick={() => router.push('/dashboard/business')}
                 className="flex-1 text-center transition-colors"
                 style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, position: 'relative',
                   color: isBusinessMode ? 'white' : 'var(--ink3)', background: isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
