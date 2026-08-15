@@ -82,6 +82,22 @@ function staleBadge(level: 'ok' | 'warn' | 'stale' | 'meeting', row: CaseRow, me
 
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
+// SSR-safe: starts false (desktop layout), corrects on mount. Drives the
+// mobile Board→List default (Aug 2026) — Kanban's horizontal column-scroll
+// is a poor fit under ~860px, so List (stage-grouped, vertical) is the
+// default there; the toggle lets either device pick either view manually.
+function useNarrow(breakpoint: number): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    setNarrow(mq.matches)
+    const onChange = () => setNarrow(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [breakpoint])
+  return narrow
+}
+
 export default function NewBusinessPipelinePage() {
   const { advisor, clients, setClients, spouseNames, authLoading } = useDashboard()
   const router = useRouter()
@@ -89,6 +105,10 @@ export default function NewBusinessPipelinePage() {
 
   const hasAccess = advisor?.id === CREATOR_ID ||
     (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing') && advisor.beta_features.includes('business_dashboard'))
+
+  const narrow = useNarrow(860)
+  const [boardViewOverride, setBoardViewOverride] = useState<'board' | 'list' | null>(null)
+  const boardView = boardViewOverride ?? (narrow ? 'list' : 'board')
 
   const [loading, setLoading] = useState(true)
   const [cases, setCases] = useState<CaseRow[]>([])
@@ -438,38 +458,103 @@ export default function NewBusinessPipelinePage() {
 
       {/* Board */}
       <div style={{ overflowX: 'auto', padding: '22px 32px 40px' }}>
-        <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <div style={{ display: 'flex', gap: 16, minWidth: 'max-content' }}>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--cream2)', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3, maxWidth: 220 }}>
+          {(['list', 'board'] as const).map(v => (
+            <button key={v} onClick={() => setBoardViewOverride(v)} style={{
+              flex: 1, fontFamily: 'Inter, sans-serif', fontSize: 11.5, fontWeight: 600, padding: '6px 0', border: 'none',
+              borderRadius: 5, cursor: 'pointer', color: boardView === v ? T.text : T.textFaint,
+              background: boardView === v ? '#fff' : 'none', boxShadow: boardView === v ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+            }}>
+              {v === 'list' ? 'List' : 'Board'}
+            </button>
+          ))}
+        </div>
+
+        {boardView === 'list' ? (
+          <div style={{ maxWidth: 620 }}>
             {STAGES.map(stage => {
               const stageCases = columns[stage.key]
               const stageLost = showLost ? lostCases.filter(c => c.outcome_at_stage === stage.label) : []
               const stageDeferred = showDeferred ? deferredCases.filter(c => c.outcome_at_stage === stage.label) : []
+              const total = stageCases.length + stageLost.length + stageDeferred.length
+              if (total === 0) return null
               return (
-                <DroppableColumn key={stage.key} stageKey={stage.key}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 4px 12px', borderBottom: `2px solid ${T.text}`, marginBottom: 12 }}>
-                    <div style={{ fontWeight: 600, fontSize: 12.5, color: T.text }}>{stage.label}</div>
-                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: T.textFaint }}>{stageCases.length}</div>
+                <div key={stage.key} style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                    <span>{stage.label}</span>
+                    <span style={{ background: 'var(--cream2)', color: T.textDim, borderRadius: 10, padding: '1px 8px', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>{total}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 60 }}>
-                    {stageCases.length === 0 && stageLost.length === 0 && stageDeferred.length === 0 && (
-                      <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', padding: '10px 2px' }}>No cases</div>
-                    )}
-                    {stageCases.map(c => (
-                      <DraggableCaseCard key={c.id} row={c} clientsById={clientsById} products={productsByCase[c.id] || []} meetings={meetings}
-                        onClick={() => setEditingId(c.id)} />
-                    ))}
-                    {stageDeferred.map(c => (
-                      <OutcomeCard key={c.id} row={c} kind="deferred" onClick={() => setEditingId(c.id)} />
-                    ))}
-                    {stageLost.map(c => (
-                      <OutcomeCard key={c.id} row={c} kind="lost" onClick={() => setEditingId(c.id)} />
-                    ))}
-                  </div>
-                </DroppableColumn>
+                  {stageCases.map(c => {
+                    const badge = staleBadge(staleLevel(c, meetings), c, meetings)
+                    return (
+                      <div key={c.id} onClick={() => setEditingId(c.id)} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: `1px solid ${T.line}`,
+                        borderRadius: 10, padding: '11px 13px', marginBottom: 7, cursor: 'pointer',
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{c.case_title}</div>
+                          <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>{c.source || (c.client_id ? 'Existing client' : '—')}</div>
+                        </div>
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, padding: '3px 7px', borderRadius: 5, whiteSpace: 'nowrap', background: badge.bg, color: badge.fg, flexShrink: 0 }}>{badge.text}</span>
+                      </div>
+                    )
+                  })}
+                  {stageDeferred.map(c => (
+                    <div key={c.id} onClick={() => setEditingId(c.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 13px', marginBottom: 7, cursor: 'pointer', opacity: 0.75 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{c.case_title}</div>
+                        <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>Paused at: {c.outcome_at_stage}</div>
+                      </div>
+                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, padding: '3px 7px', borderRadius: 5, whiteSpace: 'nowrap', background: T.slateSoft, color: T.slate, flexShrink: 0 }}>Deferred</span>
+                    </div>
+                  ))}
+                  {stageLost.map(c => (
+                    <div key={c.id} onClick={() => setEditingId(c.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 13px', marginBottom: 7, cursor: 'pointer', opacity: 0.75 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{c.case_title}</div>
+                        <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>Died at: {c.outcome_at_stage}</div>
+                      </div>
+                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, padding: '3px 7px', borderRadius: 5, whiteSpace: 'nowrap', background: T.roseSoft, color: T.rose, flexShrink: 0 }}>Lost</span>
+                    </div>
+                  ))}
+                </div>
               )
             })}
           </div>
-        </DndContext>
+        ) : (
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <div style={{ display: 'flex', gap: 16, minWidth: 'max-content' }}>
+              {STAGES.map(stage => {
+                const stageCases = columns[stage.key]
+                const stageLost = showLost ? lostCases.filter(c => c.outcome_at_stage === stage.label) : []
+                const stageDeferred = showDeferred ? deferredCases.filter(c => c.outcome_at_stage === stage.label) : []
+                return (
+                  <DroppableColumn key={stage.key} stageKey={stage.key}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 4px 12px', borderBottom: `2px solid ${T.text}`, marginBottom: 12 }}>
+                      <div style={{ fontWeight: 600, fontSize: 12.5, color: T.text }}>{stage.label}</div>
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: T.textFaint }}>{stageCases.length}</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 60 }}>
+                      {stageCases.length === 0 && stageLost.length === 0 && stageDeferred.length === 0 && (
+                        <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic', padding: '10px 2px' }}>No cases</div>
+                      )}
+                      {stageCases.map(c => (
+                        <DraggableCaseCard key={c.id} row={c} clientsById={clientsById} products={productsByCase[c.id] || []} meetings={meetings}
+                          onClick={() => setEditingId(c.id)} />
+                      ))}
+                      {stageDeferred.map(c => (
+                        <OutcomeCard key={c.id} row={c} kind="deferred" onClick={() => setEditingId(c.id)} />
+                      ))}
+                      {stageLost.map(c => (
+                        <OutcomeCard key={c.id} row={c} kind="lost" onClick={() => setEditingId(c.id)} />
+                      ))}
+                    </div>
+                  </DroppableColumn>
+                )
+              })}
+            </div>
+          </DndContext>
+        )}
       </div>
         </>
       )}

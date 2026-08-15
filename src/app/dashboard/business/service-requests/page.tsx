@@ -177,6 +177,22 @@ function dueLabel(dueDate: string | null): { text: string; kind: 'overdue' | 'to
 
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
+// SSR-safe: starts false (desktop layout), corrects on mount. Drives the
+// mobile Board→List default (Aug 2026) — replaces the old one-stage-at-a-
+// time mobile tab switcher with the same full stacked list Claims/New
+// Business use, so switching stages doesn't cost an extra tap.
+function useNarrow(breakpoint: number): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    setNarrow(mq.matches)
+    const onChange = () => setNarrow(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [breakpoint])
+  return narrow
+}
+
 export default function BusinessServiceRequestsPage() {
   const { advisor, clients, authLoading } = useDashboard()
   const router = useRouter()
@@ -187,12 +203,15 @@ export default function BusinessServiceRequestsPage() {
   const hasAccess = advisor?.id === CREATOR_ID ||
     (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing') && advisor.beta_features.includes('business_dashboard'))
 
+  const narrow = useNarrow(860)
+  const [boardViewOverride, setBoardViewOverride] = useState<'board' | 'list' | null>(null)
+  const boardView = boardViewOverride ?? (narrow ? 'list' : 'board')
+
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<ServiceRequestRow[]>([])
   const [pendingTodos, setPendingTodos] = useState<TodoRow[]>([]) // firm-wide, done=false — feeds the follow-ups tab, same shape as Claims Board's pendingTodos
   const [activeTab, setActiveTab] = useState<'followups' | 'board'>('followups')
   const [typeFilter, setTypeFilter] = useState<RequestType | 'all'>('all')
-  const [mobileCol, setMobileCol] = useState<ZoneId>('requested')
 
   // ── drag state ──
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -805,57 +824,65 @@ export default function BusinessServiceRequestsPage() {
         <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13 }}>Loading service requests…</div>
       ) : (
         <>
-          {/* ── DESKTOP: drag-and-drop board ── */}
-          <div className="hidden md:flex" style={{ gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
-            <DndContext sensors={dndSensors} onDragStart={e => setDraggingId(e.active.id as string)} onDragEnd={handleDragEnd}>
-              {BOARD_ZONES.map(col => (
-                <div key={col.id} style={{ flex: '0 0 300px', minWidth: 300 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '2px 4px 10px' }}>
-                    <div>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{col.title}</div>
-                      <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 1 }}>{col.hint}</div>
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, background: 'var(--cream2)', padding: '2px 8px', borderRadius: 999 }}>
-                      {columns[col.id].length}
-                    </span>
-                  </div>
-                  <DropZone id={col.id}>
-                    {columns[col.id].length === 0 && (
-                      <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '10px 4px' }}>Nothing here</div>
-                    )}
-                    {columns[col.id].map(row => (
-                      <RequestCard key={row.id} row={row} clientName={clientsById[row.client_id] || 'Unknown client'}
-                        policyLabel={resolvedPolicy(row)?.label || null}
-                        dragging={draggingId === row.id} onClick={() => setEditingId(row.id)} />
-                    ))}
-                  </DropZone>
-                </div>
-              ))}
-            </DndContext>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: 'var(--cream2)', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3, maxWidth: 220 }}>
+            {(['list', 'board'] as const).map(v => (
+              <button key={v} onClick={() => setBoardViewOverride(v)} style={{
+                flex: 1, fontFamily: 'Inter, sans-serif', fontSize: 11.5, fontWeight: 600, padding: '6px 0', border: 'none',
+                borderRadius: 5, cursor: 'pointer', color: boardView === v ? T.text : T.textFaint,
+                background: boardView === v ? '#fff' : 'none', boxShadow: boardView === v ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                {v === 'list' ? 'List' : 'Board'}
+              </button>
+            ))}
           </div>
 
-          {/* ── MOBILE: segmented single-column view ── */}
-          <div className="flex md:hidden" style={{ flexDirection: 'column' }}>
-            <div style={{ display: 'flex', background: 'white', border: `1px solid ${T.line}`, borderRadius: 10, padding: 3, marginBottom: 14, gap: 2 }}>
+          {boardView === 'list' ? (
+            <div style={{ maxWidth: 620 }}>
               {BOARD_ZONES.map(col => (
-                <button key={col.id} onClick={() => setMobileCol(col.id)}
-                  style={{ flex: 1, border: 'none', background: mobileCol === col.id ? 'var(--charcoal)' : 'none', color: mobileCol === col.id ? 'white' : T.textDim, fontSize: 11.5, fontWeight: 700, padding: '9px 4px', borderRadius: 7, cursor: 'pointer' }}>
-                  {col.title}
-                  <span style={{ display: 'block', fontSize: 9.5, fontWeight: 600, opacity: 0.75, marginTop: 1 }}>{columns[col.id].length}</span>
-                </button>
+                <div key={col.id} style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                    <span>{col.title}</span>
+                    <span style={{ background: 'var(--cream2)', color: T.textDim, borderRadius: 10, padding: '1px 8px', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>{columns[col.id].length}</span>
+                  </div>
+                  {columns[col.id].length === 0 ? (
+                    <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '4px 2px' }}>Nothing here</div>
+                  ) : columns[col.id].map(row => (
+                    <RequestCard key={row.id} row={row} clientName={clientsById[row.client_id] || 'Unknown client'}
+                      policyLabel={resolvedPolicy(row)?.label || null}
+                      dragging={false} onClick={() => setEditingId(row.id)} />
+                  ))}
+                </div>
               ))}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {columns[mobileCol].length === 0 && (
-                <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '10px 4px' }}>Nothing here</div>
-              )}
-              {columns[mobileCol].map(row => (
-                <RequestCard key={row.id} row={row} clientName={clientsById[row.client_id] || 'Unknown client'}
-                  policyLabel={resolvedPolicy(row)?.label || null}
-                  dragging={false} onClick={() => setEditingId(row.id)} />
-              ))}
+          ) : (
+            <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+              <DndContext sensors={dndSensors} onDragStart={e => setDraggingId(e.active.id as string)} onDragEnd={handleDragEnd}>
+                {BOARD_ZONES.map(col => (
+                  <div key={col.id} style={{ flex: '0 0 300px', minWidth: 300 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '2px 4px 10px' }}>
+                      <div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{col.title}</div>
+                        <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 1 }}>{col.hint}</div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, background: 'var(--cream2)', padding: '2px 8px', borderRadius: 999 }}>
+                        {columns[col.id].length}
+                      </span>
+                    </div>
+                    <DropZone id={col.id}>
+                      {columns[col.id].length === 0 && (
+                        <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '10px 4px' }}>Nothing here</div>
+                      )}
+                      {columns[col.id].map(row => (
+                        <RequestCard key={row.id} row={row} clientName={clientsById[row.client_id] || 'Unknown client'}
+                          policyLabel={resolvedPolicy(row)?.label || null}
+                          dragging={draggingId === row.id} onClick={() => setEditingId(row.id)} />
+                      ))}
+                    </DropZone>
+                  </div>
+                ))}
+              </DndContext>
             </div>
-          </div>
+          )}
         </>
       )}
       </>

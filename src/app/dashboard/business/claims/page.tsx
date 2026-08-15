@@ -192,6 +192,22 @@ const T = {
   line: 'var(--line)',
 }
 
+// SSR-safe: starts false (desktop layout), corrects on mount. Drives the
+// mobile Board→List default (Aug 2026) — Kanban's horizontal column-scroll
+// is a poor fit under ~860px, so List (stage-grouped, vertical) is the
+// default there; the toggle lets either device pick either view manually.
+function useNarrow(breakpoint: number): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    setNarrow(mq.matches)
+    const onChange = () => setNarrow(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [breakpoint])
+  return narrow
+}
+
 export default function BusinessClaimsBoardPage() {
   const { advisor, clients, authLoading, setActiveClient } = useDashboard()
   const router = useRouter()
@@ -205,6 +221,12 @@ export default function BusinessClaimsBoardPage() {
   const [lineItems, setLineItems] = useState<LineItemRow[]>([])
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([])
   const [policiesByClient, setPoliciesByClient] = useState<Record<string, PolicyLite[]>>({})
+
+  // Board defaults to List under 860px (see useNarrow above); explicit
+  // toggle clicks override that default until the page reloads.
+  const narrow = useNarrow(860)
+  const [boardViewOverride, setBoardViewOverride] = useState<'board' | 'list' | null>(null)
+  const boardView = boardViewOverride ?? (narrow ? 'list' : 'board')
 
   // ── Drag-and-drop state ──
   // draggingId only drives the dragged card's opacity now — dnd-kit's
@@ -908,38 +930,85 @@ export default function BusinessClaimsBoardPage() {
           })()}
         </div>
       ) : (
-        <DndContext sensors={dndSensors} onDragStart={e => setDraggingId(e.active.id as string)} onDragEnd={handleDragEnd} onDragCancel={() => setDraggingId(null)}>
-          <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
-            {COLUMNS.map(col => (
-              <div key={col.id} style={{ flex: '0 0 280px', minWidth: 280 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '2px 4px 10px' }}>
-                  <div>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{col.title}</div>
-                    <div style={{ fontSize: 10.5, color: T.textFaint }}>{col.hint}</div>
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, background: 'var(--cream2)', padding: '2px 8px', borderRadius: 999 }}>
-                    {columns[col.id].length}
-                  </span>
-                </div>
-
-                {col.id === 'resolved' ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <DropZoneList zone="resolved-approved" label="Approved" color={T.emerald}
-                      cards={columns.resolved.filter(c => c.item.approved)}
-                      draggingId={draggingId} onCardClick={setEditingCard} />
-                    <DropZoneList zone="resolved-rejected" label="Rejected" color={T.rose}
-                      cards={columns.resolved.filter(c => c.item.rejected)}
-                      draggingId={draggingId} onCardClick={setEditingCard} />
-                  </div>
-                ) : (
-                  <DropZoneList zone={col.id as DropZone} cards={columns[col.id]}
-                    draggingId={draggingId} onCardClick={setEditingCard} />
-                )}
-              </div>
+        <>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: 'var(--cream2)', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3, maxWidth: 220 }}>
+            {(['list', 'board'] as const).map(v => (
+              <button key={v} onClick={() => setBoardViewOverride(v)} style={{
+                flex: 1, fontFamily: 'Inter, sans-serif', fontSize: 11.5, fontWeight: 600, padding: '6px 0', border: 'none',
+                borderRadius: 5, cursor: 'pointer', color: boardView === v ? T.text : T.textFaint,
+                background: boardView === v ? '#fff' : 'none', boxShadow: boardView === v ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                {v === 'list' ? 'List' : 'Board'}
+              </button>
             ))}
           </div>
-        </DndContext>
+
+          {boardView === 'list' ? (
+            <div style={{ maxWidth: 620 }}>
+              {COLUMNS.map(col => (
+                <div key={col.id} style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                    <span>{col.title}</span>
+                    <span style={{ background: 'var(--cream2)', color: T.textDim, borderRadius: 10, padding: '1px 8px', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>{columns[col.id].length}</span>
+                  </div>
+                  {columns[col.id].length === 0 ? (
+                    <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '4px 2px' }}>Nothing here</div>
+                  ) : columns[col.id].map(card => (
+                    <div key={card.item.id} onClick={() => setEditingCard(card)} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: `1px solid ${T.line}`,
+                      borderLeft: `3px solid ${card.item.approved ? T.emerald : card.item.rejected ? T.rose : T.line}`,
+                      borderRadius: 10, padding: '11px 13px', marginBottom: 7, cursor: 'pointer',
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
+                          {card.policyholderLabel} · {card.lifeAssuredLabel !== card.policyholderLabel ? card.lifeAssuredLabel + ' · ' : ''}{SECTION_LABEL[card.item.section || 'pre']}
+                        </div>
+                        <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>{card.policyLabel}</div>
+                      </div>
+                      {card.lastActivityDays !== null && (
+                        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: T.textFaint, flexShrink: 0 }}>{card.lastActivityDays}d</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <DndContext sensors={dndSensors} onDragStart={e => setDraggingId(e.active.id as string)} onDragEnd={handleDragEnd} onDragCancel={() => setDraggingId(null)}>
+              <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+                {COLUMNS.map(col => (
+                  <div key={col.id} style={{ flex: '0 0 280px', minWidth: 280 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '2px 4px 10px' }}>
+                      <div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.text }}>{col.title}</div>
+                        <div style={{ fontSize: 10.5, color: T.textFaint }}>{col.hint}</div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, background: 'var(--cream2)', padding: '2px 8px', borderRadius: 999 }}>
+                        {columns[col.id].length}
+                      </span>
+                    </div>
+
+                    {col.id === 'resolved' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        <DropZoneList zone="resolved-approved" label="Approved" color={T.emerald}
+                          cards={columns.resolved.filter(c => c.item.approved)}
+                          draggingId={draggingId} onCardClick={setEditingCard} />
+                        <DropZoneList zone="resolved-rejected" label="Rejected" color={T.rose}
+                          cards={columns.resolved.filter(c => c.item.rejected)}
+                          draggingId={draggingId} onCardClick={setEditingCard} />
+                      </div>
+                    ) : (
+                      <DropZoneList zone={col.id as DropZone} cards={columns[col.id]}
+                        draggingId={draggingId} onCardClick={setEditingCard} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </DndContext>
+          )}
+        </>
       )}
+
 
       {rejectionPromptItemId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}>

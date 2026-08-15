@@ -51,6 +51,7 @@ const NAV_GROUPS_ALL: { id: NavGroupId; label: string; items: typeof NAV_PLANNIN
 // ("Board," "Pipeline," "Desk") — plural for discrete trackable items
 // (Claims, Service Requests), singular/gerund for ongoing process categories.
 const NAV_BUSINESS: { href: string; label: string; icon: string; id: string; disabled?: boolean }[] = [
+  { href: '/dashboard/business', label: 'Overview', icon: '◈', id: 'business-overview' },
   { href: '/dashboard/business/claims', label: 'Claims', icon: '▤', id: 'claims-board' },
   { href: '/dashboard/business/service-requests', label: 'Service Requests', icon: '◑', id: 'service-requests' },
   { href: '/dashboard/business/new-business', label: 'New Business', icon: '◐', id: 'new-business' },
