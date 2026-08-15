@@ -16,7 +16,7 @@ const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 // at dashboard/servicing/new-business — same case, same drawer, two entry
 // points.
 //
-// Aug 2026: added the "This week's follow-ups" tab, same pattern as Claims/
+// Aug 2026: added the "Upcoming follow-ups" tab, same pattern as Claims/
 // Service Requests (todos due today/this week, cross-case, firm-wide) with
 // one deliberate difference — "Needs a follow-up" here reuses the
 // pipeline's own per-stage staleLevel() engine (already does per-stage
@@ -43,14 +43,23 @@ interface FullMeetingRow {
   is_scheduled: boolean
 }
 
-function weekBucket(dateStr: string | null): 'today' | 'week' | 'later' {
+// (Fixed Aug 2026 — the old version used a rolling 7-day window, which on
+// a Fri/Sat/Sun showed mostly-next-week items under a "This week" label.
+// Now buckets against the actual Mon-Sun calendar week, with a separate
+// Next Week bucket for the following Mon-Sun.)
+function weekBucket(dateStr: string | null): 'today' | 'week' | 'nextweek' | 'later' {
   if (!dateStr) return 'week'
   const d = new Date(dateStr + 'T00:00:00')
   if (isNaN(d.getTime())) return 'week'
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
   if (diffDays <= 0) return 'today'
-  if (diffDays <= 7) return 'week'
+  const dow = today.getDay() // 0=Sun..6=Sat
+  const daysToSunday = dow === 0 ? 0 : 7 - dow
+  const thisWeekEnd = new Date(today); thisWeekEnd.setDate(today.getDate() + daysToSunday)
+  const nextWeekEnd = new Date(thisWeekEnd); nextWeekEnd.setDate(thisWeekEnd.getDate() + 7)
+  if (d.getTime() <= thisWeekEnd.getTime()) return 'week'
+  if (d.getTime() <= nextWeekEnd.getTime()) return 'nextweek'
   return 'later'
 }
 
@@ -233,7 +242,8 @@ export default function NewBusinessPipelinePage() {
   }, [todos, meetingsFull])
   const todayEntries = followupEntries.filter(e => weekBucket(e.date) === 'today')
   const weekEntries = followupEntries.filter(e => weekBucket(e.date) === 'week')
-  const followupCount = todayEntries.length + weekEntries.length + needsFollowupCases.length
+  const nextWeekEntries = followupEntries.filter(e => weekBucket(e.date) === 'nextweek')
+  const followupCount = todayEntries.length + weekEntries.length + nextWeekEntries.length + needsFollowupCases.length
 
   async function toggleTodoFromTab(id: string, done: boolean) {
     setTodos(prev => done ? prev.filter(t => t.id !== id) : prev)
@@ -330,7 +340,7 @@ export default function NewBusinessPipelinePage() {
           color: activeTab === 'followups' ? T.goldText : T.textFaint,
           borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
         }}>
-          This week's follow-ups{followupCount > 0 ? ` · ${followupCount}` : ''}
+          Upcoming follow-ups{followupCount > 0 ? ` · ${followupCount}` : ''}
         </button>
         <button onClick={() => setActiveTab('board')} style={{
           padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
@@ -377,7 +387,7 @@ export default function NewBusinessPipelinePage() {
               </div>
             </div>
           )}
-          {([['Today', todayEntries], ['This week', weekEntries]] as const).map(([label, entries]) => entries.length > 0 && (
+          {([['Today', todayEntries], ['This week', weekEntries], ['Next week', nextWeekEntries]] as const).map(([label, entries]) => entries.length > 0 && (
             <div key={label} style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
                 {label} · {entries.length}

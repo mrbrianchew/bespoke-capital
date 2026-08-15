@@ -308,17 +308,24 @@ export default function BusinessServiceRequestsPage() {
     .sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()), // stalest first
     [rows, pendingTodos, rowsById])
 
-  // Same "today / this week / later" split as Claims Board — anything due
-  // more than 7 days out is left off this tab entirely, surfacing here once
-  // it's actually within the week. No row appears twice.
-  function weekBucket(dueDate: string | null): 'today' | 'week' | 'later' {
+  // Same "today / this week / next week / later" split as Claims Board —
+  // anything beyond next calendar week is left off this tab entirely,
+  // surfacing here once it's actually within the week. No row appears
+  // twice. (Fixed Aug 2026 — the old version used a rolling 7-day window,
+  // which on a Fri/Sat/Sun showed mostly-next-week items as "This week".)
+  function weekBucket(dueDate: string | null): 'today' | 'week' | 'nextweek' | 'later' {
     if (!dueDate) return 'week'
     const d = new Date(dueDate + 'T00:00:00')
     if (isNaN(d.getTime())) return 'week'
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
     if (diffDays <= 0) return 'today'
-    if (diffDays <= 7) return 'week'
+    const dow = today.getDay() // 0=Sun..6=Sat
+    const daysToSunday = dow === 0 ? 0 : 7 - dow
+    const thisWeekEnd = new Date(today); thisWeekEnd.setDate(today.getDate() + daysToSunday)
+    const nextWeekEnd = new Date(thisWeekEnd); nextWeekEnd.setDate(thisWeekEnd.getDate() + 7)
+    if (d.getTime() <= thisWeekEnd.getTime()) return 'week'
+    if (d.getTime() <= nextWeekEnd.getTime()) return 'nextweek'
     return 'later'
   }
 
@@ -621,7 +628,7 @@ export default function BusinessServiceRequestsPage() {
           color: activeTab === 'followups' ? T.goldText : T.textFaint,
           borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
         }}>
-          This week's follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length}` : ''}
+          Upcoming follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length}` : ''}
         </button>
         <button onClick={() => setActiveTab('board')} style={{
           padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
@@ -642,6 +649,7 @@ export default function BusinessServiceRequestsPage() {
           {(() => {
             const todayRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'today')
             const weekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'week')
+            const nextWeekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'nextweek')
             const renderRow = ({ todo, row }: { todo: TodoRow; row: ServiceRequestRow }) => {
               const label = dueLabel(todo.due_date)
               const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
@@ -721,6 +729,16 @@ export default function BusinessServiceRequestsPage() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {weekRows.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+                {nextWeekRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                      Next week · {nextWeekRows.length}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {nextWeekRows.map(renderRow)}
                     </div>
                   </div>
                 )}

@@ -453,19 +453,27 @@ export default function BusinessClaimsBoardPage() {
     return { text: `Due ${d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}`, kind: 'upcoming' }
   }
 
-  // Splits followupRows into the two sections of the "This week" tab —
-  // Overdue + due-today land in Today (most urgent first); the rest of this
-  // calendar week (next 1-7 days) plus undated todos land in This Week.
-  // Anything due more than 7 days out is left off this tab entirely — it'll
+  // Splits followupRows into the three sections of the "Upcoming follow-ups"
+  // tab — Overdue + due-today land in Today (most urgent first); the rest
+  // of the CURRENT calendar week (Mon-Sun, not just "next 7 days") plus
+  // undated todos land in This Week; the following Mon-Sun lands in Next
+  // Week. Anything beyond that is left off this tab entirely — it'll
   // surface here once it's actually within the week. No row appears twice.
-  function weekBucket(dueDate: string | null): 'today' | 'week' | 'later' {
+  // (Fixed Aug 2026 — the old version used a rolling 7-day window, which on
+  // a Fri/Sat/Sun showed mostly-next-week items under a "This week" label.)
+  function weekBucket(dueDate: string | null): 'today' | 'week' | 'nextweek' | 'later' {
     if (!dueDate) return 'week'
     const d = new Date(dueDate + 'T00:00:00')
     if (isNaN(d.getTime())) return 'week'
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
     if (diffDays <= 0) return 'today'
-    if (diffDays <= 7) return 'week'
+    const dow = today.getDay() // 0=Sun..6=Sat
+    const daysToSunday = dow === 0 ? 0 : 7 - dow
+    const thisWeekEnd = new Date(today); thisWeekEnd.setDate(today.getDate() + daysToSunday)
+    const nextWeekEnd = new Date(thisWeekEnd); nextWeekEnd.setDate(thisWeekEnd.getDate() + 7)
+    if (d.getTime() <= thisWeekEnd.getTime()) return 'week'
+    if (d.getTime() <= nextWeekEnd.getTime()) return 'nextweek'
     return 'later'
   }
 
@@ -776,7 +784,7 @@ export default function BusinessClaimsBoardPage() {
           color: activeTab === 'followups' ? T.goldText : T.textFaint,
           borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
         }}>
-          This week's follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length}` : ''}
+          Upcoming follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length}` : ''}
         </button>
         <button onClick={() => setActiveTab('board')} style={{
           padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
@@ -799,6 +807,7 @@ export default function BusinessClaimsBoardPage() {
           {(() => {
             const todayRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'today')
             const weekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'week')
+            const nextWeekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'nextweek')
             const renderRow = ({ todo, card }: { todo: FollowupTodo; card: CardData }) => {
               const label = dueLabel(todo.due_date)
               const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
@@ -881,6 +890,16 @@ export default function BusinessClaimsBoardPage() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {weekRows.map(renderRow)}
+                    </div>
+                  </div>
+                )}
+                {nextWeekRows.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+                      Next week · {nextWeekRows.length}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {nextWeekRows.map(renderRow)}
                     </div>
                   </div>
                 )}
