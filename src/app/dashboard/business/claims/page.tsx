@@ -894,7 +894,7 @@ export default function BusinessClaimsBoardPage() {
                               </div>
                               <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2, fontStyle: 'italic' }}>No follow-up set</div>
                             </div>
-                            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.rose, background: T.roseSoft, padding: '3px 9px', borderRadius: 6, whiteSpace: narrow ? 'normal' : 'nowrap', textAlign: narrow ? 'right' : 'left', maxWidth: narrow ? 130 : undefined, flexShrink: 0 }}>
                               {lastActivityDays !== null && days !== null && lastActivityDays < days
                                 ? `${days}d since submission · ${lastActivityDays}d since last touch`
                                 : `${days}d idle`}

@@ -408,22 +408,9 @@ export default function NewBusinessPipelinePage() {
                 {label} · {entries.length}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {entries.map(e => (
-                  <div key={`${e.kind}-${e.id}`} onClick={() => setEditingId(e.caseId)} style={{
-                    background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 14px',
-                    display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
-                  }}>
-                    {e.kind === 'todo' ? (
-                      <input type="checkbox" onClick={ev => ev.stopPropagation()} onChange={ev => toggleTodoFromTab(e.id, ev.target.checked)}
-                        style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
-                    ) : (
-                      <span style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>📅</span>
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{e.title}</div>
-                      <div style={{ fontSize: 11.5, color: T.goldText, marginTop: 2 }}>{casesById[e.caseId]?.case_title || '—'}</div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                {entries.map(e => {
+                  const meta = (
+                    <>
                       <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 4, background: e.kind === 'meeting' ? T.slateSoft : T.cream2, color: e.kind === 'meeting' ? T.slate : T.textDim }}>
                         {e.kind === 'meeting' ? 'Meeting' : 'To-do'}
                       </span>
@@ -432,9 +419,42 @@ export default function NewBusinessPipelinePage() {
                       ) : e.date ? (
                         <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.textFaint, whiteSpace: 'nowrap' }}>{new Date(e.date + 'T00:00:00').toLocaleDateString('en-SG', { weekday: 'short' })}</span>
                       ) : null}
+                    </>
+                  )
+                  const icon = e.kind === 'todo' ? (
+                    <input type="checkbox" onClick={ev => ev.stopPropagation()} onChange={ev => toggleTodoFromTab(e.id, ev.target.checked)}
+                      style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+                  ) : (
+                    <span style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>📅</span>
+                  )
+                  return narrow ? (
+                    <div key={`${e.kind}-${e.id}`} onClick={() => setEditingId(e.caseId)} style={{
+                      background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 14px',
+                      display: 'flex', flexDirection: 'column', gap: 8, cursor: 'pointer',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {icon}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{e.title}</div>
+                          <div style={{ fontSize: 11.5, color: T.goldText, marginTop: 2 }}>{casesById[e.caseId]?.case_title || '—'}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingLeft: 28 }}>{meta}</div>
                     </div>
-                  </div>
-                ))}
+                  ) : (
+                    <div key={`${e.kind}-${e.id}`} onClick={() => setEditingId(e.caseId)} style={{
+                      background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 14px',
+                      display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                    }}>
+                      {icon}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{e.title}</div>
+                        <div style={{ fontSize: 11.5, color: T.goldText, marginTop: 2 }}>{casesById[e.caseId]?.case_title || '—'}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>{meta}</div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}
