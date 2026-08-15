@@ -63,8 +63,36 @@ export function hasUpcomingMeeting(caseId: string, meetings: AttentionMeeting[])
   return upcoming[0] || null
 }
 
-export type StaleLevel = 'ok' | 'warn' | 'stale' | 'meeting'
+export interface AttentionProduct {
+  case_id: string
+  premium: number | null
+  premium_frequency: string | null
+  status: string
+  outcome: string | null
+}
 
+// Single source of truth for AFYP (Annualized First Year Premium) — used by
+// both the New Business board's own metrics strip and the Business
+// Dashboard Overview page. Previously duplicated (copy-pasted formula in
+// both files); they drifted the moment Brian asked to exclude Postponed
+// from one of them but not the other, so this is now the only place the
+// definition lives — change it here, both pages pick it up.
+//
+// Scope: products on cases with no case-level outcome (not Lost/Deferred).
+// Excludes products that are withdrawn, or have a product-level outcome of
+// 'declined' OR 'postponed' (fix, Aug 2026 — postponed previously still
+// counted; Brian confirmed postponed should NOT count toward AFYP, since a
+// postponed sale isn't premium you can currently forecast). Monthly
+// premiums are annualized ×12; yearly/single taken as-is.
+export function calcAfyp(cases: AttentionCase[], productsByCase: Record<string, AttentionProduct[]>): number {
+  return cases
+    .filter(c => !c.outcome)
+    .flatMap(c => productsByCase[c.id] || [])
+    .filter(p => p.status !== 'withdrawn' && p.outcome !== 'declined' && p.outcome !== 'postponed')
+    .reduce((sum, p) => sum + (p.premium || 0) * (p.premium_frequency === 'monthly' ? 12 : 1), 0)
+}
+
+export type StaleLevel = 'ok' | 'warn' | 'stale' | 'meeting'
 export function staleLevel(row: AttentionCase, meetings: AttentionMeeting[]): StaleLevel {
   if (row.outcome) return 'ok' // Lost/Deferred cases aren't scored for staleness
   if (hasUpcomingMeeting(row.id, meetings)) return 'meeting'

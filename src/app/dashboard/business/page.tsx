@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
-import { IDLE_THRESHOLD_DAYS, Stage, hasUpcomingMeeting, AttentionMeeting } from '@/lib/newBusinessAttention'
+import { IDLE_THRESHOLD_DAYS, Stage, hasUpcomingMeeting, calcAfyp, AttentionMeeting } from '@/lib/newBusinessAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -172,9 +172,12 @@ export default function BusinessOverviewPage() {
         const todos = (todosRes.data || []) as { id: string; case_id: string; text: string; due_date: string | null }[]
         const products = (productsRes.data || []) as { case_id: string; premium: number | null; premium_frequency: string | null; status: string; outcome: string | null }[]
 
-        afyp = products
-          .filter(p => p.status !== 'withdrawn' && p.outcome !== 'declined')
-          .reduce((sum, p) => sum + (p.premium || 0) * (p.premium_frequency === 'monthly' ? 12 : 1), 0)
+        // AFYP: single source of truth is calcAfyp() in newBusinessAttention.ts
+        // (Aug 2026 — was duplicated here and on the New Business board;
+        // now excludes Postponed products too, see that function's comment).
+        const productsByCase: Record<string, typeof products> = {}
+        products.forEach(p => { (productsByCase[p.case_id] ||= []).push(p) })
+        afyp = calcAfyp(cases, productsByCase)
 
         const openTodoCaseIds = new Set(todos.map(t => t.case_id))
         cases.forEach(c => {
@@ -338,7 +341,7 @@ export default function BusinessOverviewPage() {
         <Kpi label="Active Cases" value={String(kpis.activeCases)} />
         <Kpi label="In Consideration" value={String(kpis.considerationCount)} flag={kpis.considerationStale > 0 ? `${kpis.considerationStale} stale` : undefined} />
         <Kpi label="Est. AFYP" value={`$${Math.round(kpis.afyp).toLocaleString('en-SG')}`}
-          tooltip="Annualized First Year Premium. Sums premium across all products on active cases (not Lost/Deferred), excluding withdrawn or declined products. Monthly premiums are ×12 to annualize; yearly/single as-is. Postponed products still count." />
+          tooltip="Annualized First Year Premium. Sums premium across all products on active cases (not Lost/Deferred), excluding withdrawn, declined, or postponed products. Monthly premiums are ×12 to annualize; yearly/single as-is." />
         <Kpi label="Claims In Progress" value={String(kpis.claimsInProgress)} />
         <Kpi label="Open Service Reqs" value={String(kpis.openServiceRequests)} />
       </div>

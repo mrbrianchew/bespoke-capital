@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
-import { STAGES, Stage, daysInStage, hasUpcomingMeeting, staleLevel, AttentionCase, AttentionMeeting } from '@/lib/newBusinessAttention'
+import { STAGES, Stage, daysInStage, hasUpcomingMeeting, staleLevel, calcAfyp, AttentionCase, AttentionMeeting } from '@/lib/newBusinessAttention'
 import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
 import CaseDrawer, { CaseRow, ProductRow, T, btnSmStyle } from '@/components/NewBusinessCaseDrawer'
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, closestCenter } from '@dnd-kit/core'
@@ -219,15 +219,10 @@ export default function NewBusinessPipelinePage() {
       .filter(c => !c.outcome)
       .flatMap(c => productsByCase[c.id] || [])
       .filter(p => p.status === 'issued').length
-    // declined_by_insurer/declined_by_client are retired (Aug 2026) — the
-    // new outcome field replaces them. A declined or withdrawn product
-    // never contributes to AFYP; postponed still counts since it's not a
-    // rejection, just delayed.
-    const afyp = cases
-      .filter(c => !c.outcome)
-      .flatMap(c => productsByCase[c.id] || [])
-      .filter(p => p.status !== 'withdrawn' && p.outcome !== 'declined')
-      .reduce((sum, p) => sum + (p.premium || 0) * (p.premium_frequency === 'monthly' ? 12 : 1), 0)
+    // AFYP: single source of truth is calcAfyp() in newBusinessAttention.ts
+    // (Aug 2026 — was duplicated here and on the Overview page; now excludes
+    // Postponed products too, see that function's comment).
+    const afyp = calcAfyp(cases, productsByCase)
     return {
       activeCount: activeCases.length,
       considerationCount: considerationCases.length,
