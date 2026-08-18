@@ -1013,7 +1013,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   }
   .pf-table { display: table; width: 100%; }
   .pf-cards { display: none !important; }
-  .pf-kpi-grid { grid-template-columns: repeat(5,1fr); }
+  .pf-kpi-grid { grid-template-columns: repeat(6,1fr); }
   .pf-main-grid { grid-template-columns: 1fr 320px; }
   @media (max-width: 800px) {
     .pf-table { display: none !important; }
@@ -1074,19 +1074,13 @@ export default function SharePage({ params }: { params: { token: string } }) {
               {label:'TPD Benefit',value:totTPD},
               {label:'Late Stage CI',value:totAdvCI},
               {label:'Early Stage CI',value:totEarCI},
-              {label:'Total Annual Premium',value:totalPrem,gold:true,breakdown:totalPremSplit},
+              {label:'Cash/Credit Card',value:totalPremSplit.cash,gold:true},
+              {label:'Medisave/Non-Cash',value:totalPremSplit.medisave,teal:true},
             ].map(k=>(
               <div key={k.label} style={{background:'white',border:'0.5px solid #E0DDD6',borderRadius:12,padding:'16px 18px',position:'relative',overflow:'hidden'}}>
-                {k.gold&&<div style={{position:'absolute',top:0,left:0,right:0,height:3,background:'#A8834A'}}/>}
-                <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'#888',marginBottom:8,marginTop:k.gold?4:0}}>{k.label}</div>
-                <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:k.gold?24:22,fontWeight:300,color:k.gold?'#A8834A':'#1A1A1A'}}>{fmt(k.value)}</div>
-                {k.breakdown&&(k.breakdown.cash>0||k.breakdown.medisave>0)&&(
-                  <div style={{fontFamily:'DM Mono,monospace',fontSize:9.5,color:'#999',marginTop:5,lineHeight:1.5}}>
-                    {k.breakdown.cash>0&&<>Cash/Credit Card {fmt(k.breakdown.cash)}</>}
-                    {k.breakdown.cash>0&&k.breakdown.medisave>0&&<> · </>}
-                    {k.breakdown.medisave>0&&<>Medisave/Non-Cash {fmt(k.breakdown.medisave)}</>}
-                  </div>
-                )}
+                {(k.gold||k.teal)&&<div style={{position:'absolute',top:0,left:0,right:0,height:3,background:k.gold?'#A8834A':'#5E8A80'}}/>}
+                <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'#888',marginBottom:8,marginTop:(k.gold||k.teal)?4:0}}>{k.label}</div>
+                <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:(k.gold||k.teal)?24:22,fontWeight:300,color:k.gold?'#A8834A':k.teal?'#5E8A80':'#1A1A1A'}}>{fmt(k.value)}</div>
               </div>
             ))}
           </div>

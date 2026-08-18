@@ -2602,13 +2602,14 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
     <div style={{marginBottom: 24}}>
       
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns: narrow ? 'repeat(2,1fr)' : 'repeat(6,1fr)', gap: 12, marginBottom: 16}}>
+      <div style={{display:'grid', gridTemplateColumns: narrow ? 'repeat(2,1fr)' : 'repeat(7,1fr)', gap: 12, marginBottom: 16}}>
         {[
           {label:'Death Benefit', value:totDeath, accent:COL_D},
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Annual Premium', value:totPremProtection, accent:'#A8834A', highlight: true, isPremium: true, breakdown: protectionSplit},
+          {label:'Cash/Credit Card', value:protectionSplit.cash, accent:'#A8834A', highlight: true, isPremium: true},
+          {label:'Medisave/Non-Cash', value:protectionSplit.medisave, accent:'#5E8A80', highlight: true, isPremium: true},
           {label:'Annual Savings/Investments', value:totSavings, accent:'#2D5A4E', highlight: true, isPremium: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
@@ -2649,19 +2650,6 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               letterSpacing: '-0.02em',
               lineHeight: 1.2
             }}>{kpi.isPremium ? fmtPremium(kpi.value) : fmtWhole(kpi.value)}</div>
-            {kpi.breakdown && (kpi.breakdown.cash > 0 || kpi.breakdown.medisave > 0) && (
-              <div style={{
-                fontFamily: 'DM Mono, monospace',
-                fontSize: 10.5,
-                color: '#9A9690',
-                marginTop: 6,
-                lineHeight: 1.5
-              }}>
-                {kpi.breakdown.cash > 0 && <>Cash/Credit Card {fmtPremium(kpi.breakdown.cash)}</>}
-                {kpi.breakdown.cash > 0 && kpi.breakdown.medisave > 0 && <> · </>}
-                {kpi.breakdown.medisave > 0 && <>Medisave/Non-Cash {fmtPremium(kpi.breakdown.medisave)}</>}
-              </div>
-            )}
           </div>
         ))}
       </div>
