@@ -94,7 +94,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
       .maybeSingle()
 
     const { data: familyRows } = await supabaseAdmin
-      .from('family_members').select('id,name,relationship').eq('client_id', share.client_id)
+      .from('family_members').select('id,name,relationship,dob,age').eq('client_id', share.client_id)
 
     // Canonical person-key → current display name, mirrors the dashboard's allPeople list.
     // Lets the share page resolve a policy's resolved `person` key (e.g. 'child_<id>')
@@ -103,6 +103,23 @@ export async function POST(req: Request, { params }: { params: { token: string }
     for (const m of familyRows || []) {
       if (m.relationship?.toLowerCase() === 'spouse') personLabels.spouse = m.name
       else personLabels[`child_${m.id}`] = m.name
+    }
+
+    // Canonical person-key → age, using the app-wide year-only convention
+    // (currentYear - birthYear), never calendar-precise DOB math. Needed so the
+    // Portfolio share view's Coverage Timeline chart can compute maturity ages
+    // against the actual shared person (spouse/child), not always the client.
+    const currentYear = new Date().getFullYear()
+    const ageOf = (dob?: string | null, ageCol?: number | null): number | null => {
+      if (dob) return currentYear - new Date(dob).getFullYear()
+      if (ageCol != null) return ageCol
+      return null
+    }
+    const personAges: Record<string, number | null> = { client: ageOf(client?.dob, client?.age) }
+    for (const m of familyRows || []) {
+      const a = ageOf(m.dob, m.age)
+      if (m.relationship?.toLowerCase() === 'spouse') personAges.spouse = a
+      else personAges[`child_${m.id}`] = a
     }
 
     const allPolicies: any[] = row?.data?.risk_management?.policies || []
@@ -134,6 +151,34 @@ export async function POST(req: Request, { params }: { params: { token: string }
       const person = share.person
       if (person && person !== 'all') {
         policies = policies.filter((p: any) => p.person === person)
+      }
+    }
+
+    // Resolve the actual person this Portfolio share is for, so the recipient
+    // page can header/timeline against them instead of always the client.
+    // - 'client' / 'spouse': single unambiguous person → their own name + age.
+    // - 'dependents': can bundle multiple children with different ages. If the
+    //   filtered policies belong to exactly one child, treat as that single
+    //   child. With 2+ children, there's no single age to chart against, so
+    //   the label falls back to "Dependents" and age is left null — the share
+    //   page skips the Coverage Timeline in that case rather than guess.
+    // - 'all' / unset: whole-household view → client's own name + age.
+    let sharedPersonName: string = client?.name || 'Client'
+    let sharedPersonAge: number | null = personAges.client
+    if (shareType !== 'payment_summary' && shareType !== 'claims') {
+      const person = share.person
+      if (person === 'spouse') {
+        sharedPersonName = personLabels.spouse || 'Spouse'
+        sharedPersonAge = personAges.spouse ?? null
+      } else if (person === 'dependents') {
+        const childKeys = Array.from(new Set(policies.map((p: any) => p.person).filter((k: string) => k?.startsWith('child_'))))
+        if (childKeys.length === 1) {
+          sharedPersonName = personLabels[childKeys[0]] || 'Dependent'
+          sharedPersonAge = personAges[childKeys[0]] ?? null
+        } else {
+          sharedPersonName = 'Dependents'
+          sharedPersonAge = null
+        }
       }
     }
 
@@ -213,6 +258,8 @@ export async function POST(req: Request, { params }: { params: { token: string }
     return NextResponse.json({
       client,
       person: share.person,
+      sharedPersonName,
+      sharedPersonAge,
       policies,
       claimsHistory,
       claimsShareData,

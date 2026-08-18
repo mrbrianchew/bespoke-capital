@@ -513,6 +513,11 @@ export default function SharePage({ params }: { params: { token: string } }) {
   const [policies, setPolicies] = useState<Policy[]>([])
   const [clientAge, setClientAge] = useState(40)
   const [clientName, setClientName] = useState('')
+  // Who the Portfolio share is actually for — may be the spouse or a single
+  // dependent, not the client. Falls back to clientName/clientAge (set below)
+  // when the API doesn't send one (older share types, or no match).
+  const [sharedName, setSharedName] = useState('')
+  const [sharedAge, setSharedAge] = useState<number | null>(null)
   const [shareType, setShareType] = useState<'portfolio'|'payment_summary'|'claims'|'financial_plan'>('portfolio')
   const [claimsShareData, setClaimsShareData] = useState<any[]>([])
   const [planSnapshot, setPlanSnapshot] = useState<any>(null)
@@ -559,12 +564,14 @@ export default function SharePage({ params }: { params: { token: string } }) {
       return
     }
 
-    const { client, person, policies: all, claimsHistory: claimsData, claimsShareData: claimsShare, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels, advisorName: aName, firmName: fName } = responseData
+    const { client, person, sharedPersonName, sharedPersonAge, policies: all, claimsHistory: claimsData, claimsShareData: claimsShare, shareType: sType, includedPersons: iPersons, statusOverrides: sOverrides, personLabels: pLabels, advisorName: aName, firmName: fName } = responseData
     if (client) {
       setClientName(client.name || 'Client')
       if (client.dob) setClientAge(Math.floor((Date.now() - new Date(client.dob).getTime()) / (365.25 * 24 * 3600 * 1000)))
       else if (client.age) setClientAge(Number(client.age))
     }
+    setSharedName(sharedPersonName || client?.name || 'Client')
+    setSharedAge(sharedPersonAge != null ? Number(sharedPersonAge) : null)
     if (aName) setAdvisorName(aName)
     if (fName) setFirmName(fName)
     const st: 'portfolio'|'payment_summary'|'claims' = sType === 'payment_summary' ? 'payment_summary' : sType === 'claims' ? 'claims' : 'portfolio'
@@ -1035,7 +1042,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
           <div style={{fontSize:10,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',flexShrink:0}}>{firmName}</div>
           <div className="pf-nav-title" style={{width:1,height:14,background:'rgba(255,255,255,0.15)',flexShrink:0}}/>
           <div className="pf-nav-title" style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,fontWeight:300,color:'#F0EDE8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-            Portfolio Summary {year} — {clientName}
+            Portfolio Summary {year} — {sharedName}
           </div>
         </div>
         <button onClick={handleDownloadPDF} style={{
@@ -1052,7 +1059,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
         <div className="pf-hero" style={hero('')}>
           <div>
             <div style={{fontSize:10,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:6}}>{firmName} · Wealth Protection</div>
-            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:300,color:'#F0EDE8'}}>Portfolio Summary {year} — {clientName}</div>
+            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:28,fontWeight:300,color:'#F0EDE8'}}>Portfolio Summary {year} — {sharedName}</div>
             <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginTop:4}}>{advisorName ? `Prepared by ${advisorName}` : ''}</div>
           </div>
           <div className="pf-hero-prem" style={{textAlign:'right'}}>
@@ -1085,7 +1092,11 @@ export default function SharePage({ params }: { params: { token: string } }) {
             ))}
           </div>
           <div className="pf-main-grid" style={{display:'grid',gap:16}}>
-            <CoverageTimeline policies={lifePols} personAge={clientAge} personName={clientName}/>
+            {sharedAge != null
+              ? <CoverageTimeline policies={lifePols} personAge={sharedAge} personName={sharedName}/>
+              : <div style={{background:'white',border:'0.5px solid #E0DDD6',borderRadius:12,padding:'18px 20px',display:'flex',alignItems:'center',justifyContent:'center',color:'#888',fontSize:12,fontStyle:'italic'}}>
+                  Coverage Timeline isn't shown when policies span multiple dependents.
+                </div>}
             <PremiumSchedule policies={policies}/>
           </div>
           <div style={{marginTop:16,fontSize:10,color:'#aaa',fontStyle:'italic',textAlign:'center'}}>
@@ -1103,7 +1114,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
               <div className="pf-hero" style={hero('')}>
                 <div>
                   <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>{firmName} · Wealth Protection</div>
-                  <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>{cat.label} · {clientName}</div>
+                  <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>{cat.label} · {sharedName}</div>
                 </div>
                 <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{advisorName ? `Prepared by ${advisorName}` : ''}</div>
               </div>
@@ -1120,7 +1131,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
           <div className="pf-hero" style={hero('')}>
             <div>
               <div style={{fontSize:9,letterSpacing:'0.16em',textTransform:'uppercase',color:'rgba(168,131,74,0.7)',marginBottom:3}}>{firmName} · Wealth Protection</div>
-              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>Claims History · {clientName}</div>
+              <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:20,fontWeight:300,color:'#F0EDE8'}}>Claims History · {sharedName}</div>
             </div>
             <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{advisorName ? `Prepared by ${advisorName}` : ''}</div>
           </div>
@@ -1155,7 +1166,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
       {/* Footer */}
       <div className="pf-footer" style={{background:'#1C1A17',padding:'20px 40px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>
-          This document is confidential and prepared solely for {clientName}. © {year} {firmName}.
+          This document is confidential and prepared solely for {sharedName}. © {year} {firmName}.
         </div>
         <div style={{fontSize:10,color:'rgba(168,131,74,0.6)'}}>{advisorName ? `${advisorName} · ${firmName}` : firmName}</div>
       </div>
