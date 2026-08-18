@@ -349,14 +349,28 @@ function CoverageTimeline({ policies, personAge, personName }: { policies: Polic
       const mult = p.multiplier>1?p.multiplier:1
       const multEnd = p.multiplierEnd||999
       const actMult = age<=multEnd?mult:1
+      let stepFactor = 1
+      if (p.coverStep && p.stepDownPct && age > multEnd) {
+        // Each year after multiplier ends, reduce by stepDownPct% — but only for coverStep years
+        const yearsIntoStep = Math.min(age - multEnd, p.coverStep)
+        stepFactor = Math.max(0, 1 - yearsIntoStep * ((p.stepDownPct||0) / 100))
+      }
+      // Check maturity — coverageMaturity can be stored as "Age N", "Lifetime"/
+      // "Renewable", or an actual YYYY-MM-DD date. Must match dashboard's
+      // _coverAtAge logic exactly or the client-facing timeline diverges from
+      // what the advisor sees internally.
       if (p.coverageMaturity&&!['Lifetime','Renewable'].includes(p.coverageMaturity)) {
-        if (p.coverageMaturity.startsWith('Age ')) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(p.coverageMaturity)) {
+          const matYear  = new Date(p.coverageMaturity).getFullYear()
+          const birthYear= new Date().getFullYear() - personAge
+          if (age > matYear - birthYear) continue
+        } else if (p.coverageMaturity.startsWith('Age ')) {
           if (age>parseInt(p.coverageMaturity.replace('Age ',''))) continue
         }
       }
-      d += toSGD((p.baseDeath||0)*actMult, p)
-      t += toSGD((p.baseTPD||0)*actMult, p)
-      ci += toSGD(Math.max((p.baseAdvCI||0),(p.baseEarlyCI||0))*actMult, p)
+      d += toSGD((p.baseDeath||0)*actMult*stepFactor, p)
+      t += toSGD((p.baseTPD||0)*actMult*stepFactor, p)
+      ci += toSGD(Math.max((p.baseAdvCI||0),(p.baseEarlyCI||0))*actMult*stepFactor, p)
     }
     timeline.push({age,d,t,ci})
   }
