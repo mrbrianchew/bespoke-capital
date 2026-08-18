@@ -299,51 +299,127 @@ function PageNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) 
   )
 }
 
+// One legend swatch — omitted entirely by the caller when its value is 0,
+// per Brian's note: a client with no mortgage shouldn't show a "Mortgage &
+// debt" swatch at all.
+function LegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--ink3)', fontFamily: 'DM Mono, monospace' }}>
+      <span style={{ width: 9, height: 9, display: 'inline-block', background: color }} />
+      {label}
+    </div>
+  )
+}
+
 function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunway }) {
-  const { fullNeed, targetNeed, currentProvision, assetOffsetEnabled } = runway
+  const {
+    fullNeed, fullNeedFD, fullNeedMort, fullNeedEdu,
+    targetNeed, targetFD, targetMort, targetEdu,
+    currentProvision, currentInsurance, currentAssets,
+    assetOffsetEnabled,
+  } = runway
   const currentLabel = assetOffsetEnabled ? 'Currently in place (insurance + assets)' : 'Currently in place (insurance only)'
   const axisMax = fullNeed
   const pct = (n: number) => axisMax > 0 ? Math.min(100, (n / axisMax) * 100) : 0
-  const targetShortfall = Math.max(0, fullNeed - targetNeed)
   const currentShortfall = Math.max(0, fullNeed - currentProvision)
+  const targetShortfall = Math.max(0, fullNeed - targetNeed)
   const isTargetMet = currentProvision >= targetNeed && targetNeed > 0
   const currentColor = isTargetMet ? 'var(--emerald)' : 'var(--rouge)'
   const ticks = [0, axisMax * 0.25, axisMax * 0.5, axisMax * 0.75, axisMax]
 
-  const Row = ({
-    label, amount, barColor, gapColor, widthPct, shortfall,
-  }: { label: string; amount: number; barColor: string; gapColor: string; widthPct: number; shortfall: number }) => (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <span style={{ fontSize: 12, color: 'var(--ink2)' }}>{label}</span>
-        <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: barColor }}>{fmtCompact(amount)}</span>
-      </div>
-      <div style={{ height: 10, background: 'var(--cream2)', position: 'relative' }}>
-        <div style={{ height: '100%', width: `${widthPct}%`, background: barColor }} />
-        {shortfall > 0 && (
-          <div style={{ position: 'absolute', top: 0, left: `${widthPct}%`, height: '100%', width: `${100 - widthPct}%`, background: gapColor }} />
-        )}
-      </div>
-      {shortfall > 0 && (
-        <div style={{ textAlign: 'right', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--ink3)', marginTop: 4 }}>
-          −{fmtCompact(shortfall)} short of full need
+  // Segmented row — up to 3 stacked segments plus a trailing gap. Widths are
+  // all relative to axisMax (fullNeed) so the three rows stay comparable.
+  const SegmentedRow = ({
+    label, amount, amountColor, segments, totalWidthPct,
+  }: {
+    label: string
+    amount: number
+    amountColor: string
+    segments: { value: number; color: string }[]
+    totalWidthPct: number
+  }) => {
+    const gapPct = Math.max(0, 100 - totalWidthPct)
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>{label}</span>
+          <span style={{ fontFamily: 'Cormorant Garamond, serif', fontWeight: 600, fontSize: 17, color: amountColor }}>{fmtCompact(amount)}</span>
         </div>
-      )}
-    </div>
-  )
+        <div style={{ height: 12, background: 'var(--cream2)', position: 'relative', display: 'flex', overflow: 'hidden' }}>
+          {segments.filter(s => s.value > 0).map((s, i) => (
+            <div key={i} style={{ height: '100%', width: `${axisMax > 0 ? (s.value / axisMax) * 100 : 0}%`, background: s.color }} />
+          ))}
+          {gapPct > 0 && <div style={{ height: '100%', width: `${gapPct}%`, background: 'var(--cream3)' }} />}
+        </div>
+      </div>
+    )
+  }
+
+  const needSegments = [
+    { value: fullNeedFD, color: 'var(--slate)', label: 'Family dependency' },
+    { value: fullNeedMort, color: 'var(--gold)', label: 'Mortgage & debt' },
+    { value: fullNeedEdu, color: 'var(--emerald)', label: 'Education' },
+  ]
+  const currentSegments = [
+    { value: currentInsurance, color: 'var(--ink)', label: 'Insurance' },
+    { value: currentAssets, color: 'var(--sand)', label: 'Assets' },
+  ]
 
   return (
     <div style={{ marginBottom: 44 }}>
       <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 10 }}>
         Family financial runway
       </div>
-      <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, marginBottom: 28 }}>
-        What {name}'s family would need to maintain their current lifestyle, against what's targeted and what's currently in place.
+      <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, marginBottom: 20 }}>
+        What {name}'s family would need to maintain their current lifestyle, clear debts, and fund education — against what's targeted and what's currently in place.
       </div>
 
-      <Row label="Family's full need (100%)" amount={fullNeed} barColor="var(--ink)" gapColor="transparent" widthPct={100} shortfall={0} />
-      <Row label="Chosen coverage target" amount={targetNeed} barColor="var(--gold)" gapColor="var(--gold-l)" widthPct={pct(targetNeed)} shortfall={targetShortfall} />
-      <Row label={currentLabel} amount={currentProvision} barColor={currentColor} gapColor="var(--rouge-l)" widthPct={pct(currentProvision)} shortfall={currentShortfall} />
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 10 }}>
+        {needSegments.filter(s => s.value > 0).map((s, i) => <LegendItem key={i} color={s.color} label={s.label} />)}
+      </div>
+
+      <SegmentedRow
+        label="Family's full need (100%)"
+        amount={fullNeed}
+        amountColor="var(--ink)"
+        segments={needSegments}
+        totalWidthPct={100}
+      />
+      <SegmentedRow
+        label="Chosen coverage target"
+        amount={targetNeed}
+        amountColor="var(--ink)"
+        segments={[
+          { value: targetFD, color: 'var(--slate)' },
+          { value: targetMort, color: 'var(--gold)' },
+          { value: targetEdu, color: 'var(--emerald)' },
+        ]}
+        totalWidthPct={pct(targetNeed)}
+      />
+      {targetShortfall > 0 && (
+        <div style={{ textAlign: 'right', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--ink3)', marginTop: -10, marginBottom: 14 }}>
+          −{fmtCompact(targetShortfall)} short of full family need
+        </div>
+      )}
+
+      <SegmentedRow
+        label={currentLabel}
+        amount={currentProvision}
+        amountColor={currentColor}
+        segments={[
+          { value: currentInsurance, color: 'var(--ink)' },
+          { value: currentAssets, color: 'var(--sand)' },
+        ]}
+        totalWidthPct={pct(currentProvision)}
+      />
+      {currentShortfall > 0 && (
+        <div style={{ textAlign: 'right', fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--ink3)', marginTop: -10, marginBottom: 10 }}>
+          −{fmtCompact(currentShortfall)} short of full family need
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 12 }}>
+        {currentSegments.filter(s => s.value > 0).map((s, i) => <LegendItem key={i} color={s.color} label={s.label} />)}
+      </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--ink3)', fontFamily: 'DM Mono, monospace', paddingTop: 2, borderTop: '1px solid var(--line2)' }}>
         {ticks.map((t, i) => <span key={i}>{fmtCompact(t)}</span>)}

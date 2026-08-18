@@ -19,6 +19,10 @@
   --rouge: #8A2828;
   --rouge-l: #F2EAEA;
   --charcoal: #1C1A17;
+  --slate: #3D4E5C;
+  --slate-l: #E9EDEF;
+  --sand: #A79574;
+  --sand-l: #F1ECE1;
 }
 
 * { box-sizing: border-box; }

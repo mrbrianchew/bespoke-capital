@@ -67,15 +67,29 @@ export interface ProtectionFrameworkStatus {
 }
 
 export interface FamilyRunway {
-  // 100% of the family's combined household expenses, capitalised over the
-  // coverage term — the objective need, independent of fdMode/coverage %.
+  // 100% of the family's TOTAL protection need — family dependency (combined
+  // household expenses, capitalised over the coverage term) + the full,
+  // unmitigated mortgage/debt payoff + the full education fund. All three
+  // component figures below are the objective 100% amounts, independent of
+  // any coverPct/mortgageCoverPcts/fdMode election — same for both the
+  // client's and spouse's runway card (it's the whole family's exposure,
+  // not "my share" of it).
   fullNeed: number
-  // Capital required for what the client has actually chosen to cover
-  // (fdMode + coverage %) — same figure as dtpd.familyDependency.
+  fullNeedFD: number
+  fullNeedMort: number
+  fullNeedEdu: number
+  // Capital required for what THIS person has actually chosen to cover
+  // (fdMode + coverage %, mortgageCoverPcts, per-child coverPct) — same
+  // figures as dtpd.familyDependency / .mortgageDebtClearance / .tertiaryFunding.
   targetNeed: number
+  targetFD: number
+  targetMort: number
+  targetEdu: number
   // What's currently in place to fund it: existing life (death) cover plus
   // the asset offset already used against the D/TPD need.
   currentProvision: number
+  currentInsurance: number
+  currentAssets: number
   // Live Asset Offset toggle state (Strategic Objectives > Asset Offset tab)
   // — surfaced so the report can label whether currentProvision includes
   // assets or is insurance-only.
@@ -390,6 +404,28 @@ export function buildProtectionSnapshot(input: {
   // is no nested `property.mortgages[]` array in the schema. Mirrors the same
   // field resolution as calcMortgageForPerson() on the Objectives page so the
   // Risk Management timeline agrees with the saved need figure.
+  // Amortized-balance fallback — mirrors calcAmortizedBalance() on the
+  // Objectives page exactly (same PMT-based declining-balance formula) so
+  // that when a property has no explicit `outstanding` saved, this snapshot
+  // computes the same figure calcMortgageForPerson() would, instead of
+  // falling back to the raw initialLoanAmount (which used to silently
+  // overstate the balance for any loan that had been running a while).
+  function calcAmortizedBalanceLocal(initialLoan: number, annualRatePct: number, tenureYears: number, startMmYyyy: string): number {
+    if (!initialLoan || !tenureYears) return 0
+    const parts = String(startMmYyyy || '').split('/')
+    if (parts.length !== 2) return initialLoan
+    const startDate = new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1)
+    const today = new Date()
+    const monthsElapsed = (today.getFullYear() - startDate.getFullYear()) * 12 + (today.getMonth() - startDate.getMonth())
+    if (monthsElapsed <= 0) return initialLoan
+    const n = tenureYears * 12
+    if (monthsElapsed >= n) return 0
+    if (!annualRatePct) return Math.round(initialLoan * (1 - monthsElapsed / n))
+    const r = annualRatePct / 100 / 12
+    const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+    return Math.max(0, Math.round(initialLoan * Math.pow(1 + r, monthsElapsed) - pmt * (Math.pow(1 + r, monthsElapsed) - 1) / r))
+  }
+
   function resolveMortgageFields(pr: any): { outstanding: number; rate: number; tenure: number } | null {
     const hasLoan = pr.initialLoanAmount || pr.outstanding || pr.monthlyRepayment
     if (!hasLoan) return null
@@ -405,7 +441,9 @@ export function buildProtectionSnapshot(input: {
         remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
       }
     }
-    const outstanding = Number(pr.outstanding ?? initialLoan)
+    const outstanding = Number(
+      pr.outstanding ?? calcAmortizedBalanceLocal(initialLoan, Number(pr.interestRate || 0), initialTenure, String(pr.loanStartDate || ''))
+    )
     return { outstanding, rate, tenure: Number(remainingTenure) || 0 }
   }
 
@@ -727,12 +765,39 @@ export function buildProtectionSnapshot(input: {
     }
   }
 
-  // Family Financial Runway — three capital figures, all over the same
-  // coverage term (youngest child's years to graduation): the objective
-  // 100% family need (combined household expenses, mode/% independent),
-  // what the client has actually chosen to cover (dtpd.familyDependency —
-  // already mode/% aware), and what's currently in place to fund it
-  // (existing life cover + the asset offset, if switched on).
+  // Full (100%, unmitigated) mortgage/debt and education totals — the whole
+  // family's exposure, not any one person's chosen share of it. Computed
+  // once, reused for both the client's and spouse's runway card.
+  //
+  // Mortgage: sums resolveMortgageFields().outstanding across every property
+  // at its true balance (ignores mortgageCoverPcts, which is a coverage
+  // election, not part of the actual debt) + every non-mortgage debt at its
+  // full amount (ignores the owner-based joint/50% split used for
+  // calcMortgageForPerson's chosen figure — from the family's perspective
+  // the whole debt needs to be cleared regardless of whose name it's under).
+  const fullNeedMortTotal = (() => {
+    const props = ff.properties ?? []
+    const mortOutstanding = props.reduce((sum: number, pr: any) => {
+      const resolved = resolveMortgageFields(pr)
+      return sum + (resolved ? resolved.outstanding : 0)
+    }, 0)
+    const debtTotal = (p.nonMortgageDebts ?? []).reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0)
+    return mortOutstanding + debtTotal
+  })()
+
+  // Education: sums perChildFund (already the 100% tuition+living figure
+  // per child, computed above with no coverPct applied) across every child
+  // with education provided.
+  const fullNeedEduTotal = provideEduFund
+    ? Object.values(perChildFund).reduce((sum, v) => sum + v, 0)
+    : 0
+
+  // Family Financial Runway — three capital figures, each broken into its
+  // family-dependency / mortgage / education components: the objective 100%
+  // family need (independent of any coverage election), what this person
+  // has actually chosen to cover (dtpd.familyDependency/.mortgageDebtClearance/
+  // .tertiaryFunding — already election-aware), and what's currently in
+  // place to fund it (existing life cover + the asset offset, if switched on).
   //
   // dtpd.assetMitigation is normally already 0 when the toggle is off
   // (getAssetOffset on Strategic Objectives returns 0 in that case before
@@ -742,13 +807,25 @@ export function buildProtectionSnapshot(input: {
   // flag here too, the same convention used elsewhere (masterEnabled on
   // Strategic Objectives' Asset Offset tab).
   function buildRunway(who: 'client' | 'spouse', dtpd: PersonProtectionBreakdown): FamilyRunway {
-    const fullNeed = Math.max(0, Math.round(fv(inflation, coverageTerm, annExpTotal)))
+    const fullNeedFD = Math.max(0, Math.round(fv(inflation, coverageTerm, annExpTotal)))
+    const fullNeedMort = Math.max(0, Math.round(fullNeedMortTotal))
+    const fullNeedEdu = Math.max(0, Math.round(fullNeedEduTotal))
+    const fullNeed = fullNeedFD + fullNeedMort + fullNeedEdu
+
+    const targetFD = dtpd.familyDependency
+    const targetMort = dtpd.mortgageDebtClearance
+    const targetEdu = dtpd.tertiaryFunding
+    const targetNeed = targetFD + targetMort + targetEdu
+
     const assetOffsetEnabled = p.assetOffsetEnabled !== false
-    const currentProvision = dtpd.existingCoverage + (assetOffsetEnabled ? dtpd.assetMitigation : 0)
+    const currentInsurance = dtpd.existingCoverage
+    const currentAssets = assetOffsetEnabled ? dtpd.assetMitigation : 0
+    const currentProvision = currentInsurance + currentAssets
+
     return {
-      fullNeed,
-      targetNeed: dtpd.familyDependency,
-      currentProvision,
+      fullNeed, fullNeedFD, fullNeedMort, fullNeedEdu,
+      targetNeed, targetFD, targetMort, targetEdu,
+      currentProvision, currentInsurance, currentAssets,
       assetOffsetEnabled,
     }
   }
