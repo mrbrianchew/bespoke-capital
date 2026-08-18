@@ -33,6 +33,20 @@ function formatDate(d: string) {
   return d
 }
 function toSGD(val: number, p: Policy) { return p.isUSD ? val*(p.fxRate||1.35) : val }
+// Same annualization as annualPrem, but returns the Cash/Credit Card and
+// Medisave/Non-Cash components separately — cash+medisave always equals
+// annualPrem(p) exactly, this is a decomposition, not a second calculation.
+function annualPremSplit(p: Policy): { cash: number; medisave: number } {
+  if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return { cash: 0, medisave: 0 }
+  const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+  const ms   = p.premiumMedisave||0
+  const mult = p.frequency==='Semi-Annual' ? 2
+    : p.frequency==='Quarterly' ? 4
+    : p.frequency==='Monthly'   ? 12
+    : p.frequency==='Single'    ? 0
+    : 1
+  return { cash: cash*mult, medisave: ms*mult }
+}
 function annualPrem(p: Policy) {
   const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
   const total = cash + (p.premiumMedisave||0)
@@ -937,6 +951,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
   ]
 
   const totalPrem = policies.reduce((s,p)=>s+annualPrem(p),0)
+  const totalPremSplit = policies.reduce((s,p)=>{ const sp=annualPremSplit(p); return {cash:s.cash+sp.cash, medisave:s.medisave+sp.medisave} }, {cash:0, medisave:0})
   const lifePols = policies.filter(p=>p.categoryCode==='life')
   const totDeath = lifePols.reduce((s,p)=>s+toSGD(getMultiplied(p,'baseDeath'),p),0)
   const totTPD   = lifePols.reduce((s,p)=>s+toSGD(getMultiplied(p,'baseTPD'),p),0)
@@ -1043,6 +1058,13 @@ export default function SharePage({ params }: { params: { token: string } }) {
           <div className="pf-hero-prem" style={{textAlign:'right'}}>
             <div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginBottom:2}}>Total Annual Premium</div>
             <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:300,color:'#C4A464'}}>{fmt(totalPrem)}</div>
+            {(totalPremSplit.cash>0||totalPremSplit.medisave>0) && (
+              <div style={{fontFamily:'DM Mono,monospace',fontSize:10,color:'rgba(255,255,255,0.4)',marginTop:4}}>
+                {totalPremSplit.cash>0&&<>Cash/Credit Card {fmt(totalPremSplit.cash)}</>}
+                {totalPremSplit.cash>0&&totalPremSplit.medisave>0&&<> · </>}
+                {totalPremSplit.medisave>0&&<>Medisave/Non-Cash {fmt(totalPremSplit.medisave)}</>}
+              </div>
+            )}
           </div>
         </div>
         <div className="pf-body" style={{...pageBody,paddingTop:24}}>
@@ -1052,12 +1074,19 @@ export default function SharePage({ params }: { params: { token: string } }) {
               {label:'TPD Benefit',value:totTPD},
               {label:'Late Stage CI',value:totAdvCI},
               {label:'Early Stage CI',value:totEarCI},
-              {label:'Total Annual Premium',value:totalPrem,gold:true},
+              {label:'Total Annual Premium',value:totalPrem,gold:true,breakdown:totalPremSplit},
             ].map(k=>(
               <div key={k.label} style={{background:'white',border:'0.5px solid #E0DDD6',borderRadius:12,padding:'16px 18px',position:'relative',overflow:'hidden'}}>
                 {k.gold&&<div style={{position:'absolute',top:0,left:0,right:0,height:3,background:'#A8834A'}}/>}
                 <div style={{fontSize:9,letterSpacing:'0.1em',textTransform:'uppercase',color:'#888',marginBottom:8,marginTop:k.gold?4:0}}>{k.label}</div>
                 <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:k.gold?24:22,fontWeight:300,color:k.gold?'#A8834A':'#1A1A1A'}}>{fmt(k.value)}</div>
+                {k.breakdown&&(k.breakdown.cash>0||k.breakdown.medisave>0)&&(
+                  <div style={{fontFamily:'DM Mono,monospace',fontSize:9.5,color:'#999',marginTop:5,lineHeight:1.5}}>
+                    {k.breakdown.cash>0&&<>Cash/Credit Card {fmt(k.breakdown.cash)}</>}
+                    {k.breakdown.cash>0&&k.breakdown.medisave>0&&<> · </>}
+                    {k.breakdown.medisave>0&&<>Medisave/Non-Cash {fmt(k.breakdown.medisave)}</>}
+                  </div>
+                )}
               </div>
             ))}
           </div>

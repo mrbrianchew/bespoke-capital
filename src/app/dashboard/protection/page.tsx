@@ -26,6 +26,22 @@ import { CSS } from '@dnd-kit/utilities'
 
 const ACTIVE_STATUSES = ['In-Force', 'Premium Holiday', 'Paid-up']
 
+// SSR-safe: starts false (desktop layout), corrects on mount. Same pattern
+// as the Claims board's useNarrow — drives the Portfolio KPI grid and
+// Coverage Timeline/Premium Schedule layout down to a single column on
+// narrow viewports instead of squeezing 6 columns into a phone screen.
+function useNarrow(breakpoint: number): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`)
+    setNarrow(mq.matches)
+    const onChange = () => setNarrow(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [breakpoint])
+  return narrow
+}
+
 function gapSt(need: number, have: number) {
   if (need <= 0) return { label: 'N/A',     color: '#555',    bg: '#F0EEE9' }
   if (have >= need) return { label: 'Covered', color: '#2D6A4F', bg: '#E8F5E9' }
@@ -2068,6 +2084,22 @@ function _annualPrem(p: Policy) {
     default:            return total
   }
 }
+// Same annualization as _annualPrem, but returns the Cash/Credit Card and
+// Medisave/Non-Cash components separately instead of pre-summed. Frequency
+// multiplication distributes over the sum, so cash+medisave here always
+// equals _annualPrem(p) exactly — this is just a decomposition, not a
+// second calculation that can drift from the total.
+function _annualPremSplit(p: Policy): { cash: number; medisave: number } {
+  if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return { cash: 0, medisave: 0 }
+  const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+  const ms   = p.premiumMedisave||0
+  const mult = p.frequency==='Semi-Annual' ? 2
+    : p.frequency==='Quarterly' ? 4
+    : p.frequency==='Monthly'   ? 12
+    : p.frequency==='Single'    ? 0
+    : 1
+  return { cash: cash*mult, medisave: ms*mult }
+}
 function _payMonths(p: Policy): number[] {
   const sm = p.inceptionDate ? new Date(p.inceptionDate).getMonth()+1 : 1
   switch (p.frequency) {
@@ -2537,6 +2569,10 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   // by category so the two don't get shown as one intimidating number.
   const totPremProtection = policies.filter(p=>p.categoryCode!=='endowment').reduce((s,p)=>s+_annualPrem(p),0)
   const totSavings         = policies.filter(p=>p.categoryCode==='endowment').reduce((s,p)=>s+_annualPrem(p),0)
+  const protectionSplit = policies.filter(p=>p.categoryCode!=='endowment')
+    .reduce((s,p)=>{ const sp=_annualPremSplit(p); return {cash:s.cash+sp.cash, medisave:s.medisave+sp.medisave} }, {cash:0, medisave:0})
+
+  const narrow = useNarrow(760)
 
   // ── Timeline SVG ───────────────────────────────────────────────────────────
   const W=560, H=170, PL=50, PR=12, PT=20, PB=18
@@ -2566,13 +2602,13 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
     <div style={{marginBottom: 24}}>
       
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap: 12, marginBottom: 16}}>
+      <div style={{display:'grid', gridTemplateColumns: narrow ? 'repeat(2,1fr)' : 'repeat(6,1fr)', gap: 12, marginBottom: 16}}>
         {[
           {label:'Death Benefit', value:totDeath, accent:COL_D},
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
-          {label:'Annual Premium', value:totPremProtection, accent:'#A8834A', highlight: true, isPremium: true},
+          {label:'Annual Premium', value:totPremProtection, accent:'#A8834A', highlight: true, isPremium: true, breakdown: protectionSplit},
           {label:'Annual Savings/Investments', value:totSavings, accent:'#2D5A4E', highlight: true, isPremium: true},
         ].map(kpi=>(
           <div key={kpi.label} style={{
@@ -2613,12 +2649,25 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
               letterSpacing: '-0.02em',
               lineHeight: 1.2
             }}>{kpi.isPremium ? fmtPremium(kpi.value) : fmtWhole(kpi.value)}</div>
+            {kpi.breakdown && (kpi.breakdown.cash > 0 || kpi.breakdown.medisave > 0) && (
+              <div style={{
+                fontFamily: 'DM Mono, monospace',
+                fontSize: 10.5,
+                color: '#9A9690',
+                marginTop: 6,
+                lineHeight: 1.5
+              }}>
+                {kpi.breakdown.cash > 0 && <>Cash/Credit Card {fmtPremium(kpi.breakdown.cash)}</>}
+                {kpi.breakdown.cash > 0 && kpi.breakdown.medisave > 0 && <> · </>}
+                {kpi.breakdown.medisave > 0 && <>Medisave/Non-Cash {fmtPremium(kpi.breakdown.medisave)}</>}
+              </div>
+            )}
           </div>
         ))}
       </div>
 
       {/* ── Charts Row ────────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 360px', gap: 12}}>
+      <div style={{display:'grid', gridTemplateColumns: narrow ? '1fr' : '1fr 360px', gap: 12}}>
 
         {/* Coverage Timeline Card */}
         <div style={{
