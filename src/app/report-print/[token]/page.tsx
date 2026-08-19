@@ -265,15 +265,16 @@ const PRINT_CSS = `
   .seclabel{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin:0 0 4mm; break-after:avoid;}
   .seclabel:first-of-type{margin-top:0;}
 
-  /* Fills all remaining space between the header and footer, then
-     distributes any leftover as even gaps BETWEEN the three sections
-     (KPIs / Assets & Liabilities / Cashflow) rather than dumping it all as
-     dead space after the last one — so the page always reaches the footer
-     regardless of how much data a given client has. Verified in a real
-     browser against both a typical client (5 asset rows) and the worst
-     case (7 asset rows + 8 cashflow rows): content always reaches the
-     footer exactly, with ~21mm of margin to spare in the worst case. */
-  .ov-body{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:space-between;}
+  /* Fills all remaining space between the header and footer (minus a fixed
+     6mm breathing gap above the footer rule), then distributes any leftover
+     as even gaps BETWEEN the three sections (KPIs / Assets & Liabilities /
+     Cashflow) rather than dumping it all as dead space after the last one —
+     so the page always reaches the footer regardless of how much data a
+     given client has. Verified in a real browser against both a typical
+     client (5 asset rows) and the worst case (7 asset rows + 8 cashflow
+     rows): content always sits exactly 6mm above the footer rule, with
+     ~15mm of margin still to spare before real overflow in the worst case. */
+  .ov-body{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:space-between; margin-bottom:6mm;}
 
   /* ===== bordered KPI cards ===== */
   .card-kpi-row{display:flex; gap:6mm;}
