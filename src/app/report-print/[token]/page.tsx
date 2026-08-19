@@ -5,6 +5,7 @@ import { buildOverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { buildExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import { buildProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline } from '@/lib/protectionSnapshot'
 import { buildCapitalFundSnapshot, CapitalFundSnapshot, CapitalFundObjective } from '@/lib/capitalFundSnapshot'
+import { buildActionPlanSnapshot, PersonActionPlan, ProtectionActionItem, AccumulationActionItem, ProtectionTape, ActionPlanGoalFunding } from '@/lib/actionPlanSnapshot'
 
 // Print-only render target for the PDF export pipeline (see
 // /api/report/export-pdf/route.ts, which mints the token and drives
@@ -784,6 +785,318 @@ function CapitalFundOptimizationPage({ clientName, spouseName, datePrepared, cf,
   )
 }
 
+// ─── Action Plan pages (13-16) helpers ──────────────────────────────────────
+// Design source: page5-protection-breakdown.html's ap-* classes (per Brian's
+// "full rebuild" instruction, this mockup section is the outcome of that
+// rebuild, not the older superseded fp.html design). The mockup's own
+// contribution bars are explicitly flagged as placeholder numbers — real
+// data comes from actionPlanSnapshot.ts's dtpdTape/ciTape/dtpdContribution/
+// ciContribution fields, already computed exactly for this purpose.
+
+function fmtMoney2(n: number): string {
+  if (!n) return '$0.00'
+  return '$' + n.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function actionCategoryDotColor(category: ProtectionActionItem['category']): string {
+  if (category === 'medical') return '#7A9CBF'
+  if (category === 'ltc') return '#9B7BAA'
+  if (category === 'core') return 'var(--gold)'
+  return 'var(--ink3)' // general
+}
+
+// statsFor() equivalent — shows whichever of these are nonzero, category-agnostic
+// (mirrors ActionPlanDisplay.tsx's ProtectionItemCard exactly).
+function actionItemStats(item: ProtectionActionItem): { label: string; value: string }[] {
+  const stats: { label: string; value: string }[] = []
+  if (item.deathBenefit > 0) stats.push({ label: 'Death benefit', value: fmt(item.deathBenefit) })
+  if (item.tpdBenefit > 0) stats.push({ label: 'TPD benefit', value: fmt(item.tpdBenefit) })
+  if (item.ciBenefit > 0) stats.push({ label: 'CI benefit', value: fmt(item.ciBenefit) })
+  if (item.earlyCiBenefit > 0) stats.push({ label: 'Early CI benefit', value: fmt(item.earlyCiBenefit) })
+  if (item.monthlyBenefit > 0) stats.push({ label: 'Monthly benefit', value: `${fmt(item.monthlyBenefit)}/mo` })
+  if (item.sumAssured > 0) stats.push({ label: 'Sum assured', value: fmt(item.sumAssured) })
+  return stats
+}
+
+// Simplified 4-segment per-item contribution bar (asset mitigation / existing
+// / this item's own slice / remaining) — the live page's ItemContributionBar
+// has a 5th "other items' recommended" segment; folded out here since a
+// static print card only ever shows one item's own numbers meaningfully.
+function ActionContribBar({ pillarLabel, tape, contribution }: { pillarLabel: string; tape: ProtectionTape; contribution: number }) {
+  const pct = tape.needs > 0 ? Math.round((contribution / tape.needs) * 100) : 0
+  const segs = [
+    { value: tape.assetMitigation, color: 'var(--gold)' },
+    { value: tape.existing, color: 'var(--ink3)' },
+    { value: contribution, color: '#3F6B57' },
+    { value: Math.max(0, tape.remaining), color: 'var(--accent)' },
+  ]
+  return (
+    <div className="ap-contrib">
+      <div className="ap-contrib-h"><span>{pillarLabel}</span><span>covers {pct}% of the need</span></div>
+      <div className="ap-contrib-bar">
+        {segs.map((s, i) => <div key={i} style={{ width: `${tape.needs > 0 ? (s.value / tape.needs) * 100 : 0}%`, background: s.color }} />)}
+      </div>
+    </div>
+  )
+}
+
+function ActionItemCard({ item }: { item: ProtectionActionItem }) {
+  const subtitleParts: string[] = [item.mode === 'replacement' ? `Replacing ${item.replacedPolicies.length} existing polic${item.replacedPolicies.length === 1 ? 'y' : 'ies'}` : 'New coverage']
+  if (item.premiumTerm) subtitleParts.push(`Premium term ${item.premiumTerm}`)
+  if (item.policyTerm) subtitleParts.push(`Coverage term ${item.policyTerm}`)
+  const stats = actionItemStats(item)
+
+  return (
+    <div className="ap-card">
+      <div className="ap-card-head">
+        <div>
+          <div className="ap-card-name">{item.productName}{item.insurer && ` — ${item.insurer}`}</div>
+          <div className="ap-card-sub">{subtitleParts.join(' · ')}</div>
+        </div>
+        <div className="ap-card-premium">
+          <div className="v">{fmtMoney2(item.annualPremiumTotal)}/yr</div>
+          {item.annualPremiumMedisave > 0 && <div className="s">incl. {fmtMoney2(item.annualPremiumMedisave)} via Medisave</div>}
+        </div>
+      </div>
+
+      {stats.length > 0 && (
+        <div className="ap-card-stats">
+          {stats.slice(0, 4).map((s, i) => (
+            <div key={i}><div className="l">{s.label}</div><div className="v">{s.value}</div></div>
+          ))}
+        </div>
+      )}
+
+      {item.rationale && (
+        <div className="ap-card-box">
+          <div className="l">Purpose / Rationale</div>
+          <div className="d">{item.rationale}</div>
+        </div>
+      )}
+      {item.benefits && (
+        <div className="ap-card-box">
+          <div className="l">Features / Benefits</div>
+          <div className="d">{item.benefits}</div>
+        </div>
+      )}
+      {item.limitations && (
+        <div className="ap-card-box limitations">
+          <div className="l">Limitations</div>
+          <div className="d">{item.limitations}</div>
+        </div>
+      )}
+      {item.mode === 'replacement' && item.replacedPolicies.length > 0 && (
+        <div className="ap-card-replacing">
+          <div className="l">Replacing</div>
+          <div className="d">
+            {item.replacedPolicies.map((p, i) => (
+              <span key={i}>{p.policyName}{p.companyName && ` — ${p.companyName}`} &middot; was {fmtMoney2(p.annualPremium)}/yr{i < item.replacedPolicies.length - 1 && <br />}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActionTapeBar({ label, needsLabel, tape }: { label: string; needsLabel: string; tape: ProtectionTape }) {
+  return (
+    <div className="ap-tape">
+      <div className="ap-tape-h"><span className="l">{label}</span><span className="r">needs <b>{fmt(tape.needs)}</b></span></div>
+      <div className="ap-tape-bar">
+        <div style={{ width: `${tape.needs > 0 ? (tape.assetMitigation / tape.needs) * 100 : 0}%`, background: 'var(--gold)' }} />
+        <div style={{ width: `${tape.needs > 0 ? (tape.existing / tape.needs) * 100 : 0}%`, background: 'var(--ink3)' }} />
+        <div style={{ width: `${tape.needs > 0 ? (tape.recommended / tape.needs) * 100 : 0}%`, background: '#3F6B57' }} />
+        <div style={{ width: `${tape.needs > 0 ? (tape.remaining / tape.needs) * 100 : 0}%`, background: 'var(--accent)' }} />
+      </div>
+      <div className="ap-tape-legend">
+        {tape.assetMitigation > 0 && <div><span className="sw" style={{ background: 'var(--gold)' }} />Asset mitigation<span className="amt">{fmt(tape.assetMitigation)}</span></div>}
+        {tape.existing > 0 && <div><span className="sw" style={{ background: 'var(--ink3)' }} />Existing<span className="amt">{fmt(tape.existing)}</span></div>}
+        {tape.recommended > 0 && <div><span className="sw" style={{ background: '#3F6B57' }} />Recommended<span className="amt">+{fmt(tape.recommended)}</span></div>}
+        <div><span className="sw" style={{ background: 'var(--accent)' }} />Remaining shortfall<span className="amt">{tape.remaining > 0 ? fmt(tape.remaining) : '$0 — closed'}</span></div>
+      </div>
+    </div>
+  )
+}
+
+function AccumulationItemCard({ item }: { item: AccumulationActionItem }) {
+  const title = item.company || item.planType || 'Accumulation plan'
+  const subtitleParts = [item.productType, item.planType].filter(Boolean)
+  const modeLabel = item.mode === 'new' ? 'New' : item.mode === 'topup' ? 'Top-up' : 'Replacement'
+  const contribLines: string[] = []
+  if (item.hasLumpSum && item.lumpSumAmount > 0) contribLines.push(`${fmt(item.lumpSumAmount)} lump sum`)
+  if (item.hasRegular && item.annualContribution > 0) contribLines.push(`${fmt(item.annualContribution)}/yr regular`)
+
+  return (
+    <div className="ap-card">
+      <div className="ap-card-head">
+        <div>
+          <div className="ap-card-name">{title}</div>
+          <div className="ap-card-sub">
+            {subtitleParts.length > 0 ? subtitleParts.join(' · ') : modeLabel}
+            {item.mode === 'topup' && item.topupProductLabel && ` · Topping up ${item.topupProductLabel}`}
+            {item.accountType === 'joint' && ` · Joint account — split ${item.jointSplitClientPct}%/${100 - item.jointSplitClientPct}%`}
+          </div>
+        </div>
+        <div className="ap-card-premium">
+          {contribLines.map((l, i) => <div className="v" key={i} style={{ fontSize: '12px' }}>{l}</div>)}
+        </div>
+      </div>
+      {item.rationale && (
+        <div className="ap-card-box">
+          <div className="l">Purpose / Rationale</div>
+          <div className="d">{item.rationale}</div>
+        </div>
+      )}
+      {item.benefits && (
+        <div className="ap-card-box">
+          <div className="l">Features / Benefits</div>
+          <div className="d">{item.benefits}</div>
+        </div>
+      )}
+      {item.limitations && (
+        <div className="ap-card-box limitations">
+          <div className="l">Limitations</div>
+          <div className="d">{item.limitations}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Simplified 3-segment goal-funding tape (achieved / recommended combined /
+// remaining) — the live page's AccumulationTapeView splits recommended by
+// owner (client/spouse/joint) into 3 colors; folded into one segment here
+// since the fundedBy list immediately below already names who's funding it.
+function GoalFundingBlock({ gf }: { gf: ActionPlanGoalFunding }) {
+  const tape = gf.tape
+  return (
+    <div className="ap-tape">
+      <div className="ap-tape-h"><span className="l">{gf.goal.label}</span><span className="r">target age <b>{gf.goal.targetAge}</b></span></div>
+      {tape && (
+        <>
+          <div className="ap-tape-bar">
+            <div style={{ width: `${tape.needs > 0 ? (tape.achieved / tape.needs) * 100 : 0}%`, background: 'var(--ink3)' }} />
+            <div style={{ width: `${tape.needs > 0 ? (tape.recommended / tape.needs) * 100 : 0}%`, background: '#3F6B57' }} />
+            <div style={{ width: `${tape.needs > 0 ? (tape.remaining / tape.needs) * 100 : 0}%`, background: 'var(--accent)' }} />
+          </div>
+          <div className="ap-tape-legend">
+            <div><span className="sw" style={{ background: 'var(--ink3)' }} />Already on track<span className="amt">{fmt(tape.achieved)}</span></div>
+            {tape.recommended > 0 && <div><span className="sw" style={{ background: '#3F6B57' }} />Recommended<span className="amt">+{fmt(tape.recommended)}</span></div>}
+            <div><span className="sw" style={{ background: 'var(--accent)' }} />Remaining<span className="amt">{tape.remaining > 0 ? fmt(tape.remaining) : '$0 — closed'}</span></div>
+          </div>
+        </>
+      )}
+      <div style={{ marginTop: '3mm', fontSize: '9px', color: 'var(--ink2)' }}>
+        {gf.fundedBy.map((f, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '1mm 0' }}>
+            <span>{f.productLabel}{f.ownerLabel && ` — ${f.ownerLabel}`}</span>
+            <span>{f.annualContribution > 0 ? `${fmt(f.annualContribution)}/yr` : f.hasLumpSum ? `${fmt(f.lumpSumAmount)} lump sum` : '$0/yr'}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ActionPlanMedicalLtcPage({ clientName, spouseName, datePrepared, personName, plan, pageLabel }: {
+  clientName: string
+  spouseName: string | null
+  datePrepared: string
+  personName: string
+  plan: PersonActionPlan
+  pageLabel: string
+}) {
+  const medicalItems = plan.protectionItems.filter(i => i.category === 'medical')
+  const ltcItems = plan.protectionItems.filter(i => i.category === 'ltc')
+
+  return (
+    <div className="page">
+      <div className="hdr">
+        <div className="tablabel">Financial Planning Report · Action Plan</div>
+        <div className="titlerow"><div className="client">{clientName}{spouseName && <> &amp; {spouseName}</>}</div><div className="date">{datePrepared}</div></div>
+      </div>
+
+      <div className="ap-person-h" style={{ marginTop: 0 }}>{personName}</div>
+
+      {medicalItems.length > 0 && (
+        <>
+          <div className="ap-cat"><span className="dot" style={{ background: actionCategoryDotColor('medical') }} /><span className="lbl">Medical &amp; Health</span><span className="line" /></div>
+          {medicalItems.map(item => <ActionItemCard item={item} key={item.id} />)}
+        </>
+      )}
+
+      {ltcItems.length > 0 && (
+        <>
+          <div className="ap-cat"><span className="dot" style={{ background: actionCategoryDotColor('ltc') }} /><span className="lbl">Long-Term Care</span><span className="line" /></div>
+          {ltcItems.map(item => <ActionItemCard item={item} key={item.id} />)}
+        </>
+      )}
+
+      {medicalItems.length === 0 && ltcItems.length === 0 && (
+        <div className="ap-empty">No Medical or Long-Term Care actions recorded yet for {personName}.</div>
+      )}
+
+      <div className="ftr"><span>Bespoke Capital — Confidential</span><span>{pageLabel}</span></div>
+    </div>
+  )
+}
+
+function ActionPlanCoreAccumulationPage({ clientName, spouseName, datePrepared, personName, plan, pageLabel }: {
+  clientName: string
+  spouseName: string | null
+  datePrepared: string
+  personName: string
+  plan: PersonActionPlan
+  pageLabel: string
+}) {
+  const coreItems = plan.protectionItems.filter(i => i.category === 'core')
+  const generalItems = plan.protectionItems.filter(i => i.category === 'general')
+
+  return (
+    <div className="page">
+      <div className="hdr">
+        <div className="tablabel">Financial Planning Report · Action Plan (continued)</div>
+        <div className="titlerow"><div className="client">{clientName}{spouseName && <> &amp; {spouseName}</>}</div><div className="date">{datePrepared}</div></div>
+      </div>
+
+      {coreItems.length > 0 && (
+        <>
+          <div className="ap-cat" style={{ marginTop: 0 }}><span className="dot" style={{ background: actionCategoryDotColor('core') }} /><span className="lbl">Core Protection</span><span className="line" /></div>
+          {coreItems.map(item => (
+            <div key={item.id}>
+              <ActionItemCard item={item} />
+              {plan.dtpdTape && item.dtpdContribution > 0 && <ActionContribBar pillarLabel="Death and TPD" tape={plan.dtpdTape} contribution={item.dtpdContribution} />}
+              {plan.ciTape && item.ciContribution > 0 && <ActionContribBar pillarLabel="Critical illness" tape={plan.ciTape} contribution={item.ciContribution} />}
+            </div>
+          ))}
+          {plan.dtpdTape && <ActionTapeBar label="Capital protection — Death & TPD" needsLabel="dtpd" tape={plan.dtpdTape} />}
+          {plan.ciTape && <ActionTapeBar label="Income protection — Critical Illness" needsLabel="ci" tape={plan.ciTape} />}
+        </>
+      )}
+
+      {generalItems.length > 0 && (
+        <>
+          <div className="ap-cat" style={{ marginTop: coreItems.length > 0 ? undefined : 0 }}><span className="dot" style={{ background: actionCategoryDotColor('general') }} /><span className="lbl">General Insurance</span><span className="line" /></div>
+          {generalItems.map(item => <ActionItemCard item={item} key={item.id} />)}
+        </>
+      )}
+
+      <div className="ap-cat"><span className="dot" style={{ background: 'var(--emerald, #3F6B57)' }} /><span className="lbl">Wealth Accumulation</span><span className="line" /></div>
+      {plan.accumulationItems.length === 0 && plan.goalFunding.length === 0 ? (
+        <div className="ap-empty">No accumulation actions recorded yet for {personName}.</div>
+      ) : (
+        <>
+          {plan.accumulationItems.map(item => <AccumulationItemCard item={item} key={item.id} />)}
+          {plan.goalFunding.map(gf => <GoalFundingBlock gf={gf} key={gf.goal.id} />)}
+        </>
+      )}
+
+      <div className="ftr"><span>Bespoke Capital — Confidential</span><span>{pageLabel}</span></div>
+    </div>
+  )
+}
+
 export default async function ReportPrintPage({ params }: { params: { token: string } }) {
   const payload = verifyReportPrintToken(params.token)
   if (!payload) notFound()
@@ -792,7 +1105,7 @@ export default async function ReportPrintPage({ params }: { params: { token: str
     supabaseAdmin.from('clients').select('id, name, dob').eq('id', payload.clientId).maybeSingle(),
     supabaseAdmin.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', payload.clientId),
     supabaseAdmin.from('advisors').select('name').eq('id', payload.advisorId).maybeSingle(),
-    supabaseAdmin.from('fact_finding').select('section, data').eq('client_id', payload.clientId).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement', 'capital_mandate', 'education', 'accumulation']),
+    supabaseAdmin.from('fact_finding').select('section, data').eq('client_id', payload.clientId).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement', 'capital_mandate', 'education', 'accumulation', 'strategic_recommendations_v2']),
   ])
   if (!client) notFound()
 
@@ -860,6 +1173,17 @@ export default async function ReportPrintPage({ params }: { params: { token: str
     accData: merged['accumulation'] || {},
     eduData: merged['education'] || {},
     cmData: merged['capital_mandate'] || {},
+  })
+
+  const actionPlan = buildActionPlanSnapshot({
+    client: { name: client.name, dob: client.dob || '' },
+    familyMembers: (family || []).map(f => ({ id: f.id, name: f.name, relationship: f.relationship, dob: f.dob || undefined })),
+    recData: merged['strategic_recommendations_v2'] || {},
+    retData: merged['retirement'] || {},
+    eduData: merged['education'] || {},
+    cmData: merged['capital_mandate'] || {},
+    annualSurplus: wealthSummary.annualSurplus,
+    protectionProfiles: { client: protection.client, spouse: protection.spouse },
   })
 
   return (
@@ -1089,9 +1413,19 @@ export default async function ReportPrintPage({ params }: { params: { token: str
           <CapitalFundStrategyPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 11 of 16" />
           <CapitalFundOptimizationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 12 of 16" />
 
-          {/* Remaining pages (Action Plan ×4) land here in subsequent
-              increments, each its own <div className="page"
-              break-after:page> per the approved mockup. */}
+          {/* ============ ACTION PLAN (pages 13-16) ============
+              Banner page cut per Brian's instruction (see the true page
+              total of 16, not the brief's stated 17) — this is 4 pages,
+              not the originally-planned 5. Spouse pages only render when
+              there's a spouse on file, same guard as the Protection pages. */}
+          <ActionPlanMedicalLtcPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={client.name} plan={actionPlan.client} pageLabel="Page 13 of 16" />
+          <ActionPlanCoreAccumulationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={client.name} plan={actionPlan.client} pageLabel="Page 14 of 16" />
+          {isCouple && actionPlan.spouse && (
+            <>
+              <ActionPlanMedicalLtcPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={spouseName || 'Spouse'} plan={actionPlan.spouse} pageLabel="Page 15 of 16" />
+              <ActionPlanCoreAccumulationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={spouseName || 'Spouse'} plan={actionPlan.spouse} pageLabel="Page 16 of 16" />
+            </>
+          )}
         </div>
       </body>
     </html>
@@ -1404,6 +1738,45 @@ const PRINT_CSS = `
   .cf2-closing p{font-family:'Fraunces',serif; font-style:italic; font-size:13px; line-height:1.6; color:var(--ink2); max-width:130mm; margin:0 auto;}
   .cf2-closing p b{font-style:normal; font-weight:600; color:var(--gold);}
 
+  /* ===== Action Plan (pages 13-16) ===== */
+  .ap-person-h{font-family:'Fraunces',serif; font-size:19px; font-style:italic; color:var(--ink); margin:9mm 0 6mm; padding-bottom:3mm; border-bottom:1px solid var(--ink);}
+  .ap-cat{display:flex; align-items:center; gap:2.5mm; margin:7mm 0 4mm;}
+  .ap-cat .dot{width:6px; height:6px; border-radius:50%; flex-shrink:0;}
+  .ap-cat .lbl{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink); font-weight:600;}
+  .ap-cat .line{flex:1; height:1px; background:var(--line2);}
+  .ap-card{background:#fff; border:1px solid var(--line); border-radius:8px; padding:5mm 6mm; margin-bottom:4mm;}
+  .ap-card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:5mm; margin-bottom:3mm; padding-bottom:3mm; border-bottom:1px solid var(--line);}
+  .ap-card-name{font-size:12px; font-weight:600; color:var(--ink); margin-bottom:1mm;}
+  .ap-card-sub{font-size:8.5px; color:var(--ink3);}
+  .ap-card-premium{text-align:right; flex-shrink:0;}
+  .ap-card-premium .v{font-family:'DM Mono',monospace; font-size:13px; color:var(--ink);}
+  .ap-card-premium .s{font-size:8px; color:var(--ink3); margin-top:1mm;}
+  .ap-card-stats{display:grid; grid-template-columns:repeat(4,1fr); gap:3mm; padding-bottom:3mm; margin-bottom:3mm; border-bottom:1px solid var(--line);}
+  .ap-card-stats .l{font-size:7.5px; color:var(--ink3); margin-bottom:1mm;}
+  .ap-card-stats .v{font-size:10px; font-family:'DM Mono',monospace; color:var(--ink);}
+  .ap-card-box{background:var(--cream, #F7F5F0); border-radius:6px; padding:3mm 4mm; margin-bottom:3mm;}
+  .ap-card-box .l{font-size:8px; letter-spacing:0.04em; text-transform:uppercase; color:var(--gold); margin-bottom:1.5mm;}
+  .ap-card-box.limitations .l{color:var(--ink3);}
+  .ap-card-box .d{font-size:9.5px; color:var(--ink2); line-height:1.5;}
+  .ap-card-replacing{background:#F3E2DF; border-radius:6px; padding:3mm 4mm;}
+  .ap-card-replacing .l{font-size:8px; letter-spacing:0.04em; text-transform:uppercase; color:var(--accent); margin-bottom:1.5mm;}
+  .ap-card-replacing .d{font-size:9px; color:var(--ink2); line-height:1.5;}
+  .ap-tape{padding:4mm 0 5mm; border-bottom:1px solid var(--line); margin-top:2mm;}
+  .ap-tape-h{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:3mm;}
+  .ap-tape-h .l{font-size:10.5px; color:var(--ink2);}
+  .ap-tape-h .r{font-family:'Fraunces',serif; font-style:italic; font-size:10.5px; color:var(--ink3);}
+  .ap-tape-h .r b{color:var(--ink); font-weight:600; font-style:normal;}
+  .ap-tape-bar{display:flex; height:8px; border-radius:5px; overflow:hidden; border-top:1px dashed var(--line2); border-bottom:1px dashed var(--line2); padding:1mm 0;}
+  .ap-tape-bar div{height:100%;}
+  .ap-tape-legend{display:flex; justify-content:space-between; flex-wrap:wrap; gap:3mm; margin-top:3mm; font-size:8px;}
+  .ap-tape-legend .sw{width:6px; height:6px; border-radius:1px; display:inline-block; margin-right:1.5mm;}
+  .ap-tape-legend .amt{font-family:'DM Mono',monospace; font-size:9px; color:var(--ink); padding-left:8px; display:block; margin-top:0.5mm;}
+  .ap-contrib{margin-bottom:3mm;}
+  .ap-contrib-h{display:flex; justify-content:space-between; font-size:8px; color:var(--ink3); margin-bottom:1.5mm;}
+  .ap-contrib-bar{display:flex; height:5px; border-radius:3px; overflow:hidden;}
+  .ap-contrib-bar div{height:100%;}
+  .ap-empty{text-align:center; padding:12mm 0; font-size:11px; color:var(--ink3); font-style:italic;}
+
   @media print{
     body{background:none;}
     .page{box-shadow:none;}
@@ -1411,5 +1784,6 @@ const PRINT_CSS = `
     .ews-nw-box, .ews-surplus-box, .ews-ratios, .ews-runway{break-inside:avoid;}
     .po-stats, .cp-cards, .cp-card{break-inside:avoid;}
     .cf2-hero, .cf2-goal-card, .cf2-total-box, .cf2-strategy-card, .cf2-insight{break-inside:avoid;}
+    .ap-card, .ap-tape{break-inside:avoid;}
   }
 `
