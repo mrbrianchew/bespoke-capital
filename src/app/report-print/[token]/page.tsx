@@ -251,48 +251,50 @@ const PRINT_CSS = `
      Spacing here is deliberately tighter than the fp.html mockup's original
      values — real client data (up to 7 asset categories, 8-category detailed
      cashflow) overflowed a single A4 page with the mockup's generous margins.
-     Verified against that worst case (7 asset rows + 8 cashflow rows) at
-     ~39mm of headroom remaining before the page boundary. */
-  .tablabel{font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:var(--ink3); margin-bottom:3.5mm;}
-  .hdr{margin-bottom:6mm;}
-  .titlerow{display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--ink); padding-bottom:4mm;}
-  .client{font-family:'Fraunces',serif; font-size:22px; font-weight:500; font-style:italic; color:var(--ink);}
-  .date{font-size:9.5px; color:var(--ink3);}
-  .seclabel{font-size:9px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin:0 0 3mm; break-after:avoid;}
+     Tuned and verified in a real browser against both a typical client (5
+     asset rows — ~25mm of trailing whitespace before the footer, reads as
+     intentional breathing room) and the worst case (7 asset rows + 8
+     cashflow rows — ~8mm buffer remaining before the page boundary). */
+  .tablabel{font-size:9.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--ink3); margin-bottom:4.5mm;}
+  .hdr{margin-bottom:7mm;}
+  .titlerow{display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--ink); padding-bottom:5mm;}
+  .client{font-family:'Fraunces',serif; font-size:24px; font-weight:500; font-style:italic; color:var(--ink);}
+  .date{font-size:10px; color:var(--ink3);}
+  .seclabel{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin:0 0 4mm; break-after:avoid;}
   .seclabel:first-of-type{margin-top:0;}
 
   /* ===== bordered KPI cards ===== */
-  .card-kpi-row{display:flex; gap:5mm; margin-bottom:6mm;}
-  .card-kpi{flex:1; border:1px solid var(--line); border-radius:9px; padding:4mm 5mm; background:#FBFAF6;}
-  .card-kpi .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:2.5mm;}
-  .card-kpi .v{font-family:'Fraunces',serif; font-weight:600; font-size:19px; color:var(--ink); margin-bottom:1.5mm;}
-  .card-kpi .s{font-size:8.5px; color:var(--ink3);}
+  .card-kpi-row{display:flex; gap:6mm; margin-bottom:7mm;}
+  .card-kpi{flex:1; border:1px solid var(--line); border-radius:9px; padding:5mm 6mm; background:#FBFAF6;}
+  .card-kpi .l{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:3.5mm;}
+  .card-kpi .v{font-family:'Fraunces',serif; font-weight:600; font-size:22px; color:var(--ink); margin-bottom:2mm;}
+  .card-kpi .s{font-size:9px; color:var(--ink3);}
 
   /* ===== asset composition & liabilities ===== */
-  .al-card{border:1px solid var(--line); border-radius:9px; padding:4mm 5mm; margin-bottom:3mm; display:grid; grid-template-columns:1fr 1fr; gap:10mm;}
-  .al-col .al-h{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:2.5mm;}
-  .al-row{display:flex; justify-content:space-between; align-items:baseline; padding:1.6mm 0; border-bottom:1px dotted var(--line2); font-size:10px;}
+  .al-card{border:1px solid var(--line); border-radius:9px; padding:5mm 6mm; margin-bottom:4mm; display:grid; grid-template-columns:1fr 1fr; gap:10mm;}
+  .al-col .al-h{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:3.5mm;}
+  .al-row{display:flex; justify-content:space-between; align-items:baseline; padding:2.2mm 0; border-bottom:1px dotted var(--line2); font-size:10.5px;}
   .al-row:last-child{border-bottom:none;}
   .al-row .lbl{color:var(--ink2); font-style:italic;}
   .al-row .amt{color:var(--ink);}
 
-  .nw-bar{border:1px solid var(--gold, #B08D57); background:#F6F0E4; border-radius:9px; padding:3.5mm 5mm; margin-bottom:6mm; display:flex; justify-content:space-between; align-items:center;}
-  .nw-bar .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:#8A6D3F;}
-  .nw-bar .v{font-family:'Fraunces',serif; font-weight:600; font-size:18px; color:var(--ink);}
+  .nw-bar{border:1px solid var(--gold, #B08D57); background:#F6F0E4; border-radius:9px; padding:4.5mm 6mm; margin-bottom:7mm; display:flex; justify-content:space-between; align-items:center;}
+  .nw-bar .l{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:#8A6D3F;}
+  .nw-bar .v{font-family:'Fraunces',serif; font-weight:600; font-size:20px; color:var(--ink);}
 
   /* ===== annual cashflow ===== */
-  .cashflow-wrap{display:grid; grid-template-columns:1.15fr 0.85fr; gap:8mm; border:1px solid var(--line); border-radius:9px; padding:4mm 5mm; margin-bottom:0;}
-  .cf-row{display:flex; align-items:baseline; gap:6px; padding:1.6mm 0; border-bottom:1px solid var(--line);}
+  .cashflow-wrap{display:grid; grid-template-columns:1.15fr 0.85fr; gap:9mm; border:1px solid var(--line); border-radius:9px; padding:5mm 6mm; margin-bottom:0;}
+  .cf-row{display:flex; align-items:baseline; gap:6px; padding:2mm 0; border-bottom:1px solid var(--line);}
   .cf-row:last-child{border-bottom:none;}
-  .cf-row .lbl{flex:1; font-size:9.5px; color:var(--ink2);}
-  .cf-row .amt{font-size:9px; color:var(--ink3); width:20mm; text-align:right;}
-  .cf-row .pct{font-size:9px; font-weight:500; width:26mm; text-align:right;}
+  .cf-row .lbl{flex:1; font-size:10px; color:var(--ink2);}
+  .cf-row .amt{font-size:9.5px; color:var(--ink3); width:20mm; text-align:right;}
+  .cf-row .pct{font-size:9.5px; font-weight:500; width:26mm; text-align:right;}
   .cf-row .pct .vs{color:#B0AEA8; font-weight:400;}
   .cf-row .pct.over{color:var(--accent);}
   .cf-row .pct.under{color:#3F6B57;}
   .cf-donut-wrap{display:flex; flex-direction:column; align-items:center; justify-content:center;}
-  .cf-legend{display:grid; grid-template-columns:1fr 1fr; gap:1.2mm 3mm; margin-top:3mm; width:100%;}
-  .cf-legend .li2{display:flex; align-items:center; gap:4px; font-size:7.5px; color:var(--ink2);}
+  .cf-legend{display:grid; grid-template-columns:1fr 1fr; gap:1.5mm 4mm; margin-top:4mm; width:100%;}
+  .cf-legend .li2{display:flex; align-items:center; gap:4px; font-size:8px; color:var(--ink2);}
   .cf-legend .sw2{width:6px; height:6px; border-radius:1px; flex-shrink:0;}
 
   @media print{
