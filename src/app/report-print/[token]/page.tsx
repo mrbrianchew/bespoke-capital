@@ -253,7 +253,7 @@ const PRINT_CSS = `
   .titlerow{display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--ink); padding-bottom:6mm;}
   .client{font-family:'Fraunces',serif; font-size:25px; font-weight:500; font-style:italic; color:var(--ink);}
   .date{font-size:10px; color:var(--ink3);}
-  .seclabel{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin:11mm 0 5mm;}
+  .seclabel{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin:11mm 0 5mm; break-after:avoid;}
   .seclabel:first-of-type{margin-top:0;}
 
   /* ===== bordered KPI cards ===== */
