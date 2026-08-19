@@ -119,7 +119,7 @@ const PRINT_CSS = `
   }
   .page:last-child{break-after:auto;}
 
-  .cover{display:flex; flex-direction:column; height:100%; min-height:257mm;}
+  .cover{display:flex; flex-direction:column; flex:1;}
   .cover-top{display:flex; justify-content:space-between; align-items:flex-start;}
   .cover-eyebrow{font-size:9.5px; letter-spacing:0.18em; text-transform:uppercase; color:var(--ink3);}
   .cover-body{flex:1; display:flex; flex-direction:column; justify-content:center; padding:20mm 0;}
