@@ -766,6 +766,13 @@ async function revokeShare(token: string, clear: () => void) {
 
             const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
             const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p),0)
+            // Dependents skip the full PersonPortfolioCharts block below (no single
+            // age to chart a Coverage Timeline against for a multi-child group), so
+            // surface just the Cash/Non-Cash split as inline text here instead —
+            // Client/Spouse already get this from their KPI card row.
+            const secPremSplit = isDependent
+              ? policies.reduce((s,p)=>{ const sp=_annualPremSplit(p); return {cash:s.cash+sp.cash, medisave:s.medisave+sp.medisave} }, {cash:0, medisave:0})
+              : null
             const personAge = key==='client' ? clientAge : spouseAge
 
             // Category buckets
@@ -811,6 +818,13 @@ async function revokeShare(token: string, clear: () => void) {
                         <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,color:'var(--ink)'}}>{label}</div>
                         {isDependent && <span style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',padding:'2px 7px',border:'1px solid var(--line)'}}>Dependent</span>}
                         {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)',marginLeft:8}}>Annual premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmtPremium(secPrem)}</strong></span>}
+                        {secPremSplit && (secPremSplit.cash>0||secPremSplit.medisave>0) && (
+                          <span style={{fontSize:11,color:'var(--ink3)',fontFamily:'DM Mono,monospace'}}>
+                            {secPremSplit.cash>0&&<>Cash/Credit Card {fmtPremium(secPremSplit.cash)}</>}
+                            {secPremSplit.cash>0&&secPremSplit.medisave>0&&<> · </>}
+                            {secPremSplit.medisave>0&&<>Medisave/Non-Cash {fmtPremium(secPremSplit.medisave)}</>}
+                          </span>
+                        )}
                       </div>
                       <button onClick={()=>openNew(addKey)} className="no-print"
                         style={{padding:'7px 16px',background:isDependent?'#F5FAF6':'var(--ink)',color:isDependent?'#2D6A4F':'white',border:isDependent?'1px solid #7B9E87':'none',cursor:'pointer',fontSize:12}}>
