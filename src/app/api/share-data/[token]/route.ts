@@ -149,7 +149,12 @@ export async function POST(req: Request, { params }: { params: { token: string }
     } else {
       // Portfolio: existing person filter
       const person = share.person
-      if (person && person !== 'all') {
+      if (person === 'dependents') {
+        // 'dependents' is a UI grouping label, not a literal person key —
+        // individual policies are tagged with their specific child_<id> key.
+        // Match any of them, not the literal string 'dependents'.
+        policies = policies.filter((p: any) => typeof p.person === 'string' && p.person.startsWith('child_'))
+      } else if (person && person !== 'all') {
         policies = policies.filter((p: any) => p.person === person)
       }
     }
