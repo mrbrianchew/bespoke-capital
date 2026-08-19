@@ -2,7 +2,8 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import puppeteer from 'puppeteer'
+import puppeteer from 'puppeteer-core'
+import chromium from '@sparticuz/chromium'
 import { signReportPrintToken } from '@/lib/reportPrintToken'
 
 // Runs under the advisor's own session (standard cookie auth, same pattern
@@ -13,11 +14,21 @@ import { signReportPrintToken } from '@/lib/reportPrintToken'
 // navigates to the token-gated /report-print/[token] route and exports it
 // as a PDF. The advisor's browser never talks to Puppeteer directly.
 //
-// Vercel: full `puppeteer` (bundled Chromium) is viable on the 5GB function
-// bundle limit (raised June 30 2026) — see the design discussion this route
-// implements. Generation is slow (Chromium cold start + multi-page render);
-// this needs Vercel Pro's extended function duration, not the Hobby-tier
-// 10s default. maxDuration below requests that explicitly.
+// Uses puppeteer-core + @sparticuz/chromium, NOT the vanilla `puppeteer`
+// package. The vanilla package downloads its own Chromium binary to a local
+// cache directory at `npm install` time, and that binary does not survive
+// Vercel's build → deploy packaging step — the function ships without it and
+// fails at request time with "Could not find Chrome" (confirmed in
+// production on this route's first deploy). @sparticuz/chromium instead
+// ships a serverless-packaged Chromium as an actual npm dependency asset, so
+// it's included in the deployed bundle the same way any other node_modules
+// file is.
+//
+// Locally (npm run dev), @sparticuz/chromium's bundled binary doesn't run on
+// most dev machines (it's built for Amazon Linux/Vercel's runtime) — so in
+// development this falls back to a Chrome install already on the machine.
+// Requires Chrome/Chromium to be installed locally; set
+// PUPPETEER_EXECUTABLE_PATH if it's not in one of the common locations below.
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +39,23 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+const LOCAL_CHROME_PATHS = [
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // macOS
+  '/usr/bin/google-chrome', // Linux
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', // Windows
+]
+
+async function resolveExecutablePath(): Promise<string> {
+  if (process.env.VERCEL) return chromium.executablePath()
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH
+  const fs = await import('fs')
+  const found = LOCAL_CHROME_PATHS.find(p => fs.existsSync(p))
+  if (found) return found
+  // Last resort even locally — same as production, in case a local Chrome
+  // install can't be found automatically.
+  return chromium.executablePath()
+}
 
 export async function POST(req: Request) {
   const cookieStore = cookies()
@@ -58,7 +86,12 @@ export async function POST(req: Request) {
 
   let browser
   try {
-    browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] })
+    const executablePath = await resolveExecutablePath()
+    browser = await puppeteer.launch({
+      executablePath,
+      args: process.env.VERCEL ? chromium.args : ['--no-sandbox', '--disable-setuid-sandbox'],
+      headless: true,
+    })
     const page = await browser.newPage()
     await page.goto(printUrl, { waitUntil: 'networkidle0', timeout: 45_000 })
     const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true })
@@ -72,7 +105,8 @@ export async function POST(req: Request) {
     })
   } catch (err) {
     console.error('PDF export failed:', err)
-    return NextResponse.json({ error: 'pdf_generation_failed' }, { status: 500 })
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: 'pdf_generation_failed', message }, { status: 500 })
   } finally {
     if (browser) await browser.close()
   }
