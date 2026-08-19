@@ -661,6 +661,7 @@ export default async function ReportPrintPage({ params }: { params: { token: str
               A consolidated view of {client.name}{spouseName && <> &amp; {spouseName}</>}&rsquo;s assets, liabilities and annual cashflow as at {wealthSummaryYear}.
             </div>
 
+            <div className="ews-body">
             <div className="ews-nw-box">
               <div className="l">Total Consolidated Net Worth</div>
               <div className="v">{fmt(wealthSummary.netWorth)}</div>
@@ -726,6 +727,7 @@ export default async function ReportPrintPage({ params }: { params: { token: str
                 {fmt(wealthSummary.liquidCash)} in cash &amp; fixed deposits covers this many months of essential household expenses (excludes Lifestyle &amp; Miscellaneous, which would simply pause in an emergency).
               </div>
               <div className="v">{wealthSummary.runwayMonths.toFixed(1)} months</div>
+            </div>
             </div>
 
             <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 3 of 17</span></div>
@@ -852,15 +854,16 @@ const PRINT_CSS = `
 
   /* ===== Executive Wealth Summary ===== */
   .ews-title{font-family:'Fraunces',serif; font-size:22px; font-weight:600; color:var(--ink); margin:0 0 3mm;}
-  .ews-sub{font-size:10.5px; color:var(--ink2); margin-bottom:6mm; line-height:1.5;}
-  .ews-nw-box{border:1.3px solid var(--gold, #B08D57); background:#F8F2E4; border-radius:9px; padding:4.5mm 7mm; margin-bottom:5mm;}
+  .ews-sub{font-size:10.5px; color:var(--ink2); margin-bottom:4mm; line-height:1.5;}
+  .ews-body{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:space-between; margin-bottom:5mm;}
+  .ews-nw-box{border:1.3px solid var(--gold, #B08D57); background:#F8F2E4; border-radius:9px; padding:3.5mm 7mm;}
   .ews-nw-box .l{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:#8A6D3F; margin-bottom:3mm;}
   .ews-nw-box .v{font-family:'Fraunces',serif; font-weight:700; font-size:27px; color:var(--ink);}
-  .ews-nw-box .rule{border-top:1px solid #DDCBA0; margin:4mm 0;}
+  .ews-nw-box .rule{border-top:1px solid #DDCBA0; margin:3mm 0;}
   .ews-nw-box .cap{font-size:10px; font-style:italic; color:#6B5A3A;}
-  .ews-cols{display:grid; grid-template-columns:1fr 1fr; gap:9mm; margin-bottom:5mm;}
+  .ews-cols{display:grid; grid-template-columns:1fr 1fr; gap:9mm;}
   .ews-h{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:3mm;}
-  .ews-row{display:flex; justify-content:space-between; align-items:baseline; padding:1.3mm 0; border-bottom:1px solid var(--line);}
+  .ews-row{display:flex; justify-content:space-between; align-items:baseline; padding:1mm 0; border-bottom:1px solid var(--line);}
   .ews-row .lbl{font-size:10px; color:var(--ink); line-height:1.3;}
   .ews-row .lbl .sub{display:block; font-size:8px; font-style:italic; color:var(--ink3); margin-top:0.5mm;}
   .ews-row .amt{font-size:10px; color:var(--ink); white-space:nowrap; padding-left:4mm;}
@@ -868,8 +871,8 @@ const PRINT_CSS = `
   .ews-row.total .lbl, .ews-row.total .amt{font-weight:700; color:#8A6D3F; font-size:10.5px;}
   .ews-row.total-plain{border-bottom:none; border-top:1.3px solid var(--ink); padding-top:3mm; margin-top:1mm;}
   .ews-row.total-plain .lbl, .ews-row.total-plain .amt{font-weight:700; color:var(--ink); font-size:10.5px;}
-  .ews-block-gap{margin-top:5mm;}
-  .ews-surplus-box{background:#1A1A18; border-radius:9px; padding:4mm 6mm; margin-top:4mm; text-align:center;}
+  .ews-block-gap{margin-top:4mm;}
+  .ews-surplus-box{background:#1A1A18; border-radius:9px; padding:3mm 6mm; margin-top:3mm; text-align:center;}
   .ews-surplus-box .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:#B0AEA8;}
   .ews-surplus-box .v{font-family:'Fraunces',serif; font-weight:700; font-size:20px; color:#D9B475; margin-top:2mm;}
   .ews-ratios{display:grid; grid-template-columns:1fr 1fr 1fr; gap:5mm; margin-bottom:5mm;}
@@ -889,7 +892,7 @@ const PRINT_CSS = `
   .ews-ratio.concern .v, .ews-ratio.concern .icon{color:var(--accent);}
   .ews-ratio .l{font-size:8.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink3); margin-top:3mm; display:block;}
   .ews-ratio .l .sub2{display:block; font-size:8px; letter-spacing:normal; text-transform:none; font-style:italic; color:var(--ink3); margin-top:0.5mm;}
-  .ews-runway{background:#EAF2ED; border-radius:9px; padding:4.5mm 6mm; margin-bottom:6mm; display:flex; justify-content:space-between; align-items:center; gap:6mm;}
+  .ews-runway{background:#EAF2ED; border-radius:9px; padding:3.5mm 6mm; display:flex; justify-content:space-between; align-items:center; gap:6mm;}
   .ews-runway .txt{font-size:9.5px; color:#3F6B57; line-height:1.5;}
   .ews-runway .txt .l{font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:#3F6B57; font-weight:600; margin-bottom:2mm;}
   .ews-runway .v{font-family:'Fraunces',serif; font-weight:700; font-size:20px; color:#2E5442; white-space:nowrap;}
