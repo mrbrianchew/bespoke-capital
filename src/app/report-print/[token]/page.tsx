@@ -135,65 +135,71 @@ export default async function ReportPrintPage({ params }: { params: { token: str
               </div>
             </div>
 
-            <div className="card-kpi-row">
-              <div className="card-kpi"><div className="l">Net Worth</div><div className="v">{fmt(overview.netWorth)}</div><div className="s">Liquid &amp; equity</div></div>
-              <div className="card-kpi"><div className="l">Annual Inflow</div><div className="v">{fmt(overview.annualInflow)}</div><div className="s">Gross income</div></div>
-              <div className="card-kpi"><div className="l">Annual Surplus</div><div className="v">{fmt(overview.annualSurplus)}</div><div className="s">Take-home minus expenses</div></div>
-            </div>
-
-            <div className="seclabel" style={{ marginTop: 0 }}>Asset Composition &amp; Liabilities</div>
-            <div className="al-card">
-              <div className="al-col">
-                <div className="al-h">Asset Composition</div>
-                {overview.assetBreakdown.map(a => (
-                  <div className="al-row" key={a.label}><span className="lbl">{a.label}</span><span className="amt">{fmt(a.value)}</span></div>
-                ))}
+            <div className="ov-body">
+              <div className="card-kpi-row">
+                <div className="card-kpi"><div className="l">Net Worth</div><div className="v">{fmt(overview.netWorth)}</div><div className="s">Liquid &amp; equity</div></div>
+                <div className="card-kpi"><div className="l">Annual Inflow</div><div className="v">{fmt(overview.annualInflow)}</div><div className="s">Gross income</div></div>
+                <div className="card-kpi"><div className="l">Annual Surplus</div><div className="v">{fmt(overview.annualSurplus)}</div><div className="s">Take-home minus expenses</div></div>
               </div>
-              <div className="al-col">
-                <div className="al-h">Liabilities</div>
-                {overview.liabilities.map(l => (
-                  <div className="al-row" key={l.label}><span className="lbl">{l.label}</span><span className="amt">{fmt(l.value)}</span></div>
-                ))}
-              </div>
-            </div>
-            <div className="nw-bar"><div className="l">Net Worth</div><div className="v">{fmt(overview.netWorth)}</div></div>
 
-            <div className="seclabel" style={{ marginTop: 0 }}>Annual Cashflow</div>
-            <div className="cashflow-wrap">
-              <div className="cf-list">
-                {hasBenchmark
-                  ? overview.expenseBenchmark.map(d => (
-                      <div className="cf-row" key={d.label}>
-                        <span className="lbl">{d.label}</span>
-                        <span className="amt">{fmt(d.actualValue)}</span>
-                        <span className={`pct ${comparisonClass(d.label, d.actualPct, d.benchmarkPct)}`}>
-                          {d.actualPct}%<span className="vs"> vs {d.benchmarkPct}%</span>
-                        </span>
-                      </div>
-                    ))
-                  : overview.expenseBreakdown.map(d => (
-                      <div className="cf-row" key={d.label}>
-                        <span className="lbl">{d.label}</span>
-                        <span className="amt">{fmt(d.value)}</span>
-                        <span className="pct">{expenseTotal > 0 ? Math.round((d.value / expenseTotal) * 100) : 0}%</span>
-                      </div>
+              <div>
+                <div className="seclabel" style={{ marginTop: 0 }}>Asset Composition &amp; Liabilities</div>
+                <div className="al-card">
+                  <div className="al-col">
+                    <div className="al-h">Asset Composition</div>
+                    {overview.assetBreakdown.map(a => (
+                      <div className="al-row" key={a.label}><span className="lbl">{a.label}</span><span className="amt">{fmt(a.value)}</span></div>
                     ))}
+                  </div>
+                  <div className="al-col">
+                    <div className="al-h">Liabilities</div>
+                    {overview.liabilities.map(l => (
+                      <div className="al-row" key={l.label}><span className="lbl">{l.label}</span><span className="amt">{fmt(l.value)}</span></div>
+                    ))}
+                  </div>
+                </div>
+                <div className="nw-bar"><div className="l">Net Worth</div><div className="v">{fmt(overview.netWorth)}</div></div>
               </div>
-              <div className="cf-donut-wrap">
-                <svg viewBox="0 0 120 120" width="100" height="100" style={{ display: 'block' }}>
-                  {donutSegments.map((seg, i) => (
-                    <circle key={i} cx="60" cy="60" r="45" fill="none" stroke={seg.color} strokeWidth="18" strokeDasharray={seg.dasharray} strokeDashoffset={seg.dashoffset} transform="rotate(-90 60 60)" />
-                  ))}
-                  <text x="60" y="57" textAnchor="middle" fontFamily="Fraunces, serif" fontWeight="600" fontSize="14" fill="#1A1A18">{fmt(expenseTotal)}</text>
-                  <text x="60" y="68" textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="400" fontSize="5.5" letterSpacing="0.5" fill="#9C9A94">ANNUAL OUTFLOW</text>
-                </svg>
-                <div className="cf-legend">
-                  {overview.expenseBreakdown.map((d, i) => (
-                    <div className="li2" key={d.label}>
-                      <span className="sw2" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
-                      {d.label} {expenseTotal > 0 ? Math.round((d.value / expenseTotal) * 100) : 0}%
+
+              <div>
+                <div className="seclabel" style={{ marginTop: 0 }}>Annual Cashflow</div>
+                <div className="cashflow-wrap">
+                  <div className="cf-list">
+                    {hasBenchmark
+                      ? overview.expenseBenchmark.map(d => (
+                          <div className="cf-row" key={d.label}>
+                            <span className="lbl">{d.label}</span>
+                            <span className="amt">{fmt(d.actualValue)}</span>
+                            <span className={`pct ${comparisonClass(d.label, d.actualPct, d.benchmarkPct)}`}>
+                              {d.actualPct}%<span className="vs"> vs {d.benchmarkPct}%</span>
+                            </span>
+                          </div>
+                        ))
+                      : overview.expenseBreakdown.map(d => (
+                          <div className="cf-row" key={d.label}>
+                            <span className="lbl">{d.label}</span>
+                            <span className="amt">{fmt(d.value)}</span>
+                            <span className="pct">{expenseTotal > 0 ? Math.round((d.value / expenseTotal) * 100) : 0}%</span>
+                          </div>
+                        ))}
+                  </div>
+                  <div className="cf-donut-wrap">
+                    <svg viewBox="0 0 120 120" width="150" height="150" style={{ display: 'block' }}>
+                      {donutSegments.map((seg, i) => (
+                        <circle key={i} cx="60" cy="60" r="45" fill="none" stroke={seg.color} strokeWidth="18" strokeDasharray={seg.dasharray} strokeDashoffset={seg.dashoffset} transform="rotate(-90 60 60)" />
+                      ))}
+                      <text x="60" y="57" textAnchor="middle" fontFamily="Fraunces, serif" fontWeight="600" fontSize="14" fill="#1A1A18">{fmt(expenseTotal)}</text>
+                      <text x="60" y="68" textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="400" fontSize="5.5" letterSpacing="0.5" fill="#9C9A94">ANNUAL OUTFLOW</text>
+                    </svg>
+                    <div className="cf-legend">
+                      {overview.expenseBreakdown.map((d, i) => (
+                        <div className="li2" key={d.label}>
+                          <span className="sw2" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+                          {d.label} {expenseTotal > 0 ? Math.round((d.value / expenseTotal) * 100) : 0}%
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -247,37 +253,51 @@ const PRINT_CSS = `
   .ftr .m .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:2mm;}
   .ftr .m .v{font-size:11.5px; color:var(--ink);}
 
-  /* ===== interior page header (Overview onward) ===== */
-  .tablabel{font-size:9.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--ink3); margin-bottom:5mm;}
-  .hdr{margin-bottom:12mm;}
-  .titlerow{display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--ink); padding-bottom:6mm;}
-  .client{font-family:'Fraunces',serif; font-size:25px; font-weight:500; font-style:italic; color:var(--ink);}
+  /* ===== interior page header (Overview onward) =====
+     Spacing here is deliberately tighter than the fp.html mockup's original
+     values — real client data (up to 7 asset categories, 8-category detailed
+     cashflow) overflowed a single A4 page with the mockup's generous margins. */
+  .tablabel{font-size:9.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--ink3); margin-bottom:4.5mm;}
+  .hdr{margin-bottom:7mm;}
+  .titlerow{display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid var(--ink); padding-bottom:5mm;}
+  .client{font-family:'Fraunces',serif; font-size:24px; font-weight:500; font-style:italic; color:var(--ink);}
   .date{font-size:10px; color:var(--ink3);}
-  .seclabel{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin:11mm 0 5mm; break-after:avoid;}
+  .seclabel{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin:0 0 4mm; break-after:avoid;}
   .seclabel:first-of-type{margin-top:0;}
 
+  /* Fills all remaining space between the header and footer (minus a fixed
+     6mm breathing gap above the footer rule), then distributes any leftover
+     as even gaps BETWEEN the three sections (KPIs / Assets & Liabilities /
+     Cashflow) rather than dumping it all as dead space after the last one —
+     so the page always reaches the footer regardless of how much data a
+     given client has. Verified in a real browser against both a typical
+     client (5 asset rows) and the worst case (7 asset rows + 8 cashflow
+     rows): content always sits exactly 6mm above the footer rule, with
+     ~15mm of margin still to spare before real overflow in the worst case. */
+  .ov-body{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:space-between; margin-bottom:6mm;}
+
   /* ===== bordered KPI cards ===== */
-  .card-kpi-row{display:flex; gap:6mm; margin-bottom:11mm;}
-  .card-kpi{flex:1; border:1px solid var(--line); border-radius:9px; padding:6mm; background:#FBFAF6;}
-  .card-kpi .l{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:4mm;}
-  .card-kpi .v{font-family:'Fraunces',serif; font-weight:600; font-size:23px; color:var(--ink); margin-bottom:2.5mm;}
-  .card-kpi .s{font-size:9.5px; color:var(--ink3);}
+  .card-kpi-row{display:flex; gap:6mm;}
+  .card-kpi{flex:1; border:1px solid var(--line); border-radius:9px; padding:5mm 6mm; background:#FBFAF6;}
+  .card-kpi .l{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:3.5mm;}
+  .card-kpi .v{font-family:'Fraunces',serif; font-weight:600; font-size:22px; color:var(--ink); margin-bottom:2mm;}
+  .card-kpi .s{font-size:9px; color:var(--ink3);}
 
   /* ===== asset composition & liabilities ===== */
-  .al-card{border:1px solid var(--line); border-radius:9px; padding:6mm; margin-bottom:6mm; display:grid; grid-template-columns:1fr 1fr; gap:10mm;}
-  .al-col .al-h{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:4mm;}
-  .al-row{display:flex; justify-content:space-between; align-items:baseline; padding:2.6mm 0; border-bottom:1px dotted var(--line2); font-size:10.5px;}
+  .al-card{border:1px solid var(--line); border-radius:9px; padding:5mm 6mm; margin-bottom:4mm; display:grid; grid-template-columns:1fr 1fr; gap:10mm;}
+  .al-col .al-h{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:3.5mm;}
+  .al-row{display:flex; justify-content:space-between; align-items:baseline; padding:2.2mm 0; border-bottom:1px dotted var(--line2); font-size:10.5px;}
   .al-row:last-child{border-bottom:none;}
   .al-row .lbl{color:var(--ink2); font-style:italic;}
   .al-row .amt{color:var(--ink);}
 
-  .nw-bar{border:1px solid var(--gold, #B08D57); background:#F6F0E4; border-radius:9px; padding:5mm 6mm; margin-bottom:11mm; display:flex; justify-content:space-between; align-items:center;}
+  .nw-bar{border:1px solid var(--gold, #B08D57); background:#F6F0E4; border-radius:9px; padding:4.5mm 6mm; display:flex; justify-content:space-between; align-items:center;}
   .nw-bar .l{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:#8A6D3F;}
-  .nw-bar .v{font-family:'Fraunces',serif; font-weight:600; font-size:22px; color:var(--ink);}
+  .nw-bar .v{font-family:'Fraunces',serif; font-weight:600; font-size:20px; color:var(--ink);}
 
   /* ===== annual cashflow ===== */
-  .cashflow-wrap{display:grid; grid-template-columns:1.15fr 0.85fr; gap:10mm; border:1px solid var(--line); border-radius:9px; padding:6mm; margin-bottom:9mm;}
-  .cf-row{display:flex; align-items:baseline; gap:6px; padding:2.4mm 0; border-bottom:1px solid var(--line);}
+  .cashflow-wrap{display:grid; grid-template-columns:1.15fr 0.85fr; gap:9mm; border:1px solid var(--line); border-radius:9px; padding:5mm 6mm; margin-bottom:0;}
+  .cf-row{display:flex; align-items:baseline; gap:6px; padding:2mm 0; border-bottom:1px solid var(--line);}
   .cf-row:last-child{border-bottom:none;}
   .cf-row .lbl{flex:1; font-size:10px; color:var(--ink2);}
   .cf-row .amt{font-size:9.5px; color:var(--ink3); width:20mm; text-align:right;}
