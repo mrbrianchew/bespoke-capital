@@ -1164,7 +1164,7 @@ async function revokeShare(token: string, clear: () => void) {
             <div style={{padding:'16px',background:'#F5F3EE',border:'1px solid #E0DDD6'}}>
               <div style={{fontSize:10,color:'var(--ink3)',marginBottom:6,letterSpacing:'0.08em',textTransform:'uppercase'}}>Your shareable link</div>
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,color:'var(--ink)',marginBottom:6}}>
-                Portfolio Summary {new Date().getFullYear()} — {clientName}
+                Portfolio Summary {new Date().getFullYear()} — {sharePerson==='spouse'?spouseName:sharePerson==='dependents'?(children.length===1?(children[0]?.name||'Dependent'):'Dependents'):clientName}
               </div>
               <div style={{fontSize:10,color:'var(--ink3)',fontFamily:'DM Mono,monospace',wordBreak:'break-all' as const}}>{shareLink}</div>
             </div>
@@ -1173,13 +1173,14 @@ async function revokeShare(token: string, clear: () => void) {
             </div>
             <button onClick={async()=>{
               const year = new Date().getFullYear()
-              const text = `Portfolio Summary ${year} — ${clientName}\n\n${shareLink}`
+              const label = sharePerson==='spouse'?spouseName:sharePerson==='dependents'?(children.length===1?(children[0]?.name||'Dependent'):'Dependents'):clientName
+              const text = `Portfolio Summary ${year} — ${label}\n\n${shareLink}`
               await navigator.clipboard.writeText(text)
               setShareCopied(true)
               setTimeout(()=>setShareCopied(false),3000)
             }}
               style={{padding:'10px',background:'#1C1A17',color:'#c8a96e',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
-              {shareCopied?'✓ Copied to clipboard!':'Copy "Portfolio Summary ' + new Date().getFullYear() + ' — ' + clientName + '"'}
+              {shareCopied?'✓ Copied to clipboard!':'Copy "Portfolio Summary ' + new Date().getFullYear() + ' — ' + (sharePerson==='spouse'?spouseName:sharePerson==='dependents'?(children.length===1?(children[0]?.name||'Dependent'):'Dependents'):clientName) + '"'}
             </button>
             <div style={{fontSize:11,color:'var(--ink3)',textAlign:'center'}}>
               {shareExpiry==='permanent'?'This link does not expire.':shareExpiry==='7d'?'Expires in 7 days.':'Expires in 30 days.'}
