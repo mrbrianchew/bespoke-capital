@@ -4,6 +4,7 @@ import { verifyReportPrintToken } from '@/lib/reportPrintToken'
 import { buildOverviewSnapshot } from '@/lib/financialPlanSnapshot'
 import { buildExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 import { buildProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline } from '@/lib/protectionSnapshot'
+import { buildCapitalFundSnapshot, CapitalFundSnapshot, CapitalFundObjective } from '@/lib/capitalFundSnapshot'
 
 // Print-only render target for the PDF export pipeline (see
 // /api/report/export-pdf/route.ts, which mints the token and drives
@@ -462,6 +463,327 @@ function ProtectionBreakdownPage({ type, name, profile, pageLabel }: {
   )
 }
 
+// ─── Capital Fund pages (10-12) helpers ────────────────────────────────────
+// Design source: page5-protection-breakdown.html's "OPTION 3 (Brian's mix,
+// fresh data)" pages — the only Capital Fund option NOT flagged by the
+// mockup's own author as having a confirmed Puppeteer overflow bug (Option
+// 2), and the one whose own page labels ("Journey & Goals" / "Funding
+// Strategy") match the handoff brief's description verbatim.
+
+// Static port of CapitalFundDisplay.tsx's chart geometry — uses the richer
+// fullChartSeries (persisted by the live Capital Mandate tool, with real
+// milestone ages) when present, falling back to the simpler target/projection
+// series otherwise. No hover tooltips (PDF, not interactive).
+function renderCapitalJourneySvg(cf: CapitalFundSnapshot) {
+  const W = 900, H = 260, PL = 60, PR = 20, PT = 24, PB = 40
+  const iW = W - PL - PR, iH = H - PT - PB
+
+  let ages: number[]
+  let reqVals: number[]
+  let projVals: number[]
+  let milestonePoints: { age: number; label: string }[]
+  let retirementAge: number
+
+  if (cf.fullChartSeries) {
+    const s = cf.fullChartSeries
+    ages = s.ages
+    reqVals = s.requiredLine
+    projVals = s.projectedLine
+    retirementAge = s.retirementAge
+    milestonePoints = s.milestones.filter(m => m.age !== s.retirementAge).map(m => ({ age: m.age, label: m.label }))
+  } else {
+    ages = cf.chart.target.map(p => p.age)
+    reqVals = cf.chart.target.map(p => p.value)
+    projVals = cf.chart.projection.map(p => p.value)
+    retirementAge = cf.retirementAge
+    milestonePoints = []
+  }
+  if (ages.length === 0) return null
+
+  const minA = ages[0], maxA = ages[ages.length - 1]
+  const aRange = (maxA - minA) || 1
+  const maxV = Math.max(...reqVals, ...projVals, 1) * 1.05
+  const xP = (age: number) => PL + ((age - minA) / aRange) * iW
+  const yP = (v: number) => PT + iH - Math.min(1, v / maxV) * iH
+  const fmtY = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${Math.round(n / 1000)}K` : `$${Math.round(n)}`)
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+
+  const reqPath = ages.map((a, i) => `${i === 0 ? 'M' : 'L'} ${xP(a).toFixed(1)} ${yP(reqVals[i]).toFixed(1)}`).join(' ')
+  const areaPath = `${reqPath} L ${xP(maxA).toFixed(1)} ${PT + iH} L ${xP(minA).toFixed(1)} ${PT + iH} Z`
+  const hasProjection = projVals.some(v => v > 0)
+  const projPath = hasProjection ? ages.map((a, i) => `${i === 0 ? 'M' : 'L'} ${xP(a).toFixed(1)} ${yP(projVals[i]).toFixed(1)}`).join(' ') : ''
+  const retireIdx = ages.indexOf(retirementAge)
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="40mm" style={{ display: 'block', overflow: 'visible' }}>
+      {ticks.map(f => {
+        const y = PT + iH - f * iH
+        return (
+          <g key={f}>
+            <line x1={PL} y1={y} x2={PL + iW} y2={y} stroke="#EDEAE0" strokeWidth="1" />
+            {f > 0 && <text x={PL - 8} y={y + 3.5} fontSize="13" fill="#9C9A94" textAnchor="end">{fmtY(maxV * f)}</text>}
+          </g>
+        )
+      })}
+      <path d={areaPath} fill="#F3ECE0" />
+      {hasProjection && <path d={projPath} stroke="#4A8A86" strokeWidth="2" fill="none" />}
+      <path d={reqPath} stroke="#B08D57" strokeWidth="2.5" fill="none" />
+      {milestonePoints.map((m, i) => {
+        const idx = ages.indexOf(m.age)
+        if (idx < 0) return null
+        const x = xP(m.age), y = yP(reqVals[idx])
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r="5" fill="#FEFEFC" stroke="#3F6B57" strokeWidth="1.5" />
+            <text x={x} y={Math.max(14, y - 10)} fontSize="12" fill="#3F6B57" textAnchor="middle">{m.label}</text>
+          </g>
+        )
+      })}
+      {retireIdx >= 0 && (
+        <g>
+          <circle cx={xP(retirementAge)} cy={yP(reqVals[retireIdx])} r="5" fill="#FEFEFC" stroke="#B08D57" strokeWidth="1.5" />
+          <text x={xP(retirementAge)} y={Math.max(14, yP(reqVals[retireIdx]) - 10)} fontSize="12" fill="#B08D57" textAnchor="middle">Retirement</text>
+        </g>
+      )}
+      <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#D8D5CA" strokeWidth="1" />
+      {ages.filter(a => a % 5 === 0 || a === minA || a === maxA).map(a => (
+        <text key={a} x={xP(a)} y={PT + iH + 20} fontSize="13" fill="#5C5A54" textAnchor="middle">{a}</text>
+      ))}
+    </svg>
+  )
+}
+
+function capitalGoalTag(o: CapitalFundObjective): { label: string; cls: 'gold' | 'emerald' } {
+  if (o.id === 'retirement') return { label: 'Retirement', cls: 'gold' }
+  if (o.id.startsWith('edu_')) return { label: 'Education', cls: 'emerald' }
+  return { label: 'Wealth Goal', cls: 'emerald' }
+}
+
+function CapitalFundJourneyPage({ clientName, spouseName, datePrepared, cf, pageLabel }: {
+  clientName: string
+  spouseName: string | null
+  datePrepared: string
+  cf: CapitalFundSnapshot
+  pageLabel: string
+}) {
+  const objectiveLabels = cf.objectives.map(o => o.id === 'retirement' ? 'the independence you’re building toward' : o.label.replace(/'s Education$/, '’s education'))
+  const ageLabel = cf.isCouple ? `${cf.retirementAge}/${cf.spouseRetirementAge}` : `${cf.retirementAge}`
+  const yearsLabel = cf.isCouple ? `${cf.yearsToRetirement}/${cf.spouseYearsToRetirement}` : `${cf.yearsToRetirement}`
+  const hasProjection = cf.fullChartSeries ? cf.fullChartSeries.projectedLine.some(v => v > 0) : cf.chart.projection.some(p => p.value > 0)
+  const retirementObjective = cf.objectives.find(o => o.id === 'retirement')
+
+  return (
+    <div className="page">
+      <div className="hdr">
+        <div className="tablabel">Financial Planning Report · Capital Fund</div>
+        <div className="titlerow"><div className="client">{clientName}{spouseName && <> &amp; {spouseName}</>}</div><div className="date">{datePrepared}</div></div>
+      </div>
+
+      <div className="cf2-eyebrow">Strategic Wealth Accumulation</div>
+      <div className="cf2-lede">
+        {cf.objectives.length} commitment{cf.objectives.length === 1 ? '' : 's'}, one number that has to work: {joinWithAnd(objectiveLabels)} — all by {ageLabel}.
+      </div>
+
+      <div className="cf2-hero">
+        <div>
+          <div className="l">Targeted Financial Independence (Retirement)</div>
+          <div className="v">{fmt(cf.heroAnnualIncomeTarget)}<span className="u">/ annum</span></div>
+          <div className="d">The income this capital needs to produce at {ageLabel} — {yearsLabel} years from where you&rsquo;re standing today — so retirement is a choice, not a constraint.</div>
+        </div>
+      </div>
+
+      <div className="cf2-section-label">Capital Journey &middot; {clientName}{spouseName && ` & ${spouseName}`}</div>
+      <div className="cf2-chart-legend">
+        <span><span className="sw" style={{ background: '#B08D57' }} />Capital Required</span>
+        {hasProjection && <span><span className="sw" style={{ background: '#4A8A86' }} />Projected Portfolio</span>}
+      </div>
+      {renderCapitalJourneySvg(cf)}
+
+      <div className="cf2-section-label" style={{ marginTop: '4mm' }}>Capital Goals</div>
+      {cf.objectives.length === 0 ? (
+        <div className="cf2-empty">No funding objectives on file yet — add goals in Strategic Objectives or the Capital Mandate tool.</div>
+      ) : (
+        <div className="cf2-goals">
+          {cf.objectives.map(o => {
+            const tag = capitalGoalTag(o)
+            return (
+              <div className="cf2-goal-card" key={o.id}>
+                <div className="cf2-goal-tags"><span className={`cf2-goal-tag ${tag.cls}`}>{tag.label}</span></div>
+                <div className="cf2-goal-name">{o.label}</div>
+                <div className="cf2-goal-meta">{o.purpose}</div>
+                <div className="cf2-goal-mo">{fmtCompact(o.amount)}</div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="cf2-stat-trio">
+        <div><div className="l">Required Corpus at {cf.retirementAge}</div><div className="v" style={{ fontFamily: "'Fraunces',serif", fontSize: '20px' }}>{retirementObjective ? fmtCompact(retirementObjective.amount) : '—'}</div></div>
+        <div><div className="l">Portfolio Status</div><div className="v" style={{ fontFamily: "'Fraunces',serif", fontSize: '20px', color: cf.shortfall > 0 ? 'var(--accent)' : '#3F6B57' }}>{cf.shortfall > 0 ? 'Gap' : 'On Track'}</div></div>
+        <div><div className="l">Retirement Shortfall</div><div className="v" style={{ fontFamily: "'Fraunces',serif", fontSize: '20px', color: cf.shortfall > 0 ? 'var(--accent)' : '#3F6B57' }}>{fmtCompact(cf.shortfall)}</div></div>
+      </div>
+
+      <div className="ftr"><span>Bespoke Capital — Confidential</span><span>{pageLabel}</span></div>
+    </div>
+  )
+}
+
+function CapitalFundStrategyPage({ clientName, spouseName, datePrepared, cf, pageLabel }: {
+  clientName: string
+  spouseName: string | null
+  datePrepared: string
+  cf: CapitalFundSnapshot
+  pageLabel: string
+}) {
+  const identifiableCapacity = cf.capacityAudit.currentInvestmentAnnual + cf.capacityAudit.availableCashflowAnnual
+  const coversShortfall = cf.capacityAudit.capacityBeyondMandate >= 0
+  const maxBar = Math.max(1, cf.capacityAudit.totalRequiredAnnual, cf.capacityAudit.currentInvestmentAnnual, cf.capacityAudit.requiredAnnual)
+
+  return (
+    <div className="page">
+      <div className="hdr">
+        <div className="tablabel">Financial Planning Report · Capital Fund (continued)</div>
+        <div className="titlerow"><div className="client">{clientName}{spouseName && <> &amp; {spouseName}</>}</div><div className="date">{datePrepared}</div></div>
+      </div>
+
+      <div className="cf2-body">
+      <div>
+      <div className="cf2-total-box" style={{ marginTop: 0 }}>
+        <div className="l">Total Capital Fund Required</div>
+        <div className="v">{fmt(cf.totalCapitalRequired)}</div>
+        <div className="s">The sum of every objective above</div>
+      </div>
+
+      <div className="cf2-subdivider"><div className="l" /><div className="lbl">Funding Strategy</div><div className="l" /></div>
+
+      <div className="cf2-section-label" style={{ marginTop: 0 }}>Current Investment Vehicles</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8mm' }}>
+        {cf.vehicles.length === 0 ? (
+          <div className="cf2-empty">No vehicles on file yet — add them in the Capital Mandate tool.</div>
+        ) : (
+          <div style={{ flex: 1 }}>
+            {cf.vehicles.map((v, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--ink2)', padding: '2mm 0', borderBottom: i < cf.vehicles.length - 1 ? '1px dotted var(--line2)' : 'none' }}>
+                <span style={{ color: 'var(--ink)' }}>{v.platform}</span>
+                <span>{v.isRegular ? `${fmt(v.monthlyContribution)}/mo` : 'Lump sum'} &middot; {fmt(v.currentValue)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '8mm', flexShrink: 0 }}>
+          <div><div style={{ fontSize: '8px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: '1mm' }}>Asset Growth</div><div style={{ fontFamily: "'Fraunces',serif", fontWeight: 600, fontSize: '14px', color: 'var(--ink)' }}>{cf.assetGrowthRatePct != null ? `${cf.assetGrowthRatePct.toFixed(1)}%` : '—'}</div></div>
+          <div><div style={{ fontSize: '8px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: '1mm' }}>Expected Returns</div><div style={{ fontFamily: "'Fraunces',serif", fontWeight: 600, fontSize: '14px', color: 'var(--ink)' }}>{cf.expectedReturn.toFixed(1)}%</div></div>
+        </div>
+      </div>
+      </div>
+
+      <div>
+      <div className="cf2-section-label">Liquidity Deployment &amp; Capacity Audit</div>
+      <div style={{ fontSize: '11px', color: 'var(--ink)', marginBottom: '6mm' }}>Evaluating your investment deployment against your current funding commitments.</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10mm', alignItems: 'center' }}>
+        <div>
+          <div className="cf2-capacity-row"><div className="l">Total Requirement<span className="amt">{fmt(cf.capacityAudit.totalRequiredAnnual)}</span></div><div className="s">What it&rsquo;d take annually, starting from zero</div></div>
+          <div className="cf2-capacity-row"><div className="l">Current Investment<span className="amt">{fmt(cf.capacityAudit.currentInvestmentAnnual)}</span></div><div className="s">Actual capital currently working</div></div>
+          <div className="cf2-capacity-row"><div className="l">Shortfall<span className="amt">{fmt(cf.capacityAudit.requiredAnnual)}</span></div><div className="s">Additional amount needed beyond what&rsquo;s invested today</div></div>
+          <div className="cf2-capacity-row"><div className="l">Available Cashflow<span className="amt">{fmt(cf.capacityAudit.availableCashflowAnnual)}</span></div><div className="s">Potential annual surplus capacity</div></div>
+        </div>
+        <div className="cf2-mathbars">
+          <div className="cf2-mb-col">
+            <div className="cf2-mb-bar total" style={{ height: `${Math.max(4, (cf.capacityAudit.totalRequiredAnnual / maxBar) * 100)}%` }}>{fmt(cf.capacityAudit.totalRequiredAnnual)}</div>
+            <div className="cf2-mb-lbl">Total requirement</div>
+          </div>
+          <div className="cf2-mb-op">&minus;</div>
+          <div className="cf2-mb-col">
+            <div className="cf2-mb-bar current" style={{ height: `${Math.max(4, (cf.capacityAudit.currentInvestmentAnnual / maxBar) * 100)}%` }}>{fmt(cf.capacityAudit.currentInvestmentAnnual)}</div>
+            <div className="cf2-mb-lbl">Current investment</div>
+          </div>
+          <div className="cf2-mb-op">=</div>
+          <div className="cf2-mb-col">
+            <div className="cf2-mb-bar short" style={{ height: `${Math.max(4, (cf.capacityAudit.requiredAnnual / maxBar) * 100)}%` }}>{fmt(cf.capacityAudit.requiredAnnual)}</div>
+            <div className="cf2-mb-lbl">Shortfall</div>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <div className="cf2-insight">
+        <div className="txt">
+          <div className="tag">Advisory Insight</div>
+          Of the <b>{fmt(identifiableCapacity)}</b> you could be investing each year, only <b>{cf.capacityAudit.investedShareOfCapacityPct}%</b> — <b>{fmt(cf.capacityAudit.currentInvestmentAnnual)}</b> — actually is. Redirecting the other <b>{fmt(cf.capacityAudit.availableCashflowAnnual)}</b> would {coversShortfall ? 'fully close' : 'close part of'} the <b>{fmt(cf.capacityAudit.requiredAnnual)}</b> shortfall{coversShortfall ? <>, with <b>{fmt(cf.capacityAudit.capacityBeyondMandate)}</b> a year to spare.</> : <>, but <b>{fmt(Math.abs(cf.capacityAudit.capacityBeyondMandate))}</b> a year would still be missing.</>}
+        </div>
+        <div className="num">
+          <div className="v">{coversShortfall ? '+' : '−'}{fmt(Math.abs(cf.capacityAudit.capacityBeyondMandate))}</div>
+          <div className="l">{coversShortfall ? 'Capacity beyond what’s required' : 'Still short, even fully redirected'}</div>
+        </div>
+      </div>
+      </div>
+
+      <div className="ftr"><span>Bespoke Capital — Confidential</span><span>{pageLabel}</span></div>
+    </div>
+  )
+}
+
+function CapitalFundOptimizationPage({ clientName, spouseName, datePrepared, cf, pageLabel }: {
+  clientName: string
+  spouseName: string | null
+  datePrepared: string
+  cf: CapitalFundSnapshot
+  pageLabel: string
+}) {
+  const hasShortfall = !!cf.strategy && cf.shortfall > 0
+
+  return (
+    <div className="page">
+      <div className="hdr">
+        <div className="tablabel">Financial Planning Report · Capital Fund (continued)</div>
+        <div className="titlerow"><div className="client">{clientName}{spouseName && <> &amp; {spouseName}</>}</div><div className="date">{datePrepared}</div></div>
+      </div>
+
+      <div className="cf2-section-label" style={{ marginTop: 0 }}>Strategic Optimization</div>
+      {!hasShortfall ? (
+        <div style={{ fontSize: '11.5px', color: 'var(--ink2)', lineHeight: 1.6 }}>
+          The portfolio is projected to meet this mandate at the current contribution rate — no additional capital injection is required today.
+        </div>
+      ) : (
+        <div className="cf2-optbody">
+          <div>
+            <div style={{ fontSize: '11.5px', color: 'var(--ink)', marginBottom: '2mm' }}>To close the gap, two capital injection strategies are available — individually or blended.</div>
+            <div style={{ margin: '5mm 0' }}>
+              <div style={{ fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: '2mm' }}>Goals &amp; Objectives Shortfall</div>
+              <div style={{ fontFamily: "'Fraunces',serif", fontWeight: 600, fontSize: '22px', color: 'var(--ink)' }}>{fmt(cf.shortfall)}</div>
+            </div>
+          </div>
+          <div className="cf2-strategy-cards">
+            <div className="cf2-strategy-card">
+              <div className="tag gold">Option A &middot; Regular Savings</div>
+              <div className="v">{fmt(cf.strategy!.pureMonthly)}<span className="u">/mo</span></div>
+              <div className="yr">{fmt(cf.strategy!.pureMonthlyAnnual)}/yr</div>
+              <div className="d">The quiet path — raise the monthly contribution, and let time do the rest.</div>
+            </div>
+            <div style={{ fontFamily: "'DM Mono',monospace", fontSize: '10px', color: 'var(--ink3)', whiteSpace: 'nowrap' }}>
+              {Math.round((1 - cf.strategy!.lumpSumFraction) * 100)} &mdash; {Math.round(cf.strategy!.lumpSumFraction * 100)}
+            </div>
+            <div className="cf2-strategy-card">
+              <div className="tag emerald">Option B &middot; Lump Sum</div>
+              <div className="v">{fmt(cf.strategy!.pureLumpSum)}</div>
+              <div className="d" style={{ marginTop: '2mm' }}>The decisive path — one transfer, and the mandate is already met.</div>
+            </div>
+          </div>
+
+          <div className="cf2-closing">
+            <div className="rule" />
+            <p><b>{fmt(cf.strategy!.pureMonthlyAnnual)} a year</b> is the difference between hoping these commitments work out, and knowing they will.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="ftr"><span>Bespoke Capital — Confidential</span><span>{pageLabel}</span></div>
+    </div>
+  )
+}
+
 export default async function ReportPrintPage({ params }: { params: { token: string } }) {
   const payload = verifyReportPrintToken(params.token)
   if (!payload) notFound()
@@ -470,7 +792,7 @@ export default async function ReportPrintPage({ params }: { params: { token: str
     supabaseAdmin.from('clients').select('id, name, dob').eq('id', payload.clientId).maybeSingle(),
     supabaseAdmin.from('family_members').select('id, name, relationship, dob, gender').eq('client_id', payload.clientId),
     supabaseAdmin.from('advisors').select('name').eq('id', payload.advisorId).maybeSingle(),
-    supabaseAdmin.from('fact_finding').select('section, data').eq('client_id', payload.clientId).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement']),
+    supabaseAdmin.from('fact_finding').select('section, data').eq('client_id', payload.clientId).in('section', ['financials', 'protection_needs', 'protection_portfolio', 'retirement', 'capital_mandate', 'education', 'accumulation']),
   ])
   if (!client) notFound()
 
@@ -528,6 +850,16 @@ export default async function ReportPrintPage({ params }: { params: { token: str
     isCouple,
     clientDob: client.dob || '',
     spouseDob: spouseMember?.dob || '',
+  })
+
+  const capitalFund = buildCapitalFundSnapshot({
+    client: { name: client.name, dob: client.dob || '' },
+    familyMembers: (family || []).map(f => ({ id: f.id, name: f.name, relationship: f.relationship, dob: f.dob || undefined })),
+    fin: financialsData,
+    retData: merged['retirement'] || {},
+    accData: merged['accumulation'] || {},
+    eduData: merged['education'] || {},
+    cmData: merged['capital_mandate'] || {},
   })
 
   return (
@@ -651,7 +983,7 @@ export default async function ReportPrintPage({ params }: { params: { token: str
               </div>
             </div>
 
-            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 2 of 17</span></div>
+            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 2 of 16</span></div>
           </div>
 
           {/* ============ WEALTH SUMMARY ============ */}
@@ -730,27 +1062,35 @@ export default async function ReportPrintPage({ params }: { params: { token: str
             </div>
             </div>
 
-            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 3 of 17</span></div>
+            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 3 of 16</span></div>
           </div>
 
           {/* ============ PROTECTION (pages 4-9) ============
               Page numbering below assumes the couple case (6 protection
-              pages, matching the brief's 17-page structure) — a single-client
-              report only renders 3 of them (4-6) and the "of 17" denominator
+              pages). True total is 16, not the brief's stated 17 — the
+              approved mockup's own footers ("Page N of 16") account for the
+              Action Plan banner page having been cut, which the brief's
+              prose total didn't reflect. A single-client report only
+              renders 3 protection pages (4-6) and the "of 16" denominator
               would need revisiting for that case, not handled yet. */}
-          <ProtectionOverviewPage name={client.name} profile={protection.client} pageLabel="Page 4 of 17" />
-          <ProtectionBreakdownPage type="dtpd" name={client.name} profile={protection.client} pageLabel="Page 5 of 17" />
-          <ProtectionBreakdownPage type="ci" name={client.name} profile={protection.client} pageLabel="Page 6 of 17" />
+          <ProtectionOverviewPage name={client.name} profile={protection.client} pageLabel="Page 4 of 16" />
+          <ProtectionBreakdownPage type="dtpd" name={client.name} profile={protection.client} pageLabel="Page 5 of 16" />
+          <ProtectionBreakdownPage type="ci" name={client.name} profile={protection.client} pageLabel="Page 6 of 16" />
           {isCouple && protection.spouse && (
             <>
-              <ProtectionOverviewPage name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 7 of 17" />
-              <ProtectionBreakdownPage type="dtpd" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 8 of 17" />
-              <ProtectionBreakdownPage type="ci" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 9 of 17" />
+              <ProtectionOverviewPage name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 7 of 16" />
+              <ProtectionBreakdownPage type="dtpd" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 8 of 16" />
+              <ProtectionBreakdownPage type="ci" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 9 of 16" />
             </>
           )}
 
-          {/* Remaining pages (Capital Fund ×3, Action Plan ×4) land here in
-              subsequent increments, each its own <div className="page"
+          {/* ============ CAPITAL FUND (pages 10-12) ============ */}
+          <CapitalFundJourneyPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 10 of 16" />
+          <CapitalFundStrategyPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 11 of 16" />
+          <CapitalFundOptimizationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 12 of 16" />
+
+          {/* Remaining pages (Action Plan ×4) land here in subsequent
+              increments, each its own <div className="page"
               break-after:page> per the approved mockup. */}
         </div>
       </body>
@@ -996,11 +1336,80 @@ const PRINT_CSS = `
   .cp-insight p{font-family:'Fraunces',serif; font-style:italic; font-size:12px; line-height:1.65; color:var(--ink2); margin:0;}
   .cp-insight p b{color:var(--ink); font-weight:600;}
 
+  /* ===== Capital Fund (pages 10-12, "Option 3") ===== */
+  .cf2-eyebrow{font-size:9.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--ink3); margin-bottom:4mm;}
+  .cf2-lede{font-family:'Fraunces',serif; font-weight:500; font-size:16px; line-height:1.5; color:var(--ink); margin-bottom:9mm;}
+  .cf2-hero{display:flex; gap:6mm; align-items:center; background:var(--gold-tint); border-left:2.5px solid var(--gold); border-radius:6px; padding:6mm 7mm; margin-bottom:9mm;}
+  .cf2-hero .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--gold); margin-bottom:2mm;}
+  .cf2-hero .v{font-family:'Fraunces',serif; font-weight:600; font-size:26px; color:var(--gold);}
+  .cf2-hero .v .u{font-size:11px; color:var(--ink3); font-style:italic; font-weight:400; margin-left:1.5mm;}
+  .cf2-hero .d{font-size:10px; color:var(--ink2); line-height:1.5; margin-top:2mm; max-width:110mm;}
+  .cf2-section-label{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); margin-bottom:4mm;}
+  .cf2-chart-legend{display:flex; gap:6mm; justify-content:flex-end; margin-bottom:2mm; font-size:9px; color:var(--ink3);}
+  .cf2-chart-legend span{display:flex; align-items:center; gap:1.5mm;}
+  .cf2-chart-legend .sw{width:9px; height:2px; display:inline-block;}
+  .cf2-stat-trio{display:flex; margin:6mm 0 3mm; text-align:center;}
+  .cf2-stat-trio div{flex:1; padding-right:6mm;}
+  .cf2-stat-trio .l{font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink3); margin-bottom:2mm;}
+  .cf2-stat-trio .v{font-family:'DM Mono', monospace; font-size:15px; color:var(--ink);}
+  .cf2-goals{display:grid; grid-template-columns:repeat(3,1fr); gap:5mm; margin-bottom:5mm;}
+  .cf2-goal-card{border:1px solid var(--line2); border-radius:8px; padding:5mm 5mm 4mm;}
+  .cf2-goal-tags{display:flex; gap:2mm; margin-bottom:4mm;}
+  .cf2-goal-tag{font-size:7.5px; letter-spacing:0.06em; text-transform:uppercase; padding:0.8mm 2.2mm; border-radius:8px; font-weight:600;}
+  .cf2-goal-tag.gold{background:var(--gold-tint); color:var(--gold);}
+  .cf2-goal-tag.emerald{background:#E8F2ED; color:#3F6B57;}
+  .cf2-goal-name{font-family:'Fraunces',serif; font-size:11.5px; color:var(--ink); line-height:1.35; margin-bottom:1.5mm;}
+  .cf2-goal-meta{font-size:8px; color:var(--ink3); margin-bottom:4mm; line-height:1.4;}
+  .cf2-goal-mo{font-family:'Fraunces',serif; font-weight:600; font-size:16px; color:var(--ink);}
+  .cf2-empty{font-size:10px; color:var(--ink3); font-style:italic;}
+  .cf2-body{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:space-between; margin-bottom:6mm;}
+  .cf2-total-box{background:var(--gold-tint); border-left:2.5px solid var(--gold); border-radius:6px; padding:5mm 6mm;}
+  .cf2-total-box .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--gold); margin-bottom:2mm;}
+  .cf2-total-box .v{font-family:'Fraunces',serif; font-weight:600; font-size:19px; color:var(--gold);}
+  .cf2-total-box .s{font-size:9px; color:var(--ink3); font-style:italic; margin-top:1.5mm;}
+  .cf2-subdivider{display:flex; align-items:center; gap:4mm; margin:0 0 8mm;}
+  .cf2-subdivider .l{flex:1; height:1px; background:var(--line2);}
+  .cf2-subdivider .lbl{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); white-space:nowrap;}
+  .cf2-capacity-row{margin-bottom:3.5mm;}
+  .cf2-capacity-row .l{font-size:10.5px; color:var(--ink); font-weight:500;}
+  .cf2-capacity-row .l .amt{font-family:'DM Mono',monospace; font-weight:400; margin-left:1.5mm; color:var(--ink2);}
+  .cf2-capacity-row .s{font-size:9px; color:var(--ink3);}
+  .cf2-mathbars{display:flex; gap:5mm; align-items:flex-end; height:28mm; margin-bottom:2mm;}
+  .cf2-mb-col{flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end;}
+  .cf2-mb-bar{width:100%; border-radius:2px 2px 0 0; display:flex; align-items:flex-start; justify-content:center; padding-top:2mm; color:#fff; font-family:'DM Mono',monospace; font-size:8px;}
+  .cf2-mb-bar.total{background:linear-gradient(180deg,#C9A876,var(--gold));}
+  .cf2-mb-bar.current{background:linear-gradient(180deg,#5A574F,var(--ink2));}
+  .cf2-mb-bar.short{background:linear-gradient(180deg,#E08080,var(--accent));}
+  .cf2-mb-lbl{font-size:8px; letter-spacing:0.05em; text-transform:uppercase; color:var(--ink3); margin-top:2mm; text-align:center;}
+  .cf2-mb-op{font-family:'Fraunces',serif; font-size:18px; color:var(--ink3); display:flex; align-items:center; height:28mm; padding-bottom:8mm;}
+  .cf2-insight{display:flex; background:var(--ink); border-radius:6px; overflow:hidden; margin:6mm 0 0;}
+  .cf2-insight .txt{flex:1.5; padding:6mm 7mm; font-size:10.5px; line-height:1.6; color:#EDEAE0;}
+  .cf2-insight .txt b{color:#fff; font-weight:600;}
+  .cf2-insight .txt .tag{font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gold); margin-bottom:2.5mm;}
+  .cf2-insight .num{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-left:1px solid rgba(255,255,255,0.12); padding:5mm;}
+  .cf2-insight .num .v{font-family:'Fraunces',serif; font-weight:600; font-size:19px; color:#7FC49F;}
+  .cf2-insight .num .l{font-size:8px; letter-spacing:0.08em; text-transform:uppercase; color:rgba(237,234,224,0.6); margin-top:1.5mm; text-align:center;}
+  .cf2-strategy-cards{display:flex; align-items:center; gap:5mm; margin-top:4mm;}
+  .cf2-strategy-card{flex:1; border:1px solid var(--line2); border-radius:6px; padding:6mm 6mm 5mm;}
+  .cf2-strategy-card .tag{display:inline-block; font-size:8px; letter-spacing:0.08em; text-transform:uppercase; padding:1mm 3mm; border-radius:8px; margin-bottom:4mm; font-weight:600;}
+  .cf2-strategy-card .tag.gold{background:var(--gold-tint); color:var(--gold);}
+  .cf2-strategy-card .tag.emerald{background:#E8F2ED; color:#3F6B57;}
+  .cf2-strategy-card .v{font-family:'Fraunces',serif; font-weight:600; font-size:20px; color:var(--ink);}
+  .cf2-strategy-card .v .u{font-size:10px; font-weight:500; color:var(--ink3);}
+  .cf2-strategy-card .yr{font-family:'DM Mono',monospace; font-size:9.5px; color:var(--ink3); margin:1mm 0 3mm;}
+  .cf2-strategy-card .d{font-family:'Fraunces',serif; font-style:italic; font-size:9.5px; color:var(--ink3); line-height:1.5;}
+  .cf2-optbody{flex:1; min-height:0; display:flex; flex-direction:column; justify-content:space-between; margin-bottom:6mm;}
+  .cf2-closing{text-align:center; padding:0;}
+  .cf2-closing .rule{width:8mm; height:1px; background:var(--gold); margin:0 auto 4mm;}
+  .cf2-closing p{font-family:'Fraunces',serif; font-style:italic; font-size:13px; line-height:1.6; color:var(--ink2); max-width:130mm; margin:0 auto;}
+  .cf2-closing p b{font-style:normal; font-weight:600; color:var(--gold);}
+
   @media print{
     body{background:none;}
     .page{box-shadow:none;}
     .card-kpi-row, .al-card, .cashflow-wrap{break-inside:avoid;}
     .ews-nw-box, .ews-surplus-box, .ews-ratios, .ews-runway{break-inside:avoid;}
     .po-stats, .cp-cards, .cp-card{break-inside:avoid;}
+    .cf2-hero, .cf2-goal-card, .cf2-total-box, .cf2-strategy-card, .cf2-insight{break-inside:avoid;}
   }
 `
