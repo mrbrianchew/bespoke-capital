@@ -768,11 +768,17 @@ async function revokeShare(token: string, clear: () => void) {
             const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p),0)
             // Dependents skip the full PersonPortfolioCharts block below (no single
             // age to chart a Coverage Timeline against for a multi-child group), so
-            // surface just the Cash/Non-Cash split as inline text here instead —
-            // Client/Spouse already get this from their KPI card row.
-            const secPremSplit = isDependent
-              ? policies.reduce((s,p)=>{ const sp=_annualPremSplit(p); return {cash:s.cash+sp.cash, medisave:s.medisave+sp.medisave} }, {cash:0, medisave:0})
+            // surface the Cash/Medisave/Savings split as inline text here instead —
+            // same split PersonPortfolioCharts computes for Client/Spouse, just
+            // without the age-based charts. Endowment/savings premiums are kept
+            // separate from Cash/Medisave here, same as the KPI cards do.
+            const secProtectionSplit = isDependent
+              ? policies.filter(p=>p.categoryCode!=='endowment')
+                  .reduce((s,p)=>{ const sp=_annualPremSplit(p); return {cash:s.cash+sp.cash, medisave:s.medisave+sp.medisave} }, {cash:0, medisave:0})
               : null
+            const secSavings = isDependent
+              ? policies.filter(p=>p.categoryCode==='endowment').reduce((s,p)=>s+_annualPrem(p),0)
+              : 0
             const personAge = key==='client' ? clientAge : spouseAge
 
             // Category buckets
@@ -817,12 +823,14 @@ async function revokeShare(token: string, clear: () => void) {
                         <div style={{width:3,height:18,background:isDependent?'#7B9E87':'#c8a96e'}}/>
                         <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,color:'var(--ink)'}}>{label}</div>
                         {isDependent && <span style={{fontSize:10,letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--ink3)',padding:'2px 7px',border:'1px solid var(--line)'}}>Dependent</span>}
-                        {secPrem>0 && <span style={{fontSize:12,color:'var(--ink3)',marginLeft:8}}>Annual premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmtPremium(secPrem)}</strong></span>}
-                        {secPremSplit && (secPremSplit.cash>0||secPremSplit.medisave>0) && (
-                          <span style={{fontSize:11,color:'var(--ink3)',fontFamily:'DM Mono,monospace'}}>
-                            {secPremSplit.cash>0&&<>Cash/Credit Card {fmtPremium(secPremSplit.cash)}</>}
-                            {secPremSplit.cash>0&&secPremSplit.medisave>0&&<> · </>}
-                            {secPremSplit.medisave>0&&<>Medisave/Non-Cash {fmtPremium(secPremSplit.medisave)}</>}
+                        {secPrem>0 && !isDependent && <span style={{fontSize:12,color:'var(--ink3)',marginLeft:8}}>Annual premium: <strong style={{fontFamily:'DM Mono,monospace',color:'var(--ink)'}}>{fmtPremium(secPrem)}</strong></span>}
+                        {secProtectionSplit && (secProtectionSplit.cash>0||secProtectionSplit.medisave>0||secSavings>0) && (
+                          <span style={{fontSize:11,color:'var(--ink3)',fontFamily:'DM Mono,monospace',marginLeft:8}}>
+                            {secProtectionSplit.cash>0&&<>Cash/Credit Card {fmtPremium(secProtectionSplit.cash)}</>}
+                            {secProtectionSplit.cash>0&&secProtectionSplit.medisave>0&&<> · </>}
+                            {secProtectionSplit.medisave>0&&<>Medisave/Non-Cash {fmtPremium(secProtectionSplit.medisave)}</>}
+                            {(secProtectionSplit.cash>0||secProtectionSplit.medisave>0)&&secSavings>0&&<> · </>}
+                            {secSavings>0&&<>Annual Savings/Investments {fmtPremium(secSavings)}</>}
                           </span>
                         )}
                       </div>
