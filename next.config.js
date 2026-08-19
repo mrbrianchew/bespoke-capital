@@ -8,8 +8,28 @@ const nextConfig = {
   // directory .../bin does not exist" (confirmed in production). Marking it
   // (and puppeteer-core, which loads it) as an external server package keeps
   // both as plain node_modules requires instead, so the relative path holds.
+  //
+  // Both serverComponentsExternalPackages and outputFileTracingIncludes MUST
+  // stay nested under `experimental` on Next.js 14.2.x — they only became
+  // stable, top-level config keys (serverExternalPackages /
+  // outputFileTracingIncludes) starting in Next.js 15. Putting either at the
+  // top level on 14.2.x silently no-ops instead of erroring, which is why
+  // this took a few tries to get right.
   experimental: {
     serverComponentsExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+
+    // serverComponentsExternalPackages (above) stops webpack from bundling
+    // @sparticuz/chromium's JS, but Vercel's separate output file tracing
+    // step — which decides which files actually get copied into the
+    // deployed function — doesn't detect the package's binary assets
+    // (chromium.br, fonts.tar.br, etc.) because they're extracted at
+    // runtime via fs calls, not require()'d or imported. Without this, the
+    // function deploys without its own Chromium binary. Key is the route's
+    // URL PATH (matched with picomatch per Next's docs), not a file path —
+    // no /route suffix.
+    outputFileTracingIncludes: {
+      '/api/report/export-pdf': ['node_modules/@sparticuz/chromium/bin/**/*'],
+    },
   },
 
   // Strip client-side console.* from production bundles, but keep error/warn
