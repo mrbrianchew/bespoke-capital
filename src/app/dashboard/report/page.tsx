@@ -260,7 +260,7 @@ export default function ReportPage() {
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        throw new Error(body?.error || `Export failed (${res.status})`)
+        throw new Error(body?.message || body?.error || `Export failed (${res.status})`)
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
