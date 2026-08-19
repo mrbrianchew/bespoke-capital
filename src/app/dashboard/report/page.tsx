@@ -53,6 +53,8 @@ export default function ReportPage() {
   const [passwordHint, setPasswordHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
   const [saving, setSaving] = useState(false)
   const [savedLink, setSavedLink] = useState('')
+  const [exportingPdf, setExportingPdf] = useState(false)
+  const [exportPdfError, setExportPdfError] = useState('')
   const [directives, setDirectives] = useState<{ title: string; body: string }[]>([])
   const [activeReportTab, setActiveReportTab] = useClientTabState<string>('report.activeReportTab', 'overview')
   const [pastPlans, setPastPlans] = useState<{ id: string; label: string; created_at: string; share_token: string; status: string | null }[]>([])
@@ -240,6 +242,42 @@ export default function ReportPage() {
     setDirectives(d => d.filter((_, idx) => idx !== i))
   }
 
+  // TEST TRIGGER for the new PDF export pipeline (increment 1: cover page
+  // only — see /api/report/export-pdf and /report-print/[token]). Uses the
+  // browser's own session cookie automatically (same-origin fetch), so no
+  // manual auth wiring needed here. Kept deliberately separate from
+  // handleGenerateAndSave below — that flow saves a shareable client link;
+  // this one is a direct, private download for the logged-in advisor.
+  async function handleExportPdf() {
+    if (!clientId) return
+    setExportingPdf(true)
+    setExportPdfError('')
+    try {
+      const res = await fetch('/api/report/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error || `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `financial-report-${clientName || clientId}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      setExportPdfError(err?.message || 'Export failed — check the browser console and Vercel function logs.')
+    } finally {
+      setExportingPdf(false)
+    }
+  }
+
   async function archivePlan(id: string) {
     await supabase.from('financial_plans').update({ status: 'archived' }).eq('id', id)
     if (clientId) loadPastPlans(clientId)
@@ -327,6 +365,22 @@ export default function ReportPage() {
                 </button>
               </div>
             )}
+
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
+              <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
+                Export PDF <span style={{ fontSize: 12, color: 'var(--ink3)', fontFamily: 'Inter,sans-serif' }}>(test — cover page only for now)</span>
+              </div>
+              <button
+                onClick={handleExportPdf}
+                disabled={exportingPdf || !clientId}
+                style={{ background: 'var(--gold-tag,#8A6C3A)', color: 'white', padding: '10px 20px', borderRadius: 6, border: 'none', fontSize: 14, cursor: 'pointer', opacity: exportingPdf || !clientId ? 0.5 : 1 }}
+              >
+                {exportingPdf ? 'Generating… (may take up to a minute)' : 'Export PDF'}
+              </button>
+              {exportPdfError && (
+                <div style={{ marginTop: 10, fontSize: 12, color: 'var(--rouge)' }}>{exportPdfError}</div>
+              )}
+            </div>
 
             <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
               <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 18, marginBottom: 12 }}>
