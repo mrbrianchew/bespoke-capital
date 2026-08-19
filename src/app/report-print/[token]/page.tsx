@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { notFound } from 'next/navigation'
 import { verifyReportPrintToken } from '@/lib/reportPrintToken'
 import { buildOverviewSnapshot } from '@/lib/financialPlanSnapshot'
+import { buildExecutiveWealthSummarySnapshot } from '@/lib/executiveWealthSummarySnapshot'
 
 // Print-only render target for the PDF export pipeline (see
 // /api/report/export-pdf/route.ts, which mints the token and drives
@@ -15,7 +16,7 @@ import { buildOverviewSnapshot } from '@/lib/financialPlanSnapshot'
 // same pattern /api/statement/[token]/route.ts already uses for its
 // unauthenticated public route.
 //
-// INCREMENT 2: Cover + Overview. Wealth Summary, Protection, Capital Fund,
+// INCREMENT 3: Cover + Overview + Wealth Summary. Protection, Capital Fund,
 // and Action Plan pages are built in the same @media print / break-after:page
 // structure but not wired into this route yet — see the mockup
 // (page5-protection-breakdown.html) for the approved design of each.
@@ -82,6 +83,13 @@ export default async function ReportPrintPage({ params }: { params: { token: str
     return seg
   })
   const hasBenchmark = overview.expenseBenchmark.length > 0
+
+  const wealthSummary = buildExecutiveWealthSummarySnapshot({
+    client: { name: client.name, dob: client.dob || '' },
+    familyMembers: (family || []).map(f => ({ name: f.name, relationship: f.relationship, dob: f.dob || undefined })),
+    fin: financialsData,
+  })
+  const wealthSummaryYear = new Date(wealthSummary.generatedAt).getFullYear()
 
   return (
     <html lang="en">
@@ -207,8 +215,85 @@ export default async function ReportPrintPage({ params }: { params: { token: str
             <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 2 of 17</span></div>
           </div>
 
-          {/* Remaining pages (Wealth Summary, Protection ×6, Capital Fund ×3,
-              Action Plan ×4) land here in subsequent increments, each its own
+          {/* ============ WEALTH SUMMARY ============ */}
+          <div className="page">
+            <div className="ews-title">Executive Wealth Summary</div>
+            <div className="ews-sub">
+              A consolidated view of {client.name}{spouseName && <> &amp; {spouseName}</>}&rsquo;s assets, liabilities and annual cashflow as at {wealthSummaryYear}.
+            </div>
+
+            <div className="ews-nw-box">
+              <div className="l">Total Consolidated Net Worth</div>
+              <div className="v">{fmt(wealthSummary.netWorth)}</div>
+              <div className="rule" />
+              <div className="cap">{wealthSummary.takeaway}</div>
+            </div>
+
+            <div className="ews-cols">
+              <div>
+                <div className="ews-h">Consolidated Assets</div>
+                {wealthSummary.assetBreakdown.map(a => (
+                  <div className="ews-row" key={a.label}>
+                    <span className="lbl">{a.label}{a.sublabel && <span className="sub">{a.sublabel}</span>}</span>
+                    <span className="amt">{fmt(a.value)}</span>
+                  </div>
+                ))}
+                <div className="ews-row total"><span className="lbl">Total Assets</span><span className="amt">{fmt(wealthSummary.totalAssets)}</span></div>
+
+                <div className="ews-h ews-block-gap">Consolidated Liabilities</div>
+                {wealthSummary.liabilities.map(l => (
+                  <div className="ews-row" key={l.label}>
+                    <span className="lbl">{l.label}{l.sublabel && <span className="sub">{l.sublabel}</span>}</span>
+                    <span className="amt">{fmt(l.value)}</span>
+                  </div>
+                ))}
+                <div className="ews-row total-plain"><span className="lbl">Total Liabilities</span><span className="amt">{fmt(wealthSummary.totalLiabilities)}</span></div>
+              </div>
+
+              <div>
+                <div className="ews-h">Annual Household Cashflow</div>
+                {wealthSummary.perPersonInflow.map(p => (
+                  <div className="ews-row" key={p.name}><span className="lbl">{p.name}</span><span className="amt">{fmt(p.takeHome)}</span></div>
+                ))}
+                <div className="ews-row total">
+                  <span className="lbl">Total Inflows<span className="sub" style={{ color: '#8A6D3F', fontStyle: 'italic' }}>Take-home</span></span>
+                  <span className="amt">{fmt(wealthSummary.totalInflow)}</span>
+                </div>
+
+                <div style={{ marginTop: '4mm' }}>
+                  {wealthSummary.expenseBreakdown.map(e => (
+                    <div className="ews-row" key={e.label}><span className="lbl">{e.label}</span><span className="amt">{fmt(e.value)}</span></div>
+                  ))}
+                  <div className="ews-row total-plain"><span className="lbl">Total Outflows</span><span className="amt">{fmt(wealthSummary.totalOutflow)}</span></div>
+                </div>
+
+                <div className="ews-surplus-box">
+                  <div className="l">Annual Deployable Cash Surplus</div>
+                  <div className="v">{fmt(wealthSummary.annualSurplus)}</div>
+                </div>
+
+                <div className="ews-h" style={{ marginTop: '5mm' }}>Key Financial Ratios</div>
+                <div className="ews-ratios ews-ratios-narrow">
+                  <div className={`ews-ratio ${wealthSummary.savingsRateStatus}`}><div className="icon">i</div><div className="v">{wealthSummary.savingsRatePct}%</div><div className="l">Savings Rate</div></div>
+                  <div className={`ews-ratio ${wealthSummary.debtToAssetStatus}`}><div className="icon">i</div><div className="v">{wealthSummary.debtToAssetPct}%</div><div className="l">Debt-to-Asset</div></div>
+                  <div className={`ews-ratio ${wealthSummary.investmentRatioStatus}`}><div className="icon">i</div><div className="v">{wealthSummary.investmentRatioPct}%</div><div className="l">Investment Ratio<span className="sub2">of net worth</span></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="ews-runway">
+              <div className="txt">
+                <div className="l">Emergency Cash Runway</div>
+                {fmt(wealthSummary.liquidCash)} in cash &amp; fixed deposits covers this many months of essential household expenses (excludes Lifestyle &amp; Miscellaneous, which would simply pause in an emergency).
+              </div>
+              <div className="v">{wealthSummary.runwayMonths.toFixed(1)} months</div>
+            </div>
+
+            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 3 of 17</span></div>
+          </div>
+
+          {/* Remaining pages (Protection ×6, Capital Fund ×3, Action Plan ×4)
+              land here in subsequent increments, each its own
               <div className="page" break-after:page> per the approved
               mockup. */}
         </div>
@@ -310,9 +395,54 @@ const PRINT_CSS = `
   .cf-legend .li2{display:flex; align-items:center; gap:4px; font-size:8px; color:var(--ink2);}
   .cf-legend .sw2{width:6px; height:6px; border-radius:1px; flex-shrink:0;}
 
+  /* ===== Executive Wealth Summary ===== */
+  .ews-title{font-family:'Fraunces',serif; font-size:22px; font-weight:600; color:var(--ink); margin:0 0 3mm;}
+  .ews-sub{font-size:10.5px; color:var(--ink2); margin-bottom:6mm; line-height:1.5;}
+  .ews-nw-box{border:1.3px solid var(--gold, #B08D57); background:#F8F2E4; border-radius:9px; padding:4.5mm 7mm; margin-bottom:5mm;}
+  .ews-nw-box .l{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:#8A6D3F; margin-bottom:3mm;}
+  .ews-nw-box .v{font-family:'Fraunces',serif; font-weight:700; font-size:27px; color:var(--ink);}
+  .ews-nw-box .rule{border-top:1px solid #DDCBA0; margin:4mm 0;}
+  .ews-nw-box .cap{font-size:10px; font-style:italic; color:#6B5A3A;}
+  .ews-cols{display:grid; grid-template-columns:1fr 1fr; gap:9mm; margin-bottom:5mm;}
+  .ews-h{font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:3mm;}
+  .ews-row{display:flex; justify-content:space-between; align-items:baseline; padding:1.3mm 0; border-bottom:1px solid var(--line);}
+  .ews-row .lbl{font-size:10px; color:var(--ink); line-height:1.3;}
+  .ews-row .lbl .sub{display:block; font-size:8px; font-style:italic; color:var(--ink3); margin-top:0.5mm;}
+  .ews-row .amt{font-size:10px; color:var(--ink); white-space:nowrap; padding-left:4mm;}
+  .ews-row.total{border-bottom:none; border-top:1.3px solid var(--gold,#B08D57); padding-top:3mm; margin-top:1mm;}
+  .ews-row.total .lbl, .ews-row.total .amt{font-weight:700; color:#8A6D3F; font-size:10.5px;}
+  .ews-row.total-plain{border-bottom:none; border-top:1.3px solid var(--ink); padding-top:3mm; margin-top:1mm;}
+  .ews-row.total-plain .lbl, .ews-row.total-plain .amt{font-weight:700; color:var(--ink); font-size:10.5px;}
+  .ews-block-gap{margin-top:5mm;}
+  .ews-surplus-box{background:#1A1A18; border-radius:9px; padding:4mm 6mm; margin-top:4mm; text-align:center;}
+  .ews-surplus-box .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:#B0AEA8;}
+  .ews-surplus-box .v{font-family:'Fraunces',serif; font-weight:700; font-size:20px; color:#D9B475; margin-top:2mm;}
+  .ews-ratios{display:grid; grid-template-columns:1fr 1fr 1fr; gap:5mm; margin-bottom:5mm;}
+  .ews-ratios-narrow{gap:2.5mm;}
+  .ews-ratios-narrow .ews-ratio{padding:3mm;}
+  .ews-ratios-narrow .ews-ratio .v{font-size:14px;}
+  .ews-ratios-narrow .ews-ratio .l{font-size:7px; margin-top:2mm;}
+  .ews-ratios-narrow .ews-ratio .icon{width:10px; height:10px; font-size:6px; top:2.5mm; right:2.5mm;}
+  .ews-ratio{border-radius:8px; padding:5mm; text-align:left; position:relative; border:1px solid transparent;}
+  .ews-ratio.good{background:#EAF2ED; border-color:#BFDCCB;}
+  .ews-ratio.watch{background:#F8F0DD; border-color:#E7CE95;}
+  .ews-ratio.concern{background:#F7E9E6; border-color:#E5B3AA;}
+  .ews-ratio .icon{position:absolute; top:3.5mm; right:3.5mm; width:12px; height:12px; border-radius:50%; border:1px solid currentColor; font-size:7px; font-family:'Fraunces',serif; font-style:italic; display:flex; align-items:center; justify-content:center; opacity:0.55;}
+  .ews-ratio .v{font-family:'Fraunces',serif; font-weight:700; font-size:19px; display:block;}
+  .ews-ratio.good .v, .ews-ratio.good .icon{color:#3F6B57;}
+  .ews-ratio.watch .v, .ews-ratio.watch .icon{color:#8A6D3F;}
+  .ews-ratio.concern .v, .ews-ratio.concern .icon{color:var(--accent);}
+  .ews-ratio .l{font-size:8.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink3); margin-top:3mm; display:block;}
+  .ews-ratio .l .sub2{display:block; font-size:8px; letter-spacing:normal; text-transform:none; font-style:italic; color:var(--ink3); margin-top:0.5mm;}
+  .ews-runway{background:#EAF2ED; border-radius:9px; padding:4.5mm 6mm; margin-bottom:6mm; display:flex; justify-content:space-between; align-items:center; gap:6mm;}
+  .ews-runway .txt{font-size:9.5px; color:#3F6B57; line-height:1.5;}
+  .ews-runway .txt .l{font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:#3F6B57; font-weight:600; margin-bottom:2mm;}
+  .ews-runway .v{font-family:'Fraunces',serif; font-weight:700; font-size:20px; color:#2E5442; white-space:nowrap;}
+
   @media print{
     body{background:none;}
     .page{box-shadow:none;}
     .card-kpi-row, .al-card, .cashflow-wrap{break-inside:avoid;}
+    .ews-nw-box, .ews-surplus-box, .ews-ratios, .ews-runway{break-inside:avoid;}
   }
 `
