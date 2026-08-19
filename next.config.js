@@ -1,5 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // @sparticuz/chromium ships a Chromium binary at a specific path relative
+  // to its own package folder (node_modules/@sparticuz/chromium/bin). If
+  // Next.js's webpack build bundles that package like ordinary application
+  // code, it gets relocated into the .next server output and can no longer
+  // find its own binary at runtime — the export-pdf route fails with "input
+  // directory .../bin does not exist" (confirmed in production). Marking it
+  // (and puppeteer-core, which loads it) as an external server package keeps
+  // both as plain node_modules requires instead, so the relative path holds.
+  experimental: {
+    serverComponentsExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+  },
+
   // Strip client-side console.* from production bundles, but keep error/warn
   // so genuine failures still surface. This removes the debug console.log
   // statements that were dumping client financial data / PII to the browser
