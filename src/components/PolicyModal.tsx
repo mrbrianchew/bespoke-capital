@@ -301,7 +301,7 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
   const g4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4, 1fr)',gap:14,alignItems:'flex-end'}
 
   const medPayModes   = ['Cash', 'Giro', 'Credit Card', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
-  const ltcPayModes   = ['Cash', 'Medisave', 'MS + Cash', 'MS + CC'];
+  const ltcPayModes   = ['Cash', 'Medisave', 'MS + Cash', 'MS + Giro', 'MS + CC'];
   const endowPayModes = ['Cash', 'Giro', 'Credit Card', 'CPF OA', 'CPF SA', 'CPF SRS'];
   const currentPayModes = isMedical ? medPayModes : (isLTC ? ltcPayModes : (isEndow ? endowPayModes : PAY_MODES));
 
