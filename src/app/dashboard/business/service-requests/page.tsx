@@ -54,6 +54,7 @@ interface PolicyLite {
   person: string
   premiumCash: number
   premiumMedisave: number
+  inceptionDate: string
 }
 
 // ── Premium Alerts (message templates + related lookups) ──────────────────
@@ -104,15 +105,15 @@ const PREMIUM_MSG_VARIABLES: Record<PremiumType, { key: string; label: string }[
     { key: 'plan_name', label: 'Plan Name' },
     { key: 'policy_no', label: 'Policy No.' },
     { key: 'premium_due', label: 'Premium Due' },
-    { key: 'premium_amount', label: 'Premium Amount' },
-    { key: 'next_giro_deduction', label: 'Next Giro Deduction' },
+    { key: 'premium_medisave', label: 'Premium — Medisave' },
+    { key: 'premium_cash', label: 'Premium — Cash/Giro/Credit Card' },
     { key: 'adhoc_payment_note', label: 'Adhoc Payment' },
     { key: 'advisor_name', label: 'Advisor' },
   ],
 }
 const PREMIUM_FALLBACK_TEMPLATES: Record<PremiumType, string> = {
   'Insurance Premium Reminder': `Hi {{client_name}},\n\nFriendly reminder of your premium payment:\n*Company:* {{company}}\n*Life Assured:* {{life_assured}}\n*Plan Name:* {{plan_name}}\n*Policy No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\n*Premium required in SGD:*\n*Cash:* {{premium_cash}}\n*Medisave:* {{premium_medisave}}\n*Payment Method:* {{payment_method}}\n\nPlease kindly make payment soon to avoid lapsation. Payment can be made via {{manual_method}}.\n\nPlease kindly take a screenshot and update me once payment has been made. Thank you 😊\n\n— {{advisor_name}}`,
-  'Investment Premium Reminder': `Hi {{client_name}},\n\nHope this message finds you well! 😊\n\nThis is a friendly reminder regarding your investment deduction:\n*Company:* {{company}}\n*Plan Name:* {{plan_name}}\n*Policy/Account No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\nPlease kindly ensure sufficient funds before {{next_giro_deduction}}, or make an ad-hoc payment via {{adhoc_payment_note}}.\n\nThank you!\n\n— {{advisor_name}}`,
+  'Investment Premium Reminder': `Hi {{client_name}},\n\nHope this message finds you well! 😊\n\nThis is a friendly reminder regarding your investment premium:\n*Company:* {{company}}\n*Plan Name:* {{plan_name}}\n*Policy/Account No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\n*Premium required in SGD:*\n*Medisave:* {{premium_medisave}}\n*Cash/Giro/Credit Card:* {{premium_cash}}\n\nYou can also make an ad-hoc payment via {{adhoc_payment_note}}.\n\nThank you!\n\n— {{advisor_name}}`,
 }
 function money(n: number): string {
   if (!n) return '$0.00'
@@ -123,6 +124,15 @@ function fmtDateSG(iso: string | null | undefined): string {
   const d = new Date(iso + 'T00:00:00')
   if (isNaN(d.getTime())) return iso
   return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+// Premium Due Date default: take the dd/mm off the policy's inception date
+// (the renewal anniversary), but always use the current year — the advisor
+// can still override the whole date if a specific due date differs.
+function defaultPremiumDueDate(policy: PolicyLite | null): string {
+  if (!policy?.inceptionDate) return ''
+  const m = /^\d{4}-(\d{2})-(\d{2})/.exec(policy.inceptionDate)
+  if (!m) return ''
+  return `${new Date().getFullYear()}-${m[1]}-${m[2]}`
 }
 function substituteMsgVars(body: string, vars: Record<string, string>): string {
   return body.replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : m))
@@ -511,7 +521,7 @@ export default function BusinessServiceRequestsPage() {
         if (cancelled) return
         const list: PolicyLite[] = (data?.data?.risk_management?.policies || []).map((p: any) => ({
           id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
-          premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0,
+          premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0, inceptionDate: p.inceptionDate || '',
         }))
         setPoliciesByClient(prev => ({ ...prev, [clientId]: list }))
       })
@@ -899,8 +909,8 @@ export default function BusinessServiceRequestsPage() {
     }
     return {
       ...base,
-      premium_amount: fv.premium_amount_override || money(editingPolicyFull?.premiumCash || 0),
-      next_giro_deduction: fmtDateSG(fv.next_giro_deduction),
+      premium_cash: fv.premium_cash_override || money(editingPolicyFull?.premiumCash || 0),
+      premium_medisave: fv.premium_medisave_override || money(editingPolicyFull?.premiumMedisave || 0),
       adhoc_payment_note: fv.adhoc_payment_note || '—',
     }
   })() : {}
@@ -1324,173 +1334,7 @@ export default function BusinessServiceRequestsPage() {
                   style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
               )}
 
-              {editingPremiumType ? (
-                <>
-                  <SectionLabel>Who</SectionLabel>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
-                      <FieldLabel>Life Assured</FieldLabel>
-                      <select value={editingRow.field_values?.life_assured_override || editingPolicyFull?.person || 'client'}
-                        onChange={e => setFieldValue(editingRow, 'life_assured_override', e.target.value)}
-                        style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
-                        <option value="client">{clientsById[editingRow.client_id] || 'Client'} (client)</option>
-                        {(familyByClient[editingRow.client_id] || []).map(f => (
-                          <option key={f.id} value={f.id}>{f.name}{f.relationship ? ` (${f.relationship})` : ''}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <FieldLabel>Addressing To (recipient)</FieldLabel>
-                      <select value={addressingTo} onChange={e => setAddressingTo(e.target.value)}
-                        style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
-                        {addressingOptions.map(o => <option key={o.id} value={o.id}>{o.label}{o.phone ? ` — ${o.phone}` : ''}</option>)}
-                      </select>
-                      {addressingTo === 'custom' && (
-                        <input value={customNumber} onChange={e => setCustomNumber(e.target.value)} placeholder="e.g. 91234567 (PA, referral, anyone else)"
-                          style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5, marginTop: 6 }} />
-                      )}
-                    </div>
-                  </div>
-
-                  <SectionLabel>From policy on file</SectionLabel>
-                  {editingPolicyFull ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px', background: 'var(--cream2)', borderRadius: 10, padding: '10px 12px', fontSize: 12.5 }}>
-                      <div><span style={{ color: T.textFaint, fontSize: 10 }}>Company</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.companyName || '—'}</div></div>
-                      <div><span style={{ color: T.textFaint, fontSize: 10 }}>Plan Name</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.productName || '—'}</div></div>
-                      <div><span style={{ color: T.textFaint, fontSize: 10 }}>Policy No.</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.policyNo || '—'}</div></div>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>Select a policy above to auto-fill company / plan / policy no.</div>
-                  )}
-
-                  <SectionLabel>This reminder</SectionLabel>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
-                      <FieldLabel>Premium Due Date</FieldLabel>
-                      <input type="date" defaultValue={editingRow.field_values?.premium_due_date || ''} onBlur={e => setFieldValue(editingRow, 'premium_due_date', e.target.value)}
-                        style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
-                    </div>
-
-                    {editingPremiumType === 'Insurance Premium Reminder' ? (
-                      <>
-                        <div>
-                          <FieldLabel>Payment Method</FieldLabel>
-                          <input defaultValue={editingRow.field_values?.payment_method || ''} onBlur={e => setFieldValue(editingRow, 'payment_method', e.target.value)}
-                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
-                        </div>
-                        <div>
-                          <FieldLabel>Premium — Cash <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
-                          <input defaultValue={editingRow.field_values?.premium_cash_override || (editingPolicyFull ? money(editingPolicyFull.premiumCash) : '')}
-                            onBlur={e => setFieldValue(editingRow, 'premium_cash_override', e.target.value)}
-                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
-                        </div>
-                        <div>
-                          <FieldLabel>Premium — Medisave <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
-                          <input defaultValue={editingRow.field_values?.premium_medisave_override || (editingPolicyFull ? money(editingPolicyFull.premiumMedisave) : '')}
-                            onBlur={e => setFieldValue(editingRow, 'premium_medisave_override', e.target.value)}
-                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
-                        </div>
-                        <div style={{ gridColumn: '1/-1' }}>
-                          <FieldLabel>Manual Method</FieldLabel>
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <select value={editingRow.field_values?.manual_method || ''} onChange={e => setFieldValue(editingRow, 'manual_method', e.target.value)}
-                              style={{ flex: 1, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
-                              <option value="">Select…</option>
-                              {manualMethods.map(m => <option key={m.id} value={m.label}>{m.label}</option>)}
-                            </select>
-                            <button onClick={() => setShowManageMethods(true)}
-                              style={{ padding: '0 12px', fontSize: 12, fontWeight: 700, border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.textDim, cursor: 'pointer' }}>⚙ Manage</button>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <FieldLabel>Next Giro Deduction</FieldLabel>
-                          <input type="date" defaultValue={editingRow.field_values?.next_giro_deduction || ''} onBlur={e => setFieldValue(editingRow, 'next_giro_deduction', e.target.value)}
-                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
-                        </div>
-                        <div>
-                          <FieldLabel>Premium Amount <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
-                          <input defaultValue={editingRow.field_values?.premium_amount_override || (editingPolicyFull ? money(editingPolicyFull.premiumCash) : '')}
-                            onBlur={e => setFieldValue(editingRow, 'premium_amount_override', e.target.value)}
-                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
-                        </div>
-                        <div style={{ gridColumn: '1/-1' }}>
-                          <FieldLabel>Adhoc Payment</FieldLabel>
-                          <input defaultValue={editingRow.field_values?.adhoc_payment_note || ''} onBlur={e => setFieldValue(editingRow, 'adhoc_payment_note', e.target.value)}
-                            placeholder="e.g. Email Link"
-                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* ── Message composer ── */}
-                  <button onClick={() => setPremiumComposerOpen(o => !o)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderTop: `1px solid ${T.line}`, marginTop: 16, textAlign: 'left' }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text }}>Draft a reminder message</div>
-                    <span style={{ color: T.textFaint, fontSize: 13, transform: premiumComposerOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
-                  </button>
-                  {premiumComposerOpen && (
-                    <div style={{ background: 'var(--cream)', border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, marginTop: 4 }}>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-                        <FieldLabel>Sequence</FieldLabel>
-                        {!addingSequence ? (
-                          <select value={msgSequence} onChange={e => { if (e.target.value === '__add') { setAddingSequence(true) } else { loadSequence(e.target.value); setFieldValue(editingRow, 'sequence', e.target.value) } }}
-                            style={{ width: 260, padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
-                            {sequenceOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                            <option value="__add" style={{ fontWeight: 700, color: T.gold }}>+ Add new sequence…</option>
-                          </select>
-                        ) : (
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <input autoFocus value={newSequenceDraft} onChange={e => setNewSequenceDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') confirmAddSequence(); if (e.key === 'Escape') setAddingSequence(false) }}
-                              placeholder="e.g. Policy Lapsed" style={{ padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 8, fontSize: 12.5 }} />
-                            <button onClick={confirmAddSequence} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 8, border: 'none', background: T.gold, color: 'var(--charcoal)', cursor: 'pointer' }}>Add</button>
-                            <button onClick={() => setAddingSequence(false)} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', cursor: 'pointer' }}>Cancel</button>
-                          </div>
-                        )}
-                        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: msgEdited ? T.gold : T.textFaint }}>
-                          ● {msgEdited ? 'Edited — no longer matches default' : 'Using default template'}
-                        </span>
-                      </div>
-
-                      <FieldLabel>Template (edit freely — variables below insert at cursor)</FieldLabel>
-                      <textarea ref={msgTextareaRef} value={msgBody} onChange={e => { setMsgBody(e.target.value); setMsgEdited(true) }}
-                        style={{ width: '100%', minHeight: 140, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
-
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                        {PREMIUM_MSG_VARIABLES[editingPremiumType].map(v => (
-                          <button key={v.key} onClick={() => insertMsgVariable(v.key)}
-                            style={{ fontSize: 10.5, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(231,188,114,.3)`, padding: '4px 10px', borderRadius: 999, cursor: 'pointer' }}>
-                            + {v.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div style={{ marginTop: 14 }}><FieldLabel>Preview (this is what gets sent)</FieldLabel></div>
-                      <div style={{ whiteSpace: 'pre-wrap', minHeight: 60, lineHeight: 1.5, background: 'var(--cream2)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginTop: 4 }}>{msgPreview}</div>
-
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-                        <button onClick={() => loadSequence(msgSequence)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer' }}>Reset</button>
-                        <button onClick={() => upsertPremiumTemplate(advisor?.id || null)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer' }}>Save as My Default</button>
-                        {advisor?.id === CREATOR_ID && (
-                          <button onClick={() => upsertPremiumTemplate(null)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: '1px solid rgba(138,40,40,.3)', background: T.roseSoft, color: T.rose, cursor: 'pointer' }}>Save as Admin Default</button>
-                        )}
-                        <button onClick={() => copyMsg(false)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer', marginLeft: 'auto' }}>{msgCopied === 'plain' ? 'Copied!' : 'Copy'}</button>
-                        <button onClick={() => copyMsg(true)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--gold)', color: 'var(--charcoal)', cursor: 'pointer' }}>{msgCopied === 'whatsapp' ? 'Copied!' : 'Copy for WhatsApp'}</button>
-                        {premiumWaLink ? (
-                          <a href={premiumWaLink} target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: '#25D366', color: 'white', cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-                            Click to Send WhatsApp →
-                          </a>
-                        ) : (
-                          <span style={{ fontSize: 11, color: T.textFaint, alignSelf: 'center' }}>No phone number for recipient — pick one above or Copy instead.</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : editingFields.length > 0 && (
+              {!editingPremiumType && editingFields.length > 0 && (
                 <>
                   <SectionLabel>Additional details — {editingRow.request_type}</SectionLabel>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1537,6 +1381,168 @@ export default function BusinessServiceRequestsPage() {
                   style={{ padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5, width: 130 }} />
                 <button onClick={addTodo} style={{ padding: '7px 14px', fontSize: 12.5, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Add</button>
               </div>
+
+              {editingPremiumType && (
+                <>
+                  {/* ── Draft a Reminder Message — everything premium-specific
+                      lives inside this one collapsible, below To-dos ── */}
+                  <button onClick={() => setPremiumComposerOpen(o => !o)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderTop: `1px solid ${T.line}`, marginTop: 16, textAlign: 'left' }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text }}>Draft a Reminder Message</div>
+                    <span style={{ color: T.textFaint, fontSize: 13, transform: premiumComposerOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
+                  </button>
+                  {premiumComposerOpen && (
+                    <div style={{ background: 'var(--cream)', border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, marginTop: 4 }}>
+
+                      <SectionLabel>Who</SectionLabel>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Life Assured</FieldLabel>
+                          <select value={editingRow.field_values?.life_assured_override || editingPolicyFull?.person || 'client'}
+                            onChange={e => setFieldValue(editingRow, 'life_assured_override', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
+                            <option value="client">{clientsById[editingRow.client_id] || 'Client'} (client)</option>
+                            {(familyByClient[editingRow.client_id] || []).map(f => (
+                              <option key={f.id} value={f.id}>{f.name}{f.relationship ? ` (${f.relationship})` : ''}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <FieldLabel>Addressing To (recipient)</FieldLabel>
+                          <select value={addressingTo} onChange={e => setAddressingTo(e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
+                            {addressingOptions.map(o => <option key={o.id} value={o.id}>{o.label}{o.phone ? ` — ${o.phone}` : ''}</option>)}
+                          </select>
+                          {addressingTo === 'custom' && (
+                            <input value={customNumber} onChange={e => setCustomNumber(e.target.value)} placeholder="e.g. 91234567 (PA, referral, anyone else)"
+                              style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5, marginTop: 6 }} />
+                          )}
+                        </div>
+                      </div>
+
+                      <SectionLabel>From policy on file</SectionLabel>
+                      {editingPolicyFull ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px', background: 'white', borderRadius: 10, padding: '10px 12px', fontSize: 12.5 }}>
+                          <div><span style={{ color: T.textFaint, fontSize: 10 }}>Company</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.companyName || '—'}</div></div>
+                          <div><span style={{ color: T.textFaint, fontSize: 10 }}>Plan Name</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.productName || '—'}</div></div>
+                          <div><span style={{ color: T.textFaint, fontSize: 10 }}>Policy No.</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.policyNo || '—'}</div></div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>Select a policy above to auto-fill company / plan / policy no.</div>
+                      )}
+
+                      <SectionLabel>This reminder</SectionLabel>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <FieldLabel>Premium Due Date <span style={{ fontWeight: 400, color: T.textFaint }}>(dd/mm from policy, year defaults to this year — editable)</span></FieldLabel>
+                          <input type="date"
+                            defaultValue={editingRow.field_values?.premium_due_date || defaultPremiumDueDate(editingPolicyFull)}
+                            onBlur={e => setFieldValue(editingRow, 'premium_due_date', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+                        </div>
+
+                        {editingPremiumType === 'Insurance Premium Reminder' && (
+                          <div>
+                            <FieldLabel>Payment Method</FieldLabel>
+                            <input defaultValue={editingRow.field_values?.payment_method || ''} onBlur={e => setFieldValue(editingRow, 'payment_method', e.target.value)}
+                              style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+                          </div>
+                        )}
+
+                        <div>
+                          <FieldLabel>Premium — Medisave <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
+                          <input defaultValue={editingRow.field_values?.premium_medisave_override || (editingPolicyFull ? money(editingPolicyFull.premiumMedisave) : '')}
+                            onBlur={e => setFieldValue(editingRow, 'premium_medisave_override', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+                        </div>
+                        <div>
+                          <FieldLabel>Premium — Cash / Giro / Credit Card <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
+                          <input defaultValue={editingRow.field_values?.premium_cash_override || (editingPolicyFull ? money(editingPolicyFull.premiumCash) : '')}
+                            onBlur={e => setFieldValue(editingRow, 'premium_cash_override', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+                        </div>
+
+                        {editingPremiumType === 'Insurance Premium Reminder' ? (
+                          <div style={{ gridColumn: '1/-1' }}>
+                            <FieldLabel>Manual Method</FieldLabel>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <select value={editingRow.field_values?.manual_method || ''} onChange={e => setFieldValue(editingRow, 'manual_method', e.target.value)}
+                                style={{ flex: 1, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
+                                <option value="">Select…</option>
+                                {manualMethods.map(m => <option key={m.id} value={m.label}>{m.label}</option>)}
+                              </select>
+                              <button onClick={() => setShowManageMethods(true)}
+                                style={{ padding: '0 12px', fontSize: 12, fontWeight: 700, border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.textDim, cursor: 'pointer' }}>⚙ Manage</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ gridColumn: '1/-1' }}>
+                            <FieldLabel>Adhoc Payment</FieldLabel>
+                            <input defaultValue={editingRow.field_values?.adhoc_payment_note || ''} onBlur={e => setFieldValue(editingRow, 'adhoc_payment_note', e.target.value)}
+                              placeholder="e.g. Email Link"
+                              style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ── Message composer ── */}
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 18, marginBottom: 10 }}>
+                        <FieldLabel>Sequence</FieldLabel>
+                        {!addingSequence ? (
+                          <select value={msgSequence} onChange={e => { if (e.target.value === '__add') { setAddingSequence(true) } else { loadSequence(e.target.value); setFieldValue(editingRow, 'sequence', e.target.value) } }}
+                            style={{ width: 260, padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
+                            {sequenceOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            <option value="__add" style={{ fontWeight: 700, color: T.gold }}>+ Add new sequence…</option>
+                          </select>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input autoFocus value={newSequenceDraft} onChange={e => setNewSequenceDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') confirmAddSequence(); if (e.key === 'Escape') setAddingSequence(false) }}
+                              placeholder="e.g. Policy Lapsed" style={{ padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 8, fontSize: 12.5 }} />
+                            <button onClick={confirmAddSequence} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 8, border: 'none', background: T.gold, color: 'var(--charcoal)', cursor: 'pointer' }}>Add</button>
+                            <button onClick={() => setAddingSequence(false)} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', cursor: 'pointer' }}>Cancel</button>
+                          </div>
+                        )}
+                        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: msgEdited ? T.gold : T.textFaint }}>
+                          ● {msgEdited ? 'Edited — no longer matches default' : 'Using default template'}
+                        </span>
+                      </div>
+
+                      <FieldLabel>Template (edit freely — variables below insert at cursor)</FieldLabel>
+                      <textarea ref={msgTextareaRef} value={msgBody} onChange={e => { setMsgBody(e.target.value); setMsgEdited(true) }}
+                        style={{ width: '100%', minHeight: 140, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                        {PREMIUM_MSG_VARIABLES[editingPremiumType].map(v => (
+                          <button key={v.key} onClick={() => insertMsgVariable(v.key)}
+                            style={{ fontSize: 10.5, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(231,188,114,.3)`, padding: '4px 10px', borderRadius: 999, cursor: 'pointer' }}>
+                            + {v.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div style={{ marginTop: 14 }}><FieldLabel>Preview (this is what gets sent)</FieldLabel></div>
+                      <div style={{ whiteSpace: 'pre-wrap', minHeight: 60, lineHeight: 1.5, background: 'white', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginTop: 4 }}>{msgPreview}</div>
+
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                        <button onClick={() => loadSequence(msgSequence)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer' }}>Reset</button>
+                        <button onClick={() => upsertPremiumTemplate(advisor?.id || null)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer' }}>Save as My Default</button>
+                        {advisor?.id === CREATOR_ID && (
+                          <button onClick={() => upsertPremiumTemplate(null)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: '1px solid rgba(138,40,40,.3)', background: T.roseSoft, color: T.rose, cursor: 'pointer' }}>Save as Admin Default</button>
+                        )}
+                        <button onClick={() => copyMsg(false)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer', marginLeft: 'auto' }}>{msgCopied === 'plain' ? 'Copied!' : 'Copy'}</button>
+                        <button onClick={() => copyMsg(true)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--gold)', color: 'var(--charcoal)', cursor: 'pointer' }}>{msgCopied === 'whatsapp' ? 'Copied!' : 'Copy for WhatsApp'}</button>
+                        {premiumWaLink ? (
+                          <a href={premiumWaLink} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: '#25D366', color: 'white', cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                            Click to Send WhatsApp →
+                          </a>
+                        ) : (
+                          <span style={{ fontSize: 11, color: T.textFaint, alignSelf: 'center' }}>No phone number for recipient — pick one above or Copy instead.</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
 
               <ModalSection title="Attachments, meetings, activity" defaultOpen={true}>
                 <ServiceRequestExtras serviceRequestId={editingRow.id} clientId={editingRow.client_id} />
