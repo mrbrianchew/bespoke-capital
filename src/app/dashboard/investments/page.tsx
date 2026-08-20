@@ -406,9 +406,11 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
         const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
         while (hd <= he) { holidayMonthsS.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
       })
+      const endContribEventsS = flows.filter(cf => cf.type === 'end_contributions').sort((a, b) => a.date.localeCompare(b.date))
+      const endContribDateS = endContribEventsS.length ? new Date(endContribEventsS[0].date + '-01') : null
       let activeRateS = monthlyNum; let rateIdxS = 0
       const iterS = new Date(startDate)
-      while (iterS <= now) {
+      while (iterS <= now && (!endContribDateS || iterS < endContribDateS)) {
         const ym = iterS.toISOString().slice(0, 7)
         while (rateIdxS < sortedChangesS.length && sortedChangesS[rateIdxS].date <= ym) { activeRateS = sortedChangesS[rateIdxS].amount; rateIdxS++ }
         if (!holidayMonthsS.has(ym)) savedTotalContributed += activeRateS
@@ -421,7 +423,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
           const xf: { amount: number; date: Date }[] = []
           let xRate = monthlyNum; let xIdx = 0
           const xIter = new Date(startDate)
-          while (xIter <= now) {
+          while (xIter <= now && (!endContribDateS || xIter < endContribDateS)) {
             const ym = xIter.toISOString().slice(0, 7)
             while (xIdx < sortedChangesS.length && sortedChangesS[xIdx].date <= ym) { xRate = sortedChangesS[xIdx].amount; xIdx++ }
             if (xRate > 0 && !holidayMonthsS.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
@@ -749,10 +751,12 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                   const hd = new Date(cf.date + '-01'); const he = cf.endDate ? new Date(cf.endDate + '-01') : new Date(cf.date + '-01')
                   while (hd <= he) { holidayMonths.add(hd.toISOString().slice(0, 7)); hd.setMonth(hd.getMonth() + 1) }
                 })
+                const endContribEvents = flows.filter(cf => cf.type === 'end_contributions').sort((a, b) => a.date.localeCompare(b.date))
+                const endContribDate = endContribEvents.length ? new Date(endContribEvents[0].date + '-01') : null
                 if (mode === 'Regular') {
                   let activeRate = monthlyNum; let rateIdx = 0
                   const iter = new Date(startDate)
-                  while (iter <= now) {
+                  while (iter <= now && (!endContribDate || iter < endContribDate)) {
                     const ym = iter.toISOString().slice(0, 7)
                     while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
                     if (!holidayMonths.has(ym)) totalContributed += activeRate
@@ -770,7 +774,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                       const xf: { amount: number; date: Date }[] = []
                       let xRate = monthlyNum; let xIdx = 0
                       const xIter = new Date(startDate)
-                      while (xIter <= now) {
+                      while (xIter <= now && (!endContribDate || xIter < endContribDate)) {
                         const ym = xIter.toISOString().slice(0, 7)
                         while (xIdx < changeEvents.length && changeEvents[xIdx].date <= ym) { xRate = changeEvents[xIdx].amount; xIdx++ }
                         if (xRate > 0 && !holidayMonths.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
