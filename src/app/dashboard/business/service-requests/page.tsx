@@ -52,8 +52,10 @@ interface PolicyLite {
   companyName: string
   productName: string
   person: string
+  policyholder: string
   premiumCash: number
   premiumMedisave: number
+  premiumMode: string
   inceptionDate: string
 }
 
@@ -89,6 +91,7 @@ const PREMIUM_MSG_VARIABLES: Record<PremiumType, { key: string; label: string }[
     { key: 'client_name', label: 'Addressee' },
     { key: 'company', label: 'Company' },
     { key: 'life_assured', label: 'Life Assured' },
+    { key: 'policyowner', label: 'Policyowner' },
     { key: 'plan_name', label: 'Plan Name' },
     { key: 'policy_no', label: 'Policy No.' },
     { key: 'premium_due', label: 'Premium Due' },
@@ -102,6 +105,7 @@ const PREMIUM_MSG_VARIABLES: Record<PremiumType, { key: string; label: string }[
     { key: 'client_name', label: 'Addressee' },
     { key: 'company', label: 'Company' },
     { key: 'life_assured', label: 'Life Assured' },
+    { key: 'policyowner', label: 'Policyowner' },
     { key: 'plan_name', label: 'Plan Name' },
     { key: 'policy_no', label: 'Policy No.' },
     { key: 'premium_due', label: 'Premium Due' },
@@ -112,8 +116,8 @@ const PREMIUM_MSG_VARIABLES: Record<PremiumType, { key: string; label: string }[
   ],
 }
 const PREMIUM_FALLBACK_TEMPLATES: Record<PremiumType, string> = {
-  'Insurance Premium Reminder': `Hi {{client_name}},\n\nFriendly reminder of your premium payment:\n*Company:* {{company}}\n*Life Assured:* {{life_assured}}\n*Plan Name:* {{plan_name}}\n*Policy No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\n*Premium required in SGD:*\n*Cash:* {{premium_cash}}\n*Medisave:* {{premium_medisave}}\n*Payment Method:* {{payment_method}}\n\nPlease kindly make payment soon to avoid lapsation. Payment can be made via {{manual_method}}.\n\nPlease kindly take a screenshot and update me once payment has been made. Thank you 😊\n\n— {{advisor_name}}`,
-  'Investment Premium Reminder': `Hi {{client_name}},\n\nHope this message finds you well! 😊\n\nThis is a friendly reminder regarding your investment premium:\n*Company:* {{company}}\n*Plan Name:* {{plan_name}}\n*Policy/Account No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\n*Premium required in SGD:*\n*Medisave:* {{premium_medisave}}\n*Cash/Giro/Credit Card:* {{premium_cash}}\n\nYou can also make an ad-hoc payment via {{adhoc_payment_note}}.\n\nThank you!\n\n— {{advisor_name}}`,
+  'Insurance Premium Reminder': `Hi {{client_name}},\n\nFriendly reminder of your premium payment:\n*Company:* {{company}}\n*Life Assured:* {{life_assured}}\n*Policyowner:* {{policyowner}}\n*Plan Name:* {{plan_name}}\n*Policy No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\n*Premium required in SGD:*\n*Cash:* {{premium_cash}}\n*Medisave:* {{premium_medisave}}\n*Payment Method:* {{payment_method}}\n\nPlease kindly make payment soon to avoid lapsation. Payment can be made via {{manual_method}}.\n\nPlease kindly take a screenshot and update me once payment has been made. Thank you 😊\n\n— {{advisor_name}}`,
+  'Investment Premium Reminder': `Hi {{client_name}},\n\nHope this message finds you well! 😊\n\nThis is a friendly reminder regarding your investment premium:\n*Company:* {{company}}\n*Policyowner:* {{policyowner}}\n*Plan Name:* {{plan_name}}\n*Policy/Account No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\n*Premium required in SGD:*\n*Medisave:* {{premium_medisave}}\n*Cash/Giro/Credit Card:* {{premium_cash}}\n\nYou can also make an ad-hoc payment via {{adhoc_payment_note}}.\n\nThank you!\n\n— {{advisor_name}}`,
 }
 function money(n: number): string {
   if (!n) return '$0.00'
@@ -484,8 +488,16 @@ export default function BusinessServiceRequestsPage() {
     return typeDefs.find(t => t.label === label)?.fields || []
   }
 
+  // Open Premium Alerts get their own dedicated section above the board
+  // (built below) — showing them again in the generic Requested/In
+  // Progress/Waiting columns just duplicates the same card in two places on
+  // screen, which is what was confusing. Once one is marked Done it drops
+  // out of the Premium Alerts section anyway, so it's let through here —
+  // the Done column is the only place a completed reminder is still
+  // findable.
   const filteredRows = useMemo(() => {
-    return typeFilter === 'all' ? rows : rows.filter(r => r.request_type === typeFilter)
+    const base = typeFilter === 'all' ? rows : rows.filter(r => r.request_type === typeFilter)
+    return base.filter(r => !isPremiumType(r.request_type) || r.status === 'done')
   }, [rows, typeFilter])
 
   const columns = useMemo(() => {
@@ -521,7 +533,8 @@ export default function BusinessServiceRequestsPage() {
         if (cancelled) return
         const list: PolicyLite[] = (data?.data?.risk_management?.policies || []).map((p: any) => ({
           id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
-          premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0, inceptionDate: p.inceptionDate || '',
+          policyholder: p.policyholder || '',
+          premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0, premiumMode: p.premiumMode || '', inceptionDate: p.inceptionDate || '',
         }))
         setPoliciesByClient(prev => ({ ...prev, [clientId]: list }))
       })
@@ -895,7 +908,8 @@ export default function BusinessServiceRequestsPage() {
       life_assured: lifeAssuredKey ? personLabelForKey(editingRow.client_id, lifeAssuredKey) : '—',
       plan_name: editingPolicyFull?.productName || '—',
       policy_no: editingPolicyFull?.policyNo || '—',
-      premium_due: fmtDateSG(fv.premium_due_date),
+      premium_due: fmtDateSG(fv.premium_due_date || defaultPremiumDueDate(editingPolicyFull)),
+      policyowner: editingPolicyFull?.policyholder || '—',
       advisor_name: advisor?.name || '',
     }
     if (editingPremiumType === 'Insurance Premium Reminder') {
@@ -903,7 +917,7 @@ export default function BusinessServiceRequestsPage() {
         ...base,
         premium_cash: fv.premium_cash_override || money(editingPolicyFull?.premiumCash || 0),
         premium_medisave: fv.premium_medisave_override || money(editingPolicyFull?.premiumMedisave || 0),
-        payment_method: fv.payment_method || '—',
+        payment_method: fv.payment_method || editingPolicyFull?.premiumMode || '—',
         manual_method: fv.manual_method || '—',
       }
     }
@@ -1119,10 +1133,12 @@ export default function BusinessServiceRequestsPage() {
         {capError && <div style={{ fontSize: 11.5, color: T.rose, marginTop: 8 }}>{capError}</div>}
       </div>
 
-      {/* ── type filter chips + manage types ── */}
+      {/* ── type filter chips + manage types — Premium Alert types excluded,
+          they live in their own section above and don't need a chip that
+          would otherwise filter the board down to just their Done history ── */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 18, alignItems: 'center' }}>
         <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>All types{openCount > 0 ? ` (${openCount})` : ''}</FilterChip>
-        {typeOptions.map(t => {
+        {typeOptions.filter(t => !isPremiumType(t)).map(t => {
           const openForType = rows.filter(r => r.request_type === t && r.status !== 'done').length
           return (
             <FilterChip key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>{t}{openForType > 0 ? ` (${openForType})` : ''}</FilterChip>
@@ -1425,6 +1441,7 @@ export default function BusinessServiceRequestsPage() {
                           <div><span style={{ color: T.textFaint, fontSize: 10 }}>Company</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.companyName || '—'}</div></div>
                           <div><span style={{ color: T.textFaint, fontSize: 10 }}>Plan Name</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.productName || '—'}</div></div>
                           <div><span style={{ color: T.textFaint, fontSize: 10 }}>Policy No.</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.policyNo || '—'}</div></div>
+                          <div><span style={{ color: T.textFaint, fontSize: 10 }}>Policyowner</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.policyholder || '—'}</div></div>
                         </div>
                       ) : (
                         <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>Select a policy above to auto-fill company / plan / policy no.</div>
@@ -1442,8 +1459,8 @@ export default function BusinessServiceRequestsPage() {
 
                         {editingPremiumType === 'Insurance Premium Reminder' && (
                           <div>
-                            <FieldLabel>Payment Method</FieldLabel>
-                            <input defaultValue={editingRow.field_values?.payment_method || ''} onBlur={e => setFieldValue(editingRow, 'payment_method', e.target.value)}
+                            <FieldLabel>Payment Method <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
+                            <input defaultValue={editingRow.field_values?.payment_method || editingPolicyFull?.premiumMode || ''} onBlur={e => setFieldValue(editingRow, 'payment_method', e.target.value)}
                               style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
                           </div>
                         )}
