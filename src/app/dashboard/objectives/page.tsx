@@ -514,7 +514,16 @@ function getPropertyNetOffset(ff: FactFinding, prefix: 'client' | 'spouse', p?: 
       // property is unencumbered and the full value is realized.
       const target = downsize.targetReplacementCost ?? 0
       const surplus = Math.max(0, value - target)
-      return sum + surplus * pct
+      // Joint Tenancy carries right of survivorship in Singapore — the
+      // surviving joint tenant automatically becomes 100% owner the moment
+      // the other dies, bypassing the estate entirely. So whichever spouse
+      // survives is the one selling the WHOLE property, not their original
+      // ownership share. Tenancy-in-Common / Client Only / Spouse Only do
+      // NOT carry this — the deceased's share goes into their own estate,
+      // subject to the will (or intestacy) and probate, not automatically
+      // to the spouse — so real ownership % remains correct there.
+      const survivorshipPct = prop.ownershipType === 'Joint Tenancy' ? 1 : pct
+      return sum + surplus * survivorshipPct
     }
 
     return sum + netEquity * pct
@@ -4064,6 +4073,8 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
   const downsizeTarget = downsize.targetReplacementCost ?? 0
   const downsizeSurplus = Math.max(0, primaryResidenceValue - downsizeTarget)
   const downsizeShortfall = Math.max(0, downsizeTarget - primaryResidenceValue)
+  const allPrimaryResidencesJointTenancy = primaryResidences.length > 0
+    && primaryResidences.every((prop: any) => prop.ownershipType === 'Joint Tenancy')
 
   // Effective totals respecting per-category toggles
   const effectiveClientDTPD = (liquidEnabled ? clientLiquid : 0) + (cpfEnabled ? clientCPF : 0) + (propertyEnabled ? clientPropEquity : 0)
@@ -4269,6 +4280,10 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
                     an offsetting asset{isCouple ? ` on ${clientName}'s and ${spouseName}'s cards` : ''}. If the target ever
                     exceeds the property's full value, that gap is added as an extra need instead, split the same way using the
                     mortgage cover % already set in the Mortgage &amp; Debt tab.
+                    {isCouple && allPrimaryResidencesJointTenancy && (
+                      <> Held as Joint Tenancy — right of survivorship means whichever of {clientName} or {spouseName} survives
+                      automatically owns the full property, so the full surplus applies to both cards, not split by ownership %.</>
+                    )}
                   </div>
                 </div>
               )}
