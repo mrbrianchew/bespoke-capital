@@ -1753,7 +1753,7 @@ const PRINT_CSS = `
   .cf2-stat-trio div{flex:1; padding-right:6mm;}
   .cf2-stat-trio .l{font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink3); margin-bottom:2mm;}
   .cf2-stat-trio .v{font-family:'DM Mono', monospace; font-size:15px; color:var(--ink);}
-  .cf2-goals{display:grid; grid-template-columns:repeat(3,1fr); gap:5mm; margin-bottom:5mm;}
+  .cf2-goals{display:grid; grid-template-columns:repeat(auto-fit, minmax(52mm, 1fr)); gap:5mm; margin-bottom:5mm;}
   .cf2-goal-card{border:1px solid var(--line2); border-radius:8px; padding:5mm 5mm 4mm;}
   .cf2-goal-tags{display:flex; gap:2mm; margin-bottom:4mm;}
   .cf2-goal-tag{font-size:7.5px; letter-spacing:0.06em; text-transform:uppercase; padding:0.8mm 2.2mm; border-radius:8px; font-weight:600;}
