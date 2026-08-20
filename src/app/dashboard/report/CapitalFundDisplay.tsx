@@ -42,6 +42,72 @@ function objectiveIcon(id: string) {
   return Coins
 }
 
+// ─── Canvas milestone icons ─────────────────────────────────────────────────
+// The Capital Fund chart is drawn on a <canvas> via Chart.js plugins
+// (afterDatasetsDraw/afterDraw below) — lucide-react's icon components are
+// React/SVG and can't be mounted onto a canvas 2D context, so the milestone
+// dots were previously drawn as plain filled circles with no icon at all.
+// These are the same icons' raw path data (copied from lucide-react's
+// 24x24 viewBox source), drawn with Path2D directly against the canvas
+// context instead.
+type LucideNode = ['path', { d: string }] | ['circle', { cx: string; cy: string; r: string }]
+const ICON_PATHS: Record<'graduationCap' | 'palmtree' | 'coins' | 'key', LucideNode[]> = {
+  graduationCap: [
+    ['path', { d: 'M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z' }],
+    ['path', { d: 'M22 10v6' }],
+    ['path', { d: 'M6 12.5V16a6 3 0 0 0 12 0v-3.5' }],
+  ],
+  palmtree: [
+    ['path', { d: 'M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4' }],
+    ['path', { d: 'M13 7.14A5.82 5.82 0 0 1 16.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3' }],
+    ['path', { d: 'M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35' }],
+    ['path', { d: 'M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14' }],
+  ],
+  coins: [
+    ['path', { d: 'M13.744 17.736a6 6 0 1 1-7.48-7.48' }],
+    ['path', { d: 'M15 6h1v4' }],
+    ['path', { d: 'm6.134 14.768.866-.5 2 3.464' }],
+    ['circle', { cx: '16', cy: '8', r: '6' }],
+  ],
+  key: [
+    ['path', { d: 'm15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4' }],
+    ['path', { d: 'm21 2-9.6 9.6' }],
+    ['circle', { cx: '7.5', cy: '15.5', r: '5.5' }],
+  ],
+}
+
+// Milestone data on the chart only carries a free-text label (e.g.
+// "Amanda's Education", "Retirement"), same as the PDF report's Capital
+// Journey chart — infer the icon from the label text for consistency.
+function milestoneIconKey(label: string): keyof typeof ICON_PATHS {
+  const l = label.toLowerCase()
+  if (l.includes('education')) return 'graduationCap'
+  if (l.includes('retirement')) return 'palmtree'
+  if (l.includes('mortgage') || l.includes('debt')) return 'key'
+  return 'coins'
+}
+
+function drawCanvasIcon(ctx: CanvasRenderingContext2D, iconKey: keyof typeof ICON_PATHS, cx: number, cy: number, size: number, color: string) {
+  const nodes = ICON_PATHS[iconKey]
+  ctx.save()
+  ctx.translate(cx - size / 2, cy - size / 2)
+  ctx.scale(size / 24, size / 24)
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  nodes.forEach(([tag, attrs]) => {
+    if (tag === 'path') {
+      ctx.stroke(new Path2D(attrs.d))
+    } else {
+      ctx.beginPath()
+      ctx.arc(parseFloat(attrs.cx), parseFloat(attrs.cy), parseFloat(attrs.r), 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  })
+  ctx.restore()
+}
+
 // Catmull-Rom → cubic Bezier smoothing, same technique used elsewhere in the
 // report for chart lines.
 function smoothPath(pts: [number, number][]): string {
@@ -202,12 +268,14 @@ function CapitalChartFull({ series, inflationRate }: { series: CapitalFundFullSe
             ctx.stroke()
             ctx.setLineDash([])
             ctx.beginPath()
-            ctx.arc(x, dotY, 6, 0, Math.PI * 2)
-            ctx.fillStyle = '#5E8A6A'
+            ctx.arc(x, dotY, 10, 0, Math.PI * 2)
+            ctx.fillStyle = 'white'
             ctx.fill()
-            ctx.strokeStyle = 'white'
-            ctx.lineWidth = 2
+            ctx.strokeStyle = '#5E8A6A'
+            ctx.lineWidth = 1.5
             ctx.stroke()
+            const iconLabel = msArr[0]?.label || ''
+            drawCanvasIcon(ctx, milestoneIconKey(iconLabel), x, dotY, 13, '#5E8A6A')
             ctx.restore()
           })
         },
@@ -235,12 +303,13 @@ function CapitalChartFull({ series, inflationRate }: { series: CapitalFundFullSe
           ctx.stroke()
           ctx.setLineDash([])
           ctx.beginPath()
-          ctx.arc(x, lineY, 6, 0, Math.PI * 2)
-          ctx.fillStyle = '#A8834A'
+          ctx.arc(x, lineY, 10, 0, Math.PI * 2)
+          ctx.fillStyle = 'white'
           ctx.fill()
-          ctx.strokeStyle = 'white'
-          ctx.lineWidth = 2
+          ctx.strokeStyle = '#A8834A'
+          ctx.lineWidth = 1.5
           ctx.stroke()
+          drawCanvasIcon(ctx, 'palmtree', x, lineY, 13, '#A8834A')
           ctx.restore()
         },
       }

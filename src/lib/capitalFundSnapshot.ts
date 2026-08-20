@@ -1,5 +1,6 @@
 import { ageYearOnly, fv } from './calc'
 import { buildOverviewSnapshot } from './financialPlanSnapshot'
+import { sumSelectedExpenses } from './retirementExpenses'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -175,13 +176,33 @@ export function buildCapitalFundSnapshot(input: {
   const spouseRetirementAge = isCouple ? (retSpouseData?.retirementAge || retirementAge) : 0
   const spouseYearsToRetirement = isCouple ? Math.max(0, spouseRetirementAge - spouseAge) : 0
   const inflationRate = retNested?.inflationRate ?? retNested?.assumptions?.inflation ?? retData?.inflation ?? 3
-  const desiredMonthlyIncome = isCouple
-    ? (retExpSel?.combinedDesiredMonthly || retClientData?.desiredMonthlyIncome || 0)
-    : (retClientData?.desiredMonthlyIncome || 0)
-  const desiredAnnualHolidays = isCouple
-    ? (retExpSel?.combinedDesiredHolidays || retClientData?.desiredAnnualHolidays || 0)
-    : (retClientData?.desiredAnnualHolidays || 0)
-  const currentExpenses = fin?.client?.monthlyExpenses || fin?.client?.expenses || 0
+  // The Retirement tab's own "desired monthly income" figure depends on
+  // expenseSelections.mode: 'direct' means the advisor typed a number
+  // (desiredMonthlyIncome / combinedDesiredMonthly); 'expense_based' — the
+  // default — means it's the sum of whichever fact-finding expense
+  // categories are selected (RETIREMENT_EXPENSE_GROUPS), read via the same
+  // detailed/simple key logic RetirementSection.tsx uses. Previously this
+  // only handled 'direct' mode and fell back to a 'monthlyExpenses' field
+  // that doesn't exist in the 'financials' schema, so any expense_based
+  // client (the default for new clients) showed $0/annum here even when
+  // their live Retirement tab and Capital Mandate corpus were correct.
+  const expenseMode: 'simple' | 'detailed' = (fin?.expense_mode as 'simple' | 'detailed') ?? 'simple'
+  const selectedExpenseKeys: Record<string, boolean> = retExpSel?.selectedExpenseKeys || {}
+  const clientExpAnnual = sumSelectedExpenses(fin, selectedExpenseKeys, expenseMode, 'client')
+  const spouseExpAnnual = isCouple ? sumSelectedExpenses(fin, selectedExpenseKeys, expenseMode, 'spouse') : 0
+  const combinedExpAnnual = clientExpAnnual + spouseExpAnnual
+  const isDirectMode = retExpSel?.mode === 'direct'
+  const desiredMonthlyIncome = isDirectMode
+    ? (isCouple ? (retExpSel?.combinedDesiredMonthly || 0) : (retClientData?.desiredMonthlyIncome || 0))
+    : combinedExpAnnual / 12
+  // Holiday budget is only a separate add-on in 'direct' mode — in
+  // 'expense_based' mode holidays are already inside the Lifestyle &
+  // Miscellaneous category (d_holidays), so adding it again here would
+  // double-count it, same as the live Retirement tab's own logic.
+  const desiredAnnualHolidays = isDirectMode
+    ? (isCouple ? (retExpSel?.combinedDesiredHolidays || 0) : (retClientData?.desiredAnnualHolidays || 0))
+    : 0
+  const currentExpenses = combinedExpAnnual / 12
 
   // ── Capital Mandate settings + portfolio (capital_mandate section) ───────
   const settings = cmData?.settings || { expectedReturn: 6, legacyAmount: 0, incomeSource: 'desired' }
