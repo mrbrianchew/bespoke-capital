@@ -4,6 +4,7 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
+import { sumSelectedExpenses } from '@/lib/retirementExpenses'
 import { Chart, registerables } from 'chart.js'
 import MonthInput from '@/components/MonthInput'
 Chart.register(...registerables)
@@ -1162,15 +1163,31 @@ export default function CapitalMandatePage() {
     // For couples, income/holidays are stored in expenseSelections (combined); for individuals, in client object
     const retExpSel = retNested?.expenseSelections || {}
     const isCouplePlan = mode === 'couple'
-    const savedMonthly = isCouplePlan
-      ? (retExpSel?.combinedDesiredMonthly || retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
-      : (retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
-    const savedHolidays = isCouplePlan
-      ? (retExpSel?.combinedDesiredHolidays || retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0)
-      : (retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0)
+    // expenseSelections.mode === 'direct' means the advisor typed a number
+    // directly (desiredMonthlyIncome / combinedDesiredMonthly); the default,
+    // 'expense_based', means it's the sum of selected fact-finding expense
+    // categories — same calculation the Retirement tab and the PDF report
+    // use (src/lib/retirementExpenses.ts), so this tool doesn't silently
+    // read $0 for any client using the default expense-based setup.
+    const isDirectIncomeMode = retExpSel?.mode === 'direct'
+    const expenseMode: 'simple' | 'detailed' = (fin?.expense_mode as 'simple' | 'detailed') ?? 'simple'
+    const selectedExpenseKeys: Record<string, boolean> = retExpSel?.selectedExpenseKeys || {}
+    const clientExpAnnual = sumSelectedExpenses(fin, selectedExpenseKeys, expenseMode, 'client')
+    const spouseExpAnnual = isCouplePlan ? sumSelectedExpenses(fin, selectedExpenseKeys, expenseMode, 'spouse') : 0
+    const combinedExpMonthly = (clientExpAnnual + spouseExpAnnual) / 12
+    const savedMonthly = isDirectIncomeMode
+      ? (isCouplePlan
+          ? (retExpSel?.combinedDesiredMonthly || retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0)
+          : (retClientData?.desiredMonthlyIncome || retRow?.desiredMonthlyIncome || 0))
+      : combinedExpMonthly
+    const savedHolidays = isDirectIncomeMode
+      ? (isCouplePlan
+          ? (retExpSel?.combinedDesiredHolidays || retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0)
+          : (retClientData?.desiredAnnualHolidays || retRow?.desiredAnnualHolidays || 0))
+      : 0 // holidays are already inside the Lifestyle category in expense_based mode — adding them again would double-count
     setDesiredMonthlyIncome(savedMonthly)
     setDesiredAnnualHolidays(savedHolidays)
-    setCurrentExpenses(fin?.client?.monthlyExpenses || fin?.client?.expenses || retRow?.currentExpenses || 0)
+    setCurrentExpenses(combinedExpMonthly)
     const retAssumptions = retNested?.assumptions || retNested || {}
     setPostRetirementReturn(
       retNested?.postReturnRate ||
@@ -1741,7 +1758,21 @@ export default function CapitalMandatePage() {
 
   // Top-level corpus calculation — shared by goal card and breakdown panel
   const retirementBreakdown = useMemo(() => {
-    if (effectiveRetirementIncome <= 0) return null
+    const retGoal = goals.find(g => g.source === 'retirement')
+    const storedCorpusNeeded = retGoal?.targetCorpus || 0
+    // 'desired' income source means this tool is meant to fund the exact
+    // same commitment the Retirement tab already computed — use its corpus
+    // figure directly instead of reverse-deriving an implied monthly income
+    // from it (derivedAnnualWithdrawal) and running that back through a
+    // second, separately-written PV formula below. That round trip
+    // (corpus → derived income → corpus) was producing a different number
+    // than the Retirement tab's own figure for the same commitment, purely
+    // from methodology drift between the two formulas — not a real
+    // difference in what's being funded. 'current expenses' mode
+    // legitimately represents a different scenario (today's spending, not
+    // the retirement target) so it still computes its own PV below.
+    const useStoredCorpus = settings.incomeSource === 'desired' && storedCorpusNeeded > 0
+    if (!useStoredCorpus && effectiveRetirementIncome <= 0) return null
     const yearsToRet = Math.max(0, retirementAge - clientAge)
     const inflFactor = Math.pow(1 + retirementInflation / 100, yearsToRet)
     const inflatedMonthlyIncome = effectiveRetirementIncome * inflFactor
@@ -1755,9 +1786,12 @@ export default function CapitalMandatePage() {
     const rr = postRetirementReturn / 100
     const gg = retirementInflation / 100
     const legacyPV = settings.legacyAmount ? settings.legacyAmount / Math.pow(1 + rr, n) : 0
-    // PV of full growing need (annuity-due, grows at inflation)
+    // PV of full growing need (annuity-due, grows at inflation) —
+    // or the Retirement tab's own corpus figure directly, see useStoredCorpus above.
     let pvFullNeed: number
-    if (Math.abs(rr - gg) < 0.0001) {
+    if (useStoredCorpus) {
+      pvFullNeed = storedCorpusNeeded
+    } else if (Math.abs(rr - gg) < 0.0001) {
       pvFullNeed = annualGapTotal * n * (1 + rr)
     } else {
       const ratio = (1 + gg) / (1 + rr)
@@ -1797,7 +1831,7 @@ export default function CapitalMandatePage() {
     // Net corpus = PV(full need) - PV(fixed streams) + legacy
     const corpusPV = Math.max(legacyPV, pvFullNeed - pvFixedStream + legacyPV)
     return { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus: corpusPV }
-  }, [effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
+  }, [goals, settings.incomeSource, effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
       retirementAge, retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
       postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement])
 
