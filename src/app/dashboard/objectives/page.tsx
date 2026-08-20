@@ -376,27 +376,7 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
 
   if (!propertyEnabled) return liquid + cpf
 
-  // All properties: full property value × mortgage slider pct for this person
-  const properties = (ff.properties ?? []) as any[]
-  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
-  const propertyValue = properties.reduce((sum: number, prop: any) => {
-    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
-    if (mortgageIdx === -1) {
-      const ot = prop.ownershipType ?? ''
-      let pct = 1
-      if (ot === 'Spouse Only') pct = prefix === 'spouse' ? 1 : 0
-      else if (ot === 'Joint Tenancy') pct = 0.5
-      else if (ot === 'Tenancy-in-Common') {
-        const parts = (prop.ownershipSplit ?? '50/50').split('/')
-        pct = prefix === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
-      } else pct = prefix === 'client' ? 1 : 0
-      return sum + val * pct
-    }
-    const pcts = prefix === 'client' ? (p?.mortgageCoverPctsClient ?? []) : (p?.mortgageCoverPctsSpouse ?? [])
-    const pct = (pcts[mortgageIdx] ?? 100) / 100
-    return sum + val * pct
-  }, 0)
+  const propertyValue = getPropertyNetOffset(ff, prefix)
 
   return liquid + cpf + propertyValue
 }
@@ -437,26 +417,7 @@ function getAssetOffsetBreakdown(ff: FactFinding, prefix: 'client' | 'spouse', p
 
   if (!propertyEnabled) return { cash: liquid + cpf, property: 0 }
 
-  const properties = (ff.properties ?? []) as any[]
-  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
-  const propertyValue = properties.reduce((sum: number, prop: any) => {
-    const val = prop.propertyValue ?? prop.purchasePrice ?? 0
-    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
-    if (mortgageIdx === -1) {
-      const ot = prop.ownershipType ?? ''
-      let pct = 1
-      if (ot === 'Spouse Only') pct = prefix === 'spouse' ? 1 : 0
-      else if (ot === 'Joint Tenancy') pct = 0.5
-      else if (ot === 'Tenancy-in-Common') {
-        const parts = (prop.ownershipSplit ?? '50/50').split('/')
-        pct = prefix === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
-      } else pct = prefix === 'client' ? 1 : 0
-      return sum + val * pct
-    }
-    const pcts = prefix === 'client' ? (p?.mortgageCoverPctsClient ?? []) : (p?.mortgageCoverPctsSpouse ?? [])
-    const pct = (pcts[mortgageIdx] ?? 100) / 100
-    return sum + val * pct
-  }, 0)
+  const propertyValue = getPropertyNetOffset(ff, prefix)
 
   return { cash: liquid + cpf, property: propertyValue }
 }
@@ -476,6 +437,58 @@ function calcAmortizedBalance(initialLoan: number, annualRate: number, tenureYea
   const pmt = initialLoan * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
   return Math.max(0, Math.round(initialLoan * Math.pow(1 + r, monthsElapsed) - pmt * (Math.pow(1 + r, monthsElapsed) - 1) / r))
 }
+// Real ownership % attributed to `prefix` for a property. Mirrors
+// getClientSharePct() in financials/page.tsx: ownershipType (Client/Spouse
+// Only) takes priority, then the current ownershipSplitPct field, then the
+// legacy free-text ownershipSplit string, then legacy attributedOwner,
+// defaulting to 50/50. Deliberately duplicated locally rather than imported
+// cross-page — same pattern already used for getAssetOffsetBreakdown above.
+// This is NOT the mortgageCoverPcts field — that represents how much of the
+// mortgage-clearance NEED the client wants funded, a separate concept from
+// who actually owns the property.
+function getRealOwnershipPct(prop: any, prefix: 'client' | 'spouse'): number {
+  let clientPct = 50
+  if (prop.ownershipType === 'Client Only') clientPct = 100
+  else if (prop.ownershipType === 'Spouse Only') clientPct = 0
+  else if (typeof prop.ownershipSplitPct === 'number') clientPct = prop.ownershipSplitPct
+  else if (prop.ownershipSplit) {
+    const parts = String(prop.ownershipSplit).split('/').map((s: string) => parseFloat(s.trim()))
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && (parts[0] + parts[1]) > 0) {
+      clientPct = Math.round((parts[0] / (parts[0] + parts[1])) * 100)
+    }
+  } else if (prop.attributedOwner === 'Client') clientPct = 100
+  else if (prop.attributedOwner === 'Spouse') clientPct = 0
+  return (prefix === 'client' ? clientPct : (100 - clientPct)) / 100
+}
+
+// Net-equity property offset for D/TPD and CI asset-offset purposes.
+// - Excludes the primary residence entirely (isPrimaryResidence: true) — it
+//   secures the family's shelter, not available capital, and the mortgage
+//   -clearance need already assumes it's kept, not sold.
+// - Uses NET equity (value minus outstanding loan, amortized) for every
+//   other property, not gross value — the outstanding loan is repaid from
+//   sale proceeds before the family sees any cash.
+// - Uses real ownership % (see getRealOwnershipPct), not mortgageCoverPcts.
+function getPropertyNetOffset(ff: FactFinding, prefix: 'client' | 'spouse'): number {
+  const properties = (ff.properties ?? []) as any[]
+  return properties.reduce((sum: number, prop: any) => {
+    if (prop.isPrimaryResidence) return sum
+    const value = prop.propertyValue ?? prop.purchasePrice ?? 0
+    const hasLoan = prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment
+    let outstanding = 0
+    if (hasLoan) {
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      const interestRate = prop.interestRate ?? 0
+      const initialTenure = prop.initialTenure ?? 25
+      const startDate = prop.loanStartDate ?? ''
+      outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+    }
+    const netEquity = Math.max(0, value - outstanding)
+    const pct = getRealOwnershipPct(prop, prefix)
+    return sum + netEquity * pct
+  }, 0)
+}
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 function ObjectivesPageInner() {
@@ -3977,29 +3990,8 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
   const clientCPF = (ff.a_cpf_oa ?? 0) + (ff.a_cpf_sa ?? 0) + (ff.a_cpf_ma ?? 0) + (ff.a_cpf_ra ?? 0)
   const spouseCPF = (ff.a2_cpf_oa ?? 0) + (ff.a2_cpf_sa ?? 0) + (ff.a2_cpf_ma ?? 0) + (ff.a2_cpf_ra ?? 0)
 
-  const properties = (ff.properties ?? []) as any[]
-  const mortgageProps = properties.filter((prop: any) => prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment)
-  function getPropPct(prop: any, who: 'client' | 'spouse'): number {
-    const mortgageIdx = mortgageProps.findIndex((m: any) => m.id === prop.id)
-    if (mortgageIdx === -1) {
-      const ot = prop.ownershipType ?? ''
-      if (ot === 'Spouse Only') return who === 'spouse' ? 1 : 0
-      if (ot === 'Joint Tenancy') return 0.5
-      if (ot === 'Tenancy-in-Common') {
-        const parts = (prop.ownershipSplit ?? '50/50').split('/')
-        return who === 'client' ? (parseFloat(parts[0]) / 100 || 0.5) : (parseFloat(parts[1]) / 100 || 0.5)
-      }
-      return who === 'client' ? 1 : 0
-    }
-    const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
-    return (pcts[mortgageIdx] ?? 100) / 100
-  }
-  const clientPropEquity = properties.reduce((sum: number, prop: any) => {
-    return sum + (prop.propertyValue ?? prop.purchasePrice ?? 0) * getPropPct(prop, 'client')
-  }, 0)
-  const spousePropEquity = properties.reduce((sum: number, prop: any) => {
-    return sum + (prop.propertyValue ?? prop.purchasePrice ?? 0) * getPropPct(prop, 'spouse')
-  }, 0)
+  const clientPropEquity = getPropertyNetOffset(ff, 'client')
+  const spousePropEquity = getPropertyNetOffset(ff, 'spouse')
 
   // Effective totals respecting per-category toggles
   const effectiveClientDTPD = (liquidEnabled ? clientLiquid : 0) + (cpfEnabled ? clientCPF : 0) + (propertyEnabled ? clientPropEquity : 0)
@@ -4035,7 +4027,7 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
       {/* ── Content dims when master is off ── */}
       <div style={{ opacity: masterEnabled ? 1 : 0.4, pointerEvents: masterEnabled ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
         <p style={{ fontSize: 12, color: '#888', fontFamily: 'Inter', marginBottom: 20 }}>
-          D/TPD offsets include CPF and property values (by ownership %). CI offsets use liquid assets only. Toggle individual categories to include or exclude them.
+          D/TPD offsets include CPF and net equity of non-primary-residence properties (value minus outstanding loan, by ownership %). The primary residence is never offset — it secures the family's shelter, not available capital. CI offsets use liquid assets only. Toggle individual categories to include or exclude them.
         </p>
 
         <SectionBlock title="Asset Values" color="#2D5A4E">
@@ -4050,7 +4042,7 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
           {[
             { key: 'liquid' as const, label: 'Cash & Liquid Investments', clientVal: clientLiquid, spouseVal: spouseLiquid, enabled: liquidEnabled, note: 'D/TPD + CI' },
             { key: 'cpf' as const, label: 'CPF (OA + SA + MA + RA)', clientVal: clientCPF, spouseVal: spouseCPF, enabled: cpfEnabled, note: 'D/TPD only' },
-            { key: 'property' as const, label: 'Property Value (by ownership %)', clientVal: clientPropEquity, spouseVal: spousePropEquity, enabled: propertyEnabled, note: 'D/TPD only' },
+            { key: 'property' as const, label: 'Property Net Equity (excl. primary residence)', clientVal: clientPropEquity, spouseVal: spousePropEquity, enabled: propertyEnabled, note: 'D/TPD only' },
           ].map(row => (
             <div key={row.key} style={{
               display: 'flex', alignItems: 'center', padding: '10px 12px',
