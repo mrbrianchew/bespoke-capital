@@ -78,6 +78,19 @@ function protectionMilestoneEmoji(type: 'education' | 'mortgage' | 'retirement')
   return '\u{1F3D6}' // 🏖
 }
 
+// Capital Journey milestones only carry a free-text label (e.g. "Amanda's
+// Education", "Retirement") rather than a typed category, so infer the icon
+// from the label text — same icon set as the Protection timeline for
+// consistency, falling back to a generic flag for anything else (lump-sum
+// wealth goals etc).
+function capitalMilestoneEmoji(label: string): string {
+  const l = label.toLowerCase()
+  if (l.includes('education')) return '\u{1F393}' // 🎓
+  if (l.includes('retirement')) return '\u{1F3D6}' // 🏖
+  if (l.includes('mortgage') || l.includes('debt')) return '\u{1F511}' // 🔑
+  return '\u{1F3F3}' // 🏳
+}
+
 // Static port of ProtectionDisplay.tsx's CoverageTimelineChart — same
 // geometry constants, same shortfall-region path-building algorithm, same
 // have-bars + need-line + milestone-marker rendering. Hover tooltips are
@@ -536,14 +549,14 @@ function renderCapitalJourneySvg(cf: CapitalFundSnapshot) {
         return (
           <g key={i}>
             <circle cx={x} cy={y} r="5" fill="#FEFEFC" stroke="#3F6B57" strokeWidth="1.5" />
-            <text x={x} y={Math.max(14, y - 10)} fontSize="12" fill="#3F6B57" textAnchor="middle">{m.label}</text>
+            <text x={x} y={Math.max(16, y - 8)} fontSize="16" textAnchor="middle">{capitalMilestoneEmoji(m.label)}</text>
           </g>
         )
       })}
       {retireIdx >= 0 && (
         <g>
           <circle cx={xP(retirementAge)} cy={yP(reqVals[retireIdx])} r="5" fill="#FEFEFC" stroke="#B08D57" strokeWidth="1.5" />
-          <text x={xP(retirementAge)} y={Math.max(14, yP(reqVals[retireIdx]) - 10)} fontSize="12" fill="#B08D57" textAnchor="middle">Retirement</text>
+          <text x={xP(retirementAge)} y={Math.max(16, yP(reqVals[retireIdx]) - 8)} fontSize="16" textAnchor="middle">{capitalMilestoneEmoji('retirement')}</text>
         </g>
       )}
       <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#D8D5CA" strokeWidth="1" />
@@ -672,9 +685,10 @@ function CapitalFundStrategyPage({ clientName, spouseName, datePrepared, cf, pag
             ))}
           </div>
         )}
-        <div style={{ display: 'flex', gap: '8mm', flexShrink: 0 }}>
-          <div><div style={{ fontSize: '8px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: '1mm' }}>Asset Growth</div><div style={{ fontFamily: "'Fraunces',serif", fontWeight: 600, fontSize: '14px', color: 'var(--ink)' }}>{cf.assetGrowthRatePct != null ? `${cf.assetGrowthRatePct.toFixed(1)}%` : '—'}</div></div>
-          <div><div style={{ fontSize: '8px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: '1mm' }}>Expected Returns</div><div style={{ fontFamily: "'Fraunces',serif", fontWeight: 600, fontSize: '14px', color: 'var(--ink)' }}>{cf.expectedReturn.toFixed(1)}%</div></div>
+        <div className="cf2-velocity-card">
+          <div className="cf2-velocity-title">Capital Velocity</div>
+          <div className="cf2-velocity-row"><div className="l">Asset Growth Rate</div><div className="v">{cf.assetGrowthRatePct != null ? `${cf.assetGrowthRatePct.toFixed(1)}%` : '—'}</div></div>
+          <div className="cf2-velocity-row"><div className="l">Expected Returns</div><div className="v">{cf.expectedReturn.toFixed(1)}%</div></div>
         </div>
       </div>
       </div>
@@ -715,7 +729,7 @@ function CapitalFundStrategyPage({ clientName, spouseName, datePrepared, cf, pag
           Of the <b>{fmt(identifiableCapacity)}</b> you could be investing each year, only <b>{cf.capacityAudit.investedShareOfCapacityPct}%</b> — <b>{fmt(cf.capacityAudit.currentInvestmentAnnual)}</b> — actually is. Redirecting the other <b>{fmt(cf.capacityAudit.availableCashflowAnnual)}</b> would {coversShortfall ? 'fully close' : 'close part of'} the <b>{fmt(cf.capacityAudit.requiredAnnual)}</b> shortfall{coversShortfall ? <>, with <b>{fmt(cf.capacityAudit.capacityBeyondMandate)}</b> a year to spare.</> : <>, but <b>{fmt(Math.abs(cf.capacityAudit.capacityBeyondMandate))}</b> a year would still be missing.</>}
         </div>
         <div className="num">
-          <div className="v">{coversShortfall ? '+' : '−'}{fmt(Math.abs(cf.capacityAudit.capacityBeyondMandate))}</div>
+          <div className="v" style={{ color: coversShortfall ? '#7FC49F' : '#C97066' }}>{coversShortfall ? '+' : '−'}{fmt(Math.abs(cf.capacityAudit.capacityBeyondMandate))}</div>
           <div className="l">{coversShortfall ? 'Capacity beyond what’s required' : 'Still short, even fully redirected'}</div>
         </div>
       </div>
@@ -1307,7 +1321,7 @@ export default async function ReportPrintPage({ params }: { params: { token: str
               </div>
             </div>
 
-            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 2 of 16</span></div>
+            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 2 of 12</span></div>
           </div>
 
           {/* ============ WEALTH SUMMARY ============ */}
@@ -1386,7 +1400,7 @@ export default async function ReportPrintPage({ params }: { params: { token: str
             </div>
             </div>
 
-            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 3 of 16</span></div>
+            <div className="ftr"><span>Bespoke Capital — Confidential</span><span>Page 3 of 12</span></div>
           </div>
 
           {/* ============ PROTECTION (pages 4-9) ============
@@ -1397,35 +1411,28 @@ export default async function ReportPrintPage({ params }: { params: { token: str
               prose total didn't reflect. A single-client report only
               renders 3 protection pages (4-6) and the "of 16" denominator
               would need revisiting for that case, not handled yet. */}
-          <ProtectionOverviewPage name={client.name} profile={protection.client} pageLabel="Page 4 of 16" />
-          <ProtectionBreakdownPage type="dtpd" name={client.name} profile={protection.client} pageLabel="Page 5 of 16" />
-          <ProtectionBreakdownPage type="ci" name={client.name} profile={protection.client} pageLabel="Page 6 of 16" />
+          <ProtectionOverviewPage name={client.name} profile={protection.client} pageLabel="Page 4 of 12" />
+          <ProtectionBreakdownPage type="dtpd" name={client.name} profile={protection.client} pageLabel="Page 5 of 12" />
+          <ProtectionBreakdownPage type="ci" name={client.name} profile={protection.client} pageLabel="Page 6 of 12" />
           {isCouple && protection.spouse && (
             <>
-              <ProtectionOverviewPage name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 7 of 16" />
-              <ProtectionBreakdownPage type="dtpd" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 8 of 16" />
-              <ProtectionBreakdownPage type="ci" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 9 of 16" />
+              <ProtectionOverviewPage name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 7 of 12" />
+              <ProtectionBreakdownPage type="dtpd" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 8 of 12" />
+              <ProtectionBreakdownPage type="ci" name={spouseName || 'Spouse'} profile={protection.spouse} pageLabel="Page 9 of 12" />
             </>
           )}
 
           {/* ============ CAPITAL FUND (pages 10-12) ============ */}
-          <CapitalFundJourneyPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 10 of 16" />
-          <CapitalFundStrategyPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 11 of 16" />
-          <CapitalFundOptimizationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 12 of 16" />
+          <CapitalFundJourneyPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 10 of 12" />
+          <CapitalFundStrategyPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 11 of 12" />
+          <CapitalFundOptimizationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} cf={capitalFund} pageLabel="Page 12 of 12" />
 
           {/* ============ ACTION PLAN (pages 13-16) ============
-              Banner page cut per Brian's instruction (see the true page
-              total of 16, not the brief's stated 17) — this is 4 pages,
-              not the originally-planned 5. Spouse pages only render when
-              there's a spouse on file, same guard as the Protection pages. */}
-          <ActionPlanMedicalLtcPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={client.name} plan={actionPlan.client} pageLabel="Page 13 of 16" />
-          <ActionPlanCoreAccumulationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={client.name} plan={actionPlan.client} pageLabel="Page 14 of 16" />
-          {isCouple && actionPlan.spouse && (
-            <>
-              <ActionPlanMedicalLtcPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={spouseName || 'Spouse'} plan={actionPlan.spouse} pageLabel="Page 15 of 16" />
-              <ActionPlanCoreAccumulationPage clientName={client.name} spouseName={spouseName} datePrepared={datePrepared} personName={spouseName || 'Spouse'} plan={actionPlan.spouse} pageLabel="Page 16 of 16" />
-            </>
-          )}
+              Temporarily removed from the rendered report per Brian's
+              instruction (Aug 2026) — no Recommendation / Action Plan
+              pages in the PDF for now. The page components and
+              buildActionPlanSnapshot() call are left in place below so
+              this can be re-enabled later without rebuilding it. */}
         </div>
       </body>
     </html>
@@ -1701,7 +1708,13 @@ const PRINT_CSS = `
   .cf2-total-box .l{font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--gold); margin-bottom:2mm;}
   .cf2-total-box .v{font-family:'Fraunces',serif; font-weight:600; font-size:19px; color:var(--gold);}
   .cf2-total-box .s{font-size:9px; color:var(--ink3); font-style:italic; margin-top:1.5mm;}
-  .cf2-subdivider{display:flex; align-items:center; gap:4mm; margin:0 0 8mm;}
+  .cf2-velocity-card{flex-shrink:0; min-width:38mm; border:1px solid var(--line2); border-radius:6px; padding:4mm 6mm;}
+  .cf2-velocity-title{font-size:8px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink3); margin-bottom:3mm; padding-bottom:2mm; border-bottom:1px solid var(--line2);}
+  .cf2-velocity-row{margin-bottom:3mm;}
+  .cf2-velocity-row:last-child{margin-bottom:0;}
+  .cf2-velocity-row .l{font-size:8px; letter-spacing:0.06em; text-transform:uppercase; color:var(--gold); margin-bottom:1mm;}
+  .cf2-velocity-row .v{font-family:'Fraunces',serif; font-weight:600; font-size:14px; color:var(--ink);}
+  .cf2-subdivider{display:flex; align-items:center; gap:4mm; margin:6mm 0 8mm;}
   .cf2-subdivider .l{flex:1; height:1px; background:var(--line2);}
   .cf2-subdivider .lbl{font-size:9.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink3); white-space:nowrap;}
   .cf2-capacity-row{margin-bottom:3.5mm;}
