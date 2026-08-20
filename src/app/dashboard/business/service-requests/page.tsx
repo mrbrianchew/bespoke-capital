@@ -291,7 +291,7 @@ function useNarrow(breakpoint: number): boolean {
 }
 
 export default function BusinessServiceRequestsPage() {
-  const { advisor, clients, authLoading } = useDashboard()
+  const { advisor, clients, spouseNames, authLoading } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
 
@@ -720,11 +720,26 @@ export default function BusinessServiceRequestsPage() {
     const name = capClientName.trim()
     const desc = capDesc.trim()
     if (!name || !desc || !capType) return
-    const client = clients.find(c => c.name.toLowerCase() === name.toLowerCase())
+    let client = clients.find(c => c.name.toLowerCase() === name.toLowerCase())
+    // Not a direct client match — check whether it's a spouse entry from the
+    // datalist ("Jane Lim — spouse of Michael Chia") and resolve it back to
+    // the household's client_id, tagging the new request as spouse-owned so
+    // the Person selector below opens already pointed at the spouse.
+    let personKey: string | null = null
+    if (!client) {
+      const m = name.match(/^(.+?)\s+—\s+spouse of\s+(.+)$/i)
+      if (m) {
+        const spouseName = m[1].trim(), clientName = m[2].trim()
+        const match = clients.find(c => c.name.toLowerCase() === clientName.toLowerCase() && (spouseNames[c.id] || '').toLowerCase() === spouseName.toLowerCase())
+        if (match) { client = match; personKey = 'spouse' }
+      }
+    }
     if (!client) { setCapError(`No client named "${name}" — check the spelling or pick from the list.`); return }
     setCapSaving(true)
+    const insertPayload: any = { client_id: client.id, request_type: capType, description: desc, status: 'requested' }
+    if (personKey) insertPayload.field_values = { life_assured_override: personKey }
     const { data, error } = await supabase.from('service_requests')
-      .insert({ client_id: client.id, request_type: capType, description: desc, status: 'requested' })
+      .insert(insertPayload)
       .select().maybeSingle()
     setCapSaving(false)
     if (error) { setCapError('Could not save: ' + error.message); return }
@@ -796,6 +811,29 @@ export default function BusinessServiceRequestsPage() {
     : null
   const premiumContextType = editingPremiumType === 'Investment Premium Reminder' ? 'premium_reminder_investment' : 'premium_reminder_insurance'
 
+  // Person selector — shared across every request type. Persisted the same
+  // way premium reminders already tag a life-assured override; other types
+  // simply weren't reading/writing it before now. Falls back to whichever
+  // policy is currently selected (for rows created before this existed), then
+  // to 'client'.
+  const selectedPersonKey: string = editingRow ? (editingRow.field_values?.life_assured_override || editingPolicyFull?.person || 'client') : 'client'
+  const personOptions = editingRow ? personOptionsFor(editingRow.client_id) : []
+  const filteredPolicies: PolicyLite[] = editingRow
+    ? (policiesByClient[editingRow.client_id] || []).filter(p => personMatchesFilter(p.person, selectedPersonKey))
+    : []
+
+  function setSelectedPerson(key: string) {
+    if (!editingRow) return
+    setFieldValue(editingRow, 'life_assured_override', key)
+    // If the currently-picked policy no longer belongs to the newly chosen
+    // person (or their dependents), clear it rather than silently leaving a
+    // mismatched policy selected under the new person.
+    if (editingRow.policy_id) {
+      const current = (policiesByClient[editingRow.client_id] || []).find(p => p.id === editingRow.policy_id)
+      if (current && !personMatchesFilter(current.person, key)) patchRow(editingRow.id, { policy_id: null })
+    }
+  }
+
   // Resolves a policy's `person` key ('client', 'spouse', 'child_<family_member_id>',
   // or a raw family_member id) to a display name — same convention noted in
   // the protection module. Falls back to the raw key if nothing matches.
@@ -806,9 +844,46 @@ export default function BusinessServiceRequestsPage() {
       const fid = key.slice('child_'.length)
       return family.find(f => f.id === fid)?.name || key
     }
-    const bySpouse = family.find(f => f.relationship === 'Spouse')
+    const bySpouse = family.find(f => (f.relationship || '').toLowerCase() === 'spouse')
     if (key === 'spouse' && bySpouse) return bySpouse.name
     return family.find(f => f.id === key)?.name || key
+  }
+
+  // Canonical person key for a family member — matches the convention
+  // policies already use (protection module): spouse is the literal string
+  // 'spouse', everyone else (children/dependents) is `child_<family_member_id>`.
+  // Previously the Life Assured picker used the raw family_member id as the
+  // select value for every family member including the spouse, which never
+  // matched a spouse-owned policy's `person` field ('spouse') — this fixes
+  // that mismatch going forward. Old saved rows still resolve fine since
+  // personLabelForKey() falls back to matching by raw id.
+  function personKeyFor(f: FamilyMemberLite): string {
+    return (f.relationship || '').toLowerCase() === 'spouse' ? 'spouse' : `child_${f.id}`
+  }
+
+  // Every person a policy (or a message) could plausibly be "for" on this
+  // household: the client plus every family member, each carrying the
+  // canonical key used to filter policiesByClient and to resolve display
+  // names. Used to drive the Person selector shown above the Policy section
+  // for every request type.
+  function personOptionsFor(clientId: string): { key: string; label: string; rel: string }[] {
+    const family = familyByClient[clientId] || []
+    return [
+      { key: 'client', label: clientsById[clientId] || 'Client', rel: 'client' },
+      ...family.map(f => ({ key: personKeyFor(f), label: f.name, rel: f.relationship || 'dependent' })),
+    ]
+  }
+
+  // A policy matches the chosen person if it's literally theirs, OR if it
+  // belongs to any dependent (child_*) — dependents' policies stay visible
+  // regardless of which parent is selected, since either parent may be the
+  // one sending the reminder. Selecting a specific child narrows to just
+  // that child's own policies.
+  function personMatchesFilter(policyPerson: string, filterKey: string): boolean {
+    if (!filterKey || filterKey === 'client') return policyPerson === 'client' || policyPerson.startsWith('child_')
+    if (filterKey === 'spouse') return policyPerson === 'spouse' || policyPerson.startsWith('child_')
+    if (filterKey.startsWith('child_')) return policyPerson === filterKey
+    return true
   }
 
   // Everyone this reminder could plausibly be addressed to, each with a
@@ -1113,6 +1188,9 @@ export default function BusinessServiceRequestsPage() {
           />
           <datalist id="sr-clients-datalist">
             {clients.map(c => <option key={c.id} value={c.name} />)}
+            {clients.filter(c => spouseNames[c.id]).map(c => (
+              <option key={c.id + '-spouse'} value={`${spouseNames[c.id]} — spouse of ${c.name}`} />
+            ))}
           </datalist>
           <TypeSelect
             value={capType}
@@ -1378,7 +1456,18 @@ export default function BusinessServiceRequestsPage() {
                 </div>
               </div>
 
-              <SectionLabel>Policy</SectionLabel>
+              <SectionLabel>Person</SectionLabel>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 4 }}>
+                {personOptions.map(p => (
+                  <button key={p.key} onClick={() => setSelectedPerson(p.key)}
+                    style={{ padding: '7px 13px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${selectedPersonKey === p.key ? 'var(--charcoal)' : T.line}`, background: selectedPersonKey === p.key ? 'var(--charcoal)' : 'white', color: selectedPersonKey === p.key ? 'white' : T.textDim }}>
+                    {p.label}{p.rel && p.rel !== 'client' ? <span style={{ opacity: 0.65, fontWeight: 500, marginLeft: 3 }}>{p.rel.toLowerCase()}</span> : null}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 10 }}>Filters the policy list below to this person's policies plus all dependents'.</div>
+
+              <SectionLabel>Policy <span style={{ fontWeight: 500, color: T.textFaint, textTransform: 'none', letterSpacing: 0 }}>({filteredPolicies.length} of {(policiesByClient[editingRow.client_id] || []).length} shown)</span></SectionLabel>
               <div style={{ display: 'flex', gap: 7, marginBottom: 8 }}>
                 <button onClick={() => patchRow(editingRow.id, { policy_label: null })}
                   style={{ padding: '6px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${editingRow.policy_id || !editingRow.policy_label ? 'var(--charcoal)' : T.line}`, background: editingRow.policy_id || !editingRow.policy_label ? 'var(--charcoal)' : 'white', color: editingRow.policy_id || !editingRow.policy_label ? 'white' : T.textDim }}>
@@ -1393,15 +1482,18 @@ export default function BusinessServiceRequestsPage() {
                 <select value={editingRow.policy_id || ''} onChange={e => patchRow(editingRow.id, { policy_id: e.target.value || null })}
                   style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
                   <option value="">Select a policy…</option>
-                  {(policiesByClient[editingRow.client_id] || []).map(p => (
-                    <option key={p.id} value={p.id}>{p.companyName} — {p.productName}{p.policyNo ? ` (${p.policyNo})` : ''}</option>
+                  {filteredPolicies.map(p => (
+                    <option key={p.id} value={p.id}>{p.productName || 'Untitled plan'} — {p.policyNo || 'no policy no.'} — {personLabelForKey(editingRow.client_id, p.person)}</option>
                   ))}
                 </select>
               ) : editingRow.policy_id ? (
                 <select value={editingRow.policy_id} onChange={e => patchRow(editingRow.id, { policy_id: e.target.value || null })}
                   style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
-                  {(policiesByClient[editingRow.client_id] || []).map(p => (
-                    <option key={p.id} value={p.id}>{p.companyName} — {p.productName}{p.policyNo ? ` (${p.policyNo})` : ''}</option>
+                  {/* The currently-selected policy stays in the list even if it falls outside the
+                      current person filter (e.g. row created before this feature, or Person was
+                      just changed) — otherwise the select would silently show nothing selected. */}
+                  {(filteredPolicies.some(p => p.id === editingRow.policy_id) ? filteredPolicies : [editingPolicyFull, ...filteredPolicies].filter((p): p is PolicyLite => !!p)).map(p => (
+                    <option key={p.id} value={p.id}>{p.productName || 'Untitled plan'} — {p.policyNo || 'no policy no.'} — {personLabelForKey(editingRow.client_id, p.person)}</option>
                   ))}
                 </select>
               ) : (
@@ -1473,14 +1565,10 @@ export default function BusinessServiceRequestsPage() {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                         <div>
                           <FieldLabel>Life Assured</FieldLabel>
-                          <select value={editingRow.field_values?.life_assured_override || editingPolicyFull?.person || 'client'}
-                            onChange={e => setFieldValue(editingRow, 'life_assured_override', e.target.value)}
-                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
-                            <option value="client">{clientsById[editingRow.client_id] || 'Client'} (client)</option>
-                            {(familyByClient[editingRow.client_id] || []).map(f => (
-                              <option key={f.id} value={f.id}>{f.name}{f.relationship ? ` (${f.relationship})` : ''}</option>
-                            ))}
-                          </select>
+                          <div style={{ padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream2)', color: T.textDim, fontSize: 12.5 }}>
+                            {personLabelForKey(editingRow.client_id, selectedPersonKey)}
+                            <span style={{ color: T.textFaint }}> — set via Person above</span>
+                          </div>
                         </div>
                         <div>
                           <FieldLabel>Addressing To (recipient)</FieldLabel>
