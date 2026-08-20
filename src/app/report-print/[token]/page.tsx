@@ -72,23 +72,70 @@ function fmtCompact(n: number): string {
   return fmt(n)
 }
 
-function protectionMilestoneEmoji(type: 'education' | 'mortgage' | 'retirement'): string {
-  if (type === 'education') return '\u{1F393}' // 🎓
-  if (type === 'mortgage') return '\u{1F511}' // 🔑
-  return '\u{1F3D6}' // 🏖
+// Milestone markers as self-contained inline SVG (not Unicode emoji).
+// Emoji glyphs depend on a color-emoji font (e.g. Noto Color Emoji) being
+// installed wherever the SVG is rasterized — the PDF export environment
+// doesn't have one, so protectionMilestoneEmoji/capitalMilestoneEmoji's
+// emoji characters were rendering as blank space in production even though
+// they showed correctly in a local browser with system emoji fonts. Vector
+// paths have no such dependency.
+function milestoneIcon(type: 'education' | 'mortgage' | 'retirement' | 'goal', cx: number, cy: number, color: string, size = 15) {
+  const s = size / 16 // scale factor against a 16x16 design grid
+  const x = cx - size / 2
+  const y = cy - size / 2
+  const t = (px: number, py: number) => `${(x + px * s).toFixed(1)},${(y + py * s).toFixed(1)}`
+  if (type === 'education') {
+    // Graduation cap (mortarboard), top-down view
+    return (
+      <g>
+        <path d={`M ${t(8, 1)} L ${t(15, 5)} L ${t(8, 9)} L ${t(1, 5)} Z`} fill={color} />
+        <rect x={x + 5.5 * s} y={y + 8 * s} width={5 * s} height={4.5 * s} fill={color} opacity="0.55" />
+        <circle cx={x + 15 * s} cy={y + 5 * s} r={1.1 * s} fill={color} />
+        <line x1={x + 15 * s} y1={y + 5 * s} x2={x + 15 * s} y2={y + 10 * s} stroke={color} strokeWidth={0.9 * s} />
+      </g>
+    )
+  }
+  if (type === 'mortgage') {
+    // Key
+    return (
+      <g fill="none" stroke={color} strokeWidth={1.6 * s} strokeLinecap="round">
+        <circle cx={x + 4 * s} cy={y + 4 * s} r={3 * s} />
+        <line x1={x + 6.1 * s} y1={y + 6.1 * s} x2={x + 14 * s} y2={y + 14 * s} />
+        <line x1={x + 10.5 * s} y1={y + 10.5 * s} x2={x + 12.5 * s} y2={y + 8.5 * s} />
+        <line x1={x + 12.5 * s} y1={y + 12.5 * s} x2={x + 14.5 * s} y2={y + 10.5 * s} />
+      </g>
+    )
+  }
+  if (type === 'retirement') {
+    // Beach umbrella
+    return (
+      <g fill={color}>
+        <path d={`M ${t(8, 0)} C ${t(3, 0)} ${t(0, 4.5)} ${t(0, 4.5)} L ${t(16, 4.5)} C ${t(16, 4.5)} ${t(13, 0)} ${t(8, 0)} Z`} />
+        <line x1={x + 8 * s} y1={y + 4.5 * s} x2={x + 8 * s} y2={y + 15 * s} stroke={color} strokeWidth={1 * s} />
+        <line x1={x + 8 * s} y1={y + 15 * s} x2={x + 4 * s} y2={y + 16 * s} stroke={color} strokeWidth={1 * s} strokeLinecap="round" />
+      </g>
+    )
+  }
+  // generic wealth-goal marker — five-point star
+  return (
+    <path
+      d={`M ${t(8, 0)} L ${t(9.8, 5.5)} L ${t(15.6, 5.5)} L ${t(11, 9)} L ${t(12.7, 14.5)} L ${t(8, 11)} L ${t(3.3, 14.5)} L ${t(5, 9)} L ${t(0.4, 5.5)} L ${t(6.2, 5.5)} Z`}
+      fill={color}
+    />
+  )
 }
 
 // Capital Journey milestones only carry a free-text label (e.g. "Amanda's
 // Education", "Retirement") rather than a typed category, so infer the icon
-// from the label text — same icon set as the Protection timeline for
-// consistency, falling back to a generic flag for anything else (lump-sum
-// wealth goals etc).
-function capitalMilestoneEmoji(label: string): string {
+// type from the label text — same icon set as the Protection timeline for
+// consistency, falling back to a generic wealth-goal star for anything else
+// (lump-sum goals etc).
+function capitalMilestoneType(label: string): 'education' | 'mortgage' | 'retirement' | 'goal' {
   const l = label.toLowerCase()
-  if (l.includes('education')) return '\u{1F393}' // 🎓
-  if (l.includes('retirement')) return '\u{1F3D6}' // 🏖
-  if (l.includes('mortgage') || l.includes('debt')) return '\u{1F511}' // 🔑
-  return '\u{1F3F3}' // 🏳
+  if (l.includes('education')) return 'education'
+  if (l.includes('retirement')) return 'retirement'
+  if (l.includes('mortgage') || l.includes('debt')) return 'mortgage'
+  return 'goal'
 }
 
 // Static port of ProtectionDisplay.tsx's CoverageTimelineChart — same
@@ -168,7 +215,7 @@ function renderCoverageTimelineSvg(timeline: CoverageTimeline, name: string, cur
         return (
           <g key={`ms-${i}`}>
             <line x1={mx} y1={PT} x2={mx} y2={PT + iH} stroke={color} strokeWidth="1" strokeDasharray="3,5" opacity="0.4" />
-            <text x={mx} y={PT + 2} fontSize="16" textAnchor="middle">{protectionMilestoneEmoji(m.type)}</text>
+            {milestoneIcon(m.type, mx, PT + 9, color, 16)}
           </g>
         )
       })}
@@ -546,21 +593,34 @@ function renderCapitalJourneySvg(cf: CapitalFundSnapshot) {
         const idx = ages.indexOf(m.age)
         if (idx < 0) return null
         const x = xP(m.age), y = yP(reqVals[idx])
+        const mType = capitalMilestoneType(m.label)
+        const color = mType === 'education' ? '#3F6B57' : mType === 'mortgage' ? '#8A6D3F' : '#5C5A54'
         return (
           <g key={i}>
             <circle cx={x} cy={y} r="5" fill="#FEFEFC" stroke="#3F6B57" strokeWidth="1.5" />
-            <text x={x} y={Math.max(16, y - 8)} fontSize="16" textAnchor="middle">{capitalMilestoneEmoji(m.label)}</text>
+            {milestoneIcon(mType, x, Math.max(9, y - 13), color, 15)}
           </g>
         )
       })}
       {retireIdx >= 0 && (
         <g>
           <circle cx={xP(retirementAge)} cy={yP(reqVals[retireIdx])} r="5" fill="#FEFEFC" stroke="#B08D57" strokeWidth="1.5" />
-          <text x={xP(retirementAge)} y={Math.max(16, yP(reqVals[retireIdx]) - 8)} fontSize="16" textAnchor="middle">{capitalMilestoneEmoji('retirement')}</text>
+          {milestoneIcon('retirement', xP(retirementAge), Math.max(9, yP(reqVals[retireIdx]) - 13), '#B08D57', 15)}
         </g>
       )}
       <line x1={PL} y1={PT + iH} x2={PL + iW} y2={PT + iH} stroke="#D8D5CA" strokeWidth="1" />
-      {ages.filter(a => a % 5 === 0 || a === minA || a === maxA).map(a => (
+      {ages.filter((a, i, arr) => {
+        if (a % 5 === 0 || a === minA) return true
+        // Only show the final age (e.g. 86) as its own tick if it isn't
+        // within 2 years of the last multiple-of-5 tick — otherwise the two
+        // labels collide (the "8586" overlap seen when maxA=86 sits right
+        // next to the 85 tick).
+        if (a === maxA) {
+          const lastFive = Math.floor(maxA / 5) * 5
+          return maxA - lastFive >= 2
+        }
+        return false
+      }).map(a => (
         <text key={a} x={xP(a)} y={PT + iH + 20} fontSize="13" fill="#5C5A54" textAnchor="middle">{a}</text>
       ))}
     </svg>
