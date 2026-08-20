@@ -24,6 +24,19 @@ import { buildActionPlanSnapshot, PersonActionPlan, ProtectionActionItem, Accumu
 // structure but not wired into this route yet — see the mockup
 // (page5-protection-breakdown.html) for the approved design of each.
 
+// This route MUST always fetch live data — every PDF export mints a fresh,
+// single-use token (see the file header above), but Next.js's default fetch
+// caching operates on the underlying fetch() calls this page makes (e.g.
+// Supabase-js's internal REST requests), not on the outer report-print/[token]
+// URL. Those underlying requests hit the same Supabase REST endpoint for the
+// same client_id on every export, so without an explicit opt-out here,
+// Next/Vercel could silently serve a cached render from an earlier export —
+// showing stale figures (old corpus, old shortfall) even after the advisor
+// has since edited and saved new data. force-dynamic + force-no-store
+// disable caching at both the route and fetch level so this can't happen.
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
