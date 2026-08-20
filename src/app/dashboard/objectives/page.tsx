@@ -150,6 +150,20 @@ interface ProtectionData {
     cpf?: boolean
     property?: boolean
   }
+  // ── Primary residence downsize scenario ──────────────────────────────────
+  // Off by default — the primary residence is excluded from D/TPD offset and
+  // its mortgage need assumes the family keeps the home (see
+  // getPropertyNetOffset / calcMortgageForPerson). When enabled, the family's
+  // plan is to sell and downsize instead: targetReplacementCost is the
+  // client-input budget for the replacement home. Net equity above that
+  // budget becomes an offset (surplus); net equity below it becomes a need
+  // (shortfall) that REPLACES the normal full-mortgage-clearance need for
+  // this property — never both at once, same principle as the
+  // primary-residence exclusion fix this scenario sits alongside.
+  primaryResidenceDownsize?: {
+    enabled?: boolean
+    targetReplacementCost?: number
+  }
   ciCalcMode?: 'expenses' | 'income' | 'capital' | 'custom'
   ciCustomAmountClient?: number; ciCustomAmountSpouse?: number
   // Income Replacement mode
@@ -376,7 +390,7 @@ function getAssetOffset(ff: FactFinding, prefix: 'client' | 'spouse', type: 'dtp
 
   if (!propertyEnabled) return liquid + cpf
 
-  const propertyValue = getPropertyNetOffset(ff, prefix)
+  const propertyValue = getPropertyNetOffset(ff, prefix, p)
 
   return liquid + cpf + propertyValue
 }
@@ -417,7 +431,7 @@ function getAssetOffsetBreakdown(ff: FactFinding, prefix: 'client' | 'spouse', p
 
   if (!propertyEnabled) return { cash: liquid + cpf, property: 0 }
 
-  const propertyValue = getPropertyNetOffset(ff, prefix)
+  const propertyValue = getPropertyNetOffset(ff, prefix, p)
 
   return { cash: liquid + cpf, property: propertyValue }
 }
@@ -462,17 +476,23 @@ function getRealOwnershipPct(prop: any, prefix: 'client' | 'spouse'): number {
 }
 
 // Net-equity property offset for D/TPD and CI asset-offset purposes.
-// - Excludes the primary residence entirely (isPrimaryResidence: true) — it
-//   secures the family's shelter, not available capital, and the mortgage
-//   -clearance need already assumes it's kept, not sold.
-// - Uses NET equity (value minus outstanding loan, amortized) for every
-//   other property, not gross value — the outstanding loan is repaid from
-//   sale proceeds before the family sees any cash.
-// - Uses real ownership % (see getRealOwnershipPct), not mortgageCoverPcts.
-function getPropertyNetOffset(ff: FactFinding, prefix: 'client' | 'spouse'): number {
+// - Primary residence: excluded entirely by default (it secures the family's
+//   shelter, not available capital, and the mortgage-clearance need already
+//   assumes it's kept). If the family has an explicit downsize plan
+//   (p.primaryResidenceDownsize.enabled), only the SURPLUS above the
+//   replacement home budget counts as offset — the rest is consumed buying
+//   the smaller home, and any gap becomes a NEED instead (see
+//   calcMortgageForPerson). Surplus and shortfall are complementary: never
+//   both nonzero for the same property, same principle as not double-
+//   counting a mortgage-clearance need against the asset it's clearing.
+// - Every other property: NET equity (value minus outstanding loan,
+//   amortized), not gross value — the loan is repaid from sale proceeds
+//   before the family sees any cash.
+// - Real ownership % (see getRealOwnershipPct), not mortgageCoverPcts.
+function getPropertyNetOffset(ff: FactFinding, prefix: 'client' | 'spouse', p?: ProtectionData): number {
   const properties = (ff.properties ?? []) as any[]
+  const downsize = p?.primaryResidenceDownsize
   return properties.reduce((sum: number, prop: any) => {
-    if (prop.isPrimaryResidence) return sum
     const value = prop.propertyValue ?? prop.purchasePrice ?? 0
     const hasLoan = prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment
     let outstanding = 0
@@ -485,6 +505,14 @@ function getPropertyNetOffset(ff: FactFinding, prefix: 'client' | 'spouse'): num
     }
     const netEquity = Math.max(0, value - outstanding)
     const pct = getRealOwnershipPct(prop, prefix)
+
+    if (prop.isPrimaryResidence) {
+      if (!downsize?.enabled) return sum
+      const target = downsize.targetReplacementCost ?? 0
+      const surplus = Math.max(0, netEquity - target)
+      return sum + surplus * pct
+    }
+
     return sum + netEquity * pct
   }, 0)
 }
@@ -982,6 +1010,19 @@ const coverageTerm = (() => {
     const mortgageTotal = mortgages.reduce((sum, m, i) => {
       const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
       const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
+      const srcProp = (ff.properties ?? []).find((prop: any) => prop.id === m.id)
+      // Downsize scenario: the family plans to sell this property, so the
+      // need is no longer "clear the full mortgage" — it's "cover the gap
+      // between sale proceeds and the replacement home budget," if any.
+      // Complementary to the surplus offset in getPropertyNetOffset: never
+      // both nonzero for the same property.
+      if (srcProp?.isPrimaryResidence && p.primaryResidenceDownsize?.enabled) {
+        const value = srcProp.propertyValue ?? srcProp.purchasePrice ?? 0
+        const netEquity = Math.max(0, value - m.outstanding)
+        const target = p.primaryResidenceDownsize.targetReplacementCost ?? 0
+        const shortfall = Math.max(0, target - netEquity)
+        return sum + shortfall * pct
+      }
       return sum + m.outstanding * pct
     }, 0)
     // Add non-mortgage debts (outstanding balance for D/TPD)
@@ -3990,8 +4031,40 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
   const clientCPF = (ff.a_cpf_oa ?? 0) + (ff.a_cpf_sa ?? 0) + (ff.a_cpf_ma ?? 0) + (ff.a_cpf_ra ?? 0)
   const spouseCPF = (ff.a2_cpf_oa ?? 0) + (ff.a2_cpf_sa ?? 0) + (ff.a2_cpf_ma ?? 0) + (ff.a2_cpf_ra ?? 0)
 
-  const clientPropEquity = getPropertyNetOffset(ff, 'client')
-  const spousePropEquity = getPropertyNetOffset(ff, 'spouse')
+  const clientPropEquity = getPropertyNetOffset(ff, 'client', p)
+  const spousePropEquity = getPropertyNetOffset(ff, 'spouse', p)
+
+  // ── Primary residence downsize scenario ──────────────────────────────────
+  const primaryResidences = ((ff.properties ?? []) as any[]).filter((prop: any) => prop.isPrimaryResidence)
+  const downsize = p.primaryResidenceDownsize ?? {}
+  const downsizeEnabled = downsize.enabled === true
+
+  function toggleDownsize() {
+    updateP({ primaryResidenceDownsize: { ...downsize, enabled: !downsizeEnabled } })
+  }
+  function setReplacementCost(v: number) {
+    updateP({ primaryResidenceDownsize: { ...downsize, targetReplacementCost: v } })
+  }
+
+  const primaryResidenceLabel = primaryResidences.length === 1
+    ? (primaryResidences[0].label || 'Primary residence')
+    : `${primaryResidences.length} properties`
+  const primaryResidenceNetEquity = primaryResidences.reduce((sum: number, prop: any) => {
+    const value = prop.propertyValue ?? prop.purchasePrice ?? 0
+    const hasLoan = prop.initialLoanAmount || prop.outstanding || prop.monthlyRepayment
+    let outstanding = 0
+    if (hasLoan) {
+      const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
+      const interestRate = prop.interestRate ?? 0
+      const initialTenure = prop.initialTenure ?? 25
+      const startDate = prop.loanStartDate ?? ''
+      outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
+    }
+    return sum + Math.max(0, value - outstanding)
+  }, 0)
+  const downsizeTarget = downsize.targetReplacementCost ?? 0
+  const downsizeSurplus = Math.max(0, primaryResidenceNetEquity - downsizeTarget)
+  const downsizeShortfall = Math.max(0, downsizeTarget - primaryResidenceNetEquity)
 
   // Effective totals respecting per-category toggles
   const effectiveClientDTPD = (liquidEnabled ? clientLiquid : 0) + (cpfEnabled ? clientCPF : 0) + (propertyEnabled ? clientPropEquity : 0)
@@ -4104,6 +4177,104 @@ function AssetOffsetTab({ ff, p, updateP, isCouple, clientName, spouseName, dtpd
             )}
           </div>
         </SectionBlock>
+
+        {/* ── Primary Residence downsize scenario ── */}
+        {primaryResidences.length > 0 && (
+          <SectionBlock title="Primary Residence" color="#9A3B3B">
+            <div style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontFamily: 'Inter', fontWeight: 600, color: '#1C1A17' }}>
+                    {primaryResidenceLabel}
+                    <span style={{ fontWeight: 400, color: '#888', fontSize: 11, marginLeft: 6 }}>— primary residence</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, fontFamily: 'DM Mono, monospace', color: downsizeEnabled ? '#9A3B3B' : '#888', marginTop: 4 }}>
+                    {downsizeEnabled ? 'Family may downsize instead' : "Excluded — securing the family's shelter"}
+                  </div>
+                </div>
+                <Toggle value={downsizeEnabled} onChange={toggleDownsize} />
+              </div>
+
+              {!downsizeEnabled && (
+                <div style={{ fontSize: 11.5, color: '#888', fontFamily: 'Inter', lineHeight: 1.6, marginTop: 12, paddingTop: 12, borderTop: '1px dashed #E8E4DC' }}>
+                  Not counted as an offsetting asset. The mortgage-clearance need on this property assumes the family keeps the home.
+                </div>
+              )}
+
+              {downsizeEnabled && (
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #E8E4DC' }}>
+
+                  {/* Empathetic warning — informational, no sign-off required */}
+                  <div style={{ background: '#FBF4F0', border: '1px solid #E8C9C0', borderRadius: 6, padding: '18px 20px', marginBottom: 18 }}>
+                    <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9A3B3B', fontFamily: 'Inter', fontWeight: 600, marginBottom: 8 }}>
+                      Before you turn this on
+                    </div>
+                    <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 18, fontWeight: 600, color: '#1C1A17', lineHeight: 1.35, marginBottom: 10 }}>
+                      This isn't just a smaller mortgage. It's asking them to move.
+                    </div>
+                    <p style={{ fontSize: 12.5, lineHeight: 1.7, color: '#4a443c', margin: '0 0 10px 0', fontFamily: 'Inter' }}>
+                      If {clientName} is gone, {spouseName || 'their spouse'} and the children won't just be grieving — under this plan,
+                      they'd also be packing boxes, changing the children's route to school, and saying goodbye to the home. Most families
+                      who agree to this on paper, in a calm room, find it much harder to go through with when the day actually comes.
+                    </p>
+                    <p style={{ fontSize: 12.5, lineHeight: 1.7, color: '#4a443c', margin: 0, fontFamily: 'Inter' }}>
+                      There's a practical side too. A property doesn't sell the week someone needs the cash — it can take months, longer in
+                      a soft market — and whatever's in CPF comes back to CPF first, not to hand. The number below may not be what actually
+                      reaches the family when they need it most.
+                    </p>
+                    <div style={{ fontSize: 11.5, fontStyle: 'italic', color: '#888', marginTop: 12, paddingTop: 10, borderTop: '1px dashed #E8C9C0', fontFamily: 'Inter' }}>
+                      If downsizing is genuinely part of the family's plan, that's the client's call to make — just make sure it's a
+                      conversation had with them now, not one left for them to figure out alone.
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter', marginBottom: 7 }}>
+                      Target replacement home budget
+                    </label>
+                    <input
+                      type="text"
+                      value={downsizeTarget ? downsizeTarget.toLocaleString('en-SG') : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, '')
+                        setReplacementCost(raw ? parseInt(raw, 10) : 0)
+                      }}
+                      placeholder="e.g. 900,000"
+                      style={{
+                        width: '100%', padding: '10px 14px', border: '1px solid #E8E4DC', borderRadius: 4,
+                        fontFamily: 'DM Mono, monospace', fontSize: 14, color: '#1C1A17', background: '#FAFAF7',
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ background: '#F5F0E8', borderRadius: 4, padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '6px 0', fontFamily: 'Inter' }}>
+                      <span>Net sale proceeds ({primaryResidenceLabel}, 100%)</span>
+                      <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(primaryResidenceNetEquity)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '6px 0', fontFamily: 'Inter' }}>
+                      <span>Target replacement home budget</span>
+                      <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(downsizeTarget)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '10px 0 0 0', marginTop: 4, borderTop: '1px solid #DCC9A0', fontWeight: 600, fontFamily: 'Inter' }}>
+                      <span>{downsizeShortfall > 0 ? 'Downsizing shortfall (added to need)' : 'Surplus (added to offset)'}</span>
+                      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 14, color: downsizeShortfall > 0 ? '#9A3B3B' : '#2D5A4E' }}>
+                        {fmt(downsizeShortfall > 0 ? downsizeShortfall : downsizeSurplus)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 11, color: '#888', fontFamily: 'Inter', lineHeight: 1.6, marginTop: 12 }}>
+                    This shortfall replaces the full mortgage-clearance need for this property in the Needs breakdown — split between
+                    {isCouple ? ` ${clientName}'s and ${spouseName}'s cards` : ` ${clientName}'s card`} using the same mortgage cover %
+                    already set in the Mortgage &amp; Debt tab. Only the surplus above the replacement budget, if any, counts as an
+                    offsetting asset — never both at once.
+                  </div>
+                </div>
+              )}
+            </div>
+          </SectionBlock>
+        )}
 
         {/* Net Need Summary */}
         <SectionBlock title="Net Need After Offset" color="#1C1A17">
