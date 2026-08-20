@@ -52,6 +52,89 @@ interface PolicyLite {
   companyName: string
   productName: string
   person: string
+  premiumCash: number
+  premiumMedisave: number
+}
+
+// ── Premium Alerts (message templates + related lookups) ──────────────────
+interface MessageTemplate {
+  id: string
+  context_type: string
+  context_key: string
+  advisor_id: string | null
+  body: string
+}
+interface ManualPaymentMethod {
+  id: string
+  label: string
+}
+interface FamilyMemberLite {
+  id: string
+  client_id: string
+  name: string
+  relationship: string | null
+  phone: string | null
+}
+// The two request_type labels that get the Premium Alerts treatment: their
+// own board section, auto-fill from policy, and a message composer. Any
+// other type (including the older single "Premium Reminder" type predating
+// this feature) still goes through the generic modal untouched.
+const PREMIUM_TYPES = ['Insurance Premium Reminder', 'Investment Premium Reminder'] as const
+type PremiumType = typeof PREMIUM_TYPES[number]
+function isPremiumType(t: string): t is PremiumType { return (PREMIUM_TYPES as readonly string[]).includes(t) }
+
+const PREMIUM_MSG_VARIABLES: Record<PremiumType, { key: string; label: string }[]> = {
+  'Insurance Premium Reminder': [
+    { key: 'client_name', label: 'Addressee' },
+    { key: 'company', label: 'Company' },
+    { key: 'life_assured', label: 'Life Assured' },
+    { key: 'plan_name', label: 'Plan Name' },
+    { key: 'policy_no', label: 'Policy No.' },
+    { key: 'premium_due', label: 'Premium Due' },
+    { key: 'premium_cash', label: 'Premium — Cash' },
+    { key: 'premium_medisave', label: 'Premium — Medisave' },
+    { key: 'payment_method', label: 'Payment Method' },
+    { key: 'manual_method', label: 'Manual Method' },
+    { key: 'advisor_name', label: 'Advisor' },
+  ],
+  'Investment Premium Reminder': [
+    { key: 'client_name', label: 'Addressee' },
+    { key: 'company', label: 'Company' },
+    { key: 'life_assured', label: 'Life Assured' },
+    { key: 'plan_name', label: 'Plan Name' },
+    { key: 'policy_no', label: 'Policy No.' },
+    { key: 'premium_due', label: 'Premium Due' },
+    { key: 'premium_amount', label: 'Premium Amount' },
+    { key: 'next_giro_deduction', label: 'Next Giro Deduction' },
+    { key: 'adhoc_payment_note', label: 'Adhoc Payment' },
+    { key: 'advisor_name', label: 'Advisor' },
+  ],
+}
+const PREMIUM_FALLBACK_TEMPLATES: Record<PremiumType, string> = {
+  'Insurance Premium Reminder': `Hi {{client_name}},\n\nFriendly reminder of your premium payment:\n*Company:* {{company}}\n*Life Assured:* {{life_assured}}\n*Plan Name:* {{plan_name}}\n*Policy No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\n*Premium required in SGD:*\n*Cash:* {{premium_cash}}\n*Medisave:* {{premium_medisave}}\n*Payment Method:* {{payment_method}}\n\nPlease kindly make payment soon to avoid lapsation. Payment can be made via {{manual_method}}.\n\nPlease kindly take a screenshot and update me once payment has been made. Thank you 😊\n\n— {{advisor_name}}`,
+  'Investment Premium Reminder': `Hi {{client_name}},\n\nHope this message finds you well! 😊\n\nThis is a friendly reminder regarding your investment deduction:\n*Company:* {{company}}\n*Plan Name:* {{plan_name}}\n*Policy/Account No.:* {{policy_no}}\n\nYour premium was due on {{premium_due}}.\n\nPlease kindly ensure sufficient funds before {{next_giro_deduction}}, or make an ad-hoc payment via {{adhoc_payment_note}}.\n\nThank you!\n\n— {{advisor_name}}`,
+}
+function money(n: number): string {
+  if (!n) return '$0.00'
+  return '$' + n.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+function fmtDateSG(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function substituteMsgVars(body: string, vars: Record<string, string>): string {
+  return body.replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : m))
+}
+// Singapore mobile numbers are stored as bare 8-digit local numbers — prefix
+// the country code for a wa.me deep link. Strips any spaces/dashes/leading
+// +/0 the advisor might have typed into the Custom Number field.
+function waLink(phoneRaw: string, text: string): string | null {
+  const digits = phoneRaw.replace(/[^\d]/g, '').replace(/^0+/, '')
+  if (digits.length < 8) return null
+  const withCountry = digits.startsWith('65') && digits.length > 8 ? digits : `65${digits}`
+  return `https://wa.me/${withCountry}?text=${encodeURIComponent(text)}`
 }
 
 interface ServiceRequestRow {
@@ -247,6 +330,28 @@ export default function BusinessServiceRequestsPage() {
   const [todoDueDraft, setTodoDueDraft] = useState('')
   const [savingModal, setSavingModal] = useState(false)
 
+  // ── Premium Alerts: message templates + related lookups ──
+  const [premiumComposerOpen, setPremiumComposerOpen] = useState(false)
+  const [templates, setTemplates] = useState<MessageTemplate[]>([])
+  const [msgSequence, setMsgSequence] = useState('')
+  const [msgBody, setMsgBody] = useState('')
+  const [msgEdited, setMsgEdited] = useState(false)
+  const [msgCopied, setMsgCopied] = useState<string | null>(null)
+  const msgTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const [addingSequence, setAddingSequence] = useState(false)
+  const [newSequenceDraft, setNewSequenceDraft] = useState('')
+
+  const [manualMethods, setManualMethods] = useState<ManualPaymentMethod[]>([])
+  const [showManageMethods, setShowManageMethods] = useState(false)
+
+  // Family members per client — for the "Life Assured" / "Addressing To"
+  // pickers, which need names + phone numbers beyond just the client record.
+  // Lazy-loaded per client, same caching pattern as policiesByClient.
+  const [familyByClient, setFamilyByClient] = useState<Record<string, FamilyMemberLite[]>>({})
+
+  const [addressingTo, setAddressingTo] = useState('') // 'client' | family_member id | 'self' | 'custom'
+  const [customNumber, setCustomNumber] = useState('')
+
   useEffect(() => {
     if (!authLoading && advisor && !hasAccess) router.replace('/dashboard')
   }, [authLoading, advisor, hasAccess, router])
@@ -406,12 +511,42 @@ export default function BusinessServiceRequestsPage() {
         if (cancelled) return
         const list: PolicyLite[] = (data?.data?.risk_management?.policies || []).map((p: any) => ({
           id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
+          premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0,
         }))
         setPoliciesByClient(prev => ({ ...prev, [clientId]: list }))
       })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingRow?.client_id])
+
+  // Family members for the currently-open request's client — needed for the
+  // Life Assured / Addressing To pickers. Same lazy + cached pattern as
+  // policiesByClient above.
+  useEffect(() => {
+    if (!editingRow) return
+    const clientId = editingRow.client_id
+    if (familyByClient[clientId]) return
+    let cancelled = false
+    supabase.from('family_members').select('id, client_id, name, relationship, phone').eq('client_id', clientId)
+      .then(({ data }: any) => { if (!cancelled) setFamilyByClient(prev => ({ ...prev, [clientId]: (data || []) as FamilyMemberLite[] })) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingRow?.client_id])
+
+  // Manual payment method picklist — firm-wide, loaded once.
+  useEffect(() => {
+    if (!advisor) return
+    supabase.from('manual_payment_methods').select('*').order('created_at', { ascending: true })
+      .then(({ data }) => setManualMethods((data || []) as ManualPaymentMethod[]))
+  }, [advisor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Premium message templates — both context types loaded together, filtered
+  // by context_type at read time, same table/pattern Claims Board uses.
+  useEffect(() => {
+    if (!advisor) return
+    supabase.from('message_templates').select('*').in('context_type', ['premium_reminder_insurance', 'premium_reminder_investment'])
+      .then(({ data }) => setTemplates((data || []) as MessageTemplate[]))
+  }, [advisor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function resolvedPolicy(row: ServiceRequestRow): { label: string; policyNo: string } | null {
     if (row.policy_id) {
@@ -626,6 +761,175 @@ export default function BusinessServiceRequestsPage() {
   const editingFields = editingRow ? fieldsForType(editingRow.request_type) : []
   const editingPolicy = editingRow ? resolvedPolicy(editingRow) : null
 
+  // ── Premium Alerts derived state (only meaningful when editingRow is one
+  // of the two premium types) ──
+  const editingPremiumType: PremiumType | null = editingRow && isPremiumType(editingRow.request_type) ? editingRow.request_type : null
+  const editingPolicyFull: PolicyLite | null = editingRow?.policy_id
+    ? (policiesByClient[editingRow.client_id] || []).find(p => p.id === editingRow.policy_id) || null
+    : null
+  const premiumContextType = editingPremiumType === 'Investment Premium Reminder' ? 'premium_reminder_investment' : 'premium_reminder_insurance'
+
+  // Resolves a policy's `person` key ('client', 'spouse', 'child_<family_member_id>',
+  // or a raw family_member id) to a display name — same convention noted in
+  // the protection module. Falls back to the raw key if nothing matches.
+  function personLabelForKey(clientId: string, key: string): string {
+    if (!key || key === 'client') return clientsById[clientId] || 'Client'
+    const family = familyByClient[clientId] || []
+    if (key.startsWith('child_')) {
+      const fid = key.slice('child_'.length)
+      return family.find(f => f.id === fid)?.name || key
+    }
+    const bySpouse = family.find(f => f.relationship === 'Spouse')
+    if (key === 'spouse' && bySpouse) return bySpouse.name
+    return family.find(f => f.id === key)?.name || key
+  }
+
+  // Everyone this reminder could plausibly be addressed to, each with a
+  // phone number if one's on file. "Myself" only appears if the advisor has
+  // set a phone; otherwise Custom Number is the only way to text yourself/a
+  // PA, which is intentional — no PA account concept exists in this app yet.
+  const addressingOptions: { id: string; label: string; phone: string | null }[] = editingRow ? [
+    { id: 'client', label: `${clientsById[editingRow.client_id] || 'Client'} — client`, phone: clients.find(c => c.id === editingRow.client_id)?.phone || null },
+    ...((familyByClient[editingRow.client_id] || []).filter(f => f.phone).map(f => ({ id: f.id, label: `${f.name} — ${f.relationship || 'family'}`, phone: f.phone }))),
+    ...(advisor?.phone ? [{ id: 'self', label: `Myself — ${advisor.name || 'Advisor'}`, phone: advisor.phone }] : []),
+    { id: 'custom', label: 'Custom number…', phone: null },
+  ] : []
+  const selectedAddressing = addressingOptions.find(a => a.id === addressingTo) || null
+  const addressingPhone = addressingTo === 'custom' ? customNumber : (selectedAddressing?.phone || '')
+  const addressingName = addressingTo === 'custom' ? (customNumber ? 'there' : '') : (selectedAddressing?.label.split(' — ')[0] || '')
+
+  // Default the addressee the first time a premium modal opens: prefer the
+  // life assured if they have a phone on file, else the client.
+  useEffect(() => {
+    if (!editingRow || !editingPremiumType) return
+    if (addressingTo) return // already chosen this session
+    const lifeAssuredKey = editingRow.field_values?.life_assured_override || editingPolicyFull?.person || ''
+    const family = familyByClient[editingRow.client_id] || []
+    const lifeAssuredFamilyMember = family.find(f => f.name === personLabelForKey(editingRow.client_id, lifeAssuredKey))
+    if (lifeAssuredFamilyMember?.phone) setAddressingTo(lifeAssuredFamilyMember.id)
+    else setAddressingTo('client')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingRow?.id, editingPolicyFull, Object.keys(familyByClient).length])
+  // Reset per-modal composer state when switching cards.
+  useEffect(() => {
+    setAddressingTo(''); setCustomNumber(''); setPremiumComposerOpen(false); setMsgEdited(false); setMsgSequence(''); setMsgBody('')
+  }, [editingId])
+
+  const sequenceOptions = Array.from(new Set(
+    templates.filter(t => t.context_type === premiumContextType).map(t => t.context_key)
+  )).filter(Boolean)
+  if (editingPremiumType === 'Insurance Premium Reminder' && sequenceOptions.length === 0) sequenceOptions.push('Missed Premium (within Grace Period)')
+
+  function templateBodyForSequence(key: string): string {
+    if (!editingPremiumType) return ''
+    const personal = templates.find(t => t.context_type === premiumContextType && t.context_key === key && t.advisor_id === advisor?.id)
+    if (personal) return personal.body
+    const def = templates.find(t => t.context_type === premiumContextType && t.context_key === key && t.advisor_id === null)
+    if (def) return def.body
+    return PREMIUM_FALLBACK_TEMPLATES[editingPremiumType] || ''
+  }
+  function loadSequence(key: string) {
+    setMsgSequence(key)
+    setMsgBody(templateBodyForSequence(key))
+    setMsgEdited(false)
+  }
+  useEffect(() => {
+    if (premiumComposerOpen && editingPremiumType && !msgSequence) {
+      loadSequence(editingRow?.field_values?.sequence || sequenceOptions[0] || '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [premiumComposerOpen, editingId])
+
+  async function confirmAddSequence() {
+    const label = newSequenceDraft.trim()
+    if (!label || !editingRow) return
+    loadSequence(label)
+    setFieldValue(editingRow, 'sequence', label)
+    setAddingSequence(false)
+    setNewSequenceDraft('')
+  }
+
+  async function upsertPremiumTemplate(advisorIdForRow: string | null) {
+    if (!editingPremiumType || !msgSequence) return
+    const existing = templates.find(t => t.context_type === premiumContextType && t.context_key === msgSequence && t.advisor_id === advisorIdForRow)
+    if (existing) {
+      setTemplates(prev => prev.map(t => t.id === existing.id ? { ...t, body: msgBody } : t))
+      await supabase.from('message_templates').update({ body: msgBody, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      const { data } = await supabase.from('message_templates')
+        .insert({ context_type: premiumContextType, context_key: msgSequence, advisor_id: advisorIdForRow, body: msgBody })
+        .select().maybeSingle()
+      if (data) setTemplates(prev => [...prev, data as MessageTemplate])
+    }
+    setMsgEdited(false)
+  }
+
+  function insertMsgVariable(key: string) {
+    const token = `{{${key}}}`
+    const el = msgTextareaRef.current
+    if (!el) { setMsgBody(prev => prev + token); setMsgEdited(true); return }
+    const start = el.selectionStart ?? msgBody.length
+    const end = el.selectionEnd ?? msgBody.length
+    const next = msgBody.slice(0, start) + token + msgBody.slice(end)
+    setMsgBody(next)
+    setMsgEdited(true)
+    requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = start + token.length })
+  }
+
+  const msgVars: Record<string, string> = editingRow && editingPremiumType ? (() => {
+    const fv = editingRow.field_values || {}
+    const lifeAssuredKey = fv.life_assured_override || editingPolicyFull?.person || ''
+    const base = {
+      client_name: addressingName || clientsById[editingRow.client_id] || 'there',
+      company: editingPolicyFull?.companyName || '—',
+      life_assured: lifeAssuredKey ? personLabelForKey(editingRow.client_id, lifeAssuredKey) : '—',
+      plan_name: editingPolicyFull?.productName || '—',
+      policy_no: editingPolicyFull?.policyNo || '—',
+      premium_due: fmtDateSG(fv.premium_due_date),
+      advisor_name: advisor?.name || '',
+    }
+    if (editingPremiumType === 'Insurance Premium Reminder') {
+      return {
+        ...base,
+        premium_cash: fv.premium_cash_override || money(editingPolicyFull?.premiumCash || 0),
+        premium_medisave: fv.premium_medisave_override || money(editingPolicyFull?.premiumMedisave || 0),
+        payment_method: fv.payment_method || '—',
+        manual_method: fv.manual_method || '—',
+      }
+    }
+    return {
+      ...base,
+      premium_amount: fv.premium_amount_override || money(editingPolicyFull?.premiumCash || 0),
+      next_giro_deduction: fmtDateSG(fv.next_giro_deduction),
+      adhoc_payment_note: fv.adhoc_payment_note || '—',
+    }
+  })() : {}
+  const msgPreview = substituteMsgVars(msgBody, msgVars)
+
+  function copyMsg(forWhatsApp: boolean) {
+    if (navigator.clipboard) navigator.clipboard.writeText(msgPreview)
+    setMsgCopied(forWhatsApp ? 'whatsapp' : 'plain')
+    setTimeout(() => setMsgCopied(null), 1800)
+  }
+  const premiumWaLink = addressingPhone ? waLink(addressingPhone, msgPreview) : null
+
+  async function addManualMethod(label: string) {
+    const clean = label.trim()
+    if (!clean) return
+    const { data } = await supabase.from('manual_payment_methods').insert({ label: clean }).select().maybeSingle()
+    if (data) setManualMethods(prev => [...prev, data as ManualPaymentMethod])
+  }
+  async function renameManualMethod(id: string, label: string) {
+    const clean = label.trim()
+    if (!clean) return
+    setManualMethods(prev => prev.map(m => m.id === id ? { ...m, label: clean } : m))
+    await supabase.from('manual_payment_methods').update({ label: clean }).eq('id', id)
+  }
+  async function deleteManualMethod(id: string) {
+    setManualMethods(prev => prev.filter(m => m.id !== id))
+    await supabase.from('manual_payment_methods').delete().eq('id', id)
+  }
+
   return (
     <div style={{ padding: 24, background: 'var(--cream)', minHeight: '100%', borderRadius: 16 }}>
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
@@ -820,6 +1124,45 @@ export default function BusinessServiceRequestsPage() {
         </button>
       </div>
 
+      {/* ── Premium Alerts — separate from the generic Kanban, own visual
+          treatment. Open ones only; closed alerts just live in the normal
+          board/list once marked Done, same as everything else. ── */}
+      {!loading && (() => {
+        const premiumRows = rows.filter(r => isPremiumType(r.request_type) && r.status !== 'done')
+          .sort((a, b) => (a.field_values?.premium_due_date || '9999-12-31').localeCompare(b.field_values?.premium_due_date || '9999-12-31'))
+        if (premiumRows.length === 0) return null
+        return (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 999, background: T.rose }} />
+              <div className="font-serif" style={{ fontSize: 19, fontWeight: 600, color: T.text }}>Premium Alerts</div>
+              <div style={{ fontSize: 11, color: T.textFaint }}>— {premiumRows.length} open</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 620 }}>
+              {premiumRows.map(row => {
+                const policy = resolvedPolicy(row)
+                const due = row.field_values?.premium_due_date
+                return (
+                  <div key={row.id} onClick={() => setEditingId(row.id)}
+                    style={{ background: 'white', border: `1px solid ${T.roseSoft}`, borderLeft: `3px solid ${T.rose}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text }}>{clientsById[row.client_id] || 'Unknown client'}</div>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: T.roseSoft, color: T.rose }}>
+                        {row.request_type === 'Investment Premium Reminder' ? 'Investment' : 'Insurance'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: T.textFaint, marginTop: 4 }}>{policy?.label || 'No policy attached'}</div>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: T.rose, marginTop: 6, fontWeight: 500 }}>
+                      {row.field_values?.sequence || 'Reminder'}{due ? ` · due ${fmtDateSG(due)}` : ''}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13 }}>Loading service requests…</div>
       ) : (
@@ -981,7 +1324,173 @@ export default function BusinessServiceRequestsPage() {
                   style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
               )}
 
-              {editingFields.length > 0 && (
+              {editingPremiumType ? (
+                <>
+                  <SectionLabel>Who</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <FieldLabel>Life Assured</FieldLabel>
+                      <select value={editingRow.field_values?.life_assured_override || editingPolicyFull?.person || 'client'}
+                        onChange={e => setFieldValue(editingRow, 'life_assured_override', e.target.value)}
+                        style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
+                        <option value="client">{clientsById[editingRow.client_id] || 'Client'} (client)</option>
+                        {(familyByClient[editingRow.client_id] || []).map(f => (
+                          <option key={f.id} value={f.id}>{f.name}{f.relationship ? ` (${f.relationship})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <FieldLabel>Addressing To (recipient)</FieldLabel>
+                      <select value={addressingTo} onChange={e => setAddressingTo(e.target.value)}
+                        style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
+                        {addressingOptions.map(o => <option key={o.id} value={o.id}>{o.label}{o.phone ? ` — ${o.phone}` : ''}</option>)}
+                      </select>
+                      {addressingTo === 'custom' && (
+                        <input value={customNumber} onChange={e => setCustomNumber(e.target.value)} placeholder="e.g. 91234567 (PA, referral, anyone else)"
+                          style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5, marginTop: 6 }} />
+                      )}
+                    </div>
+                  </div>
+
+                  <SectionLabel>From policy on file</SectionLabel>
+                  {editingPolicyFull ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 14px', background: 'var(--cream2)', borderRadius: 10, padding: '10px 12px', fontSize: 12.5 }}>
+                      <div><span style={{ color: T.textFaint, fontSize: 10 }}>Company</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.companyName || '—'}</div></div>
+                      <div><span style={{ color: T.textFaint, fontSize: 10 }}>Plan Name</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.productName || '—'}</div></div>
+                      <div><span style={{ color: T.textFaint, fontSize: 10 }}>Policy No.</span><div style={{ fontWeight: 600 }}>{editingPolicyFull.policyNo || '—'}</div></div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>Select a policy above to auto-fill company / plan / policy no.</div>
+                  )}
+
+                  <SectionLabel>This reminder</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <FieldLabel>Premium Due Date</FieldLabel>
+                      <input type="date" defaultValue={editingRow.field_values?.premium_due_date || ''} onBlur={e => setFieldValue(editingRow, 'premium_due_date', e.target.value)}
+                        style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                    </div>
+
+                    {editingPremiumType === 'Insurance Premium Reminder' ? (
+                      <>
+                        <div>
+                          <FieldLabel>Payment Method</FieldLabel>
+                          <input defaultValue={editingRow.field_values?.payment_method || ''} onBlur={e => setFieldValue(editingRow, 'payment_method', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                        </div>
+                        <div>
+                          <FieldLabel>Premium — Cash <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
+                          <input defaultValue={editingRow.field_values?.premium_cash_override || (editingPolicyFull ? money(editingPolicyFull.premiumCash) : '')}
+                            onBlur={e => setFieldValue(editingRow, 'premium_cash_override', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                        </div>
+                        <div>
+                          <FieldLabel>Premium — Medisave <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
+                          <input defaultValue={editingRow.field_values?.premium_medisave_override || (editingPolicyFull ? money(editingPolicyFull.premiumMedisave) : '')}
+                            onBlur={e => setFieldValue(editingRow, 'premium_medisave_override', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                        </div>
+                        <div style={{ gridColumn: '1/-1' }}>
+                          <FieldLabel>Manual Method</FieldLabel>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <select value={editingRow.field_values?.manual_method || ''} onChange={e => setFieldValue(editingRow, 'manual_method', e.target.value)}
+                              style={{ flex: 1, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
+                              <option value="">Select…</option>
+                              {manualMethods.map(m => <option key={m.id} value={m.label}>{m.label}</option>)}
+                            </select>
+                            <button onClick={() => setShowManageMethods(true)}
+                              style={{ padding: '0 12px', fontSize: 12, fontWeight: 700, border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.textDim, cursor: 'pointer' }}>⚙ Manage</button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <FieldLabel>Next Giro Deduction</FieldLabel>
+                          <input type="date" defaultValue={editingRow.field_values?.next_giro_deduction || ''} onBlur={e => setFieldValue(editingRow, 'next_giro_deduction', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                        </div>
+                        <div>
+                          <FieldLabel>Premium Amount <span style={{ fontWeight: 400, color: T.textFaint }}>(from policy, editable)</span></FieldLabel>
+                          <input defaultValue={editingRow.field_values?.premium_amount_override || (editingPolicyFull ? money(editingPolicyFull.premiumCash) : '')}
+                            onBlur={e => setFieldValue(editingRow, 'premium_amount_override', e.target.value)}
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                        </div>
+                        <div style={{ gridColumn: '1/-1' }}>
+                          <FieldLabel>Adhoc Payment</FieldLabel>
+                          <input defaultValue={editingRow.field_values?.adhoc_payment_note || ''} onBlur={e => setFieldValue(editingRow, 'adhoc_payment_note', e.target.value)}
+                            placeholder="e.g. Email Link"
+                            style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* ── Message composer ── */}
+                  <button onClick={() => setPremiumComposerOpen(o => !o)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0', borderTop: `1px solid ${T.line}`, marginTop: 16, textAlign: 'left' }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text }}>Draft a reminder message</div>
+                    <span style={{ color: T.textFaint, fontSize: 13, transform: premiumComposerOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
+                  </button>
+                  {premiumComposerOpen && (
+                    <div style={{ background: 'var(--cream)', border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, marginTop: 4 }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                        <FieldLabel>Sequence</FieldLabel>
+                        {!addingSequence ? (
+                          <select value={msgSequence} onChange={e => { if (e.target.value === '__add') { setAddingSequence(true) } else { loadSequence(e.target.value); setFieldValue(editingRow, 'sequence', e.target.value) } }}
+                            style={{ width: 260, padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
+                            {sequenceOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            <option value="__add" style={{ fontWeight: 700, color: T.gold }}>+ Add new sequence…</option>
+                          </select>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input autoFocus value={newSequenceDraft} onChange={e => setNewSequenceDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') confirmAddSequence(); if (e.key === 'Escape') setAddingSequence(false) }}
+                              placeholder="e.g. Policy Lapsed" style={{ padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 8, fontSize: 12.5 }} />
+                            <button onClick={confirmAddSequence} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 8, border: 'none', background: T.gold, color: 'var(--charcoal)', cursor: 'pointer' }}>Add</button>
+                            <button onClick={() => setAddingSequence(false)} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', cursor: 'pointer' }}>Cancel</button>
+                          </div>
+                        )}
+                        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: msgEdited ? T.gold : T.textFaint }}>
+                          ● {msgEdited ? 'Edited — no longer matches default' : 'Using default template'}
+                        </span>
+                      </div>
+
+                      <FieldLabel>Template (edit freely — variables below insert at cursor)</FieldLabel>
+                      <textarea ref={msgTextareaRef} value={msgBody} onChange={e => { setMsgBody(e.target.value); setMsgEdited(true) }}
+                        style={{ width: '100%', minHeight: 140, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
+
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                        {PREMIUM_MSG_VARIABLES[editingPremiumType].map(v => (
+                          <button key={v.key} onClick={() => insertMsgVariable(v.key)}
+                            style={{ fontSize: 10.5, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: `1px solid rgba(231,188,114,.3)`, padding: '4px 10px', borderRadius: 999, cursor: 'pointer' }}>
+                            + {v.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div style={{ marginTop: 14 }}><FieldLabel>Preview (this is what gets sent)</FieldLabel></div>
+                      <div style={{ whiteSpace: 'pre-wrap', minHeight: 60, lineHeight: 1.5, background: 'var(--cream2)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginTop: 4 }}>{msgPreview}</div>
+
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                        <button onClick={() => loadSequence(msgSequence)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer' }}>Reset</button>
+                        <button onClick={() => upsertPremiumTemplate(advisor?.id || null)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer' }}>Save as My Default</button>
+                        {advisor?.id === CREATOR_ID && (
+                          <button onClick={() => upsertPremiumTemplate(null)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: '1px solid rgba(138,40,40,.3)', background: T.roseSoft, color: T.rose, cursor: 'pointer' }}>Save as Admin Default</button>
+                        )}
+                        <button onClick={() => copyMsg(false)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'white', color: T.textDim, cursor: 'pointer', marginLeft: 'auto' }}>{msgCopied === 'plain' ? 'Copied!' : 'Copy'}</button>
+                        <button onClick={() => copyMsg(true)} style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--gold)', color: 'var(--charcoal)', cursor: 'pointer' }}>{msgCopied === 'whatsapp' ? 'Copied!' : 'Copy for WhatsApp'}</button>
+                        {premiumWaLink ? (
+                          <a href={premiumWaLink} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: '#25D366', color: 'white', cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                            Click to Send WhatsApp →
+                          </a>
+                        ) : (
+                          <span style={{ fontSize: 11, color: T.textFaint, alignSelf: 'center' }}>No phone number for recipient — pick one above or Copy instead.</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : editingFields.length > 0 && (
                 <>
                   <SectionLabel>Additional details — {editingRow.request_type}</SectionLabel>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1059,6 +1568,47 @@ export default function BusinessServiceRequestsPage() {
           onAddNew={addNewType}
         />
       )}
+
+      {/* ── manage manual payment methods modal ── */}
+      {showManageMethods && (
+        <div onClick={() => setShowManageMethods(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 220 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 14, padding: '20px 22px' }}>
+            <div className="font-serif" style={{ fontSize: 19, fontWeight: 600, marginBottom: 4 }}>Manual Payment Methods</div>
+            <div style={{ fontSize: 11.5, color: T.textFaint, marginBottom: 14 }}>Shared firm-wide — used across all Insurance Premium Reminders.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {manualMethods.map(m => (
+                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input defaultValue={m.label} onBlur={e => e.target.value.trim() !== m.label && renameManualMethod(m.id, e.target.value)}
+                    style={{ flex: 1, padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }} />
+                  <button onClick={() => deleteManualMethod(m.id)}
+                    style={{ padding: '5px 10px', fontSize: 11, fontWeight: 700, border: 'none', borderRadius: 6, background: T.roseSoft, color: T.rose, cursor: 'pointer' }}>Delete</button>
+                </div>
+              ))}
+              {manualMethods.length === 0 && <div style={{ fontSize: 12, color: T.textFaint, fontStyle: 'italic' }}>No methods yet.</div>}
+            </div>
+            <NewMethodRow onAdd={addManualMethod} />
+            <button onClick={() => setShowManageMethods(false)}
+              style={{ marginTop: 16, width: '100%', padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NewMethodRow({ onAdd }: { onAdd: (label: string) => void }) {
+  const [draft, setDraft] = useState('')
+  return (
+    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+      <input value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && draft.trim()) { onAdd(draft); setDraft('') } }}
+        placeholder="New method…" style={{ flex: 1, padding: '7px 9px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--cream)', fontSize: 12.5 }} />
+      <button onClick={() => { if (draft.trim()) { onAdd(draft); setDraft('') } }}
+        style={{ padding: '7px 14px', fontSize: 11.5, fontWeight: 700, border: '1px solid rgba(138,40,40,.3)', borderRadius: 8, background: 'var(--rouge-l)', color: 'var(--rouge)', cursor: 'pointer' }}>
+        + Add
+      </button>
     </div>
   )
 }
