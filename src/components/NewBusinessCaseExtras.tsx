@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 // Meetings + to-dos for a New Business case. Meetings reuse
 // /api/service-requests/schedule-meeting as-is — that route only ever
@@ -11,6 +12,73 @@ import { useConfirm } from '@/components/ConfirmDialog'
 // client-side in whichever table the caller saves into. No new API route
 // needed. To-dos mirror the inline CRUD already in the Service Requests
 // board modal (service_request_todos) — same shape, different table.
+
+// Appointment messaging (Aug 2026) — reuses the firm-wide message_templates
+// table (context_type/context_key/advisor_id/body) that Premium Alerts and
+// Claims already write to. context_type='new_business_appointment',
+// context_key=Message Type (Confirmation / Reminder Today / Reminder
+// Tomorrow / Reminder Upcoming, or any custom one added later) — matches
+// Brian's own WhatsApp mail-merge sheet, not the meeting's purpose. Same
+// addable-sequence pattern as Premium Alerts, same Who / Greeting / Copy /
+// Copy for WhatsApp / wa.me composer.
+const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
+const APPT_MESSAGE_TYPES = ['Confirmation', 'Reminder (Today)', 'Reminder (Tomorrow)', 'Reminder (Upcoming)']
+
+interface MessageTemplate {
+  id: string
+  context_type: string
+  context_key: string
+  advisor_id: string | null
+  body: string
+}
+interface FamilyMemberLite {
+  id: string
+  name: string
+  relationship: string | null
+  phone: string | null
+}
+const APPT_FALLBACK_TEMPLATE =
+  `{{greeting}} {{client_name}},\n\nThank you for confirming your appointment:\n*Date:* {{meeting_date}}\n*Time:* {{meeting_time}}\n*Venue:* {{where}}\n\n_Please kindly confirm or advise if otherwise._\n\nThank you, and looking forward to our meeting 😊\n\n— {{advisor_name}}`
+const APPT_MSG_VARIABLES = [
+  { key: 'greeting', label: 'Greeting' },
+  { key: 'client_name', label: 'Client Name' },
+  { key: 'meeting_date', label: 'Date' },
+  { key: 'meeting_time', label: 'Time' },
+  { key: 'where', label: 'Venue/Link' },
+  { key: 'advisor_name', label: 'Advisor Name' },
+]
+// Matches Brian's sheet: Good Morning before noon, Good Afternoon until 6pm,
+// Good Evening after. Editable dropdown — this is just the default.
+function defaultGreeting(): string {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good Morning'
+  if (h < 18) return 'Good Afternoon'
+  return 'Good Evening'
+}
+function fmtDateSGFull(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function fmtTime12h(t: string | null): string {
+  if (!t) return '—'
+  const [h, m] = t.slice(0, 5).split(':').map(Number)
+  const period = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 || 12
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`
+}
+function substituteMsgVars(body: string, vars: Record<string, string>): string {
+  return body.replace(/\{\{(\w+)\}\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : m))
+}
+// Singapore mobile numbers are stored as bare 8-digit local numbers — prefix
+// the country code for a wa.me deep link. Strips spaces/dashes/leading +/0.
+function waLink(phoneRaw: string, text: string): string | null {
+  const digits = phoneRaw.replace(/[^\d]/g, '').replace(/^0+/, '')
+  if (digits.length < 8) return null
+  const withCountry = digits.startsWith('65') && digits.length > 8 ? digits : `65${digits}`
+  return `https://wa.me/${withCountry}?text=${encodeURIComponent(text)}`
+}
 
 const T = {
   gold: 'var(--gold)', goldText: 'var(--gold-tag)', goldSoft: 'rgba(168,131,74,.12)',
@@ -84,10 +152,20 @@ const btnStyle: React.CSSProperties = {
   padding: '7px 14px', fontSize: 12.5, fontWeight: 700, color: '#fff', background: T.text, border: 'none', borderRadius: 7, cursor: 'pointer',
 }
 
-export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { caseId: string; onMeetingsChanged?: () => void }) {
+export default function NewBusinessCaseExtras({
+  caseId, onMeetingsChanged, clientId, clientName, prospectName, prospectContact,
+}: {
+  caseId: string
+  onMeetingsChanged?: () => void
+  clientId?: string | null
+  clientName?: string | null
+  prospectName?: string | null
+  prospectContact?: string | null
+}) {
   const supabase = createClient()
   const toast = useToast()
   const confirmAction = useConfirm()
+  const { advisor } = useDashboard()
 
   const [loading, setLoading] = useState(true)
   const [meetings, setMeetings] = useState<MeetingRow[]>([])
@@ -123,6 +201,42 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null)
   const [editTodoText, setEditTodoText] = useState('')
   const [editTodoDue, setEditTodoDue] = useState('')
+
+  // ── appointment messaging ──
+  const [templates, setTemplates] = useState<MessageTemplate[]>([])
+  const [clientPhone, setClientPhone] = useState<string | null>(null)
+  const [family, setFamily] = useState<FamilyMemberLite[]>([])
+  const [messagingMeetingId, setMessagingMeetingId] = useState<string | null>(null)
+  const [addressingTo, setAddressingTo] = useState('')
+  const [customNumber, setCustomNumber] = useState('')
+  const [greeting, setGreeting] = useState(defaultGreeting())
+  const [msgType, setMsgType] = useState('')
+  const [addingMsgType, setAddingMsgType] = useState(false)
+  const [newMsgTypeDraft, setNewMsgTypeDraft] = useState('')
+  const [msgBody, setMsgBody] = useState('')
+  const [msgEdited, setMsgEdited] = useState(false)
+  const [msgCopied, setMsgCopied] = useState<'plain' | 'whatsapp' | null>(null)
+  const msgTextareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Templates for this context — loaded once, filtered by context_key
+  // (Message Type) at read time. Same pattern Premium Alerts' Sequence uses.
+  useEffect(() => {
+    if (!advisor) return
+    supabase.from('message_templates').select('*').eq('context_type', 'new_business_appointment')
+      .then(({ data }) => setTemplates((data || []) as MessageTemplate[]))
+  }, [advisor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Client phone + family (for the Who selector) — only relevant when this
+  // case is linked to an actual client record, not a bare prospect.
+  useEffect(() => {
+    if (!clientId) { setClientPhone(null); setFamily([]); return }
+    let cancelled = false
+    supabase.from('clients').select('phone').eq('id', clientId).maybeSingle()
+      .then(({ data }: any) => { if (!cancelled) setClientPhone(data?.phone || null) })
+    supabase.from('family_members').select('id, name, relationship, phone').eq('client_id', clientId)
+      .then(({ data }: any) => { if (!cancelled) setFamily((data || []) as FamilyMemberLite[]) })
+    return () => { cancelled = true }
+  }, [clientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false
@@ -242,9 +356,116 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     setMeetingMode(null)
   }
 
+  // Everyone this appointment message could go to. Client cases get the
+  // full Who list (client / family with phone / myself / custom), same as
+  // Premium Alerts. Prospect-only cases (no client record yet) fall back to
+  // the prospect's own contact number since there's no family/client row.
+  const addressingOptions: { id: string; label: string; phone: string | null }[] = clientId
+    ? [
+        { id: 'client', label: `${clientName || 'Client'} — client`, phone: clientPhone },
+        ...family.filter(f => f.phone).map(f => ({ id: f.id, label: `${f.name} — ${f.relationship || 'family'}`, phone: f.phone })),
+        ...(advisor?.phone ? [{ id: 'self', label: `Myself — ${advisor.name || 'Advisor'}`, phone: advisor.phone }] : []),
+        { id: 'custom', label: 'Custom number…', phone: null },
+      ]
+    : [
+        { id: 'prospect', label: `${prospectName || 'Prospect'}`, phone: prospectContact || null },
+        ...(advisor?.phone ? [{ id: 'self', label: `Myself — ${advisor.name || 'Advisor'}`, phone: advisor.phone }] : []),
+        { id: 'custom', label: 'Custom number…', phone: null },
+      ]
+  const selectedAddressing = addressingOptions.find(a => a.id === addressingTo) || null
+  const addressingPhone = addressingTo === 'custom' ? customNumber : (selectedAddressing?.phone || '')
+  const addressingName = addressingTo === 'custom' ? (customNumber ? 'there' : '') : (selectedAddressing?.label.split(' — ')[0] || '')
+
+  const msgTypeOptions = Array.from(new Set([...APPT_MESSAGE_TYPES, ...templates.map(t => t.context_key)]))
+
+  function templateBodyFor(type: string): string {
+    const personal = templates.find(t => t.context_key === type && t.advisor_id === advisor?.id)
+    if (personal) return personal.body
+    const def = templates.find(t => t.context_key === type && t.advisor_id === null)
+    if (def) return def.body
+    return APPT_FALLBACK_TEMPLATE
+  }
+
+  function loadMsgType(type: string) {
+    setMsgType(type)
+    setMsgBody(templateBodyFor(type))
+    setMsgEdited(false)
+  }
+
+  function openMessageComposer(m: MeetingRow) {
+    setMessagingMeetingId(m.id)
+    setAddressingTo(clientId ? 'client' : 'prospect')
+    setCustomNumber('')
+    setGreeting(defaultGreeting())
+    loadMsgType(msgType || msgTypeOptions[0])
+  }
+  function closeMessageComposer() {
+    setMessagingMeetingId(null)
+  }
+
+  function confirmAddMsgType() {
+    const label = newMsgTypeDraft.trim()
+    if (!label) return
+    loadMsgType(label)
+    setAddingMsgType(false)
+    setNewMsgTypeDraft('')
+  }
+
+  async function upsertApptTemplate(type: string, advisorIdForRow: string | null) {
+    if (!type) return
+    const existing = templates.find(t => t.context_key === type && t.advisor_id === advisorIdForRow)
+    if (existing) {
+      setTemplates(prev => prev.map(t => t.id === existing.id ? { ...t, body: msgBody } : t))
+      await supabase.from('message_templates').update({ body: msgBody, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      const { data } = await supabase.from('message_templates')
+        .insert({ context_type: 'new_business_appointment', context_key: type, advisor_id: advisorIdForRow, body: msgBody })
+        .select().maybeSingle()
+      if (data) setTemplates(prev => [...prev, data as MessageTemplate])
+    }
+    setMsgEdited(false)
+  }
+
+  function insertMsgVariable(key: string) {
+    const token = `{{${key}}}`
+    const el = msgTextareaRef.current
+    if (!el) { setMsgBody(prev => prev + token); setMsgEdited(true); return }
+    const start = el.selectionStart ?? msgBody.length
+    const end = el.selectionEnd ?? msgBody.length
+    const next = msgBody.slice(0, start) + token + msgBody.slice(end)
+    setMsgBody(next)
+    setMsgEdited(true)
+    requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = start + token.length })
+  }
+
+  function whereFor(m: MeetingRow): string {
+    if (m.location) return m.location
+    if (m.meeting_link) return m.meeting_link
+    if (m.phone_number) return `Call — ${m.phone_number}`
+    return '—'
+  }
+
+  function msgVarsFor(m: MeetingRow): Record<string, string> {
+    return {
+      greeting,
+      client_name: addressingName || clientName || prospectName || 'there',
+      meeting_date: fmtDateSGFull(m.meeting_date),
+      meeting_time: fmtTime12h(m.meeting_time),
+      where: whereFor(m),
+      advisor_name: advisor?.name || '',
+    }
+  }
+
+  function copyMsg(preview: string, forWhatsApp: boolean) {
+    if (navigator.clipboard) navigator.clipboard.writeText(preview)
+    setMsgCopied(forWhatsApp ? 'whatsapp' : 'plain')
+    setTimeout(() => setMsgCopied(null), 1800)
+  }
+
   async function deleteMeeting(id: string) {
     if (!await confirmAction('Delete this meeting?', { danger: true, confirmLabel: 'Delete' })) return
     const meeting = meetings.find(m => m.id === id)
+    if (messagingMeetingId === id) setMessagingMeetingId(null)
     setMeetings(prev => prev.filter(m => m.id !== id))
     const { error } = await supabase.from('new_business_case_meetings').delete().eq('id', id)
     if (error) toast('Delete failed: ' + error.message, 'error')
@@ -382,6 +603,8 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 11, color: T.textFaint, whiteSpace: 'nowrap' }}>{fmtDate(m.meeting_date)}{m.meeting_time ? `, ${m.meeting_time.slice(0, 5)}` : ''}</span>
+                <button onClick={() => messagingMeetingId === m.id ? closeMessageComposer() : openMessageComposer(m)}
+                  style={{ fontSize: 11, fontWeight: 700, color: messagingMeetingId === m.id ? T.goldText : T.textFaint, background: messagingMeetingId === m.id ? T.goldSoft : 'none', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '2px 6px' }} title="Message">✉ Message</button>
                 <button onClick={() => openEditMeetingForm(m)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }} title="Edit">✎</button>
                 <button onClick={() => deleteMeeting(m.id)} style={{ fontSize: 13, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
               </div>
@@ -395,6 +618,98 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
                 {m.google_calendar_event_id ? '✓ synced to calendar' : 'scheduled — calendar not connected'}
               </p>
             )}
+
+            {messagingMeetingId === m.id && (() => {
+              const msgVars = msgVarsFor(m)
+              const msgPreview = substituteMsgVars(msgBody, msgVars)
+              const msgWaLink = addressingPhone ? waLink(addressingPhone, msgPreview) : null
+              return (
+                <div style={{ marginTop: 10, background: T.cream2, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: T.textFaint, marginBottom: 4 }}>Addressing To</div>
+                      <select value={addressingTo} onChange={e => setAddressingTo(e.target.value)}
+                        style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 7, background: '#fff', color: T.text, fontSize: 12.5 }}>
+                        {addressingOptions.map(o => <option key={o.id} value={o.id}>{o.label}{o.phone ? ` — ${o.phone}` : ''}</option>)}
+                      </select>
+                      {addressingTo === 'custom' && (
+                        <input value={customNumber} onChange={e => setCustomNumber(e.target.value)} placeholder="e.g. 91234567"
+                          style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 7, background: '#fff', color: T.text, fontSize: 12.5, marginTop: 6 }} />
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: T.textFaint, marginBottom: 4 }}>Greeting</div>
+                      <select value={greeting} onChange={e => setGreeting(e.target.value)}
+                        style={{ width: '100%', padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 7, background: '#fff', color: T.text, fontSize: 12.5 }}>
+                        <option>Good Morning</option>
+                        <option>Good Afternoon</option>
+                        <option>Good Evening</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: T.textFaint }}>Message Type</div>
+                    {!addingMsgType ? (
+                      <select value={msgType} onChange={e => { if (e.target.value === '__add') { setAddingMsgType(true) } else { loadMsgType(e.target.value) } }}
+                        style={{ width: 220, padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 7, background: '#fff', color: T.text, fontSize: 12.5 }}>
+                        {msgTypeOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                        <option value="__add" style={{ fontWeight: 700, color: T.gold }}>+ Add new type…</option>
+                      </select>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input autoFocus value={newMsgTypeDraft} onChange={e => setNewMsgTypeDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') confirmAddMsgType(); if (e.key === 'Escape') setAddingMsgType(false) }}
+                          placeholder="e.g. Reschedule" style={{ padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 7, fontSize: 12.5 }} />
+                        <button onClick={confirmAddMsgType} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 7, border: 'none', background: T.gold, color: 'var(--charcoal)', cursor: 'pointer' }}>Add</button>
+                        <button onClick={() => setAddingMsgType(false)} style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 7, border: `1px solid ${T.line}`, background: '#fff', cursor: 'pointer' }}>Cancel</button>
+                      </div>
+                    )}
+                    <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.3, color: msgEdited ? T.gold : T.textFaint }}>
+                      ● {msgEdited ? 'Edited — no longer matches default' : 'Using default template'}
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: T.textFaint, marginBottom: 4 }}>Template (edit freely — variables below insert at cursor)</div>
+                  <textarea ref={msgTextareaRef} value={msgBody} onChange={e => { setMsgBody(e.target.value); setMsgEdited(true) }}
+                    style={{ width: '100%', minHeight: 130, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5, padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: '#fff', color: T.text, fontSize: 12.5 }} />
+
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                    {APPT_MSG_VARIABLES.map(v => (
+                      <button key={v.key} onClick={() => insertMsgVariable(v.key)}
+                        style={{ fontSize: 10.5, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: '1px solid rgba(231,188,114,.3)', padding: '4px 10px', borderRadius: 999, cursor: 'pointer' }}>
+                        + {v.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase', color: T.textFaint, marginTop: 12, marginBottom: 4 }}>Preview (this is what gets sent)</div>
+                  <div style={{ whiteSpace: 'pre-wrap', minHeight: 56, lineHeight: 1.5, background: '#fff', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>{msgPreview}</div>
+
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                    <button onClick={() => loadMsgType(msgType)}
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: '#fff', color: T.textDim, cursor: 'pointer' }}>Reset</button>
+                    <button onClick={() => upsertApptTemplate(msgType, advisor?.id || null)}
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: '#fff', color: T.textDim, cursor: 'pointer' }}>Save as My Default</button>
+                    {advisor?.id === CREATOR_ID && (
+                      <button onClick={() => upsertApptTemplate(msgType, null)}
+                        style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: '1px solid rgba(138,40,40,.3)', background: 'rgba(138,40,40,.10)', color: T.rose, cursor: 'pointer' }}>Save as Admin Default</button>
+                    )}
+                    <button onClick={() => copyMsg(msgPreview, false)}
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: `1px solid ${T.line}`, background: '#fff', color: T.textDim, cursor: 'pointer', marginLeft: 'auto' }}>{msgCopied === 'plain' ? 'Copied!' : 'Copy'}</button>
+                    <button onClick={() => copyMsg(msgPreview, true)}
+                      style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: 'var(--gold)', color: 'var(--charcoal)', cursor: 'pointer' }}>{msgCopied === 'whatsapp' ? 'Copied!' : 'Copy for WhatsApp'}</button>
+                    {msgWaLink ? (
+                      <a href={msgWaLink} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: 12, fontWeight: 700, padding: '7px 13px', borderRadius: 8, border: 'none', background: '#25D366', color: 'white', cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                        Click to Send WhatsApp →
+                      </a>
+                    ) : (
+                      <span style={{ fontSize: 11, color: T.textFaint, alignSelf: 'center' }}>No phone number for recipient — pick one above or Copy instead.</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         ))}
       </div>
