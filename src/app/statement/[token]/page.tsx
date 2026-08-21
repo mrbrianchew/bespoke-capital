@@ -24,6 +24,8 @@ import {
   stmtAssetBlockTotal, stmtAssetsTotal, stmtLiabBlockTotal, stmtLiabTotal, stmtPropertyEquity,
   fmtStmtMoney,
 } from '@/lib/statementFields'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const SECTIONS = ['Income', 'Expenses', 'Assets', 'Properties', 'Liabilities']
 
@@ -142,6 +144,8 @@ type Phase = 'loading' | 'gate' | 'form' | 'expired' | 'notfound'
 export default function StatementPage() {
   const params = useParams<{ token: string }>()
   const token = params?.token || ''
+  const toast = useToast()
+  const confirmAction = useConfirm()
 
   const [phase, setPhase] = useState<Phase>('loading')
   const [firm, setFirm] = useState('Bespoke Capital')
@@ -236,18 +240,18 @@ export default function StatementPage() {
 
   async function persist(action: 'save' | 'submit') {
     if (!validateIdentity()) {
-      alert(`Please fill in your Name and Occupation before ${action === 'save' ? 'saving' : 'submitting'}.`)
+      toast(`Please fill in your Name and Occupation before ${action === 'save' ? 'saving' : 'submitting'}.`, 'error')
       return
     }
     if (action === 'submit') {
       if (!ack) {
         setAckErr(true)
         ackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        alert('Please confirm the accuracy checkbox before submitting.')
+        toast('Please confirm the accuracy checkbox before submitting.', 'error')
         return
       }
       setAckErr(false)
-      if (!confirm(`Submit your ${year} financial statement? Once submitted, it becomes final and can no longer be edited.`)) return
+      if (!await confirmAction(`Submit your ${year} financial statement? Once submitted, it becomes final and can no longer be edited.`)) return
     }
     setSaving(true); setSaveErr('')
     try {

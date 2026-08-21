@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 interface Band {
   id: string
@@ -28,6 +29,7 @@ const lbl: React.CSSProperties = {
 export default function MedisaveLimitsPage() {
   const router = useRouter()
   const supabase = createClient()
+  const confirmAction = useConfirm()
   const [checking, setChecking]   = useState(true)
   const [bands, setBands]         = useState<Band[]>([])
   const [saving, setSaving]       = useState<string | null>(null)
@@ -75,7 +77,7 @@ export default function MedisaveLimitsPage() {
   }
 
   async function deleteBand(id: string) {
-    if (!confirm('Delete this age band?')) return
+    if (!await confirmAction('Delete this age band?')) return
     setDeleting(id)
     await supabase.from('medisave_withdrawal_limits').delete().eq('id', id)
     await load()

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -38,6 +39,7 @@ const ADMIN_SECTIONS = [
 ]
 
 function PendingAdvisorsCard() {
+  const confirmAction = useConfirm()
   const [pending, setPending] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<string | null>(null)
@@ -60,7 +62,7 @@ function PendingAdvisorsCard() {
   }
 
  async function handleReject(id: string) {
-    if (!confirm('Reject and delete this advisor account? This cannot be undone.')) return
+    if (!await confirmAction('Reject and delete this advisor account? This cannot be undone.')) return
     setActionId(id)
     await fetch('/api/delete-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setPending(prev => prev.filter(a => a.id !== id))
@@ -132,6 +134,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function RegisteredAdvisorsCard() {
+  const confirmAction = useConfirm()
   const [advisors, setAdvisors] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<string | null>(null)
@@ -146,7 +149,7 @@ function RegisteredAdvisorsCard() {
   useEffect(() => { load() }, [])
 
   async function handleSuspend(id: string) {
-    if (!confirm('Suspend this advisor? They will be signed out and unable to log in until reactivated. Their data is kept.')) return
+    if (!await confirmAction('Suspend this advisor? They will be signed out and unable to log in until reactivated. Their data is kept.')) return
     setActionId(id)
     await fetch('/api/suspend-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setAdvisors(prev => prev.map(a => a.id === id ? { ...a, status: 'suspended' } : a))
@@ -161,7 +164,7 @@ function RegisteredAdvisorsCard() {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Permanently delete ${name || 'this advisor'}? This deletes their login and cascades to all of their clients' data. This cannot be undone.`)) return
+    if (!await confirmAction(`Permanently delete ${name || 'this advisor'}? This deletes their login and cascades to all of their clients' data. This cannot be undone.`)) return
     setActionId(id)
     await fetch('/api/delete-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setAdvisors(prev => prev.filter(a => a.id !== id))
@@ -304,6 +307,7 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 function BugReportsCard() {
+  const confirmAction = useConfirm()
   const [reports, setReports] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<string | null>(null)
@@ -329,7 +333,7 @@ function BugReportsCard() {
   }
 
   async function deleteReport(id: string) {
-    if (!confirm('Permanently delete this report? This cannot be undone.')) return
+    if (!await confirmAction('Permanently delete this report? This cannot be undone.')) return
     setActionId(id)
     await fetch('/api/delete-bug-report', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

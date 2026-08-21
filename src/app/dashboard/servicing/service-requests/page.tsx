@@ -8,6 +8,8 @@ import ServiceRequestExtras from '@/components/ServiceRequestExtras'
 import { needsFollowupRequests } from '@/lib/serviceRequestsAttention'
 import { useDriveUpload } from '@/lib/useDriveUpload'
 import { logServiceResolution } from '@/lib/policyServiceHistory'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -74,6 +76,8 @@ export default function ServiceRequestsServicingPage() {
   const router = useRouter()
   const supabase = createClient()
   const drive = useDriveUpload()
+  const toast = useToast()
+  const confirmAction = useConfirm()
 
   const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
 
@@ -174,7 +178,7 @@ export default function ServiceRequestsServicingPage() {
     const existing = typeDefs.find(t => t.label.toLowerCase() === trimmed.toLowerCase())
     if (existing) return existing.label
     const { data, error } = await supabase.from('service_request_types').insert({ label: trimmed, fields: [] }).select().maybeSingle()
-    if (error || !data) { alert('Could not add type: ' + (error?.message || 'unknown error')); return null }
+    if (error || !data) { toast('Could not add type: ' + (error?.message || 'unknown error'), 'error'); return null }
     setTypeDefs(prev => [...prev, { ...(data as any), fields: [] }])
     return trimmed
   }
@@ -183,7 +187,7 @@ export default function ServiceRequestsServicingPage() {
     const withTimestamp = { ...patch, updated_at: new Date().toISOString() }
     setRows(prev => prev.map(r => r.id === id ? { ...r, ...withTimestamp } : r))
     const { error } = await supabase.from('service_requests').update(withTimestamp).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   function setFieldValue(row: ServiceRequestRow, key: string, value: string) {
@@ -214,7 +218,7 @@ export default function ServiceRequestsServicingPage() {
     const { data, error } = await supabase.from('service_request_todos')
       .insert({ service_request_id: editingId, text: todoDraft.trim(), due_date: todoDueDraft || null })
       .select().maybeSingle()
-    if (error) { alert('Could not add to-do: ' + error.message); return }
+    if (error) { toast('Could not add to-do: ' + error.message, 'error'); return }
     if (data) { setModalTodos(prev => [...prev, data as TodoRow]); setOpenTodos(prev => [...prev, data as TodoRow]) }
     setTodoDraft(''); setTodoDueDraft('')
   }
@@ -222,18 +226,18 @@ export default function ServiceRequestsServicingPage() {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done } : t))
     setOpenTodos(prev => done ? prev.filter(t => t.id !== id) : prev)
     const { error } = await supabase.from('service_request_todos').update({ done }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
   async function deleteTodo(id: string) {
     setModalTodos(prev => prev.filter(t => t.id !== id))
     setOpenTodos(prev => prev.filter(t => t.id !== id))
     const { error } = await supabase.from('service_request_todos').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
   function setTodoDueDate(id: string, date: string) {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: date || null } : t))
     setOpenTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: date || null } : t))
-    supabase.from('service_request_todos').update({ due_date: date || null }).eq('id', id).then(({ error }: any) => { if (error) alert('Save failed: ' + error.message) })
+    supabase.from('service_request_todos').update({ due_date: date || null }).eq('id', id).then(({ error }: any) => { if (error) toast('Save failed: ' + error.message, 'error') })
   }
 
   async function createRequest() {
@@ -244,16 +248,16 @@ export default function ServiceRequestsServicingPage() {
       status: 'requested', field_values: {},
     }).select().maybeSingle()
     setSavingNew(false)
-    if (error) { alert('Could not create request: ' + error.message); return }
+    if (error) { toast('Could not create request: ' + error.message, 'error'); return }
     if (data) { setRows(prev => [{ ...(data as any), field_values: {} }, ...prev]); setNewDesc(''); setShowNew(false); setEditingId((data as any).id) }
   }
 
   async function deleteRequest(id: string) {
-    if (!window.confirm('Delete this service request? This cannot be undone.')) return
+    if (!await confirmAction('Delete this service request? This cannot be undone.')) return
     setRows(prev => prev.filter(r => r.id !== id))
     setEditingId(null)
     const { error } = await supabase.from('service_requests').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   if (authLoading || loading) {

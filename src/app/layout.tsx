@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Cormorant_Garamond, Inter, DM_Mono } from 'next/font/google'
 import './globals.css'
+import AppProviders from '@/components/AppProviders'
 
 export const metadata: Metadata = {
   title: 'Bespoke HeartWork — Financial Plan',
@@ -43,7 +44,9 @@ const dmMono = DM_Mono({
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${cormorant.variable} ${inter.variable} ${dmMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   )
 }

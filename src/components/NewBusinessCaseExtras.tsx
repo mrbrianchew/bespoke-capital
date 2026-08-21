@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 // Meetings + to-dos for a New Business case. Meetings reuse
 // /api/service-requests/schedule-meeting as-is — that route only ever
@@ -84,6 +86,8 @@ const btnStyle: React.CSSProperties = {
 
 export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { caseId: string; onMeetingsChanged?: () => void }) {
   const supabase = createClient()
+  const toast = useToast()
+  const confirmAction = useConfirm()
 
   const [loading, setLoading] = useState(true)
   const [meetings, setMeetings] = useState<MeetingRow[]>([])
@@ -193,7 +197,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
       }
       const { error } = await supabase.from('new_business_case_meetings').update(patch).eq('id', editingMeetingId)
       setSavingMeeting(false)
-      if (error) { alert('Could not save changes: ' + error.message); return }
+      if (error) { toast('Could not save changes: ' + error.message, 'error'); return }
       setMeetings(prev => prev.map(m => m.id === editingMeetingId ? { ...m, ...patch } : m))
       onMeetingsChanged?.()
       setMeetingMode(null)
@@ -233,17 +237,17 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     }).select().maybeSingle()
 
     setSavingMeeting(false)
-    if (error) { alert('Could not save meeting: ' + error.message); return }
+    if (error) { toast('Could not save meeting: ' + error.message, 'error'); return }
     if (data) { setMeetings(prev => [data as MeetingRow, ...prev]); onMeetingsChanged?.() }
     setMeetingMode(null)
   }
 
   async function deleteMeeting(id: string) {
-    if (!window.confirm('Delete this meeting?')) return
+    if (!await confirmAction('Delete this meeting?')) return
     const meeting = meetings.find(m => m.id === id)
     setMeetings(prev => prev.filter(m => m.id !== id))
     const { error } = await supabase.from('new_business_case_meetings').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
     if (meeting?.google_calendar_event_id) {
       fetch('/api/service-requests/schedule-meeting', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
@@ -257,7 +261,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     if (!todoDraft.trim()) return
     const { data, error } = await supabase.from('new_business_case_todos')
       .insert({ case_id: caseId, text: todoDraft.trim(), due_date: todoDueDraft || null }).select().maybeSingle()
-    if (error) { alert('Could not add: ' + error.message); return }
+    if (error) { toast('Could not add: ' + error.message, 'error'); return }
     if (data) setTodos(prev => [...prev, data as TodoRow])
     setTodoDraft('')
     setTodoDueDraft('')
@@ -266,13 +270,13 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
   async function toggleTodo(id: string, done: boolean) {
     setTodos(prev => prev.map(t => t.id === id ? { ...t, done, done_at: done ? new Date().toISOString() : null } as any : t))
     const { error } = await supabase.from('new_business_case_todos').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function deleteTodo(id: string) {
     setTodos(prev => prev.filter(t => t.id !== id))
     const { error } = await supabase.from('new_business_case_todos').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   function openEditTodo(t: TodoRow) {
@@ -288,7 +292,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     const id = editingTodoId
     setEditingTodoId(null)
     const { error } = await supabase.from('new_business_case_todos').update(patch).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   // ── activity log ──
@@ -297,7 +301,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     const { data, error } = await supabase.from('new_business_activity_log')
       .insert({ case_id: caseId, activity_date: activityDateDraft, description: activityDraft.trim() })
       .select().maybeSingle()
-    if (error) { alert('Could not add entry: ' + error.message); return }
+    if (error) { toast('Could not add entry: ' + error.message, 'error'); return }
     if (data) setActivity(prev => [data as ActivityRow, ...prev])
     setActivityDraft('')
     setActivityDateDraft(new Date().toISOString().slice(0, 10))
@@ -316,14 +320,14 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
     setActivity(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
     setEditingActivityId(null)
     const { error } = await supabase.from('new_business_activity_log').update(patch).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function deleteActivity(id: string) {
-    if (!window.confirm('Delete this entry?')) return
+    if (!await confirmAction('Delete this entry?')) return
     setActivity(prev => prev.filter(a => a.id !== id))
     const { error } = await supabase.from('new_business_activity_log').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   if (loading) return <div style={{ fontSize: 12, color: T.textFaint }}>Loading…</div>

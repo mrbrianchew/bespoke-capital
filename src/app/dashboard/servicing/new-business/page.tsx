@@ -5,6 +5,7 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import { STAGES, Stage, staleLevel, hasUpcomingMeeting, daysInStage, AttentionMeeting } from '@/lib/newBusinessAttention'
 import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
 import CaseDrawer, { CaseRow, ProductRow, T, btnSmStyle } from '@/components/NewBusinessCaseDrawer'
+import { useToast } from '@/components/Toast'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -34,6 +35,7 @@ function staleBadge(row: CaseRow, meetings: AttentionMeeting[]) {
 export default function NewApplicationsServicingPage() {
   const { activeClient, advisor, clients, setClients, spouseNames, authLoading } = useDashboard()
   const supabase = createClient()
+  const toast = useToast()
 
   const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
 
@@ -87,7 +89,7 @@ export default function NewApplicationsServicingPage() {
   async function moveStage(id: string, stage: Stage) {
     setCases(prev => prev.map(c => c.id === id ? { ...c, stage, stage_changed_at: new Date().toISOString() } : c))
     const { error } = await supabase.from('new_business_cases').update({ stage, stage_changed_at: new Date().toISOString() }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function submitOutcome() {
@@ -103,7 +105,7 @@ export default function NewApplicationsServicingPage() {
     }
     const { error } = await supabase.from('new_business_cases').update(patch).eq('id', editingId)
     setSavingOutcome(false)
-    if (error) { alert('Save failed: ' + error.message); return }
+    if (error) { toast('Save failed: ' + error.message, 'error'); return }
     setCases(prev => prev.map(c => c.id === editingId ? { ...c, ...patch } : c))
     setOutcomeDraft(null)
     setEditingId(null)
@@ -112,13 +114,13 @@ export default function NewApplicationsServicingPage() {
   async function reopenCase(id: string) {
     const { error } = await supabase.from('new_business_cases')
       .update({ outcome: null, outcome_reason: null, outcome_at_stage: null, revisit_date: null }).eq('id', id)
-    if (error) { alert('Save failed: ' + error.message); return }
+    if (error) { toast('Save failed: ' + error.message, 'error'); return }
     setCases(prev => prev.map(c => c.id === id ? { ...c, outcome: null, outcome_reason: null, outcome_at_stage: null, revisit_date: null } : c))
   }
 
   async function deleteCase(id: string) {
     const { error } = await supabase.from('new_business_cases').delete().eq('id', id)
-    if (error) { alert('Delete failed: ' + error.message); return }
+    if (error) { toast('Delete failed: ' + error.message, 'error'); return }
     setCases(prev => prev.filter(c => c.id !== id))
     setEditingId(null)
     setOutcomeDraft(null)

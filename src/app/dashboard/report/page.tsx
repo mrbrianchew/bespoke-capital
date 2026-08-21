@@ -9,6 +9,7 @@ import { buildActionPlanSnapshot, ActionPlanSnapshot } from '@/lib/actionPlanSna
 import FinancialPlanView, { PlanSnapshot } from './FinancialPlanView'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 type FrameworkOverrideMap = Partial<Record<FrameworkRowKey, FrameworkRowStatus>>
 
@@ -31,6 +32,7 @@ function applyFrameworkOverrides(
 export default function ReportPage() {
   const supabase = createClient()
   const { user, activeClient, authLoading } = useDashboard()
+  const confirmAction = useConfirm()
   const [clientId, setClientId] = useState<string | null>(null)
   const [clientName, setClientName] = useState('')
   const [spouseName, setSpouseName] = useState('')
@@ -287,7 +289,7 @@ export default function ReportPage() {
     if (clientId) loadPastPlans(clientId)
   }
   async function deletePlan(id: string, label: string) {
-    if (!window.confirm(`Permanently delete "${label}"? This cannot be undone — the link will stop working immediately.`)) return
+    if (!await confirmAction(`Permanently delete "${label}"? This cannot be undone — the link will stop working immediately.`)) return
     await supabase.from('financial_plans').delete().eq('id', id)
     if (clientId) loadPastPlans(clientId)
   }

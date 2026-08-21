@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySharePassword } from '@/lib/sharePassword'
 
+// Client-facing route — must never be cached by Vercel's fetch cache.
+// Without this, a client could be served a stale statement after the
+// advisor edits and saves new data (same bug class fixed on report-print).
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 // Client-facing Financial Statement endpoint.
 //
 // The public statement page (/statement/[token]) is unauthenticated, and all

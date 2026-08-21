@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -31,6 +32,7 @@ const S = {
 export default function InsuranceAdminPage() {
   const router = useRouter()
   const supabase = createClient()
+  const confirmAction = useConfirm()
   const [checking, setChecking]     = useState(true)
   const [activeCat, setActiveCat]   = useState<number | null>(null)
   const [activeTab, setActiveTab]   = useState<'types' | 'companies' | 'products'>('types')
@@ -123,7 +125,7 @@ export default function InsuranceAdminPage() {
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
               onDelete={async (id) => {
-                if (!confirm('Delete this policy type?')) return
+                if (!await confirmAction('Delete this policy type?')) return
                 await supabase.from('ins_policy_types').delete().eq('id', id)
                 await loadAll(); flash('Deleted')
               }}
@@ -146,7 +148,7 @@ export default function InsuranceAdminPage() {
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
               onDelete={async (id) => {
-                if (!confirm('Delete this company? This will also remove linked products.')) return
+                if (!await confirmAction('Delete this company? This will also remove linked products.')) return
                 await supabase.from('ins_products').delete().eq('company_id', id)
                 await supabase.from('ins_companies').delete().eq('id', id)
                 await loadAll(); flash('Deleted')
@@ -176,7 +178,7 @@ export default function InsuranceAdminPage() {
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
               onDelete={async (id) => {
-                if (!confirm('Delete this product?')) return
+                if (!await confirmAction('Delete this product?')) return
                 await supabase.from('ins_products').delete().eq('id', id)
                 await loadAll(); flash('Deleted')
               }}

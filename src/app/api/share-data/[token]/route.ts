@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { hashSharePassword, verifySharePassword } from '@/lib/sharePassword'
 
+// Client-facing route — must never be cached by Vercel's fetch cache.
+// Without this, a client could be served stale data after the advisor
+// edits and saves new data (same bug class fixed on report-print).
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!

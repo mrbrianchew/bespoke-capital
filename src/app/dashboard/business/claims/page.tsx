@@ -8,6 +8,8 @@ import { useDriveUpload } from '@/lib/useDriveUpload'
 import { needsFollowupItems, daysSinceLastActivity } from '@/lib/claimsAttention'
 import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -212,6 +214,8 @@ export default function BusinessClaimsBoardPage() {
   const { advisor, clients, authLoading, setActiveClient } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
+  const toast = useToast()
+  const confirmAction = useConfirm()
 
   const hasAccess = advisor?.id === CREATOR_ID ||
     (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing') && advisor.beta_features.includes('business_dashboard'))
@@ -508,7 +512,7 @@ export default function BusinessClaimsBoardPage() {
     setModalTodos(prev => prev.map(t => t.id === todoId ? { ...t, done, done_at: doneAt } : t))
     setAllTodosLite(prev => prev.map(t => t.id === todoId ? { ...t, done, done_at: doneAt } : t))
     const { error } = await supabase.from('claim_followup_todos').update({ done, done_at: doneAt }).eq('id', todoId)
-    if (error) alert('Could not update: ' + error.message)
+    if (error) toast('Could not update: ' + error.message, 'error')
   }
 
   const columns = useMemo(() => {
@@ -541,14 +545,14 @@ export default function BusinessClaimsBoardPage() {
   }, [lineItems, claimsById, clientsById, familyByClient, policiesByClient, notesLite, allTodosLite])
 
   // Same pattern as saveLineItem on the per-client Medical Claims page:
-  // optimistic local update first, then the write, alert() on failure. No
+  // optimistic local update first, then the write, toast(..., 'error') on failure. No
   // rollback attempted on error — matches the existing page's behavior
   // (advisor sees the alert and can retry by dragging again).
   async function moveItem(id: string, zone: DropZone) {
     const patch = { ...patchFor(zone), updated_at: new Date().toISOString() }
     setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
     const { error } = await supabase.from('claim_line_items').update(patch).eq('id', id)
-    if (error) alert('Move failed: ' + error.message)
+    if (error) toast('Move failed: ' + error.message, 'error')
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -572,7 +576,7 @@ export default function BusinessClaimsBoardPage() {
     const trimmed = reason.trim() || null
     setLineItems(prev => prev.map(i => i.id === id ? { ...i, rejection_reason: trimmed } : i))
     const { error } = await supabase.from('claim_line_items').update({ rejection_reason: trimmed }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   // Reuses the client's most recent existing claim if one exists (life_assured
@@ -669,7 +673,7 @@ export default function BusinessClaimsBoardPage() {
     setEditingCard(prev => prev ? { ...prev, item: { ...prev.item, ...patch, updated_at: new Date().toISOString() } } : prev)
     const { error } = await supabase.from('claim_line_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
     setSavingModal(false)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function addNote() {
@@ -677,7 +681,7 @@ export default function BusinessClaimsBoardPage() {
     const { data, error } = await supabase.from('claim_followup_notes')
       .insert({ line_item_id: editingCard.item.id, note_date: noteDate, text: noteDraft.trim() })
       .select().maybeSingle()
-    if (error) { alert('Could not add note: ' + error.message); return }
+    if (error) { toast('Could not add note: ' + error.message, 'error'); return }
     if (data) {
       setModalNotes(prev => [data as FollowupNote, ...prev])
       setNotesLite(prev => [...prev, { line_item_id: (data as FollowupNote).line_item_id, created_at: (data as FollowupNote).created_at }])
@@ -690,7 +694,7 @@ export default function BusinessClaimsBoardPage() {
     const { data, error } = await supabase.from('claim_followup_todos')
       .insert({ line_item_id: editingCard.item.id, task: todoDraft.trim(), due_date: todoDueDate || null })
       .select().maybeSingle()
-    if (error) { alert('Could not add to-do: ' + error.message); return }
+    if (error) { toast('Could not add to-do: ' + error.message, 'error'); return }
     if (data) {
       setModalTodos(prev => [...prev, data as FollowupTodo])
       setAllTodosLite(prev => [...prev, data as FollowupTodo])
@@ -704,13 +708,13 @@ export default function BusinessClaimsBoardPage() {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done, done_at: doneAt } : t))
     setAllTodosLite(prev => prev.map(t => t.id === id ? { ...t, done, done_at: doneAt } : t))
     const { error } = await supabase.from('claim_followup_todos').update({ done, done_at: doneAt }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function deleteTodo(id: string) {
     setModalTodos(prev => prev.filter(t => t.id !== id))
     const { error } = await supabase.from('claim_followup_todos').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   function startEditTodo(t: FollowupTodo) {
@@ -726,7 +730,7 @@ export default function BusinessClaimsBoardPage() {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
     setEditingTodoId(null)
     const { error } = await supabase.from('claim_followup_todos').update(patch).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   function startEditNote(n: FollowupNote) {
@@ -742,14 +746,14 @@ export default function BusinessClaimsBoardPage() {
     setModalNotes(prev => prev.map(n => n.id === id ? { ...n, ...patch } : n))
     setEditingNoteId(null)
     const { error } = await supabase.from('claim_followup_notes').update(patch).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function deleteNote(id: string) {
-    if (!window.confirm('Delete this note?')) return
+    if (!await confirmAction('Delete this note?')) return
     setModalNotes(prev => prev.filter(n => n.id !== id))
     const { error } = await supabase.from('claim_followup_notes').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   async function connectModalDrive() {

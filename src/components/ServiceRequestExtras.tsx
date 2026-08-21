@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useDriveUpload, DriveDocumentGeneric } from '@/lib/useDriveUpload'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 // Drops into the Service Request modal wherever it's rendered (firm-wide
 // Board or the per-client Servicing page) — self-fetches and self-manages
@@ -67,6 +69,8 @@ function fmtDate(d: string) {
 export default function ServiceRequestExtras({ serviceRequestId, clientId }: { serviceRequestId: string; clientId: string }) {
   const supabase = createClient()
   const drive = useDriveUpload()
+  const toast = useToast()
+  const confirmAction = useConfirm()
 
   // Bumps the parent request's updated_at so serviceRequestsAttention.ts's
   // idle-day staleness check sees this as "recently touched" even though
@@ -229,17 +233,17 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
       phone_number: meetingTypeSel === 'phone_call' ? (phoneDraft.trim() || null) : null,
     }).select().maybeSingle()
     setSavingMeeting(false)
-    if (error) { alert('Could not save meeting: ' + error.message); return }
+    if (error) { toast('Could not save meeting: ' + error.message, 'error'); return }
     if (data) { setMeetings(prev => [data as MeetingRow, ...prev]); touchRequest() }
     setMeetingMode(null)
   }
 
   async function deleteMeeting(id: string) {
-    if (!window.confirm('Delete this meeting?')) return
+    if (!await confirmAction('Delete this meeting?')) return
     const meeting = meetings.find(m => m.id === id)
     setMeetings(prev => prev.filter(m => m.id !== id))
     const { error } = await supabase.from('service_request_meetings').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
     // Best-effort cleanup on the Calendar side too, so a deleted meeting
     // doesn't leave a stray event sitting on the advisor's actual calendar.
     if (meeting?.google_calendar_event_id) {
@@ -256,7 +260,7 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     const { data, error } = await supabase.from('service_request_activity_log')
       .insert({ service_request_id: serviceRequestId, activity_date: activityDateDraft, description: activityDraft.trim() })
       .select().maybeSingle()
-    if (error) { alert('Could not add entry: ' + error.message); return }
+    if (error) { toast('Could not add entry: ' + error.message, 'error'); return }
     if (data) { setActivity(prev => [data as ActivityRow, ...prev]); touchRequest() }
     setActivityDraft('')
     setActivityDateDraft(new Date().toISOString().slice(0, 10))
@@ -275,15 +279,15 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     setActivity(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
     setEditingActivityId(null)
     const { error } = await supabase.from('service_request_activity_log').update(patch).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
     else touchRequest()
   }
 
   async function deleteActivity(id: string) {
-    if (!window.confirm('Delete this entry?')) return
+    if (!await confirmAction('Delete this entry?')) return
     setActivity(prev => prev.filter(a => a.id !== id))
     const { error } = await supabase.from('service_request_activity_log').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   const inputStyle: React.CSSProperties = { padding: '7px 9px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }

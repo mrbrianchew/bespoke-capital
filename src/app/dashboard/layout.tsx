@@ -13,6 +13,7 @@ import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
 import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttention'
 import { fetchNewBusinessAttentionCount } from '@/lib/newBusinessAttention'
 import { fetchPremiumAlertsAttentionCount } from '@/lib/premiumAlertsAttention'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -118,6 +119,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     user, advisor, clients, activeClient, spouseNames,
     setActiveClient, setClients, updateActiveClientFields,
   } = useDashboard()
+  const confirmAction = useConfirm()
   const [showClientDrop, setShowClientDrop] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
   const [showFolderModal, setShowFolderModal] = useState(false)
@@ -250,7 +252,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   }, [user?.id])
 
   async function deleteClient(clientId: string) {
-    if (!confirm('Delete this client? This cannot be undone.')) return
+    if (!await confirmAction('Delete this client? This cannot be undone.')) return
     await supabase.from('fact_finding').delete().eq('client_id', clientId)
     await supabase.from('family_members').delete().eq('client_id', clientId)
     await supabase.from('clients').delete().eq('id', clientId)

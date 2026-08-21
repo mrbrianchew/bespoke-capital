@@ -6,6 +6,8 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import ServiceRequestExtras from '@/components/ServiceRequestExtras'
 import { logServiceResolution } from '@/lib/policyServiceHistory'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -169,6 +171,8 @@ export default function PremiumAlertsPage() {
   const { advisor, clients, spouseNames, authLoading } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
+  const toast = useToast()
+  const confirmAction = useConfirm()
   const narrow = useNarrow(560)
 
   const hasAccess = advisor?.id === CREATOR_ID ||
@@ -288,7 +292,7 @@ export default function PremiumAlertsPage() {
     const withTimestamp = { ...patch, updated_at: new Date().toISOString() }
     setRows(prev => prev.map(r => r.id === id ? { ...r, ...withTimestamp } : r))
     const { error } = await supabase.from('service_requests').update(withTimestamp).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   function setFieldValue(row: ServiceRequestRow, key: string, value: string) {
@@ -314,11 +318,11 @@ export default function PremiumAlertsPage() {
   }
 
   async function deleteRequest(id: string) {
-    if (!window.confirm('Delete this premium alert? This cannot be undone.')) return
+    if (!await confirmAction('Delete this premium alert? This cannot be undone.')) return
     setRows(prev => prev.filter(r => r.id !== id))
     setEditingId(null)
     const { error } = await supabase.from('service_requests').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   // ── quick-add ──

@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase'
 import { getUsdSgdRate } from '@/lib/fxRate'
 import { getLatestHistoryByPolicy, getHistoryForPolicy, addCorrection, PolicyHistoryEntry } from '@/lib/policyServiceHistory'
 import DateInput from '@/components/DateInput'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 // Extracted from src/app/dashboard/protection/page.tsx so the New Business
 // Pipeline's product/application flow can reuse the exact same policy
@@ -126,6 +128,8 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
   onSave:(p:Policy)=>void; onClose:()=>void
   clientId:string|null; onHistoryChanged:()=>void
 }) {
+  const toast = useToast()
+  const confirmAction = useConfirm()
   const [form, setForm] = useState<Policy>({...policy})
   const f=(k:keyof Policy,v:any)=>setForm(prev=>({...prev,[k]:v}))
   const isNew = !policy.companyName && !policy.productName
@@ -215,20 +219,20 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
   // Remarks auto-generate — only for Medical & LTC, pulls the selected
   // product's default_remarks from Admin, falls back to "Provides {briefDescription}"
   // for Medical when no default is set. Always editable after.
-  function generateRemarks() {
+  async function generateRemarks() {
     const selProd = filtProds.find(pr => pr.name === form.productName);
     let generated = '';
     if (selProd?.default_remarks && selProd.default_remarks.trim()) {
       generated = selProd.default_remarks.trim();
     } else if (isMedical) {
-      if (!form.briefDescription) { alert('Select a Brief Description first.'); return; }
+      if (!form.briefDescription) { toast('Select a Brief Description first.', 'error'); return; }
       generated = `Provides ${form.briefDescription}`;
     } else {
-      alert('No default remarks set for this product yet. Add one in Admin → Insurance Reference Data.');
+      toast('No default remarks set for this product yet. Add one in Admin → Insurance Reference Data.', 'error');
       return;
     }
     if (form.remarks && form.remarks.trim() && form.remarks.trim() !== generated) {
-      if (!confirm('This will replace your current Remarks text. Continue?')) return;
+      if (!await confirmAction('This will replace your current Remarks text. Continue?')) return;
     }
     f('remarks', generated);
   }
@@ -769,6 +773,7 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
 
 export function ServicingHistorySection({clientId, policyId, onChanged}:{clientId:string; policyId:string; onChanged:()=>void}) {
   const supabase = createClient()
+  const toast = useToast()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [entries, setEntries] = useState<PolicyHistoryEntry[]>([])
@@ -806,7 +811,7 @@ export function ServicingHistorySection({clientId, policyId, onChanged}:{clientI
       createdBy: user?.id || null,
     })
     setSaving(false)
-    if (error) { alert('Could not save correction: ' + error); return }
+    if (error) { toast('Could not save correction: ' + error, 'error'); return }
     setCorrectingId(null)
     await load()
     onChanged()

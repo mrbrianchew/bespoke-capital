@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 type Status = { connected: boolean; email: string | null; connectedAt: string | null }
 
@@ -13,6 +14,7 @@ const RESULT_MESSAGES: Record<string, { text: string; tone: 'error' | 'success' 
 }
 
 export default function CalendarConnectCard() {
+  const confirmAction = useConfirm()
   const [status, setStatus] = useState<Status | null>(null)
   const [loading, setLoading] = useState(true)
   const [disconnecting, setDisconnecting] = useState(false)
@@ -43,7 +45,7 @@ export default function CalendarConnectCard() {
   }
 
   async function disconnect() {
-    if (!window.confirm('Disconnect Calendar? Scheduled meetings will stop syncing until you reconnect.')) return
+    if (!await confirmAction('Disconnect Calendar? Scheduled meetings will stop syncing until you reconnect.')) return
     setDisconnecting(true)
     try {
       await fetch('/api/calendar/disconnect', { method: 'POST' })

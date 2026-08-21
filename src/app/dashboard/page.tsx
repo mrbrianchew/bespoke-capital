@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase'
 import { calcAnnualTakeHome, amortisedOutstanding } from '@/lib/calc'
 import DateInput from '@/components/DateInput'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,8 @@ const STATUS_CONFIG: Record<Status, { bg: string; border: string; dot: string; l
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function ExecutiveSummaryPage() {
+  const toast = useToast()
+  const confirmAction = useConfirm()
   const [loading, setLoading]       = useState(true)
   const [client, setClient]         = useState<any>(null)
   const [spouse, setSpouse]         = useState<any>(null)
@@ -136,7 +140,7 @@ export default function ExecutiveSummaryPage() {
     setClient((prev: any) => ({ ...prev, ...updateFields }))
     updateActiveClientFields(updateFields)
   } catch (error: any) {
-    alert(`Failed to update client: ${error.message || 'Unknown error'}`)
+    toast(`Failed to update client: ${error.message || 'Unknown error'}`, 'error')
   } finally {
     setSaving(false)
   }
@@ -177,13 +181,13 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
       )
     }
   } catch (error: any) {
-    alert(`Failed to update: ${error.message || 'Unknown error'}`)
+    toast(`Failed to update: ${error.message || 'Unknown error'}`, 'error')
   } finally {
     setSaving(false)
   }
 }
 async function deleteFamilyMember(memberId: string) {
-    if (!confirm('Are you sure you want to remove this family member?')) return
+    if (!await confirmAction('Are you sure you want to remove this family member?')) return
     setSaving(true)
     try {
       const { error } = await supabase
@@ -197,7 +201,7 @@ async function deleteFamilyMember(memberId: string) {
         setChildren((prev: any[]) => prev.filter(k => k.id !== memberId))
       }
     } catch (error: any) {
-      alert(`Failed to delete: ${error.message || 'Unknown error'}`)
+      toast(`Failed to delete: ${error.message || 'Unknown error'}`, 'error')
     } finally {
       setSaving(false)
     }
@@ -219,7 +223,7 @@ async function deleteFamilyMember(memberId: string) {
         setChildren((prev: any[]) => [...prev, data])
       }
     } catch (error: any) {
-      alert(`Failed to add: ${error.message || 'Unknown error'}`)
+      toast(`Failed to add: ${error.message || 'Unknown error'}`, 'error')
     } finally {
       setSaving(false)
     }

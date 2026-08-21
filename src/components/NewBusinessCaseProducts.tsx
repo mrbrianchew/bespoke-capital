@@ -5,6 +5,8 @@ import { saveFactFindingSection } from '@/lib/factFindingSave'
 import PolicyModal, { Policy, InsCategory, InsPolicyType, InsCompany, InsProduct, emptyPolicy, RiskMgmtData, EMPTY_RM } from '@/components/PolicyModal'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import type { ProductRow, ProductOutcome } from '@/components/NewBusinessCaseDrawer'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 // Adding a product to a New Business case opens the exact same policy form
 // the Protection page uses (category-driven fields, product/company
@@ -129,6 +131,8 @@ export default function NewBusinessCaseProducts({
   onProductDeleted: (id: string) => void
 }) {
   const supabase = createClient()
+  const toast = useToast()
+  const confirmAction = useConfirm()
 
   const [categories, setCategories] = useState<InsCategory[]>([])
   const [policyTypes, setPolicyTypes] = useState<InsPolicyType[]>([])
@@ -232,9 +236,9 @@ export default function NewBusinessCaseProducts({
   }
 
   async function deleteProduct(p: ProductRow) {
-    if (!window.confirm(`Remove ${p.product_name || p.product_type || 'this product'} from the case?`)) return
+    if (!await confirmAction(`Remove ${p.product_name || p.product_type || 'this product'} from the case?`)) return
     const { error } = await supabase.from('new_business_case_products').delete().eq('id', p.id)
-    if (error) { alert('Delete failed: ' + error.message); return }
+    if (error) { toast('Delete failed: ' + error.message, 'error'); return }
     onProductDeleted(p.id)
   }
 
@@ -255,12 +259,12 @@ export default function NewBusinessCaseProducts({
 
     if (editingProduct) {
       const { error } = await supabase.from('new_business_case_products').update(patch).eq('id', editingProduct.id)
-      if (error) { alert('Save failed: ' + error.message); return }
+      if (error) { toast('Save failed: ' + error.message, 'error'); return }
       onProductUpdated({ ...editingProduct, ...patch } as ProductRow)
     } else {
       const { data, error } = await supabase.from('new_business_case_products')
         .insert({ case_id: caseId, status: 'active', ...patch }).select().maybeSingle()
-      if (error) { alert('Save failed: ' + error.message); return }
+      if (error) { toast('Save failed: ' + error.message, 'error'); return }
       if (data) onProductAdded(data as ProductRow)
     }
     setShowModal(false)
@@ -275,13 +279,13 @@ export default function NewBusinessCaseProducts({
 
   async function setOutcome(p: ProductRow, outcome: ProductOutcome) {
     const { error } = await supabase.from('new_business_case_products').update({ outcome }).eq('id', p.id)
-    if (error) { alert('Could not update outcome: ' + error.message); return }
+    if (error) { toast('Could not update outcome: ' + error.message, 'error'); return }
     onProductUpdated({ ...p, outcome })
   }
 
   async function withdrawProduct(p: ProductRow) {
     const { error } = await supabase.from('new_business_case_products').update({ status: 'active' === p.status ? 'withdrawn' : 'active' }).eq('id', p.id)
-    if (error) { alert('Could not update: ' + error.message); return }
+    if (error) { toast('Could not update: ' + error.message, 'error'); return }
     onProductUpdated({ ...p, status: p.status === 'active' ? 'withdrawn' : 'active' })
   }
 
@@ -297,7 +301,7 @@ export default function NewBusinessCaseProducts({
     setSavingReasonFor(p.id)
     const { error } = await supabase.from('new_business_case_products').update({ status_note: text || null }).eq('id', p.id)
     setSavingReasonFor(null)
-    if (error) { alert('Could not save reason: ' + error.message); return }
+    if (error) { toast('Could not save reason: ' + error.message, 'error'); return }
     onProductUpdated({ ...p, status_note: text || null })
   }
 
@@ -306,15 +310,15 @@ export default function NewBusinessCaseProducts({
     setSavingRefFor(p.id)
     const { error } = await supabase.from('new_business_case_products').update({ reference_number: text || null }).eq('id', p.id)
     setSavingRefFor(null)
-    if (error) { alert('Could not save reference number: ' + error.message); return }
+    if (error) { toast('Could not save reference number: ' + error.message, 'error'); return }
     onProductUpdated({ ...p, reference_number: text || null })
   }
 
   // ── push to portfolio / client incepted ──
 
   async function pushToPortfolio(p: ProductRow) {
-    if (!clientId) { alert("This case isn't linked to a client record yet — convert the prospect to a client before pushing to portfolio."); return }
-    if (!p.policy_draft) { alert('This product has no policy detail captured — edit it first.'); return }
+    if (!clientId) { toast("This case isn't linked to a client record yet — convert the prospect to a client before pushing to portfolio.", 'error'); return }
+    if (!p.policy_draft) { toast('This product has no policy detail captured — edit it first.', 'error'); return }
     setPushingId(p.id)
     try {
       const personKey = derivePersonKey(p.life_assured_role, p.life_assured_family_member_id)
@@ -327,7 +331,7 @@ export default function NewBusinessCaseProducts({
       if (error) throw error
       onProductUpdated({ ...p, linked_policy_id: pushedPolicy.id })
     } catch (e: any) {
-      alert('Push to portfolio failed: ' + (e?.message || 'unknown error'))
+      toast('Push to portfolio failed: ' + (e?.message || 'unknown error'), 'error')
     } finally {
       setPushingId(null)
     }
@@ -338,10 +342,10 @@ export default function NewBusinessCaseProducts({
     setLoadingIncept(p.id)
     const { data, error } = await supabase.from('fact_finding').select('data').eq('client_id', clientId).eq('section', 'protection_portfolio').maybeSingle()
     setLoadingIncept(null)
-    if (error) { alert('Could not load the portfolio: ' + error.message); return }
+    if (error) { toast('Could not load the portfolio: ' + error.message, 'error'); return }
     const rm: RiskMgmtData | undefined = (data?.data as any)?.risk_management
     const found = rm?.policies?.find(pol => pol.id === p.linked_policy_id)
-    if (!found) { alert("Could not find this policy in the client's portfolio — it may have been removed there."); return }
+    if (!found) { toast("Could not find this policy in the client's portfolio — it may have been removed there.", 'error'); return }
     setInceptingProduct(p)
     setInceptingPolicy(found)
     setShowInceptModal(true)
@@ -356,10 +360,10 @@ export default function NewBusinessCaseProducts({
       })
       const patch = { status: 'issued' as const, policy_draft: policy, issued_at: new Date().toISOString().slice(0, 10) }
       const { error } = await supabase.from('new_business_case_products').update(patch).eq('id', inceptingProduct.id)
-      if (error) { alert('Saved to the portfolio, but could not update this product\'s record: ' + error.message) }
+      if (error) { toast('Saved to the portfolio, but could not update this product\'s record: ' + error.message, 'error') }
       else onProductUpdated({ ...inceptingProduct, ...patch } as ProductRow)
     } catch (e: any) {
-      alert('Save failed: ' + (e?.message || 'unknown error'))
+      toast('Save failed: ' + (e?.message || 'unknown error'), 'error')
     } finally {
       setShowInceptModal(false)
       setInceptingProduct(null)

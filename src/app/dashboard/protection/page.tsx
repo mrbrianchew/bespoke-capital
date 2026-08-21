@@ -8,6 +8,7 @@ import { getUsdSgdRate } from '@/lib/fxRate'
 import { getLatestHistoryByPolicy, getHistoryForPolicy, addCorrection, PolicyHistoryEntry } from '@/lib/policyServiceHistory'
 import ProtectionOverview from './ProtectionOverview'
 import DateInput from '@/components/DateInput'
+import { useConfirm } from '@/components/ConfirmDialog'
 import PolicyModal, { Policy, InsCategory, InsPolicyType, InsCompany, InsProduct, emptyPolicy, CAT_COLORS, CAT_SHORT, FREQ, STATUS_OPTS, PAY_MODES, fmt, fmtPremium, RiskMgmtData, EMPTY_RM } from '@/components/PolicyModal'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
@@ -94,6 +95,7 @@ export default function ProtectionPageWrapper() {
 function ProtectionPage() {
   const supabase = createClient()
   const { activeClient, authLoading } = useDashboard()
+  const confirmAction = useConfirm()
   const [error, setError] = useState<string | null>(null)
 
   // Servicing History — latest non-superseded entry per policy_id, keyed for
@@ -659,7 +661,7 @@ async function handleGeneratePaymentShare() {
 // Deletes a share row so its link stops working immediately.
 async function revokeShare(token: string, clear: () => void) {
   if (!token) return
-  if (!confirm('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
+  if (!await confirmAction('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
   setRevoking(true)
   try {
     const { error } = await supabase.from('client_shares').delete().eq('token', token)

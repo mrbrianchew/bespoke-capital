@@ -7,6 +7,7 @@ import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { sumSelectedExpenses } from '@/lib/retirementExpenses'
 import { Chart, registerables } from 'chart.js'
 import MonthInput from '@/components/MonthInput'
+import { useConfirm } from '@/components/ConfirmDialog'
 Chart.register(...registerables)
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -1050,6 +1051,7 @@ function vehicleIcon(t: VehicleType) {
 export default function CapitalMandatePage() {
   const supabase = createClient()
   const { activeClient, authLoading } = useDashboard()
+  const confirmAction = useConfirm()
 
   const [loading, setLoading] = useState(true)
   const [client, setClient] = useState<any>(null)
@@ -1321,7 +1323,7 @@ export default function CapitalMandatePage() {
   }
 
   async function deleteVehicle(id: string) {
-    if (!confirm('Remove this funding vehicle?')) return
+    if (!await confirmAction('Remove this funding vehicle?')) return
     const updated = portfolio.filter(p => p.id !== id)
     setPortfolio(updated)
     await saveData(updated, settings, goals.filter(g => g.source === 'custom'), notes, corpusShortfall)

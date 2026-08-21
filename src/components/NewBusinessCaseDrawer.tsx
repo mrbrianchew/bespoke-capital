@@ -5,6 +5,7 @@ import NewBusinessCaseDocuments from '@/components/NewBusinessCaseDocuments'
 import NewBusinessCaseProducts from '@/components/NewBusinessCaseProducts'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import type { Policy } from '@/components/PolicyModal'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 // Shared between the firm-wide Business Dashboard board
 // (dashboard/business/new-business) and the per-client Client Servicing
@@ -112,6 +113,7 @@ export default function NewBusinessCaseDrawer({
   onProductUpdated: (p: ProductRow) => void
   onProductDeleted: (id: string) => void
 }) {
+  const confirmAction = useConfirm()
   const stageIdx = STAGES.findIndex(s => s.key === row.stage)
   const isProspect = !row.client_id
 
@@ -259,7 +261,7 @@ export default function NewBusinessCaseDrawer({
             up regardless of stage. */}
         <div style={{ marginTop: 28, paddingTop: 16, borderTop: `1px solid ${T.line}` }}>
           <button
-            onClick={() => { if (window.confirm(`Permanently delete "${row.case_title}"? This removes the case and all its products, meetings, to-dos, and email search history. This cannot be undone.`)) onDelete() }}
+            onClick={async () => { if (await confirmAction(`Permanently delete "${row.case_title}"? This removes the case and all its products, meetings, to-dos, and email search history. This cannot be undone.`)) onDelete() }}
             style={{ ...btnSmStyle, border: 'none', background: 'none', color: T.textFaint, padding: '4px 0' }}
           >
             Delete this case

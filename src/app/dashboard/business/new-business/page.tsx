@@ -8,6 +8,7 @@ import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
 import CaseDrawer, { CaseRow, ProductRow, T, btnSmStyle } from '@/components/NewBusinessCaseDrawer'
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, closestCenter } from '@dnd-kit/core'
 import { GripVertical } from 'lucide-react'
+import { useToast } from '@/components/Toast'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -102,6 +103,7 @@ export default function NewBusinessPipelinePage() {
   const { advisor, clients, setClients, spouseNames, authLoading } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
+  const toast = useToast()
 
   const hasAccess = advisor?.id === CREATOR_ID ||
     (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing') && advisor.beta_features.includes('business_dashboard'))
@@ -263,14 +265,14 @@ export default function NewBusinessPipelinePage() {
   async function toggleTodoFromTab(id: string, done: boolean) {
     setTodos(prev => done ? prev.filter(t => t.id !== id) : prev)
     const { error } = await supabase.from('new_business_case_todos').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function moveStage(id: string, stage: Stage) {
     setCases(prev => prev.map(c => c.id === id ? { ...c, stage, stage_changed_at: new Date().toISOString() } : c))
     const { error } = await supabase.from('new_business_cases')
       .update({ stage, stage_changed_at: new Date().toISOString() }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function submitOutcome() {
@@ -286,7 +288,7 @@ export default function NewBusinessPipelinePage() {
     }
     const { error } = await supabase.from('new_business_cases').update(patch).eq('id', editingId)
     setSavingOutcome(false)
-    if (error) { alert('Save failed: ' + error.message); return }
+    if (error) { toast('Save failed: ' + error.message, 'error'); return }
     setCases(prev => prev.map(c => c.id === editingId ? { ...c, ...patch } : c))
     setOutcomeDraft(null)
     setEditingId(null)
@@ -295,7 +297,7 @@ export default function NewBusinessPipelinePage() {
   async function reopenCase(id: string) {
     const { error } = await supabase.from('new_business_cases')
       .update({ outcome: null, outcome_reason: null, outcome_at_stage: null, revisit_date: null }).eq('id', id)
-    if (error) { alert('Save failed: ' + error.message); return }
+    if (error) { toast('Save failed: ' + error.message, 'error'); return }
     setCases(prev => prev.map(c => c.id === id ? { ...c, outcome: null, outcome_reason: null, outcome_at_stage: null, revisit_date: null } : c))
   }
 
@@ -305,7 +307,7 @@ export default function NewBusinessPipelinePage() {
     // to null (fixed via migration — the FK previously had no ON DELETE
     // clause and would have blocked this).
     const { error } = await supabase.from('new_business_cases').delete().eq('id', id)
-    if (error) { alert('Delete failed: ' + error.message); return }
+    if (error) { toast('Delete failed: ' + error.message, 'error'); return }
     setCases(prev => prev.filter(c => c.id !== id))
     setEditingId(null)
     setOutcomeDraft(null)

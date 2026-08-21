@@ -6,6 +6,8 @@ import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
 import { daysSinceLastActivity } from '@/lib/claimsAttention'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -255,6 +257,8 @@ function MedicalClaimsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
+  const toast = useToast()
+  const confirmAction = useConfirm()
   // Deep-link from the Business Dashboard Claims Board: ?claimId=<uuid> selects
   // that claim once its client loads. Only honored when the id actually belongs
   // to the newly-loaded client's claims — see the load effect below.
@@ -603,7 +607,7 @@ function MedicalClaimsPage() {
     let person = personKeyOverride
     if (!person) {
       if (peopleWithMedicalPolicy.length === 0) {
-        alert('No one on this case has a medical policy on file yet — add one on the Protection page first.')
+        toast('No one on this case has a medical policy on file yet — add one on the Protection page first.', 'error')
         return
       }
       if (peopleWithMedicalPolicy.length > 1) {
@@ -613,7 +617,7 @@ function MedicalClaimsPage() {
       person = peopleWithMedicalPolicy[0].key
     }
     const firstMain = policiesForPerson(person).find(p => p.policyTypeCode?.toLowerCase() === 'main') || policiesForPerson(person)[0]
-    if (!firstMain) { alert('This person has no medical policy on file yet — add one on the Protection page first.'); return }
+    if (!firstMain) { toast('This person has no medical policy on file yet — add one on the Protection page first.', 'error'); return }
     setShowNewClaimPicker(false)
     setSaving(true)
     const { data, error } = await supabase.from('claims').insert({
@@ -621,7 +625,7 @@ function MedicalClaimsPage() {
       label: 'New Claim', status: 'open', opened_date: new Date().toISOString().slice(0, 10),
     }).select().maybeSingle()
     setSaving(false)
-    if (error || !data) { alert('Could not create claim: ' + (error?.message || 'unknown error')); return }
+    if (error || !data) { toast('Could not create claim: ' + (error?.message || 'unknown error'), 'error'); return }
     setClaims(prev => [data as ClaimRow, ...prev])
     setSelectedClaimId((data as ClaimRow).id)
     setDetailsOpen(true)
@@ -657,7 +661,7 @@ function MedicalClaimsPage() {
       setShareToken(token)
     } catch (e) {
       console.error('Claims share failed:', e)
-      alert('Could not generate share link: ' + (e instanceof Error ? e.message : 'unknown error'))
+      toast('Could not generate share link: ' + (e instanceof Error ? e.message : 'unknown error'), 'error')
     } finally {
       setShareGenerating(false)
     }
@@ -665,7 +669,7 @@ function MedicalClaimsPage() {
 
   async function revokeClaimsShare(token: string) {
     if (!token) return
-    if (!window.confirm('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
+    if (!await confirmAction('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
     setRevoking(true)
     try {
       const { error } = await supabase.from('client_shares').delete().eq('token', token)
@@ -684,18 +688,18 @@ function MedicalClaimsPage() {
     if (!selectedClaim) return
     setClaims(prev => prev.map(c => c.id === selectedClaim.id ? { ...c, ...patch } : c))
     const { error } = await supabase.from('claims').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', selectedClaim.id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function deleteClaim() {
     if (!selectedClaim) return
     const label = allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || selectedClaim.life_assured_person
-    if (!window.confirm(`Delete "${selectedClaim.label || 'Claim'}" for ${label}? This removes all its line items, notes, and documents. This cannot be undone.`)) return
+    if (!await confirmAction(`Delete "${selectedClaim.label || 'Claim'}" for ${label}? This removes all its line items, notes, and documents. This cannot be undone.`)) return
     const idToDelete = selectedClaim.id
     setSaving(true)
     const { error } = await supabase.from('claims').delete().eq('id', idToDelete)
     setSaving(false)
-    if (error) { alert('Could not delete claim: ' + error.message); return }
+    if (error) { toast('Could not delete claim: ' + error.message, 'error'); return }
     setClaims(prev => {
       const remaining = prev.filter(c => c.id !== idToDelete)
       setSelectedClaimId(remaining[0]?.id || null)
@@ -707,7 +711,7 @@ function MedicalClaimsPage() {
 
   async function onLifeAssuredChange(personKey: string) {
     const firstMain = policiesForPerson(personKey).find(p => p.policyTypeCode?.toLowerCase() === 'main') || policiesForPerson(personKey)[0]
-    if (!firstMain) { alert('This person has no medical policy on file yet.'); return }
+    if (!firstMain) { toast('This person has no medical policy on file yet.', 'error'); return }
     await updateClaim({ life_assured_person: personKey, policy_id: firstMain.id })
     setLinkedPolicyIds([])
     if (selectedClaimId) await supabase.from('claim_linked_policies').delete().eq('claim_id', selectedClaimId)
@@ -731,7 +735,7 @@ function MedicalClaimsPage() {
     setAddingLine(true)
     const { data, error } = await supabase.from('claim_line_items').insert(draft).select().maybeSingle()
     setAddingLine(false)
-    if (error || !data) { alert('Could not add line: ' + (error?.message || 'unknown error')); return }
+    if (error || !data) { toast('Could not add line: ' + (error?.message || 'unknown error'), 'error'); return }
     setLineItems(prev => [...prev, data as LineItemRow])
     setAddModalSection(null)
     // addSectionConsumedRef is only ever set true by the Business Dashboard
@@ -750,14 +754,14 @@ function MedicalClaimsPage() {
   async function saveLineItem(id: string, patch: Partial<LineItemRow>) {
     setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
     const { error } = await supabase.from('claim_line_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function deleteLine(id: string) {
     setLineItems(prev => prev.filter(i => i.id !== id))
     if (expandedItemId === id) setExpandedItemId(null)
     const { error } = await supabase.from('claim_line_items').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   // ── Follow-up note mutations ──
@@ -765,7 +769,7 @@ function MedicalClaimsPage() {
     const text = (noteDraft[lineItemId] || '').trim()
     if (!text) return
     const { data, error } = await supabase.from('claim_followup_notes').insert({ line_item_id: lineItemId, text }).select().maybeSingle()
-    if (error || !data) { alert('Could not add note: ' + (error?.message || 'unknown error')); return }
+    if (error || !data) { toast('Could not add note: ' + (error?.message || 'unknown error'), 'error'); return }
     setNotesByItem(prev => ({ ...prev, [lineItemId]: [data as FollowupNote, ...(prev[lineItemId] || [])] }))
     setNoteDraft(prev => ({ ...prev, [lineItemId]: '' }))
   }
@@ -773,7 +777,7 @@ function MedicalClaimsPage() {
   async function deleteNote(lineItemId: string, noteId: string) {
     setNotesByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).filter(n => n.id !== noteId) }))
     const { error } = await supabase.from('claim_followup_notes').delete().eq('id', noteId)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   // ── Follow-up todo mutations — same claim_followup_todos table the
@@ -785,7 +789,7 @@ function MedicalClaimsPage() {
     const dueDate = todoDueDraft[lineItemId] || null
     const { data, error } = await supabase.from('claim_followup_todos')
       .insert({ line_item_id: lineItemId, task, due_date: dueDate, done: false }).select().maybeSingle()
-    if (error || !data) { alert('Could not add follow-up: ' + (error?.message || 'unknown error')); return }
+    if (error || !data) { toast('Could not add follow-up: ' + (error?.message || 'unknown error'), 'error'); return }
     setTodosByItem(prev => {
       const next = [...(prev[lineItemId] || []), data as FollowupTodo]
       next.sort((a, b) => (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31'))
@@ -799,13 +803,13 @@ function MedicalClaimsPage() {
     const doneAt = done ? new Date().toISOString() : null
     setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).map(t => t.id === todoId ? { ...t, done, done_at: doneAt } : t) }))
     const { error } = await supabase.from('claim_followup_todos').update({ done, done_at: doneAt }).eq('id', todoId)
-    if (error) alert('Could not update: ' + error.message)
+    if (error) toast('Could not update: ' + error.message, 'error')
   }
 
   async function deleteTodo(lineItemId: string, todoId: string) {
     setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).filter(t => t.id !== todoId) }))
     const { error } = await supabase.from('claim_followup_todos').delete().eq('id', todoId)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   function startEditTodo(t: FollowupTodo) {
@@ -821,7 +825,7 @@ function MedicalClaimsPage() {
     setTodosByItem(prev => ({ ...prev, [lineItemId]: (prev[lineItemId] || []).map(t => t.id === id ? { ...t, ...patch } : t) }))
     setEditingTodoId(null)
     const { error } = await supabase.from('claim_followup_todos').update(patch).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   // Google auth + folder picking (advisor's own account, not a robot).
@@ -978,7 +982,7 @@ function MedicalClaimsPage() {
   }
 
   async function deleteDocument(doc: ClaimDocument) {
-    if (!window.confirm(`Delete "${doc.file_name}"? This removes it from Drive too.`)) return
+    if (!await confirmAction(`Delete "${doc.file_name}"? This removes it from Drive too.`)) return
     setDocuments(prev => prev.filter(d => d.id !== doc.id))
     try {
       if (doc.drive_file_id) {
@@ -989,7 +993,7 @@ function MedicalClaimsPage() {
       }
     } catch { /* proceed to remove the app-side record regardless */ }
     const { error } = await supabase.from('claim_documents').delete().eq('id', doc.id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   // ── Totals ──

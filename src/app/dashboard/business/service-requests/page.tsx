@@ -9,6 +9,8 @@ import { needsFollowupRequests } from '@/lib/serviceRequestsAttention'
 import { logServiceResolution } from '@/lib/policyServiceHistory'
 import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { useToast } from '@/components/Toast'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -294,6 +296,8 @@ export default function BusinessServiceRequestsPage() {
   const { advisor, clients, spouseNames, authLoading } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
+  const toast = useToast()
+  const confirmAction = useConfirm()
 
   // Same two-flag gate as Claims Board — this is the same Business Dashboard
   // section, no separate beta flag introduced for this feature.
@@ -475,7 +479,7 @@ export default function BusinessServiceRequestsPage() {
     setPendingTodos(prev => done ? prev.filter(t => t.id !== todoId) : prev)
     setModalTodos(prev => prev.map(t => t.id === todoId ? { ...t, done } : t))
     const { error } = await supabase.from('service_request_todos').update({ done }).eq('id', todoId)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   const typeOptions = useMemo(() => typeDefs.map(t => t.label), [typeDefs])
@@ -592,7 +596,7 @@ export default function BusinessServiceRequestsPage() {
     const withTimestamp = { ...patch, updated_at: new Date().toISOString() }
     setRows(prev => prev.map(r => r.id === id ? { ...r, ...withTimestamp } : r))
     const { error } = await supabase.from('service_requests').update(withTimestamp).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   function setFieldValue(row: ServiceRequestRow, key: string, value: string) {
@@ -648,7 +652,7 @@ export default function BusinessServiceRequestsPage() {
   // Adds a new type to the shared picklist if it doesn't already exist
   // (case-insensitive). Returns the canonical label to use — either the
   // newly-created one, or the existing match if this was a near-duplicate.
-  // A genuine insert failure is surfaced via alert() and returns null — it
+  // A genuine insert failure is surfaced via toast(..., 'error') and returns null — it
   // must NOT fall back to "pretend it worked" local-only state, or the type
   // silently vanishes on next load with no sign anything went wrong (this
   // masked a real PostgREST schema-cache staleness bug once already).
@@ -666,7 +670,7 @@ export default function BusinessServiceRequestsPage() {
           return row.label
         }
       }
-      alert('Could not save new type: ' + error.message)
+      toast('Could not save new type: ' + error.message, 'error')
       return null
     }
     const newType = { ...(data as any), fields: (data as any)?.fields || [] } as TypeRow
@@ -684,12 +688,12 @@ export default function BusinessServiceRequestsPage() {
     const newLabel = newLabelRaw.trim()
     if (!newLabel || newLabel === oldLabel) return
     const collision = typeDefs.find(t => t.id !== typeId && t.label.toLowerCase() === newLabel.toLowerCase())
-    if (collision) { alert(`"${newLabel}" already exists as a separate type — pick a different name, or delete one of them first.`); return }
+    if (collision) { toast(`"${newLabel}" already exists as a separate type — pick a different name, or delete one of them first.`, 'error'); return }
     const { error: renameErr } = await supabase.from('service_request_types').update({ label: newLabel }).eq('id', typeId)
-    if (renameErr) { alert('Could not rename: ' + renameErr.message); return }
+    if (renameErr) { toast('Could not rename: ' + renameErr.message, 'error'); return }
     if (typeUsageCount[oldLabel] > 0) {
       const { error: cascadeErr } = await supabase.from('service_requests').update({ request_type: newLabel }).eq('request_type', oldLabel)
-      if (cascadeErr) { alert('Type renamed, but updating existing requests failed: ' + cascadeErr.message); }
+      if (cascadeErr) { toast('Type renamed, but updating existing requests failed: ' + cascadeErr.message, 'error'); }
       else setRows(prev => prev.map(r => r.request_type === oldLabel ? { ...r, request_type: newLabel } : r))
     }
     setTypeDefs(prev => prev.map(t => t.id === typeId ? { ...t, label: newLabel } : t))
@@ -700,17 +704,17 @@ export default function BusinessServiceRequestsPage() {
   // first, or waiting until nothing references it, are the ways around this.
   async function deleteType(typeId: string, label: string) {
     const count = typeUsageCount[label] || 0
-    if (count > 0) { alert(`"${label}" is used by ${count} request${count === 1 ? '' : 's'} — rename it if needed, but it can't be deleted while in use.`); return }
-    if (!window.confirm(`Delete the "${label}" type? This cannot be undone.`)) return
+    if (count > 0) { toast(`"${label}" is used by ${count} request${count === 1 ? '' : 's'} — rename it if needed, but it can't be deleted while in use.`, 'error'); return }
+    if (!await confirmAction(`Delete the "${label}" type? This cannot be undone.`)) return
     setTypeDefs(prev => prev.filter(t => t.id !== typeId))
     const { error } = await supabase.from('service_request_types').delete().eq('id', typeId)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   async function updateTypeFields(typeId: string, fields: FieldDef[]) {
     setTypeDefs(prev => prev.map(t => t.id === typeId ? { ...t, fields } : t))
     const { error } = await supabase.from('service_request_types').update({ fields }).eq('id', typeId)
-    if (error) alert('Could not save field: ' + error.message)
+    if (error) toast('Could not save field: ' + error.message, 'error')
   }
 
   // Quick-capture — resolves the typed client name against the already-loaded
@@ -764,7 +768,7 @@ export default function BusinessServiceRequestsPage() {
     if (!editingId || !todoDraft.trim()) return
     const { data, error } = await supabase.from('service_request_todos')
       .insert({ service_request_id: editingId, text: todoDraft.trim(), due_date: todoDueDraft || null }).select().maybeSingle()
-    if (error) { alert('Could not add: ' + error.message); return }
+    if (error) { toast('Could not add: ' + error.message, 'error'); return }
     if (data) { setModalTodos(prev => [...prev, data as TodoRow]); setPendingTodos(prev => [...prev, data as TodoRow]) }
     setTodoDraft('')
     setTodoDueDraft('')
@@ -774,29 +778,29 @@ export default function BusinessServiceRequestsPage() {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, done } : t))
     setPendingTodos(prev => done ? prev.filter(t => t.id !== id) : prev) // done=false re-adding isn't reconstructable locally — next firm-wide load picks it back up
     const { error } = await supabase.from('service_request_todos').update({ done }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function setTodoDueDate(id: string, due_date: string) {
     setModalTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: due_date || null } : t))
     setPendingTodos(prev => prev.map(t => t.id === id ? { ...t, due_date: due_date || null } : t))
     const { error } = await supabase.from('service_request_todos').update({ due_date: due_date || null }).eq('id', id)
-    if (error) alert('Save failed: ' + error.message)
+    if (error) toast('Save failed: ' + error.message, 'error')
   }
 
   async function deleteTodo(id: string) {
     setModalTodos(prev => prev.filter(t => t.id !== id))
     setPendingTodos(prev => prev.filter(t => t.id !== id))
     const { error } = await supabase.from('service_request_todos').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   async function deleteRequest(id: string) {
-    if (!window.confirm('Delete this service request? This cannot be undone.')) return
+    if (!await confirmAction('Delete this service request? This cannot be undone.')) return
     setRows(prev => prev.filter(r => r.id !== id))
     setEditingId(null)
     const { error } = await supabase.from('service_requests').delete().eq('id', id)
-    if (error) alert('Delete failed: ' + error.message)
+    if (error) toast('Delete failed: ' + error.message, 'error')
   }
 
   if (!hasAccess) return null
@@ -1714,7 +1718,7 @@ function TypeSelect({ value, options, onChange, onAddNew, width }: {
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
 
-  async function confirm() {
+  async function submitNewType() {
     const label = draft.trim()
     if (!label) { setAdding(false); return }
     setSaving(true)
@@ -1727,10 +1731,10 @@ function TypeSelect({ value, options, onChange, onAddNew, width }: {
     return (
       <div style={{ display: 'flex', gap: 6, flex: `0 0 ${typeof width === 'number' ? width + 'px' : width}` }}>
         <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') { setAdding(false); setDraft('') } }}
+          onKeyDown={e => { if (e.key === 'Enter') submitNewType(); if (e.key === 'Escape') { setAdding(false); setDraft('') } }}
           placeholder="New type name…"
           style={{ flex: 1, minWidth: 0, padding: '9px 11px', border: `1px solid ${T.gold}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }} />
-        <button onClick={confirm} disabled={saving || !draft.trim()}
+        <button onClick={submitNewType} disabled={saving || !draft.trim()}
           style={{ padding: '9px 12px', fontSize: 12, fontWeight: 700, color: 'white', background: T.text, border: 'none', borderRadius: 8, cursor: 'pointer', opacity: saving || !draft.trim() ? 0.5 : 1 }}>
           {saving ? '…' : '✓'}
         </button>

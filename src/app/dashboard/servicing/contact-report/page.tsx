@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
+import { useConfirm } from '@/components/ConfirmDialog'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -91,6 +92,7 @@ export default function ContactReportPage() {
   const { activeClient, advisor, authLoading } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
+  const confirmAction = useConfirm()
 
   const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
 
@@ -329,7 +331,7 @@ export default function ContactReportPage() {
   }
 
   async function deleteEntry(report: ContactReportRow) {
-    if (!confirm('Delete this contact report entry? This cannot be undone.')) return
+    if (!await confirmAction('Delete this contact report entry? This cannot be undone.')) return
     const { error } = await supabase.from('contact_reports').delete().eq('id', report.id)
     if (error) { console.error('[contact-report] delete entry failed:', error); return }
     setReports(prev => prev.filter(r => r.id !== report.id))
