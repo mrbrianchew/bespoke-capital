@@ -153,7 +153,7 @@ const btnStyle: React.CSSProperties = {
 }
 
 export default function NewBusinessCaseExtras({
-  caseId, onMeetingsChanged, clientId, clientName, prospectName, prospectContact,
+  caseId, onMeetingsChanged, clientId, clientName, prospectName, prospectContact, prospectSpouseName, prospectSpouseContact,
 }: {
   caseId: string
   onMeetingsChanged?: () => void
@@ -161,6 +161,8 @@ export default function NewBusinessCaseExtras({
   clientName?: string | null
   prospectName?: string | null
   prospectContact?: string | null
+  prospectSpouseName?: string | null
+  prospectSpouseContact?: string | null
 }) {
   const supabase = createClient()
   const toast = useToast()
@@ -369,6 +371,7 @@ export default function NewBusinessCaseExtras({
       ]
     : [
         { id: 'prospect', label: `${prospectName || 'Prospect'}`, phone: prospectContact || null },
+        ...(prospectSpouseName || prospectSpouseContact ? [{ id: 'prospect_spouse', label: `${prospectSpouseName || 'Spouse'}`, phone: prospectSpouseContact || null }] : []),
         ...(advisor?.phone ? [{ id: 'self', label: `Myself — ${advisor.name || 'Advisor'}`, phone: advisor.phone }] : []),
         { id: 'custom', label: 'Custom number…', phone: null },
       ]

@@ -30,6 +30,8 @@ export interface CaseRow {
   prospect_name: string | null
   prospect_contact: string | null
   prospect_email: string | null
+  prospect_spouse_name: string | null
+  prospect_spouse_contact: string | null
   case_party: CaseParty
   spouse_family_member_id: string | null
   case_title: string
@@ -203,7 +205,15 @@ export default function NewBusinessCaseDrawer({
         </div>
 
         <div style={{ marginBottom: 28 }}>
-          <NewBusinessCaseExtras caseId={row.id} />
+          <NewBusinessCaseExtras
+            caseId={row.id}
+            clientId={row.client_id}
+            clientName={clientName}
+            prospectName={row.prospect_name}
+            prospectContact={row.prospect_contact}
+            prospectSpouseName={row.prospect_spouse_name}
+            prospectSpouseContact={row.prospect_spouse_contact}
+          />
         </div>
 
         <div style={{ marginBottom: 28 }}>

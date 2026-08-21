@@ -76,6 +76,8 @@ export default function NewBusinessCaseModal({
   const [prospectName, setProspectName] = useState('')
   const [prospectPhone, setProspectPhone] = useState('')
   const [prospectEmail, setProspectEmail] = useState('')
+  const [prospectSpouseName, setProspectSpouseName] = useState('')
+  const [prospectSpouseContact, setProspectSpouseContact] = useState('')
   const [source, setSource] = useState('Referral — from existing client')
   const [referredBy, setReferredBy] = useState('')
 
@@ -158,6 +160,8 @@ export default function NewBusinessCaseModal({
           prospect_name: prospectName.trim(),
           prospect_contact: prospectPhone.trim() || null,
           prospect_email: prospectEmail.trim() || null,
+          prospect_spouse_name: prospectSpouseName.trim() || null,
+          prospect_spouse_contact: prospectSpouseContact.trim() || null,
           case_party: 'client' as const,
           spouse_family_member_id: null,
           source,
@@ -169,6 +173,8 @@ export default function NewBusinessCaseModal({
           prospect_name: null,
           prospect_contact: null,
           prospect_email: null,
+          prospect_spouse_name: null,
+          prospect_spouse_contact: null,
           case_party: caseParty,
           spouse_family_member_id: (caseParty === 'spouse' || caseParty === 'both') ? spouse?.id || null : null,
           source: null,
@@ -319,6 +325,16 @@ export default function NewBusinessCaseModal({
                 <div style={{ flex: 1 }}>
                   <div style={labelStyle}>Email</div>
                   <input value={prospectEmail} onChange={e => setProspectEmail(e.target.value)} type="email" placeholder="name@email.com" style={inputStyle} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={labelStyle}>Spouse Name <span style={{ fontWeight: 400, color: T.textFaint }}>(optional)</span></div>
+                  <input value={prospectSpouseName} onChange={e => setProspectSpouseName(e.target.value)} placeholder="e.g. Mrs Ravindran" style={inputStyle} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={labelStyle}>Spouse Contact <span style={{ fontWeight: 400, color: T.textFaint }}>(optional)</span></div>
+                  <input value={prospectSpouseContact} onChange={e => setProspectSpouseContact(e.target.value)} placeholder="+65 9xxx xxxx" style={inputStyle} />
                 </div>
               </div>
               <div style={{ fontSize: 11, color: T.textFaint, marginBottom: 16, lineHeight: 1.4 }}>
