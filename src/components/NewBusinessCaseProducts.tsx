@@ -236,7 +236,7 @@ export default function NewBusinessCaseProducts({
   }
 
   async function deleteProduct(p: ProductRow) {
-    if (!await confirmAction(`Remove ${p.product_name || p.product_type || 'this product'} from the case?`)) return
+    if (!await confirmAction(`Remove ${p.product_name || p.product_type || 'this product'} from the case?`, { danger: true, confirmLabel: 'Remove' })) return
     const { error } = await supabase.from('new_business_case_products').delete().eq('id', p.id)
     if (error) { toast('Delete failed: ' + error.message, 'error'); return }
     onProductDeleted(p.id)

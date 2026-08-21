@@ -302,7 +302,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
   }
 
   async function expireNow(row: StatementRow) {
-    if (!await confirmAction(`Expire ${personLabel(row.person)}'s ${row.year} link now? They will no longer be able to open it (their entered data is kept).`)) return
+    if (!await confirmAction(`Expire ${personLabel(row.person)}'s ${row.year} link now? They will no longer be able to open it (their entered data is kept).`, { danger: true, confirmLabel: 'Expire' })) return
     setBusy(`expire:${row.id}`)
     const { error } = await supabase.from('financial_statements')
       .update({ expires_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -325,7 +325,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
       : (section === 'expenses' || section === 'income')
         ? '\n\nAnnual figures from the statement are converted to monthly (÷12) to match the Financials tab.'
         : ''
-    if (!await confirmAction(`Apply ${who}'s ${row.year} ${label} into this client's Financials data? The current values are logged so you can revert this once.${extra}`)) return
+    if (!await confirmAction(`Apply ${who}'s ${row.year} ${label} into this client's Financials data? The current values are logged so you can revert this once.${extra}`, { confirmLabel: 'Apply' })) return
 
     setBusy(`apply:${row.id}:${section}`)
     try {
@@ -365,7 +365,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     const log = latestLog(row.id, section)
     if (!log) return
     const label = SECTION_LIST.find(s => s.id === section)?.label || section
-    if (!await confirmAction(`Revert ${label} to the values from before the last Apply (${new Date(log.created_at).toLocaleString('en-SG')})?`)) return
+    if (!await confirmAction(`Revert ${label} to the values from before the last Apply (${new Date(log.created_at).toLocaleString('en-SG')})?`, { confirmLabel: 'Revert' })) return
 
     setBusy(`revert:${row.id}:${section}`)
     try {

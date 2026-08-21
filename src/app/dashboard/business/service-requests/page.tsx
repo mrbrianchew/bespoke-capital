@@ -705,7 +705,7 @@ export default function BusinessServiceRequestsPage() {
   async function deleteType(typeId: string, label: string) {
     const count = typeUsageCount[label] || 0
     if (count > 0) { toast(`"${label}" is used by ${count} request${count === 1 ? '' : 's'} — rename it if needed, but it can't be deleted while in use.`, 'error'); return }
-    if (!await confirmAction(`Delete the "${label}" type? This cannot be undone.`)) return
+    if (!await confirmAction(`Delete the "${label}" type? This cannot be undone.`, { danger: true, confirmLabel: 'Delete' })) return
     setTypeDefs(prev => prev.filter(t => t.id !== typeId))
     const { error } = await supabase.from('service_request_types').delete().eq('id', typeId)
     if (error) toast('Delete failed: ' + error.message, 'error')
@@ -796,7 +796,7 @@ export default function BusinessServiceRequestsPage() {
   }
 
   async function deleteRequest(id: string) {
-    if (!await confirmAction('Delete this service request? This cannot be undone.')) return
+    if (!await confirmAction('Delete this service request? This cannot be undone.', { danger: true, confirmLabel: 'Delete' })) return
     setRows(prev => prev.filter(r => r.id !== id))
     setEditingId(null)
     const { error } = await supabase.from('service_requests').delete().eq('id', id)

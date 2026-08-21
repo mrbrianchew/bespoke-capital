@@ -331,7 +331,7 @@ export default function ContactReportPage() {
   }
 
   async function deleteEntry(report: ContactReportRow) {
-    if (!await confirmAction('Delete this contact report entry? This cannot be undone.')) return
+    if (!await confirmAction('Delete this contact report entry? This cannot be undone.', { danger: true, confirmLabel: 'Delete' })) return
     const { error } = await supabase.from('contact_reports').delete().eq('id', report.id)
     if (error) { console.error('[contact-report] delete entry failed:', error); return }
     setReports(prev => prev.filter(r => r.id !== report.id))

@@ -750,7 +750,7 @@ export default function BusinessClaimsBoardPage() {
   }
 
   async function deleteNote(id: string) {
-    if (!await confirmAction('Delete this note?')) return
+    if (!await confirmAction('Delete this note?', { danger: true, confirmLabel: 'Delete' })) return
     setModalNotes(prev => prev.filter(n => n.id !== id))
     const { error } = await supabase.from('claim_followup_notes').delete().eq('id', id)
     if (error) toast('Delete failed: ' + error.message, 'error')

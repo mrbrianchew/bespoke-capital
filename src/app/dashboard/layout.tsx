@@ -252,7 +252,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   }, [user?.id])
 
   async function deleteClient(clientId: string) {
-    if (!await confirmAction('Delete this client? This cannot be undone.')) return
+    if (!await confirmAction('Delete this client? This cannot be undone.', { danger: true, confirmLabel: 'Delete' })) return
     await supabase.from('fact_finding').delete().eq('client_id', clientId)
     await supabase.from('family_members').delete().eq('client_id', clientId)
     await supabase.from('clients').delete().eq('id', clientId)

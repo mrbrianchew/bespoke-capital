@@ -62,7 +62,7 @@ function PendingAdvisorsCard() {
   }
 
  async function handleReject(id: string) {
-    if (!await confirmAction('Reject and delete this advisor account? This cannot be undone.')) return
+    if (!await confirmAction('Reject and delete this advisor account? This cannot be undone.', { danger: true, confirmLabel: 'Reject & delete' })) return
     setActionId(id)
     await fetch('/api/delete-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setPending(prev => prev.filter(a => a.id !== id))
@@ -149,7 +149,7 @@ function RegisteredAdvisorsCard() {
   useEffect(() => { load() }, [])
 
   async function handleSuspend(id: string) {
-    if (!await confirmAction('Suspend this advisor? They will be signed out and unable to log in until reactivated. Their data is kept.')) return
+    if (!await confirmAction('Suspend this advisor? They will be signed out and unable to log in until reactivated. Their data is kept.', { confirmLabel: 'Suspend' })) return
     setActionId(id)
     await fetch('/api/suspend-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setAdvisors(prev => prev.map(a => a.id === id ? { ...a, status: 'suspended' } : a))
@@ -164,7 +164,7 @@ function RegisteredAdvisorsCard() {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!await confirmAction(`Permanently delete ${name || 'this advisor'}? This deletes their login and cascades to all of their clients' data. This cannot be undone.`)) return
+    if (!await confirmAction(`Permanently delete ${name || 'this advisor'}? This deletes their login and cascades to all of their clients' data. This cannot be undone.`, { danger: true, confirmLabel: 'Delete' })) return
     setActionId(id)
     await fetch('/api/delete-advisor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setAdvisors(prev => prev.filter(a => a.id !== id))
@@ -333,7 +333,7 @@ function BugReportsCard() {
   }
 
   async function deleteReport(id: string) {
-    if (!await confirmAction('Permanently delete this report? This cannot be undone.')) return
+    if (!await confirmAction('Permanently delete this report? This cannot be undone.', { danger: true, confirmLabel: 'Delete' })) return
     setActionId(id)
     await fetch('/api/delete-bug-report', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

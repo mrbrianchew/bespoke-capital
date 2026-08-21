@@ -125,7 +125,7 @@ export default function InsuranceAdminPage() {
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
               onDelete={async (id) => {
-                if (!await confirmAction('Delete this policy type?')) return
+                if (!await confirmAction('Delete this policy type?', { danger: true, confirmLabel: 'Delete' })) return
                 await supabase.from('ins_policy_types').delete().eq('id', id)
                 await loadAll(); flash('Deleted')
               }}
@@ -148,7 +148,7 @@ export default function InsuranceAdminPage() {
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
               onDelete={async (id) => {
-                if (!await confirmAction('Delete this company? This will also remove linked products.')) return
+                if (!await confirmAction('Delete this company? This will also remove linked products.', { danger: true, confirmLabel: 'Delete' })) return
                 await supabase.from('ins_products').delete().eq('company_id', id)
                 await supabase.from('ins_companies').delete().eq('id', id)
                 await loadAll(); flash('Deleted')
@@ -178,7 +178,7 @@ export default function InsuranceAdminPage() {
                 await loadAll(); setSaving(false); flash('Saved ✓')
               }}
               onDelete={async (id) => {
-                if (!await confirmAction('Delete this product?')) return
+                if (!await confirmAction('Delete this product?', { danger: true, confirmLabel: 'Delete' })) return
                 await supabase.from('ins_products').delete().eq('id', id)
                 await loadAll(); flash('Deleted')
               }}

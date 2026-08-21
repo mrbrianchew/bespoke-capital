@@ -243,7 +243,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
   }
 
   async function deleteMeeting(id: string) {
-    if (!await confirmAction('Delete this meeting?')) return
+    if (!await confirmAction('Delete this meeting?', { danger: true, confirmLabel: 'Delete' })) return
     const meeting = meetings.find(m => m.id === id)
     setMeetings(prev => prev.filter(m => m.id !== id))
     const { error } = await supabase.from('new_business_case_meetings').delete().eq('id', id)
@@ -324,7 +324,7 @@ export default function NewBusinessCaseExtras({ caseId, onMeetingsChanged }: { c
   }
 
   async function deleteActivity(id: string) {
-    if (!await confirmAction('Delete this entry?')) return
+    if (!await confirmAction('Delete this entry?', { danger: true, confirmLabel: 'Delete' })) return
     setActivity(prev => prev.filter(a => a.id !== id))
     const { error } = await supabase.from('new_business_activity_log').delete().eq('id', id)
     if (error) toast('Delete failed: ' + error.message, 'error')

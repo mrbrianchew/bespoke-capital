@@ -232,7 +232,7 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
       return;
     }
     if (form.remarks && form.remarks.trim() && form.remarks.trim() !== generated) {
-      if (!await confirmAction('This will replace your current Remarks text. Continue?')) return;
+      if (!await confirmAction('This will replace your current Remarks text. Continue?', { confirmLabel: 'Replace' })) return;
     }
     f('remarks', generated);
   }

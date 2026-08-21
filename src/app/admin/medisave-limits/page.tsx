@@ -77,7 +77,7 @@ export default function MedisaveLimitsPage() {
   }
 
   async function deleteBand(id: string) {
-    if (!await confirmAction('Delete this age band?')) return
+    if (!await confirmAction('Delete this age band?', { danger: true, confirmLabel: 'Delete' })) return
     setDeleting(id)
     await supabase.from('medisave_withdrawal_limits').delete().eq('id', id)
     await load()

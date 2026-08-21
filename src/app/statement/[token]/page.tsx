@@ -251,7 +251,7 @@ export default function StatementPage() {
         return
       }
       setAckErr(false)
-      if (!await confirmAction(`Submit your ${year} financial statement? Once submitted, it becomes final and can no longer be edited.`)) return
+      if (!await confirmAction(`Submit your ${year} financial statement? Once submitted, it becomes final and can no longer be edited.`, { confirmLabel: 'Submit' })) return
     }
     setSaving(true); setSaveErr('')
     try {

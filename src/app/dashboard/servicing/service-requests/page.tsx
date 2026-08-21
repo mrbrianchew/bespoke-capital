@@ -253,7 +253,7 @@ export default function ServiceRequestsServicingPage() {
   }
 
   async function deleteRequest(id: string) {
-    if (!await confirmAction('Delete this service request? This cannot be undone.')) return
+    if (!await confirmAction('Delete this service request? This cannot be undone.', { danger: true, confirmLabel: 'Delete' })) return
     setRows(prev => prev.filter(r => r.id !== id))
     setEditingId(null)
     const { error } = await supabase.from('service_requests').delete().eq('id', id)

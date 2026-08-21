@@ -45,7 +45,7 @@ export default function GmailConnectCard() {
   }
 
   async function disconnect() {
-    if (!await confirmAction('Disconnect Gmail? You will need to reconnect to search claim-related emails again.')) return
+    if (!await confirmAction('Disconnect Gmail? You will need to reconnect to search claim-related emails again.', { danger: true, confirmLabel: 'Disconnect' })) return
     setDisconnecting(true)
     try {
       await fetch('/api/gmail/disconnect', { method: 'POST' })

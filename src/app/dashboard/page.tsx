@@ -187,7 +187,7 @@ async function updateFamilyMemberComplete(memberId: string, updatedData: any) {
   }
 }
 async function deleteFamilyMember(memberId: string) {
-    if (!await confirmAction('Are you sure you want to remove this family member?')) return
+    if (!await confirmAction('Are you sure you want to remove this family member?', { danger: true, confirmLabel: 'Remove' })) return
     setSaving(true)
     try {
       const { error } = await supabase

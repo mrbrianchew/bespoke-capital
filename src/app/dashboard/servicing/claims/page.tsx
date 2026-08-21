@@ -669,7 +669,7 @@ function MedicalClaimsPage() {
 
   async function revokeClaimsShare(token: string) {
     if (!token) return
-    if (!await confirmAction('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
+    if (!await confirmAction('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.', { danger: true, confirmLabel: 'Revoke' })) return
     setRevoking(true)
     try {
       const { error } = await supabase.from('client_shares').delete().eq('token', token)
@@ -694,7 +694,7 @@ function MedicalClaimsPage() {
   async function deleteClaim() {
     if (!selectedClaim) return
     const label = allPeople.find(p => p.key === selectedClaim.life_assured_person)?.label || selectedClaim.life_assured_person
-    if (!await confirmAction(`Delete "${selectedClaim.label || 'Claim'}" for ${label}? This removes all its line items, notes, and documents. This cannot be undone.`)) return
+    if (!await confirmAction(`Delete "${selectedClaim.label || 'Claim'}" for ${label}? This removes all its line items, notes, and documents. This cannot be undone.`, { danger: true, confirmLabel: 'Delete' })) return
     const idToDelete = selectedClaim.id
     setSaving(true)
     const { error } = await supabase.from('claims').delete().eq('id', idToDelete)
@@ -982,7 +982,7 @@ function MedicalClaimsPage() {
   }
 
   async function deleteDocument(doc: ClaimDocument) {
-    if (!await confirmAction(`Delete "${doc.file_name}"? This removes it from Drive too.`)) return
+    if (!await confirmAction(`Delete "${doc.file_name}"? This removes it from Drive too.`, { danger: true, confirmLabel: 'Delete' })) return
     setDocuments(prev => prev.filter(d => d.id !== doc.id))
     try {
       if (doc.drive_file_id) {

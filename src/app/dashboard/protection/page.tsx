@@ -661,7 +661,7 @@ async function handleGeneratePaymentShare() {
 // Deletes a share row so its link stops working immediately.
 async function revokeShare(token: string, clear: () => void) {
   if (!token) return
-  if (!await confirmAction('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.')) return
+  if (!await confirmAction('Revoke this link? Anyone who has it will lose access immediately. This cannot be undone.', { danger: true, confirmLabel: 'Revoke' })) return
   setRevoking(true)
   try {
     const { error } = await supabase.from('client_shares').delete().eq('token', token)

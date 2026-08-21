@@ -45,7 +45,7 @@ export default function CalendarConnectCard() {
   }
 
   async function disconnect() {
-    if (!await confirmAction('Disconnect Calendar? Scheduled meetings will stop syncing until you reconnect.')) return
+    if (!await confirmAction('Disconnect Calendar? Scheduled meetings will stop syncing until you reconnect.', { danger: true, confirmLabel: 'Disconnect' })) return
     setDisconnecting(true)
     try {
       await fetch('/api/calendar/disconnect', { method: 'POST' })

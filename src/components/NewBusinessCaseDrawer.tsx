@@ -261,7 +261,7 @@ export default function NewBusinessCaseDrawer({
             up regardless of stage. */}
         <div style={{ marginTop: 28, paddingTop: 16, borderTop: `1px solid ${T.line}` }}>
           <button
-            onClick={async () => { if (await confirmAction(`Permanently delete "${row.case_title}"? This removes the case and all its products, meetings, to-dos, and email search history. This cannot be undone.`)) onDelete() }}
+            onClick={async () => { if (await confirmAction(`Permanently delete "${row.case_title}"? This removes the case and all its products, meetings, to-dos, and email search history. This cannot be undone.`, { danger: true, confirmLabel: 'Delete' })) onDelete() }}
             style={{ ...btnSmStyle, border: 'none', background: 'none', color: T.textFaint, padding: '4px 0' }}
           >
             Delete this case

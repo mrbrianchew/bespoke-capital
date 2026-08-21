@@ -289,7 +289,7 @@ export default function ReportPage() {
     if (clientId) loadPastPlans(clientId)
   }
   async function deletePlan(id: string, label: string) {
-    if (!await confirmAction(`Permanently delete "${label}"? This cannot be undone — the link will stop working immediately.`)) return
+    if (!await confirmAction(`Permanently delete "${label}"? This cannot be undone — the link will stop working immediately.`, { danger: true, confirmLabel: 'Delete' })) return
     await supabase.from('financial_plans').delete().eq('id', id)
     if (clientId) loadPastPlans(clientId)
   }
