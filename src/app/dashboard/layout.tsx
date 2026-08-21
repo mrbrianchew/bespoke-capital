@@ -12,6 +12,7 @@ import IdleLogoutGuard from '@/components/IdleLogoutGuard'
 import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
 import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttention'
 import { fetchNewBusinessAttentionCount } from '@/lib/newBusinessAttention'
+import { fetchPremiumAlertsAttentionCount } from '@/lib/premiumAlertsAttention'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -56,6 +57,7 @@ const NAV_BUSINESS: { href: string; label: string; icon: string; id: string; dis
   { href: '/dashboard/business', label: 'Overview', icon: '◈', id: 'business-overview' },
   { href: '/dashboard/business/claims', label: 'Claims', icon: '▤', id: 'claims-board' },
   { href: '/dashboard/business/service-requests', label: 'Service Requests', icon: '◑', id: 'service-requests' },
+  { href: '/dashboard/business/premium-alerts', label: 'Premium Alerts', icon: '⏰', id: 'premium-alerts' },
   { href: '/dashboard/business/new-business', label: 'New Business', icon: '◐', id: 'new-business' },
 ]
 
@@ -125,6 +127,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const [adminBadgeCount, setAdminBadgeCount] = useState(0)
   const [claimsBadgeCount, setClaimsBadgeCount] = useState(0)
   const [serviceRequestsBadgeCount, setServiceRequestsBadgeCount] = useState(0)
+  const [premiumAlertsBadgeCount, setPremiumAlertsBadgeCount] = useState(0)
   const [newBusinessBadgeCount, setNewBusinessBadgeCount] = useState(0)
   const router = useRouter()
   const pathname = usePathname()
@@ -189,6 +192,22 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (!businessAccess) { setServiceRequestsBadgeCount(0); return }
     let cancelled = false
     const refresh = () => fetchServiceRequestsAttentionCount(supabase).then(count => { if (!cancelled) setServiceRequestsBadgeCount(count) }).catch(() => {})
+    refresh()
+    const interval = setInterval(refresh, BADGE_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener('focus', refresh) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessAccess])
+
+  // Premium Alerts badge — overdue/due-today premium reminders only (not
+  // "this week", to keep the badge meaning "needs action now" — see
+  // premiumAlertsAttention.ts). Same firm-wide-via-RLS pattern as the two
+  // badges above; shown on the Business Dashboard toggle (summed with the
+  // others) and on the Premium Alerts nav item itself.
+  useEffect(() => {
+    if (!businessAccess) { setPremiumAlertsBadgeCount(0); return }
+    let cancelled = false
+    const refresh = () => fetchPremiumAlertsAttentionCount(supabase).then(count => { if (!cancelled) setPremiumAlertsBadgeCount(count) }).catch(() => {})
     refresh()
     const interval = setInterval(refresh, BADGE_REFRESH_MS)
     window.addEventListener('focus', refresh)
@@ -300,12 +319,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                 style={{ padding: '6px 4px', borderRadius: 6, fontSize: 11.5, fontWeight: 600, position: 'relative',
                   color: isBusinessMode ? 'white' : 'var(--ink3)', background: isBusinessMode ? 'var(--charcoal)' : 'transparent' }}>
                 Business Dashboard
-                {(claimsBadgeCount + serviceRequestsBadgeCount + newBusinessBadgeCount) > 0 && (
+                {(claimsBadgeCount + serviceRequestsBadgeCount + premiumAlertsBadgeCount + newBusinessBadgeCount) > 0 && (
                   <span
                     className="flex items-center justify-center text-xs font-medium"
                     style={{ position: 'absolute', top: -6, right: -6, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: 'var(--rouge)', color: 'white', lineHeight: 1, fontSize: 9.5 }}
                   >
-                    {(claimsBadgeCount + serviceRequestsBadgeCount + newBusinessBadgeCount) > 99 ? '99+' : (claimsBadgeCount + serviceRequestsBadgeCount + newBusinessBadgeCount)}
+                    {(claimsBadgeCount + serviceRequestsBadgeCount + premiumAlertsBadgeCount + newBusinessBadgeCount) > 99 ? '99+' : (claimsBadgeCount + serviceRequestsBadgeCount + premiumAlertsBadgeCount + newBusinessBadgeCount)}
                   </span>
                 )}
               </button>
@@ -438,6 +457,14 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
                       style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
                     >
                       {serviceRequestsBadgeCount > 99 ? '99+' : serviceRequestsBadgeCount}
+                    </span>
+                  )}
+                  {item.id === 'premium-alerts' && premiumAlertsBadgeCount > 0 && (
+                    <span
+                      className="flex items-center justify-center text-xs font-medium"
+                      style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--rouge)', color: 'white', lineHeight: 1 }}
+                    >
+                      {premiumAlertsBadgeCount > 99 ? '99+' : premiumAlertsBadgeCount}
                     </span>
                   )}
                   {item.id === 'new-business' && newBusinessBadgeCount > 0 && (

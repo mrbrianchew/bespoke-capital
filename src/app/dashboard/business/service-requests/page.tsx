@@ -366,10 +366,6 @@ export default function BusinessServiceRequestsPage() {
   const [addressingTo, setAddressingTo] = useState('') // 'client' | family_member id | 'self' | 'custom'
   const [customNumber, setCustomNumber] = useState('')
 
-  // Premium Alerts section controls — filter chip + collapsed "Later" bucket
-  const [premiumAlertFilter, setPremiumAlertFilter] = useState<'all' | PremiumType>('all')
-  const [premiumLaterOpen, setPremiumLaterOpen] = useState(false)
-
   useEffect(() => {
     if (!authLoading && advisor && !hasAccess) router.replace('/dashboard')
   }, [authLoading, advisor, hasAccess, router])
@@ -413,7 +409,8 @@ export default function BusinessServiceRequestsPage() {
       const orphanLabels = Array.from(new Set(rowsData.map(r => r.request_type).filter(l => l && !knownLabels.has(l))))
       const merged = [...loadedTypes, ...orphanLabels.map(label => ({ id: `orphan:${label}`, label, fields: [] as FieldDef[], created_at: '' }))]
       setTypeDefs(merged)
-      if (merged.length > 0) setCapType(prev => prev || merged[0].label)
+      const firstCreatable = merged.find(t => !isPremiumType(t.label))
+      if (firstCreatable) setCapType(prev => prev || firstCreatable.label)
       setLoading(false)
     }
     load()
@@ -482,6 +479,11 @@ export default function BusinessServiceRequestsPage() {
   }
 
   const typeOptions = useMemo(() => typeDefs.map(t => t.label), [typeDefs])
+  // Quick-capture no longer offers the two Premium types — creating a new
+  // premium reminder now happens on its own Premium Alerts page, which has
+  // its own (simpler) quick-add. Keeps one creation point per concept
+  // instead of two paths that land in different places.
+  const creatableTypeOptions = useMemo(() => typeOptions.filter(t => !isPremiumType(t)), [typeOptions])
   const typeUsageCount = useMemo(() => {
     const counts: Record<string, number> = {}
     rows.forEach(r => { counts[r.request_type] = (counts[r.request_type] || 0) + 1 })
@@ -1194,7 +1196,7 @@ export default function BusinessServiceRequestsPage() {
           </datalist>
           <TypeSelect
             value={capType}
-            options={typeOptions}
+            options={creatableTypeOptions}
             onChange={setCapType}
             onAddNew={async label => { const canonical = await addNewType(label); if (canonical) { setCapType(canonical); return true }; return false }}
             width={170}
@@ -1232,100 +1234,12 @@ export default function BusinessServiceRequestsPage() {
         </button>
       </div>
 
-      {/* ── Premium Alerts — separate from the generic Kanban, own visual
-          treatment. Open ones only; closed alerts just live in the normal
-          board/list once marked Done, same as everything else. Grouped by
-          urgency (same idea as the Follow-ups tab's week buckets) so a long
-          list doesn't turn into one unbroken scroll — only Overdue/Today/
-          This Week show by default, everything further out sits behind a
-          collapsed "Later" toggle. ── */}
-      {!loading && (() => {
-        const premiumRows = rows.filter(r => isPremiumType(r.request_type) && r.status !== 'done')
-        if (premiumRows.length === 0) return null
-
-        const filtered = premiumAlertFilter === 'all' ? premiumRows : premiumRows.filter(r => r.request_type === premiumAlertFilter)
-        const today = new Date(); today.setHours(0, 0, 0, 0)
-        function bucketFor(row: ServiceRequestRow): 'overdue' | 'today' | 'week' | 'later' {
-          const due = row.field_values?.premium_due_date
-          if (!due) return 'later'
-          const d = new Date(due + 'T00:00:00')
-          if (isNaN(d.getTime())) return 'later'
-          const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
-          if (diffDays < 0) return 'overdue'
-          if (diffDays === 0) return 'today'
-          if (diffDays <= 7) return 'week'
-          return 'later'
-        }
-        const byBucket = { overdue: [] as ServiceRequestRow[], today: [] as ServiceRequestRow[], week: [] as ServiceRequestRow[], later: [] as ServiceRequestRow[] }
-        filtered.forEach(r => byBucket[bucketFor(r)].push(r))
-        ;(Object.keys(byBucket) as (keyof typeof byBucket)[]).forEach(k =>
-          byBucket[k].sort((a, b) => (a.field_values?.premium_due_date || '9999-12-31').localeCompare(b.field_values?.premium_due_date || '9999-12-31')))
-
-        const renderCard = (row: ServiceRequestRow) => {
-          const policy = resolvedPolicy(row)
-          const due = row.field_values?.premium_due_date
-          return (
-            <div key={row.id} onClick={() => setEditingId(row.id)}
-              style={{ background: 'white', border: `1px solid ${T.roseSoft}`, borderLeft: `3px solid ${T.rose}`, borderRadius: 10, padding: '12px 14px', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text }}>{clientsById[row.client_id] || 'Unknown client'}</div>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: T.roseSoft, color: T.rose }}>
-                  {row.request_type === 'Investment Premium Reminder' ? 'Investment' : 'Insurance'}
-                </span>
-              </div>
-              <div style={{ fontSize: 11.5, color: T.textFaint, marginTop: 4 }}>{policy?.label || 'No policy attached'}</div>
-              <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: T.rose, marginTop: 6, fontWeight: 500 }}>
-                {row.field_values?.sequence || 'Reminder'}{due ? ` · due ${fmtDateSG(due)}` : ''}
-              </div>
-            </div>
-          )
-        }
-        const bucketHeader = (label: string, count: number) => (
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8, marginTop: 14 }}>
-            {label} · {count}
-          </div>
-        )
-
-        return (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-              <div style={{ width: 8, height: 8, borderRadius: 999, background: T.rose }} />
-              <div className="font-serif" style={{ fontSize: 19, fontWeight: 600, color: T.text }}>Premium Alerts</div>
-              <div style={{ fontSize: 11, color: T.textFaint }}>— {premiumRows.length} open</div>
-              <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-                {(['all', 'Insurance Premium Reminder', 'Investment Premium Reminder'] as const).map(f => (
-                  <button key={f} onClick={() => setPremiumAlertFilter(f)}
-                    style={{ padding: '4px 11px', borderRadius: 999, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1px solid ${premiumAlertFilter === f ? T.rose : T.line}`, background: premiumAlertFilter === f ? T.roseSoft : 'white', color: premiumAlertFilter === f ? T.rose : T.textFaint }}>
-                    {f === 'all' ? 'All' : f === 'Investment Premium Reminder' ? 'Investment' : 'Insurance'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ maxWidth: 620 }}>
-              {byBucket.overdue.length > 0 && (
-                <>{bucketHeader('Overdue', byBucket.overdue.length)}<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{byBucket.overdue.map(renderCard)}</div></>
-              )}
-              {byBucket.today.length > 0 && (
-                <>{bucketHeader('Due Today', byBucket.today.length)}<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{byBucket.today.map(renderCard)}</div></>
-              )}
-              {byBucket.week.length > 0 && (
-                <>{bucketHeader('This Week', byBucket.week.length)}<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{byBucket.week.map(renderCard)}</div></>
-              )}
-              {byBucket.later.length > 0 && (
-                <>
-                  <button onClick={() => setPremiumLaterOpen(o => !o)}
-                    style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 0 8px', marginTop: 6, textAlign: 'left' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint }}>Later · {byBucket.later.length}</div>
-                    <span style={{ color: T.textFaint, fontSize: 12, transform: premiumLaterOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
-                  </button>
-                  {premiumLaterOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{byBucket.later.map(renderCard)}</div>}
-                </>
-              )}
-            </div>
-          </div>
-        )
-      })()}
+      {/* Premium Alerts moved to its own sidebar page (Aug 2026) — see
+          /dashboard/business/premium-alerts/page.tsx. Open premium rows are
+          still excluded from this board's columns (filteredRows below), and
+          Done ones still pass through into the Done column below, same as
+          before — this page just no longer renders its own dedicated
+          section for the open ones. */}
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13 }}>Loading service requests…</div>
