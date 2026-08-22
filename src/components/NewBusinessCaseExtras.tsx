@@ -319,15 +319,17 @@ export default function NewBusinessCaseExtras({
       onMeetingsChanged?.()
       // Keeps the notebook entry in sync — otherwise editing a meeting's
       // date/title here leaves Contact Report showing the stale original.
+      // Awaited (not fire-and-forget) for the same reliability reason as
+      // the delete cleanup below.
       if (clientId) {
-        supabase.from('client_activity').update({
+        const { error: syncErr } = await supabase.from('client_activity').update({
           title: patch.title,
           description: patch.notes,
           activity_date: patch.meeting_date,
           activity_type: channel === 'in_person' ? 'meeting_f2f' : channel === 'video_call' ? 'meeting_video' : 'meeting_phone',
           updated_at: new Date().toISOString(),
         }).eq('source_table', 'new_business_case_meetings').eq('source_id', editingMeetingId)
-          .then(({ error: syncErr }) => { if (syncErr) console.warn('[client_activity sync] failed:', syncErr.message) })
+        if (syncErr) console.warn('[client_activity sync] failed:', syncErr.message)
       }
       setMeetingMode(null)
       setEditingMeetingId(null)
@@ -510,13 +512,14 @@ export default function NewBusinessCaseExtras({
         body: JSON.stringify({ eventId: meeting.google_calendar_event_id }),
       }).catch(() => {})
     }
-    // Same best-effort cleanup for the client's merged activity notebook —
-    // otherwise a deleted meeting leaves a stale entry behind on Contact
-    // Report pointing at nothing.
+    // Same cleanup for the client's merged activity notebook — otherwise a
+    // deleted meeting leaves a stale entry behind on Contact Report
+    // pointing at nothing. Awaited (not fire-and-forget) so it reliably
+    // completes rather than racing whatever happens next in the UI.
     if (!error) {
-      supabase.from('client_activity').delete()
+      const { error: cleanupErr } = await supabase.from('client_activity').delete()
         .eq('source_table', 'new_business_case_meetings').eq('source_id', id)
-        .then(({ error: cleanupErr }) => { if (cleanupErr) console.warn('[client_activity cleanup] failed:', cleanupErr.message) })
+      if (cleanupErr) console.warn('[client_activity cleanup] failed:', cleanupErr.message)
     }
     onMeetingsChanged?.()
   }

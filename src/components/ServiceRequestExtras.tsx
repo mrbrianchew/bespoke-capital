@@ -283,13 +283,14 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId, advis
         body: JSON.stringify({ eventId: meeting.google_calendar_event_id }),
       }).catch(() => {})
     }
-    // Same best-effort cleanup for the client's merged activity notebook —
-    // otherwise a deleted meeting leaves a stale entry behind on Contact
-    // Report pointing at nothing.
+    // Same cleanup for the client's merged activity notebook — otherwise a
+    // deleted meeting leaves a stale entry behind on Contact Report
+    // pointing at nothing. Awaited (not fire-and-forget) so it reliably
+    // completes rather than racing whatever happens next in the UI.
     if (!error) {
-      supabase.from('client_activity').delete()
+      const { error: cleanupErr } = await supabase.from('client_activity').delete()
         .eq('source_table', 'service_request_meetings').eq('source_id', id)
-        .then(({ error: cleanupErr }) => { if (cleanupErr) console.warn('[client_activity cleanup] failed:', cleanupErr.message) })
+      if (cleanupErr) console.warn('[client_activity cleanup] failed:', cleanupErr.message)
     }
   }
 
