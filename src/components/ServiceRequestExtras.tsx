@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { useDriveUpload, DriveDocumentGeneric } from '@/lib/useDriveUpload'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { logClientActivity } from '@/lib/logClientActivity'
 
 // Drops into the Service Request modal wherever it's rendered (firm-wide
 // Board or the per-client Servicing page) — self-fetches and self-manages
@@ -66,7 +67,7 @@ function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })
 }
 
-export default function ServiceRequestExtras({ serviceRequestId, clientId }: { serviceRequestId: string; clientId: string }) {
+export default function ServiceRequestExtras({ serviceRequestId, clientId, advisorId }: { serviceRequestId: string; clientId: string; advisorId: string }) {
   const supabase = createClient()
   const drive = useDriveUpload()
   const toast = useToast()
@@ -234,7 +235,23 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId }: { s
     }).select().maybeSingle()
     setSavingMeeting(false)
     if (error) { toast('Could not save meeting: ' + error.message, 'error'); return }
-    if (data) { setMeetings(prev => [data as MeetingRow, ...prev]); touchRequest() }
+    if (data) {
+      setMeetings(prev => [data as MeetingRow, ...prev])
+      touchRequest()
+      // Mirrors this meeting into the client's merged activity notebook —
+      // see src/lib/logClientActivity.ts. Fire-and-forget: a failed log
+      // here should never block the meeting save the advisor just made.
+      logClientActivity(supabase, {
+        clientId,
+        advisorId,
+        type: meetingTypeSel === 'in_person' ? 'meeting_f2f' : meetingTypeSel === 'video_call' ? 'meeting_video' : 'meeting_phone',
+        title: meetingTitle.trim(),
+        description: meetingNotes.trim() || null,
+        date: meetingDate,
+        sourceTable: 'service_request_meetings',
+        sourceId: (data as MeetingRow).id,
+      })
+    }
     setMeetingMode(null)
   }
 

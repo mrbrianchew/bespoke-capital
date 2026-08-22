@@ -938,7 +938,7 @@ export default function PremiumAlertsPage() {
               )}
 
               <ModalSection title="Attachments, meetings, activity" defaultOpen={false}>
-                <ServiceRequestExtras serviceRequestId={editingRow.id} clientId={editingRow.client_id} />
+                <ServiceRequestExtras serviceRequestId={editingRow.id} clientId={editingRow.client_id} advisorId={advisor?.id || ''} />
               </ModalSection>
 
               <ModalSection title="Related emails" defaultOpen={false}>

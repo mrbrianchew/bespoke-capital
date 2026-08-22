@@ -484,7 +484,7 @@ export default function ServiceRequestsServicingPage() {
               </div>
 
               <div style={{ marginTop: 16, borderTop: `1px solid ${T.line}`, paddingTop: 10 }}>
-                <ServiceRequestExtras serviceRequestId={editingRow.id} clientId={editingRow.client_id} />
+                <ServiceRequestExtras serviceRequestId={editingRow.id} clientId={editingRow.client_id} advisorId={advisor?.id || ''} />
               </div>
 
               <div style={{ marginTop: 16, borderTop: `1px solid ${T.line}`, paddingTop: 10 }}>
