@@ -1,6 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
@@ -9,6 +10,18 @@ import { useConfirm } from '@/components/ConfirmDialog'
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
+//
+// This page merges two sources into one timeline:
+//  - `contact_reports` — manual entries, typed in here directly. Fully
+//    editable, has an Open/Resolved status.
+//  - `client_activity` — auto-logged entries, written by other parts of the
+//    app the moment something already happens (a Service Request meeting,
+//    a New Business meeting, a claim reaching Approved/Rejected). Not
+//    editable here — editing goes back to the source screen — but takes the
+//    same running Updates/To-Do list as manual entries, via
+//    client_activity_id on contact_report_todos/contact_report_comments.
+//
+// See src/lib/logClientActivity.ts for the write side.
 
 type ContactType = 'f2f' | 'non_f2f' | 'phone' | 'service_update' | 'other'
 type ContactStatus = 'open' | 'resolved'
@@ -29,38 +42,99 @@ interface ContactReportRow {
   updated_at: string
 }
 
+type ActivityType =
+  | 'meeting_f2f' | 'meeting_video' | 'meeting_phone'
+  | 'claim_status' | 'policy_milestone' | 'todo' | 'other'
+
+interface ClientActivityRow {
+  id: string
+  client_id: string
+  advisor_id: string
+  activity_type: ActivityType
+  source_type: 'auto' | 'manual'
+  source_table: string | null
+  source_id: string | null
+  title: string
+  description: string | null
+  activity_date: string
+  created_at: string
+  updated_at: string
+}
+
+// contact_report_id and client_activity_id are mutually exclusive on both of
+// these — exactly one is set per row (enforced by a DB check constraint).
 interface ContactTodoRow {
   id: string
-  contact_report_id: string
+  contact_report_id: string | null
+  client_activity_id: string | null
   text: string
   done: boolean
   sort_order: number
   created_at: string
 }
-
 interface ContactCommentRow {
   id: string
-  contact_report_id: string
+  contact_report_id: string | null
+  client_activity_id: string | null
   comment_date: string
   text: string
   created_at: string
 }
 
+// Unified shape the timeline actually renders — one of these per manual
+// entry and one per auto entry, sorted together by date.
+type EntryKind = 'manual' | 'auto'
+interface TimelineEntry {
+  id: string
+  kind: EntryKind
+  date: string
+  createdAt: string
+  title: string
+  tag: string
+  secondaryTag: string | null
+  status: ContactStatus | null
+  filterGroup: FilterGroup
+  manual: ContactReportRow | null
+  auto: ClientActivityRow | null
+}
+
+type FilterGroup = 'f2f' | 'call' | 'non_f2f' | 'service' | 'other'
+const FILTER_LABEL: Record<'all' | FilterGroup, string> = {
+  all: 'All', f2f: 'F2F', call: 'Call', non_f2f: 'Non-F2F', service: 'Service', other: 'Other',
+}
+
 const CONTACT_TYPE_LABEL: Record<ContactType, string> = {
-  f2f: 'F2F Meeting',
-  non_f2f: 'Non-F2F',
-  phone: 'Phone Call',
-  service_update: 'Service Update',
-  other: 'Other',
+  f2f: 'F2F Meeting', non_f2f: 'Non-F2F', phone: 'Phone Call', service_update: 'Service Update', other: 'Other',
 }
 const CONTACT_TYPE_ICON: Record<ContactType, string> = {
-  f2f: '🤝',
-  non_f2f: '💻',
-  phone: '📞',
-  service_update: '🔧',
-  other: '✉️',
+  f2f: '🤝', non_f2f: '💻', phone: '📞', service_update: '🔧', other: '✉️',
+}
+const CONTACT_TYPE_GROUP: Record<ContactType, FilterGroup> = {
+  f2f: 'f2f', non_f2f: 'non_f2f', phone: 'call', service_update: 'service', other: 'other',
 }
 const PLATFORM_OPTIONS = ['Zoom', 'Google Meet', 'Microsoft Teams', 'WhatsApp Video', 'Skype', 'Other']
+
+const ACTIVITY_TYPE_LABEL: Record<ActivityType, string> = {
+  meeting_f2f: 'F2F Meeting', meeting_video: 'Video Meeting', meeting_phone: 'Phone Call',
+  claim_status: 'Claim Update', policy_milestone: 'Policy Update', todo: 'Task', other: 'Activity',
+}
+const ACTIVITY_TYPE_ICON: Record<ActivityType, string> = {
+  meeting_f2f: '🤝', meeting_video: '💻', meeting_phone: '📞',
+  claim_status: '🔧', policy_milestone: '🔧', todo: '✓', other: '✉️',
+}
+const ACTIVITY_TYPE_GROUP: Record<ActivityType, FilterGroup> = {
+  meeting_f2f: 'f2f', meeting_video: 'non_f2f', meeting_phone: 'call',
+  claim_status: 'service', policy_milestone: 'service', todo: 'other', other: 'other',
+}
+
+// Where an auto entry's "Open source" link points — same client, different
+// tab. None of these pages support deep-linking to one specific row yet, so
+// this opens the tab, not the exact record.
+const SOURCE_LINK: Record<string, { label: string; href: string }> = {
+  service_request_meetings: { label: 'Open in Service Requests', href: '/dashboard/servicing/service-requests' },
+  new_business_case_meetings: { label: 'Open in New Business', href: '/dashboard/servicing/new-business' },
+  claim_line_items: { label: 'Open in Claims', href: '/dashboard/servicing/claims' },
+}
 
 function fmtDate(iso: string) {
   const d = new Date(iso)
@@ -86,6 +160,30 @@ function secondaryTag(r: ContactReportRow): string | null {
   return null
 }
 
+function toEntry(r: ContactReportRow): TimelineEntry {
+  return {
+    id: r.id, kind: 'manual', date: r.contact_date, createdAt: r.created_at,
+    title: r.notes ? r.notes.split('\n')[0].slice(0, 80) : `${CONTACT_TYPE_LABEL[r.contact_type]} logged`,
+    tag: contactTag(r), secondaryTag: secondaryTag(r), status: r.status,
+    filterGroup: CONTACT_TYPE_GROUP[r.contact_type], manual: r, auto: null,
+  }
+}
+function toEntryAuto(a: ClientActivityRow): TimelineEntry {
+  return {
+    id: a.id, kind: 'auto', date: a.activity_date, createdAt: a.created_at,
+    title: a.title,
+    tag: `${ACTIVITY_TYPE_ICON[a.activity_type]} ${ACTIVITY_TYPE_LABEL[a.activity_type]}`,
+    secondaryTag: null, status: null,
+    filterGroup: ACTIVITY_TYPE_GROUP[a.activity_type], manual: null, auto: a,
+  }
+}
+function sortEntries(list: TimelineEntry[]) {
+  return [...list].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1
+    return a.createdAt < b.createdAt ? 1 : -1
+  })
+}
+
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
 export default function ContactReportPage() {
@@ -97,16 +195,17 @@ export default function ContactReportPage() {
   const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
 
   const [loading, setLoading] = useState(true)
-  const [reports, setReports] = useState<ContactReportRow[]>([])
-  const [todosByReport, setTodosByReport] = useState<Record<string, ContactTodoRow[]>>({})
-  const [commentsByReport, setCommentsByReport] = useState<Record<string, ContactCommentRow[]>>({})
+  const [entries, setEntries] = useState<TimelineEntry[]>([])
+  const [todosByEntry, setTodosByEntry] = useState<Record<string, ContactTodoRow[]>>({})
+  const [commentsByEntry, setCommentsByEntry] = useState<Record<string, ContactCommentRow[]>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [filter, setFilter] = useState<'all' | FilterGroup>('all')
   const [newTodoDraft, setNewTodoDraft] = useState<Record<string, string>>({})
   const [newCommentDraft, setNewCommentDraft] = useState<Record<string, string>>({})
   const [newCommentDate, setNewCommentDate] = useState<Record<string, string>>({})
 
-  // ── Form state ──
+  // ── Form state (manual entries only — auto entries have no form) ──
   const [formOpen, setFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [fType, setFType] = useState<ContactType | null>(null)
@@ -118,34 +217,48 @@ export default function ContactReportPage() {
   const [fNotes, setFNotes] = useState('')
   const [formError, setFormError] = useState('')
 
-  // ── Route/feature guard — mirrors Medical Claims' creator-bypass rule. ──
   useEffect(() => {
     if (!authLoading && advisor && !hasAccess) router.replace('/dashboard')
   }, [authLoading, advisor, hasAccess, router])
 
-  // ── Load contact reports + their nested todos for the active client. ──
+  // ── Load manual + auto entries for the active client, merge, then load
+  //    their shared todos/comments in one pass keyed by entry id. ──
   useEffect(() => {
     if (authLoading || !activeClient) { setLoading(false); return }
     let cancelled = false
     setLoading(true)
     ;(async () => {
-      const { data: reportRows, error: reportErr } = await supabase
-        .from('contact_reports')
-        .select('*')
-        .eq('client_id', activeClient.id)
-        .order('contact_date', { ascending: false })
-        .order('created_at', { ascending: false })
+      const [{ data: reportRows, error: reportErr }, { data: activityRows, error: activityErr }] = await Promise.all([
+        supabase.from('contact_reports').select('*').eq('client_id', activeClient.id)
+          .order('contact_date', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('client_activity').select('*').eq('client_id', activeClient.id)
+          .order('activity_date', { ascending: false }).order('created_at', { ascending: false }),
+      ])
       if (cancelled) return
-      if (reportErr) { console.error('[contact-report] load reports failed:', reportErr); setLoading(false); return }
+      if (reportErr) console.error('[contact-report] load manual entries failed:', reportErr)
+      if (activityErr) console.error('[contact-report] load auto entries failed:', activityErr)
 
-      const rows = (reportRows || []) as ContactReportRow[]
-      setReports(rows)
+      const manualRows = (reportRows || []) as ContactReportRow[]
+      const autoRows = (activityRows || []) as ClientActivityRow[]
+      const merged = sortEntries([...manualRows.map(toEntry), ...autoRows.map(toEntryAuto)])
+      setEntries(merged)
 
-      if (rows.length > 0) {
-        const ids = rows.map(r => r.id)
+      if (merged.length > 0) {
+        const manualIds = manualRows.map(r => r.id)
+        const autoIds = autoRows.map(a => a.id)
         const [{ data: todoRows, error: todoErr }, { data: commentRows, error: commentErr }] = await Promise.all([
-          supabase.from('contact_report_todos').select('*').in('contact_report_id', ids).order('sort_order', { ascending: true }),
-          supabase.from('contact_report_comments').select('*').in('contact_report_id', ids).order('comment_date', { ascending: false }).order('created_at', { ascending: false }),
+          supabase.from('contact_report_todos').select('*')
+            .or([
+              manualIds.length ? `contact_report_id.in.(${manualIds.join(',')})` : '',
+              autoIds.length ? `client_activity_id.in.(${autoIds.join(',')})` : '',
+            ].filter(Boolean).join(','))
+            .order('sort_order', { ascending: true }),
+          supabase.from('contact_report_comments').select('*')
+            .or([
+              manualIds.length ? `contact_report_id.in.(${manualIds.join(',')})` : '',
+              autoIds.length ? `client_activity_id.in.(${autoIds.join(',')})` : '',
+            ].filter(Boolean).join(','))
+            .order('comment_date', { ascending: false }).order('created_at', { ascending: false }),
         ])
         if (cancelled) return
         if (todoErr) {
@@ -153,40 +266,43 @@ export default function ContactReportPage() {
         } else {
           const grouped: Record<string, ContactTodoRow[]> = {}
           for (const t of (todoRows || []) as ContactTodoRow[]) {
-            if (!grouped[t.contact_report_id]) grouped[t.contact_report_id] = []
-            grouped[t.contact_report_id].push(t)
+            const key = t.contact_report_id || t.client_activity_id
+            if (!key) continue
+            if (!grouped[key]) grouped[key] = []
+            grouped[key].push(t)
           }
-          setTodosByReport(grouped)
+          setTodosByEntry(grouped)
         }
         if (commentErr) {
           console.error('[contact-report] load comments failed:', commentErr)
         } else {
           const groupedComments: Record<string, ContactCommentRow[]> = {}
           for (const c of (commentRows || []) as ContactCommentRow[]) {
-            if (!groupedComments[c.contact_report_id]) groupedComments[c.contact_report_id] = []
-            groupedComments[c.contact_report_id].push(c)
+            const key = c.contact_report_id || c.client_activity_id
+            if (!key) continue
+            if (!groupedComments[key]) groupedComments[key] = []
+            groupedComments[key].push(c)
           }
-          setCommentsByReport(groupedComments)
+          setCommentsByEntry(groupedComments)
         }
       } else {
-        setTodosByReport({})
-        setCommentsByReport({})
+        setTodosByEntry({})
+        setCommentsByEntry({})
       }
       setLoading(false)
     })()
     return () => { cancelled = true }
   }, [activeClient, authLoading])
 
+  const visibleEntries = useMemo(
+    () => (filter === 'all' ? entries : entries.filter(e => e.filterGroup === filter)),
+    [entries, filter],
+  )
+
   function resetForm() {
-    setEditingId(null)
-    setFType(null)
-    setFTypeOther('')
-    setFVenue('')
-    setFPlatform(PLATFORM_OPTIONS[0])
-    setFPlatformOther('')
-    setFDate(new Date().toISOString().slice(0, 10))
-    setFNotes('')
-    setFormError('')
+    setEditingId(null); setFType(null); setFTypeOther(''); setFVenue('')
+    setFPlatform(PLATFORM_OPTIONS[0]); setFPlatformOther('')
+    setFDate(new Date().toISOString().slice(0, 10)); setFNotes(''); setFormError('')
   }
 
   function openEditForm(report: ContactReportRow) {
@@ -222,43 +338,29 @@ export default function ContactReportPage() {
 
     if (editingId) {
       const { data, error } = await supabase.from('contact_reports')
-        .update({ ...payload, updated_at: new Date().toISOString() })
-        .eq('id', editingId)
-        .select()
+        .update({ ...payload, updated_at: new Date().toISOString() }).eq('id', editingId).select()
       setSaving(false)
       if (error) { setFormError(error.message); return }
       const updatedRow = (data || [])[0] as ContactReportRow | undefined
       if (updatedRow) {
-        setReports(prev => prev.map(r => (r.id === editingId ? updatedRow : r))
-          .sort((a, b) => {
-            if (a.contact_date !== b.contact_date) return a.contact_date < b.contact_date ? 1 : -1
-            return a.created_at < b.created_at ? 1 : -1
-          }))
+        setEntries(prev => sortEntries(prev.map(e => (e.id === editingId ? toEntry(updatedRow) : e))))
         setExpandedId(editingId)
       }
-      resetForm()
-      setFormOpen(false)
+      resetForm(); setFormOpen(false)
       return
     }
 
     const { data, error } = await supabase.from('contact_reports').insert({
-      ...payload,
-      client_id: activeClient.id,
-      advisor_id: advisor.id,
-      status: 'open',
+      ...payload, client_id: activeClient.id, advisor_id: advisor.id, status: 'open',
     }).select()
     setSaving(false)
     if (error) { setFormError(error.message); return }
     const newRow = (data || [])[0] as ContactReportRow | undefined
     if (newRow) {
-      setReports(prev => [newRow, ...prev].sort((a, b) => {
-        if (a.contact_date !== b.contact_date) return a.contact_date < b.contact_date ? 1 : -1
-        return a.created_at < b.created_at ? 1 : -1
-      }))
+      setEntries(prev => sortEntries([toEntry(newRow), ...prev]))
       setExpandedId(newRow.id)
     }
-    resetForm()
-    setFormOpen(false)
+    resetForm(); setFormOpen(false)
   }
 
   function toggleExpand(id: string) {
@@ -266,66 +368,57 @@ export default function ContactReportPage() {
   }
 
   async function toggleTodo(todo: ContactTodoRow) {
+    const key = (todo.contact_report_id || todo.client_activity_id)!
     const nextDone = !todo.done
-    setTodosByReport(prev => ({
-      ...prev,
-      [todo.contact_report_id]: (prev[todo.contact_report_id] || []).map(t => (t.id === todo.id ? { ...t, done: nextDone } : t)),
-    }))
+    setTodosByEntry(prev => ({ ...prev, [key]: (prev[key] || []).map(t => (t.id === todo.id ? { ...t, done: nextDone } : t)) }))
     const { error } = await supabase.from('contact_report_todos').update({ done: nextDone, updated_at: new Date().toISOString() }).eq('id', todo.id)
     if (error) {
       console.error('[contact-report] todo toggle failed:', error)
-      setTodosByReport(prev => ({
-        ...prev,
-        [todo.contact_report_id]: (prev[todo.contact_report_id] || []).map(t => (t.id === todo.id ? { ...t, done: todo.done } : t)),
-      }))
+      setTodosByEntry(prev => ({ ...prev, [key]: (prev[key] || []).map(t => (t.id === todo.id ? { ...t, done: todo.done } : t)) }))
     }
   }
 
-  async function addTodo(reportId: string) {
-    const text = (newTodoDraft[reportId] || '').trim()
+  async function addTodo(entry: TimelineEntry) {
+    const text = (newTodoDraft[entry.id] || '').trim()
     if (!text) return
-    const existing = todosByReport[reportId] || []
+    const existing = todosByEntry[entry.id] || []
     const { data, error } = await supabase.from('contact_report_todos').insert({
-      contact_report_id: reportId,
-      text,
-      sort_order: existing.length,
+      contact_report_id: entry.kind === 'manual' ? entry.id : null,
+      client_activity_id: entry.kind === 'auto' ? entry.id : null,
+      text, sort_order: existing.length,
     }).select()
     if (error) { console.error('[contact-report] add todo failed:', error); return }
     const newTodo = (data || [])[0] as ContactTodoRow | undefined
-    if (newTodo) {
-      setTodosByReport(prev => ({ ...prev, [reportId]: [...(prev[reportId] || []), newTodo] }))
-    }
-    setNewTodoDraft(prev => ({ ...prev, [reportId]: '' }))
+    if (newTodo) setTodosByEntry(prev => ({ ...prev, [entry.id]: [...(prev[entry.id] || []), newTodo] }))
+    setNewTodoDraft(prev => ({ ...prev, [entry.id]: '' }))
   }
 
-  async function addComment(reportId: string) {
-    const text = (newCommentDraft[reportId] || '').trim()
+  async function addComment(entry: TimelineEntry) {
+    const text = (newCommentDraft[entry.id] || '').trim()
     if (!text) return
-    const date = newCommentDate[reportId] || new Date().toISOString().slice(0, 10)
+    const date = newCommentDate[entry.id] || new Date().toISOString().slice(0, 10)
     const { data, error } = await supabase.from('contact_report_comments').insert({
-      contact_report_id: reportId,
-      comment_date: date,
-      text,
+      contact_report_id: entry.kind === 'manual' ? entry.id : null,
+      client_activity_id: entry.kind === 'auto' ? entry.id : null,
+      comment_date: date, text,
     }).select()
     if (error) { console.error('[contact-report] add comment failed:', error); return }
     const newComment = (data || [])[0] as ContactCommentRow | undefined
     if (newComment) {
-      setCommentsByReport(prev => ({
+      setCommentsByEntry(prev => ({
         ...prev,
-        [reportId]: [newComment, ...(prev[reportId] || [])].sort((a, b) => {
+        [entry.id]: [newComment, ...(prev[entry.id] || [])].sort((a, b) => {
           if (a.comment_date !== b.comment_date) return a.comment_date < b.comment_date ? 1 : -1
           return a.created_at < b.created_at ? 1 : -1
         }),
       }))
     }
-    setNewCommentDraft(prev => ({ ...prev, [reportId]: '' }))
+    setNewCommentDraft(prev => ({ ...prev, [entry.id]: '' }))
   }
 
   async function deleteComment(comment: ContactCommentRow) {
-    setCommentsByReport(prev => ({
-      ...prev,
-      [comment.contact_report_id]: (prev[comment.contact_report_id] || []).filter(c => c.id !== comment.id),
-    }))
+    const key = (comment.contact_report_id || comment.client_activity_id)!
+    setCommentsByEntry(prev => ({ ...prev, [key]: (prev[key] || []).filter(c => c.id !== comment.id) }))
     const { error } = await supabase.from('contact_report_comments').delete().eq('id', comment.id)
     if (error) console.error('[contact-report] delete comment failed:', error)
   }
@@ -334,29 +427,18 @@ export default function ContactReportPage() {
     if (!await confirmAction('Delete this contact report entry? This cannot be undone.', { danger: true, confirmLabel: 'Delete' })) return
     const { error } = await supabase.from('contact_reports').delete().eq('id', report.id)
     if (error) { console.error('[contact-report] delete entry failed:', error); return }
-    setReports(prev => prev.filter(r => r.id !== report.id))
-    setTodosByReport(prev => {
-      const next = { ...prev }
-      delete next[report.id]
-      return next
-    })
-    setCommentsByReport(prev => {
-      const next = { ...prev }
-      delete next[report.id]
-      return next
-    })
+    setEntries(prev => prev.filter(e => e.id !== report.id))
+    setTodosByEntry(prev => { const next = { ...prev }; delete next[report.id]; return next })
+    setCommentsByEntry(prev => { const next = { ...prev }; delete next[report.id]; return next })
     if (expandedId === report.id) setExpandedId(null)
   }
 
   async function deleteTodo(todo: ContactTodoRow) {
-    setTodosByReport(prev => ({
-      ...prev,
-      [todo.contact_report_id]: (prev[todo.contact_report_id] || []).filter(t => t.id !== todo.id),
-    }))
+    const key = (todo.contact_report_id || todo.client_activity_id)!
+    setTodosByEntry(prev => ({ ...prev, [key]: (prev[key] || []).filter(t => t.id !== todo.id) }))
     const { error } = await supabase.from('contact_report_todos').delete().eq('id', todo.id)
     if (error) console.error('[contact-report] delete todo failed:', error)
   }
-
 
   // ── Guards ──
   if (authLoading || loading) {
@@ -372,9 +454,17 @@ export default function ContactReportPage() {
       <div className="font-serif" style={{ fontSize: 26, color: 'var(--charcoal)', marginBottom: 2 }}>Contact Report</div>
       <div style={{ fontSize: 13, color: 'var(--ink3)', marginBottom: 20 }}>{activeClient.name} · Servicing Log</div>
 
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+        {(['all', 'f2f', 'call', 'non_f2f', 'service', 'other'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)} style={filter === f ? filterChipOn : filterChipOff}>
+            {FILTER_LABEL[f]}
+          </button>
+        ))}
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
         <div className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
-          {reports.length} {reports.length === 1 ? 'entry' : 'entries'}
+          {visibleEntries.length} {visibleEntries.length === 1 ? 'entry' : 'entries'}
         </div>
         {!formOpen && (
           <button onClick={() => setFormOpen(true)} style={btnPrimary}>+ Log Contact</button>
@@ -443,29 +533,30 @@ export default function ContactReportPage() {
         </div>
       )}
 
-      {reports.length === 0 ? (
+      {visibleEntries.length === 0 ? (
         <div style={{ ...cardBase, textAlign: 'center', color: 'var(--ink3)', padding: 40 }}>
-          No contact logged yet for {activeClient.name}. Click "+ Log Contact" to start.
+          {entries.length === 0
+            ? `No contact logged yet for ${activeClient.name}. Click "+ Log Contact" to start.`
+            : 'No entries match this filter.'}
         </div>
       ) : (
         <div style={{ borderTop: '1px solid var(--line)' }}>
-          {reports.map(r => {
-            const isExpanded = expandedId === r.id
-            const todos = todosByReport[r.id] || []
+          {visibleEntries.map(entry => {
+            const isExpanded = expandedId === entry.id
+            const todos = todosByEntry[entry.id] || []
             const openTodos = todos.filter(t => !t.done).length
-            const comments = commentsByReport[r.id] || []
-            const secondary = secondaryTag(r)
+            const comments = commentsByEntry[entry.id] || []
+            const sourceLink = entry.auto?.source_table ? SOURCE_LINK[entry.auto.source_table] : null
             return (
-              <div key={r.id} style={{ borderBottom: '1px solid var(--line)' }}>
-                <div onClick={() => toggleExpand(r.id)} style={logRow}>
-                  <div className="font-mono" style={logDate}>{fmtDate(r.contact_date)}</div>
+              <div key={entry.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                <div onClick={() => toggleExpand(entry.id)} style={logRow}>
+                  <div className="font-mono" style={logDate}>{fmtDate(entry.date)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={logTitle}>
-                      {r.notes ? r.notes.split('\n')[0].slice(0, 80) : `${CONTACT_TYPE_LABEL[r.contact_type]} logged`}
-                    </div>
+                    <div style={logTitle}>{entry.title}</div>
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                      <span style={tagStyle}>{contactTag(r)}</span>
-                      {secondary && <span style={tagStyle}>{secondary}</span>}
+                      <span style={tagStyle}>{entry.tag}</span>
+                      {entry.secondaryTag && <span style={tagStyle}>{entry.secondaryTag}</span>}
+                      {entry.kind === 'auto' && <span style={autoTagStyle}>Auto-logged</span>}
                     </div>
                   </div>
                   {openTodos > 0 && (
@@ -476,16 +567,30 @@ export default function ContactReportPage() {
 
                 {isExpanded && (
                   <div style={logDetail} onClick={e => e.stopPropagation()}>
-                    {r.notes && (
+                    {entry.manual?.notes && (
                       <div style={{ marginBottom: 12 }}>
                         <div style={detailLabel}>Notes</div>
-                        <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{r.notes}</div>
+                        <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{entry.manual.notes}</div>
+                      </div>
+                    )}
+                    {entry.auto?.description && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={detailLabel}>Details</div>
+                        <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{entry.auto.description}</div>
                       </div>
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <button onClick={() => openEditForm(r)} style={editEntryBtn}>Edit Entry</button>
-                      <button onClick={() => deleteEntry(r)} style={deleteEntryBtn}>Delete Entry</button>
+                      {entry.kind === 'manual' ? (
+                        <>
+                          <button onClick={() => openEditForm(entry.manual!)} style={editEntryBtn}>Edit Entry</button>
+                          <button onClick={() => deleteEntry(entry.manual!)} style={deleteEntryBtn}>Delete Entry</button>
+                        </>
+                      ) : sourceLink ? (
+                        <Link href={sourceLink.href} style={editEntryBtn}>{sourceLink.label} →</Link>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--ink3)' }}>Auto-logged — edit at the source</span>
+                      )}
                     </div>
 
                     <div style={{ ...nestedTodoBox, marginBottom: 10 }}>
@@ -501,14 +606,14 @@ export default function ContactReportPage() {
                         </div>
                       ))}
                       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                        <input type="date" value={newCommentDate[r.id] || new Date().toISOString().slice(0, 10)}
-                          onChange={e => setNewCommentDate(prev => ({ ...prev, [r.id]: e.target.value }))}
+                        <input type="date" value={newCommentDate[entry.id] || new Date().toISOString().slice(0, 10)}
+                          onChange={e => setNewCommentDate(prev => ({ ...prev, [entry.id]: e.target.value }))}
                           style={{ ...ntAddInput, flex: '0 0 128px', fontFamily: 'DM Mono, monospace' }} />
-                        <input type="text" value={newCommentDraft[r.id] || ''} placeholder="e.g. Sent illustration, emailed follow-up, client said not interested..."
-                          onChange={e => setNewCommentDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
-                          onKeyDown={e => { if (e.key === 'Enter') addComment(r.id) }}
+                        <input type="text" value={newCommentDraft[entry.id] || ''} placeholder="e.g. Sent illustration, emailed follow-up, client said not interested..."
+                          onChange={e => setNewCommentDraft(prev => ({ ...prev, [entry.id]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') addComment(entry) }}
                           style={ntAddInput} />
-                        <button onClick={() => addComment(r.id)} style={ntAddBtn}>Add</button>
+                        <button onClick={() => addComment(entry)} style={ntAddBtn}>Add</button>
                       </div>
                     </div>
 
@@ -530,11 +635,11 @@ export default function ContactReportPage() {
                         </div>
                       ))}
                       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                        <input type="text" value={newTodoDraft[r.id] || ''} placeholder="Add a task for this entry..."
-                          onChange={e => setNewTodoDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
-                          onKeyDown={e => { if (e.key === 'Enter') addTodo(r.id) }}
+                        <input type="text" value={newTodoDraft[entry.id] || ''} placeholder="Add a task for this entry..."
+                          onChange={e => setNewTodoDraft(prev => ({ ...prev, [entry.id]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') addTodo(entry) }}
                           style={ntAddInput} />
-                        <button onClick={() => addTodo(r.id)} style={ntAddBtn}>Add</button>
+                        <button onClick={() => addTodo(entry)} style={ntAddBtn}>Add</button>
                       </div>
                     </div>
                   </div>
@@ -568,6 +673,13 @@ const pillBase: React.CSSProperties = {
 const pillSelected: React.CSSProperties = { ...pillBase, background: 'var(--charcoal)', color: 'var(--cream)', borderColor: 'var(--charcoal)' }
 const pillUnselected: React.CSSProperties = { ...pillBase, background: 'var(--cream)', color: 'var(--ink2)' }
 
+const filterChipBase: React.CSSProperties = {
+  fontSize: 11.5, fontWeight: 600, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+  border: '1px solid var(--line)', fontFamily: 'DM Mono, monospace',
+}
+const filterChipOn: React.CSSProperties = { ...filterChipBase, background: 'var(--charcoal)', color: 'var(--cream)', borderColor: 'var(--charcoal)' }
+const filterChipOff: React.CSSProperties = { ...filterChipBase, background: 'transparent', color: 'var(--ink3)' }
+
 const textInput: React.CSSProperties = {
   width: '100%', fontSize: 13.5, padding: '11px 12px', border: '1px solid var(--line)', borderRadius: 8,
   background: 'var(--cream)', outline: 'none', fontFamily: 'inherit',
@@ -593,6 +705,7 @@ const logRow: React.CSSProperties = { display: 'flex', alignItems: 'flex-start',
 const logDate: React.CSSProperties = { fontSize: 11, color: 'var(--ink3)', width: 62, flexShrink: 0, paddingTop: 2, lineHeight: 1.4 }
 const logTitle: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: 'var(--charcoal)' }
 const tagStyle: React.CSSProperties = { fontSize: 10, color: 'var(--ink3)', background: 'var(--cream2)', padding: '2px 8px', borderRadius: 5 }
+const autoTagStyle: React.CSSProperties = { fontSize: 10, color: 'var(--emerald)', background: 'var(--emerald-l, rgba(45,90,78,0.10))', padding: '2px 8px', borderRadius: 5, fontWeight: 600 }
 const logStatus: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, flexShrink: 0, paddingTop: 2, whiteSpace: 'nowrap', color: 'var(--gold-tag)' }
 const chevron: React.CSSProperties = { fontSize: 11, color: 'var(--ink3)', marginLeft: 4, transition: 'transform 0.15s ease', flexShrink: 0, paddingTop: 3 }
 
@@ -602,7 +715,7 @@ const detailValue: React.CSSProperties = { fontSize: 13, color: 'var(--ink)', li
 
 const editEntryBtn: React.CSSProperties = {
   fontSize: 11, fontWeight: 600, color: 'var(--gold-tag)', background: 'var(--gold-l)', border: 'none',
-  borderRadius: 6, padding: '6px 12px', cursor: 'pointer',
+  borderRadius: 6, padding: '6px 12px', cursor: 'pointer', textDecoration: 'none', display: 'inline-block',
 }
 const deleteEntryBtn: React.CSSProperties = {
   fontSize: 11, fontWeight: 600, color: 'var(--rouge)', background: 'transparent', border: 'none',
