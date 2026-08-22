@@ -136,6 +136,13 @@ const SOURCE_LINK: Record<string, { label: string; href: string }> = {
   claim_line_items: { label: 'Open in Claims', href: '/dashboard/servicing/claims' },
 }
 
+// Dot color per filter group — the whole point is to make the type
+// recognizable at a glance down the page without reading every tag.
+const DOT_COLOR: Record<FilterGroup, string> = {
+  f2f: 'var(--emerald)', call: 'var(--gold)', non_f2f: 'var(--ink2)',
+  service: 'var(--rouge)', other: 'var(--ink3)',
+}
+
 function fmtDate(iso: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
@@ -540,32 +547,36 @@ export default function ContactReportPage() {
             : 'No entries match this filter.'}
         </div>
       ) : (
-        <div style={{ borderTop: '1px solid var(--line)' }}>
-          {visibleEntries.map(entry => {
+        <div style={timelineWrap}>
+          {visibleEntries.map((entry, idx) => {
             const isExpanded = expandedId === entry.id
             const todos = todosByEntry[entry.id] || []
             const openTodos = todos.filter(t => !t.done).length
             const comments = commentsByEntry[entry.id] || []
             const sourceLink = entry.auto?.source_table ? SOURCE_LINK[entry.auto.source_table] : null
+            const isLast = idx === visibleEntries.length - 1
             return (
-              <div key={entry.id} style={{ borderBottom: '1px solid var(--line)' }}>
-                <div onClick={() => toggleExpand(entry.id)} style={logRow}>
-                  <div className="font-mono" style={logDate}>{fmtDate(entry.date)}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={logTitle}>{entry.title}</div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                      <span style={tagStyle}>{entry.tag}</span>
-                      {entry.secondaryTag && <span style={tagStyle}>{entry.secondaryTag}</span>}
-                      {entry.kind === 'auto' && <span style={autoTagStyle}>Auto-logged</span>}
+              <div key={entry.id} style={timelineItem}>
+                <div style={{ ...timelineRail, ...(isLast ? { bottom: 'auto', height: 20 } : {}) }} />
+                <div style={{ ...timelineDot, background: DOT_COLOR[entry.filterGroup] }} />
+                <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--line)', paddingBottom: 18 }}>
+                  <div onClick={() => toggleExpand(entry.id)} style={logRow}>
+                    <div className="font-mono" style={logDate}>{fmtDate(entry.date)}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={logTitle}>{entry.title}</div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                        <span style={tagStyle}>{entry.tag}</span>
+                        {entry.secondaryTag && <span style={tagStyle}>{entry.secondaryTag}</span>}
+                        {entry.kind === 'auto' && <span style={autoTagStyle}>Auto-logged</span>}
+                      </div>
                     </div>
+                    {openTodos > 0 && (
+                      <div className="font-mono" style={logStatus}>{openTodos} to-do{openTodos > 1 ? 's' : ''}</div>
+                    )}
+                    <div style={{ ...chevron, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</div>
                   </div>
-                  {openTodos > 0 && (
-                    <div className="font-mono" style={logStatus}>{openTodos} to-do{openTodos > 1 ? 's' : ''}</div>
-                  )}
-                  <div style={{ ...chevron, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</div>
-                </div>
 
-                {isExpanded && (
+                  {isExpanded && (
                   <div style={logDetail} onClick={e => e.stopPropagation()}>
                     {entry.manual?.notes && (
                       <div style={{ marginBottom: 12 }}>
@@ -644,6 +655,7 @@ export default function ContactReportPage() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
             )
           })}
@@ -656,6 +668,19 @@ export default function ContactReportPage() {
 // ─── STYLES ─────────────────────────────────────────────────────────────────
 
 const pageWrap: React.CSSProperties = { padding: '24px 32px 60px', maxWidth: 760 }
+
+// Vertical dotted-line timeline — replaces the old flat bordered list. Each
+// entry gets a colored dot (see DOT_COLOR) sitting on a thin rail, so the
+// contact type reads at a glance without parsing every tag.
+const timelineWrap: React.CSSProperties = { position: 'relative', paddingLeft: 22 }
+const timelineItem: React.CSSProperties = { position: 'relative' }
+const timelineRail: React.CSSProperties = {
+  position: 'absolute', left: -17, top: 6, bottom: 0, width: 1, background: 'var(--line)',
+}
+const timelineDot: React.CSSProperties = {
+  position: 'absolute', left: -21, top: 20, width: 9, height: 9, borderRadius: '50%',
+  border: '2px solid var(--cream)', boxShadow: '0 0 0 1px var(--line2)',
+}
 
 const cardBase: React.CSSProperties = {
   background: '#fff', border: '1px solid var(--line)', borderRadius: 12, padding: 18, marginBottom: 14,
@@ -701,7 +726,7 @@ const btnCancel: React.CSSProperties = {
   padding: 10, cursor: 'pointer',
 }
 
-const logRow: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 4px', cursor: 'pointer' }
+const logRow: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 4px 0', cursor: 'pointer' }
 const logDate: React.CSSProperties = { fontSize: 11, color: 'var(--ink3)', width: 62, flexShrink: 0, paddingTop: 2, lineHeight: 1.4 }
 const logTitle: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: 'var(--charcoal)' }
 const tagStyle: React.CSSProperties = { fontSize: 10, color: 'var(--ink3)', background: 'var(--cream2)', padding: '2px 8px', borderRadius: 5 }
