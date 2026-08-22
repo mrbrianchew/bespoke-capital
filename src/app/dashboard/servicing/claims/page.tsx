@@ -780,6 +780,14 @@ function MedicalClaimsPage() {
     if (expandedItemId === id) setExpandedItemId(null)
     const { error } = await supabase.from('claim_line_items').delete().eq('id', id)
     if (error) toast('Delete failed: ' + error.message, 'error')
+    // Best-effort cleanup for the client's merged activity notebook — a
+    // deleted line item that had already reached Approved/Rejected would
+    // otherwise leave a stale entry on Contact Report.
+    if (!error) {
+      supabase.from('client_activity').delete()
+        .eq('source_table', 'claim_line_items').eq('source_id', id)
+        .then(({ error: cleanupErr }) => { if (cleanupErr) console.warn('[client_activity cleanup] failed:', cleanupErr.message) })
+    }
   }
 
   // ── Follow-up note mutations ──
