@@ -10,6 +10,7 @@ import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useDraggable, use
 import { CSS } from '@dnd-kit/utilities'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { logClientActivity } from '@/lib/logClientActivity'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -553,6 +554,25 @@ export default function BusinessClaimsBoardPage() {
     setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
     const { error } = await supabase.from('claim_line_items').update(patch).eq('id', id)
     if (error) toast('Move failed: ' + error.message, 'error')
+    // Mirrors a claim reaching a resolved outcome into the client's merged
+    // activity notebook — see src/lib/logClientActivity.ts. Only the two
+    // resolved zones matter here; docs/submitted/assessment are working
+    // states, not events worth surfacing on the client's timeline.
+    if (!error && (zone === 'resolved-approved' || zone === 'resolved-rejected')) {
+      const item = lineItems.find(i => i.id === id)
+      const claim = item ? claimsById[item.claim_id] : undefined
+      if (claim?.client_id && advisor?.id) {
+        logClientActivity(supabase, {
+          clientId: claim.client_id,
+          advisorId: advisor.id,
+          type: 'claim_status',
+          title: `Claim ${zone === 'resolved-approved' ? 'approved' : 'rejected'} — ${item?.description || item?.type || 'line item'}`,
+          description: zone === 'resolved-rejected' ? (item?.rejection_reason || null) : null,
+          sourceTable: 'claim_line_items',
+          sourceId: id,
+        })
+      }
+    }
   }
 
   function handleDragEnd(event: DragEndEvent) {

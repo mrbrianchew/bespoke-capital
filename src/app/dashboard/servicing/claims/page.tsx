@@ -8,6 +8,7 @@ import GmailClaimSearch from '@/components/GmailClaimSearch'
 import { daysSinceLastActivity } from '@/lib/claimsAttention'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { logClientActivity } from '@/lib/logClientActivity'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -755,6 +756,23 @@ function MedicalClaimsPage() {
     setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i))
     const { error } = await supabase.from('claim_line_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) toast('Save failed: ' + error.message, 'error')
+    // Mirrors a claim reaching a resolved outcome into the client's merged
+    // activity notebook — see src/lib/logClientActivity.ts. `patch` only
+    // carries approved/rejected keys when the Outcome buttons fire (see
+    // commit() below), so this only logs actual resolution changes, not
+    // every edit that passes through this function.
+    if (!error && activeClient?.id && advisor?.id && (patch.approved === true || patch.rejected === true)) {
+      const item = lineItems.find(i => i.id === id)
+      logClientActivity(supabase, {
+        clientId: activeClient.id,
+        advisorId: advisor.id,
+        type: 'claim_status',
+        title: `Claim ${patch.approved ? 'approved' : 'rejected'} — ${item?.description || item?.type || 'line item'}`,
+        description: patch.rejected ? (item?.rejection_reason || null) : null,
+        sourceTable: 'claim_line_items',
+        sourceId: id,
+      })
+    }
   }
 
   async function deleteLine(id: string) {
