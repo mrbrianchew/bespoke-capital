@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { useDashboard } from '@/contexts/DashboardContext'
+import { logClientActivity } from '@/lib/logClientActivity'
 
 // Meetings + to-dos for a New Business case. Meetings reuse
 // /api/service-requests/schedule-meeting as-is — that route only ever
@@ -354,7 +355,26 @@ export default function NewBusinessCaseExtras({
 
     setSavingMeeting(false)
     if (error) { toast('Could not save meeting: ' + error.message, 'error'); return }
-    if (data) { setMeetings(prev => [data as MeetingRow, ...prev]); onMeetingsChanged?.() }
+    if (data) {
+      setMeetings(prev => [data as MeetingRow, ...prev])
+      onMeetingsChanged?.()
+      // Mirrors this meeting into the client's merged activity notebook —
+      // see src/lib/logClientActivity.ts. Prospect-only cases have no
+      // clients row yet (clientId is null), so there's nothing to log
+      // against until the case converts to an actual client.
+      if (clientId && advisor?.id) {
+        logClientActivity(supabase, {
+          clientId,
+          advisorId: advisor.id,
+          type: channel === 'in_person' ? 'meeting_f2f' : channel === 'video_call' ? 'meeting_video' : 'meeting_phone',
+          title: meetingTitle.trim(),
+          description: meetingNotes.trim() || null,
+          date: meetingDate,
+          sourceTable: 'new_business_case_meetings',
+          sourceId: (data as MeetingRow).id,
+        })
+      }
+    }
     setMeetingMode(null)
   }
 
