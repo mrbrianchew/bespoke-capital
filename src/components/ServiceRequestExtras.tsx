@@ -5,6 +5,7 @@ import { useDriveUpload, DriveDocumentGeneric } from '@/lib/useDriveUpload'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { logClientActivity } from '@/lib/logClientActivity'
+import { useDashboard } from '@/contexts/DashboardContext'
 
 // Drops into the Service Request modal wherever it's rendered (firm-wide
 // Board or the per-client Servicing page) — self-fetches and self-manages
@@ -71,6 +72,14 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId, advis
   const supabase = createClient()
   const drive = useDriveUpload()
   const toast = useToast()
+  // advisorId (prop, above) is passed down from the parent page's own
+  // advisor state — but that gets captured whenever this component mounts,
+  // which can be before the advisor context has actually loaded, silently
+  // producing an empty string. Pulling it directly here instead guarantees
+  // a live value at the moment we actually need it — same fix already
+  // proven working in NewBusinessCaseExtras, which never had this bug
+  // because it always fetched advisor this way.
+  const { advisor } = useDashboard()
   const confirmAction = useConfirm()
 
   // Bumps the parent request's updated_at so serviceRequestsAttention.ts's
@@ -241,16 +250,21 @@ export default function ServiceRequestExtras({ serviceRequestId, clientId, advis
       // Mirrors this meeting into the client's merged activity notebook —
       // see src/lib/logClientActivity.ts. Fire-and-forget: a failed log
       // here should never block the meeting save the advisor just made.
-      logClientActivity(supabase, {
-        clientId,
-        advisorId,
-        type: meetingTypeSel === 'in_person' ? 'meeting_f2f' : meetingTypeSel === 'video_call' ? 'meeting_video' : 'meeting_phone',
-        title: meetingTitle.trim(),
-        description: meetingNotes.trim() || null,
-        date: meetingDate,
-        sourceTable: 'service_request_meetings',
-        sourceId: (data as MeetingRow).id,
-      })
+      // Guard matches the same pattern already working correctly in
+      // NewBusinessCaseExtras and both Claims pages — only log if we
+      // actually have a real advisor id, never send an empty one.
+      if (clientId && advisor?.id) {
+        logClientActivity(supabase, {
+          clientId,
+          advisorId: advisor.id,
+          type: meetingTypeSel === 'in_person' ? 'meeting_f2f' : meetingTypeSel === 'video_call' ? 'meeting_video' : 'meeting_phone',
+          title: meetingTitle.trim(),
+          description: meetingNotes.trim() || null,
+          date: meetingDate,
+          sourceTable: 'service_request_meetings',
+          sourceId: (data as MeetingRow).id,
+        })
+      }
     }
     setMeetingMode(null)
   }
