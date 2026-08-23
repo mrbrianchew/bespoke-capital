@@ -858,7 +858,7 @@ const annualSurplus = totalIncome - totalExp
       </div>
 
       {/* ── MAIN BODY ── */}
-      <div style={{ padding: '32px 40px', display: 'grid', gridTemplateColumns: '1fr 320px', gap: 28, alignItems: 'start' }}>
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_320px]" style={{ padding: '32px 40px', gap: 28, alignItems: 'start' }}>
 
         <div>
           <div style={{ marginBottom: 8 }}>
@@ -866,12 +866,12 @@ const annualSurplus = totalIncome - totalExp
               <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink3)' }}>Planning Status</span>
               <div style={{ flex: 1, height: 1, background: '#E8E4DC' }} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" style={{ gap: 12, marginBottom: 12 }}>
               {areas.slice(0, 3).map(area => (
                 <AreaCard key={area.id} area={area} />
               ))}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2" style={{ gap: 12 }}>
               {areas.slice(3).map(area => (
                 <AreaCard key={area.id} area={area} />
               ))}
@@ -928,7 +928,7 @@ const annualSurplus = totalIncome - totalExp
                 <span style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600, color: 'var(--ink3)' }}>Financial Overview</span>
                 <div style={{ flex: 1, height: 1, background: '#E8E4DC' }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" style={{ gap: 12 }}>
                 {[
                   { label: 'Liquid Assets',     val: fmtShort(clientLiquid),           sub: 'savings & fixed deposits'       },
                   { label: 'Property Equity',    val: fmtShort(propEquity),             sub: 'net of mortgage'          },
