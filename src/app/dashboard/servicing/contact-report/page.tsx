@@ -136,6 +136,13 @@ const SOURCE_LINK: Record<string, { label: string; href: string }> = {
   claim_line_items: { label: 'Open in Claims', href: '/dashboard/servicing/claims' },
 }
 
+// Auto entries whose Details can be edited right here in Contact Report.
+// Both meeting tables have a real `notes` column to write back to, so an
+// edit here also updates the source meeting — not just the notebook copy.
+// claim_line_items' description is a generated status message, not a note
+// the advisor typed, so it stays "edit at the source" only.
+const EDITABLE_AUTO_DETAILS_SOURCES = new Set(['new_business_case_meetings', 'service_request_meetings'])
+
 // Dot color per filter group — the whole point is to make the type
 // recognizable at a glance down the page without reading every tag.
 const DOT_COLOR: Record<FilterGroup, string> = {
@@ -211,6 +218,9 @@ export default function ContactReportPage() {
   const [newTodoDraft, setNewTodoDraft] = useState<Record<string, string>>({})
   const [newCommentDraft, setNewCommentDraft] = useState<Record<string, string>>({})
   const [newCommentDate, setNewCommentDate] = useState<Record<string, string>>({})
+  const [editingAutoDetailsId, setEditingAutoDetailsId] = useState<string | null>(null)
+  const [autoDetailsDraft, setAutoDetailsDraft] = useState('')
+  const [savingAutoDetails, setSavingAutoDetails] = useState(false)
 
   // ── Form state (manual entries only — auto entries have no form) ──
   const [formOpen, setFormOpen] = useState(false)
@@ -430,6 +440,32 @@ export default function ContactReportPage() {
     if (error) console.error('[contact-report] delete comment failed:', error)
   }
 
+  // Edits an auto entry's Details field from Contact Report itself. Writes
+  // to client_activity.description (what this page reads) AND back to the
+  // source meeting's own `notes` column, so New Business / Service Requests
+  // shows the same text if opened later — not just a local overwrite here.
+  async function saveAutoDetails(entry: TimelineEntry) {
+    if (!entry.auto) return
+    const text = autoDetailsDraft.trim() || null
+    setSavingAutoDetails(true)
+    const { error } = await supabase.from('client_activity')
+      .update({ description: text, updated_at: new Date().toISOString() })
+      .eq('id', entry.auto.id)
+    if (error) {
+      console.error('[contact-report] save auto details failed:', error)
+      setSavingAutoDetails(false)
+      return
+    }
+    if (entry.auto.source_table && entry.auto.source_id && EDITABLE_AUTO_DETAILS_SOURCES.has(entry.auto.source_table)) {
+      const { error: sourceErr } = await supabase.from(entry.auto.source_table)
+        .update({ notes: text }).eq('id', entry.auto.source_id)
+      if (sourceErr) console.warn('[contact-report] source meeting notes sync failed:', sourceErr.message)
+    }
+    setEntries(prev => prev.map(e => (e.id === entry.id && e.auto ? { ...e, auto: { ...e.auto, description: text } } : e)))
+    setEditingAutoDetailsId(null)
+    setSavingAutoDetails(false)
+  }
+
   async function deleteEntry(report: ContactReportRow) {
     if (!await confirmAction('Delete this contact report entry? This cannot be undone.', { danger: true, confirmLabel: 'Delete' })) return
     const { error } = await supabase.from('contact_reports').delete().eq('id', report.id)
@@ -584,11 +620,47 @@ export default function ContactReportPage() {
                         <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{entry.manual.notes}</div>
                       </div>
                     )}
-                    {entry.auto?.description && (
+                    {entry.kind === 'auto' && entry.auto?.source_table && EDITABLE_AUTO_DETAILS_SOURCES.has(entry.auto.source_table) ? (
                       <div style={{ marginBottom: 12 }}>
-                        <div style={detailLabel}>Details</div>
-                        <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{entry.auto.description}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={detailLabel}>Details</div>
+                          {editingAutoDetailsId !== entry.id && (
+                            <button
+                              onClick={() => { setEditingAutoDetailsId(entry.id); setAutoDetailsDraft(entry.auto?.description || '') }}
+                              style={editEntryBtn}
+                            >
+                              {entry.auto?.description ? 'Edit' : '+ Add'}
+                            </button>
+                          )}
+                        </div>
+                        {editingAutoDetailsId === entry.id ? (
+                          <div style={{ marginTop: 6 }}>
+                            <textarea
+                              value={autoDetailsDraft}
+                              onChange={e => setAutoDetailsDraft(e.target.value)}
+                              rows={3}
+                              autoFocus
+                              style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 7, fontSize: 12.5, fontFamily: 'Inter, sans-serif', resize: 'vertical', color: 'var(--ink)' }}
+                            />
+                            <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
+                              <button onClick={() => saveAutoDetails(entry)} disabled={savingAutoDetails} style={editEntryBtn}>Save</button>
+                              <button onClick={() => setEditingAutoDetailsId(null)} disabled={savingAutoDetails} style={deleteEntryBtn}>Cancel</button>
+                              <span style={{ fontSize: 10.5, color: 'var(--ink3)' }}>Also updates the notes on the original meeting.</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>
+                            {entry.auto?.description || <span style={{ color: 'var(--ink3)', fontStyle: 'italic' }}>No details yet.</span>}
+                          </div>
+                        )}
                       </div>
+                    ) : (
+                      entry.auto?.description && (
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={detailLabel}>Details</div>
+                          <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{entry.auto.description}</div>
+                        </div>
+                      )
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
