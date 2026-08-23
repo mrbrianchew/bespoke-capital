@@ -173,6 +173,46 @@ export async function createCalendarEvent(accessToken: string, input: CreateEven
   return { id: data.id, htmlLink: data.htmlLink, meetLink: data.hangoutLink || null }
 }
 
+// Patches an existing event in place (title/time/location/etc.) rather than
+// delete+recreate, so the event keeps its Calendar identity — attendee
+// replies, invite history, and the link the advisor may have already
+// shared with a client all survive an edit made here. Mirrors
+// createCalendarEvent's body-building exactly; conferenceData is left
+// untouched on edit (advisors edit time/notes far more than they change
+// the video platform, and re-requesting a Meet link on every edit would
+// silently swap out a link the advisor may have already shared).
+export async function updateCalendarEvent(accessToken: string, eventId: string, input: CreateEventInput): Promise<void> {
+  const body: any = {
+    summary: input.title,
+    description: input.description || undefined,
+  }
+  if (input.time) {
+    const start = new Date(`${input.date}T${input.time}:00+08:00`)
+    const durationMin = input.durationMinutes && input.durationMinutes > 0 ? input.durationMinutes : 30
+    const end = new Date(start.getTime() + durationMin * 60000)
+    body.start = { dateTime: start.toISOString(), timeZone: 'Asia/Singapore' }
+    body.end = { dateTime: end.toISOString(), timeZone: 'Asia/Singapore' }
+  } else {
+    body.start = { date: input.date }
+    const endDate = new Date(`${input.date}T00:00:00Z`)
+    endDate.setUTCDate(endDate.getUTCDate() + 1)
+    body.end = { date: endDate.toISOString().slice(0, 10) }
+  }
+
+  if (input.meetingLink) {
+    body.location = input.meetingLink
+  } else if (input.location) {
+    body.location = input.location
+  }
+
+  const res = await fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Calendar event update failed: ${res.status} ${await res.text()}`)
+}
+
 export async function deleteCalendarEvent(accessToken: string, eventId: string): Promise<void> {
   await fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
     method: 'DELETE',

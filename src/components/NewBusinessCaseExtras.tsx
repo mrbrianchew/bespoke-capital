@@ -288,11 +288,9 @@ export default function NewBusinessCaseExtras({
     setPhoneDraft('')
   }
 
-  // Edits the DB row in place — does not touch the synced Calendar event
-  // (the schedule-meeting API only supports create/delete, no update), so
-  // a calendar-synced meeting's invite won't reflect edits made here. That's
-  // an acceptable gap for now: delete + reschedule still works for changes
-  // that need to hit the calendar.
+  // Edits the DB row in place and, if this meeting has a synced Calendar
+  // event, PATCHes that event too (see saveMeeting) so the advisor's actual
+  // calendar reflects the edit instead of going stale.
   function openEditMeetingForm(m: MeetingRow) {
     setMeetingMode('edit')
     setEditingMeetingId(m.id)
@@ -328,6 +326,24 @@ export default function NewBusinessCaseExtras({
       if (error) { toast('Could not save changes: ' + error.message, 'error'); return }
       setMeetings(prev => prev.map(m => m.id === editingMeetingId ? { ...m, ...patch } : m))
       onMeetingsChanged?.()
+      // Push the same changes to the synced Calendar event, if any. Fire-
+      // and-forget: a failed patch here (e.g. advisor disconnected Calendar
+      // since scheduling) shouldn't block the save the advisor just made —
+      // the local row above is already correct either way.
+      const editedMeeting = meetings.find(m => m.id === editingMeetingId)
+      if (editedMeeting?.google_calendar_event_id) {
+        fetch('/api/service-requests/schedule-meeting', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventId: editedMeeting.google_calendar_event_id,
+            title: patch.title, date: patch.meeting_date, time: patch.meeting_time, notes: patch.notes,
+            durationMinutes: patch.duration_minutes,
+            location: patch.location || (patch.phone_number ? `Phone: ${patch.phone_number}` : null),
+            meetingLink: patch.meeting_link,
+          }),
+        }).catch(() => {})
+      }
       // Keeps the notebook entry in sync — otherwise editing a meeting's
       // date/title here leaves Contact Report showing the stale original.
       // Awaited (not fire-and-forget) for the same reliability reason as
