@@ -36,6 +36,13 @@ const ADMIN_SECTIONS = [
     icon: "🏥",
     tag: "As needed",
   },
+  {
+    title: "Meeting Purposes",
+    description: "Add, rename, or remove the options in the \"What's this meeting about?\" dropdown on New Business meeting cards.",
+    href: "/admin/meeting-purposes",
+    icon: "📋",
+    tag: "As needed",
+  },
 ]
 
 function PendingAdvisorsCard() {

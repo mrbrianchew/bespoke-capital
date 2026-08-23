@@ -95,7 +95,7 @@ interface MeetingRow {
   id: string
   case_id: string
   title: string
-  meeting_type: 'fact_find' | 'presentation' | 'implementation' | 'clarification' | 'other'
+  meeting_type: string
   meeting_date: string
   meeting_time: string | null
   duration_minutes: number
@@ -130,9 +130,13 @@ interface ActivityRow {
   created_at: string
 }
 
-const MEETING_PURPOSE_LABELS: Record<MeetingRow['meeting_type'], string> = {
-  fact_find: 'Fact-Find', presentation: 'Presentation', implementation: 'Implementation',
-  clarification: 'Clarification Call', other: 'Other',
+interface MeetingPurpose { id: number; code: string; name: string; sort_order: number }
+// Meeting purposes are now editable in Admin Hub (meeting_purposes table)
+// instead of a fixed 5-value list. `formatPurposeFallback` covers codes that
+// no longer have a matching row — e.g. an advisor deleted the option after
+// it was used on a past meeting — so old meetings never show a blank label.
+function formatPurposeFallback(code: string): string {
+  return code.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 const VIDEO_PLATFORM_LABELS: Record<VideoPlatform, string> = {
   google_meet: 'Google Meet', zoom: 'Zoom', teams: 'MS Teams', other: 'Other',
@@ -186,7 +190,8 @@ export default function NewBusinessCaseExtras({
   const [meetingMode, setMeetingMode] = useState<'log' | 'schedule' | 'edit' | null>(null)
   const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null)
   const [meetingTitle, setMeetingTitle] = useState('')
-  const [purpose, setPurpose] = useState<MeetingRow['meeting_type']>('fact_find')
+  const [purpose, setPurpose] = useState<string>('fact_find')
+  const [meetingPurposes, setMeetingPurposes] = useState<MeetingPurpose[]>([])
   const [channel, setChannel] = useState<'in_person' | 'video_call' | 'phone_call'>('video_call')
   const [meetingDate, setMeetingDate] = useState('')
   const [meetingTime, setMeetingTime] = useState('')
@@ -228,6 +233,12 @@ export default function NewBusinessCaseExtras({
     supabase.from('message_templates').select('*').eq('context_type', 'new_business_appointment')
       .then(({ data }) => setTemplates((data || []) as MessageTemplate[]))
   }, [advisor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Meeting purpose options — firm-wide list, editable in Admin Hub.
+  useEffect(() => {
+    supabase.from('meeting_purposes').select('*').order('sort_order')
+      .then(({ data }) => setMeetingPurposes((data || []) as MeetingPurpose[]))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Client phone + family (for the Who selector) — only relevant when this
   // case is linked to an actual client record, not a bare prospect.
@@ -644,7 +655,7 @@ export default function NewBusinessCaseExtras({
               <div>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{m.title}</span>
                 <span style={{ marginLeft: 8, fontFamily: 'DM Mono, monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: 4, background: T.cream2, color: T.textDim }}>
-                  {MEETING_PURPOSE_LABELS[m.meeting_type]}
+                  {meetingPurposes.find(p => p.code === m.meeting_type)?.name || formatPurposeFallback(m.meeting_type)}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -774,8 +785,8 @@ export default function NewBusinessCaseExtras({
           )}
           <input value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="What's this meeting about?" style={inputStyle} />
 
-          <select value={purpose} onChange={e => setPurpose(e.target.value as MeetingRow['meeting_type'])} style={inputStyle}>
-            {(Object.keys(MEETING_PURPOSE_LABELS) as MeetingRow['meeting_type'][]).map(p => <option key={p} value={p}>{MEETING_PURPOSE_LABELS[p]}</option>)}
+          <select value={purpose} onChange={e => setPurpose(e.target.value)} style={inputStyle}>
+            {meetingPurposes.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
           </select>
 
           <div style={{ display: 'flex', gap: 4 }}>
