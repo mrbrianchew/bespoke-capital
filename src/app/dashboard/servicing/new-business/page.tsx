@@ -179,9 +179,15 @@ export default function NewApplicationsServicingPage() {
 
       {editingRow && (
         <div onClick={() => { setEditingId(null); setOutcomeDraft(null) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.42)', zIndex: 100, display: 'flex', justifyContent: 'flex-end' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.32)', backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)', zIndex: 100, display: 'flex', justifyContent: 'flex-end', padding: 12 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ width: 'min(720px, 94vw)', background: 'var(--cream)', height: '100%', overflowY: 'auto', boxShadow: '-14px 0 40px rgba(0,0,0,0.18)' }}>
+            style={{
+              width: 'min(720px, 94vw)', height: 'calc(100% - 24px)',
+              background: 'radial-gradient(circle at 92% 0%, rgba(168,131,74,0.18), transparent 42%), radial-gradient(circle at 0% 100%, rgba(42,94,70,0.14), transparent 42%), rgba(240,237,232,0.72)',
+              backdropFilter: 'blur(22px) saturate(1.4)', WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
+              border: '1px solid rgba(255,255,255,0.5)', borderRadius: 24, overflowY: 'auto',
+              boxShadow: '0 24px 70px rgba(26,24,22,0.35), inset 0 1px 0 rgba(255,255,255,0.6)',
+            }}>
             <CaseDrawer
               row={editingRow}
               clientName={activeClient.name}
