@@ -97,6 +97,9 @@ function ProtectionPage() {
   const { activeClient, authLoading } = useDashboard()
   const confirmAction = useConfirm()
   const [error, setError] = useState<string | null>(null)
+  // Drives the hero header (heading/tab-bar stacking) below — same
+  // breakpoint and pattern as the Portfolio KPI grid's useNarrow(760).
+  const narrowHero = useNarrow(760)
 
   // Servicing History — latest non-superseded entry per policy_id, keyed for
   // the Variant D row indicator. Refetched whenever the client changes or a
@@ -677,20 +680,30 @@ async function revokeShare(token: string, clear: () => void) {
   return (
     <div style={{minHeight:'100vh',background:'var(--cream)',display:'flex',flexDirection:'column'}}>
       {/* Hero */}
-      <div style={{background:'#1C1A17',padding:'0 48px'}}>
-        <div style={{paddingTop:32,paddingBottom:28,display:'flex',alignItems:'flex-end',justifyContent:'space-between'}}>
+      <div style={{background:'#1C1A17',padding:narrowHero?'0 18px':'0 48px'}}>
+        <div style={{
+          paddingTop:narrowHero?20:32,
+          paddingBottom:narrowHero?16:28,
+          display:'flex',
+          flexDirection:narrowHero?'column':'row',
+          alignItems:narrowHero?'stretch':'flex-end',
+          justifyContent:'space-between',
+          gap:narrowHero?14:0
+        }}>
           <div>
-            <div style={{fontSize:11,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.8)',marginBottom:6}}>Risk Management</div>
-            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:32,fontWeight:300,color:'#F0EDE8'}}>Wealth Protection — {clientName}</div>
+            <div style={{fontSize:narrowHero?10:11,letterSpacing:'0.15em',textTransform:'uppercase',color:'rgba(200,169,110,0.8)',marginBottom:6}}>Risk Management</div>
+            <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:narrowHero?22:32,fontWeight:300,color:'#F0EDE8',lineHeight:1.2}}>Wealth Protection — {clientName}</div>
           </div>
-          <div style={{display:'flex',gap:16,alignItems:'center',paddingBottom:4}}>
+          <div style={{display:'flex',gap:narrowHero?8:16,alignItems:'center',paddingBottom:narrowHero?0:4,flexWrap:'wrap'}}>
             {saveError && <span style={{fontSize:12,color:'#E53935',fontWeight:500}}>⚠ Save failed</span>}
             {saving && !saveError && <span style={{fontSize:12,color:'rgba(255,255,255,0.4)'}}>Saving…</span>}
-            <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3}}>
+            <div style={{display:'flex',gap:2,background:'rgba(255,255,255,0.06)',borderRadius:6,padding:3,width:narrowHero?'100%':'auto'}}>
               {(['overview','portfolio','payment_summary'] as const).map(t=>(
                 <button key={t} onClick={()=>setActiveTab(t)}
-                  style={{padding:'6px 18px',borderRadius:4,border:'none',cursor:'pointer',fontSize:12,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:500,background:activeTab===t?'rgba(200,169,110,0.2)':'transparent',color:activeTab===t?'#c8a96e':'rgba(255,255,255,0.45)'}}>
-                  {t==='overview'?'Overview':t==='portfolio'?'Portfolio':'Payment Summary'}
+                  style={{flex:narrowHero?1:'none',padding:narrowHero?'7px 6px':'6px 18px',borderRadius:4,border:'none',cursor:'pointer',fontSize:narrowHero?10:12,letterSpacing:'0.05em',textTransform:'uppercase',fontWeight:500,background:activeTab===t?'rgba(200,169,110,0.2)':'transparent',color:activeTab===t?'#c8a96e':'rgba(255,255,255,0.45)',whiteSpace:'nowrap'}}>
+                  {narrowHero
+                    ? (t==='overview'?'Overview':t==='portfolio'?'Portfolio':'Payment')
+                    : (t==='overview'?'Overview':t==='portfolio'?'Portfolio':'Payment Summary')}
                 </button>
               ))}
             </div>
@@ -2627,7 +2640,12 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
     <div style={{marginBottom: 24}}>
       
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns: narrow ? 'repeat(2,1fr)' : 'repeat(7,1fr)', gap: 12, marginBottom: 16}}>
+      {/* Single column on narrow: full-precision numbers at full size don't
+          fit 2-up in a 380px card without clipping (overflow:hidden below
+          was silently cutting off trailing digits, e.g. "$526,00" for
+          "$526,000"). Trades a longer scroll for numbers that are never
+          cut off — see chat 2026-08-25 for the before/after mockups. */}
+      <div style={{display:'grid', gridTemplateColumns: narrow ? '1fr' : 'repeat(7,1fr)', gap: 12, marginBottom: 16}}>
         {[
           {label:'Death Benefit', value:totDeath, accent:COL_D},
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
