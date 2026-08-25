@@ -243,10 +243,10 @@ export default function GlobalQuickAdd() {
       </button>
 
       {showBottomSheet && (
-        <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+        <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(28,26,23,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div onClick={e => e.stopPropagation()} style={{
             width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto', background: 'var(--cream)',
-            borderRadius: '16px 16px 0 0', boxShadow: '0 -10px 40px rgba(0,0,0,0.25)',
+            borderRadius: 16, boxShadow: '0 24px 64px rgba(0,0,0,0.3)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${T.line}`, position: 'sticky', top: 0, background: 'var(--cream)' }}>
               <div className="font-serif" style={{ fontSize: 19, fontWeight: 600, color: T.text }}>Quick Add</div>

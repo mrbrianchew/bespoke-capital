@@ -1758,12 +1758,12 @@ function NewLineItemModal({ section, typeOptions, saving, onCancel, onCreate }: 
   return (
     <div onClick={onCancel} style={{
       position: 'fixed', inset: 0, background: 'rgba(28,26,23,.45)', zIndex: 100,
-      display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--cream)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560,
+        background: 'var(--cream)', borderRadius: 18, width: '100%', maxWidth: 560,
         maxHeight: '88vh', overflowY: 'auto', padding: '20px 18px 24px',
-        boxShadow: '0 -16px 40px rgba(28,26,23,.25)',
+        boxShadow: '0 24px 64px rgba(28,26,23,.3)',
       }}>
         <div className="claims-serif" style={{ fontSize: 20, color: T.text, marginBottom: 4 }}>New {SECTION_LABEL[section]} Line</div>
         <div style={{ fontSize: 11.5, color: T.textFaint, marginBottom: 16 }}>Fill in what you have — documents can be attached once it's saved.</div>
