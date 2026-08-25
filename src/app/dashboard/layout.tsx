@@ -301,8 +301,14 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       )}
 
       <aside
-        className={`sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0 fixed inset-y-0 left-0 z-50 transition-transform duration-200 md:static md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
-        style={{ width: 240, background: 'white', borderRight: '1px solid var(--line)' }}>
+        className={`sidebar-scroll flex flex-col overflow-y-auto flex-shrink-0 fixed inset-y-0 left-0 z-50 transition-transform duration-200 md:static md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-[calc(100%+16px)]'}`}
+        style={{
+          width: 240, margin: 16, borderRadius: 20,
+          background: `linear-gradient(to right, transparent calc(100% - 1px), rgba(168,131,74,0.3) calc(100% - 1px), rgba(168,131,74,0.3) 100%),
+            url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.02 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+            linear-gradient(180deg, #F8F6F1 0%, var(--cream) 45%, var(--cream2) 100%)`,
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8), inset 1px 0 0 rgba(255,255,255,0.4), 0 24px 60px rgba(28,26,23,0.14), 0 6px 16px rgba(28,26,23,0.08)',
+        }}>
         <div className="px-6 py-7" style={{ borderBottom: '1px solid var(--line)' }}>
           <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>{advisor?.firm || 'Bespoke Heartwork'}</div>
 <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
