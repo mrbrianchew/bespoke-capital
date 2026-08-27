@@ -41,10 +41,20 @@ export async function requireCreator() {
     },
   )
 
-  // getUser() validates the JWT against the Supabase auth server (it does not
-  // trust the cookie blindly), so this is a genuine authentication check.
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user || user.id !== creatorId) return null
-
-  return user
+  try {
+    // getUser() validates the JWT against the Supabase auth server (it does
+    // not trust the cookie blindly), so this is a genuine authentication
+    // check. It can also throw (instead of returning `error`) when it hits
+    // an already-rotated refresh token mid-refresh — a rare race with the
+    // browser's own background token refresh, not a real auth failure — so
+    // a throw is treated the same as `error`/`!user` below: fail closed to
+    // null. Previously uncaught, this surfaced as a crashed route handler
+    // (AuthApiError: refresh_token_not_found) in prod logs on this route's
+    // 3-minute polling cadence — see chat 2026-08-27.
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error || !user || user.id !== creatorId) return null
+    return user
+  } catch {
+    return null
+  }
 }
