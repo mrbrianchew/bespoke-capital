@@ -119,13 +119,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     }
     if (cls) {
       setClients(cls)
-      if (cls.length > 0) {
-        const savedId = localStorage.getItem('selectedClientId')
-        const match = cls.find((c: any) => c.id === savedId)
-        const selected = match || cls[0]
-        setActiveClient(selected)
-        localStorage.setItem('selectedClientId', selected.id)
-      }
+      // Deliberately no auto-select here. Every login lands on a neutral
+      // "no client chosen" state instead of resuming the last-viewed client
+      // or falling back to cls[0] (alphabetically first) — the advisor picks
+      // a client explicitly from the sidebar each session
+      // (dashboard/layout.tsx:406 sets activeClient + localStorage there).
+      // Every dashboard page already guards on `!activeClient` (loading
+      // stops, no fetch fires), so this is safe with no other changes.
       const clientIds = cls.map((c: any) => c.id)
       if (clientIds.length > 0) {
         const { data: spouses } = await supabase.from('family_members').select('client_id, name').eq('relationship', 'Spouse').in('client_id', clientIds)
