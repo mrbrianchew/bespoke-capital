@@ -71,7 +71,7 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
   const [copied, setCopied] = useState(false)
 
   const [genPassword, setGenPassword] = useState('')
-  const [genHint, setGenHint] = useState('Use your NRIC and birth year, e.g. S1234567A1990.')
+  const [genHint, setGenHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
   const [genExpiry, setGenExpiry] = useState<'7d' | '30d' | 'never'>('30d')
   const [genError, setGenError] = useState('')
   const [showGenForm, setShowGenForm] = useState(false)
