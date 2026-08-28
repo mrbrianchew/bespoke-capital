@@ -1712,7 +1712,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_340px]" style={{ gap: 24, alignItems: 'start' }}>
+            <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_340px]" style={{ gap: 24, alignItems: 'start' }}>
               <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={age1} config={cpfConfig} label={clientName} />
               <CpfCard p={p1} age={age1} config={cpfConfig} />
             </div>
@@ -1739,7 +1739,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_340px]" style={{ gap: 20, alignItems: 'start' }}>
+            <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_340px]" style={{ gap: 20, alignItems: 'start' }}>
               <div className="space-y-4">
 
                 {expMode === 'simple' && (
@@ -1748,6 +1748,8 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                       <div className="font-serif text-lg" style={{ color: 'var(--ink)' }}>Annual Expenses</div>
                       <div className="text-xs mt-0.5" style={{ color: 'var(--ink3)' }}>Enter annual amounts — monthly auto-calculated</div>
                     </div>
+                    <div style={isCouple ? { overflowX: 'auto' } : undefined}>
+                    <div style={isCouple ? { minWidth: 560 } : undefined}>
                     {isCouple && (
                       <div className="px-6 pt-4">
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 145px 145px 130px', gap: 8 }}>
@@ -1820,6 +1822,8 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                         )}
                       </div>
                     </div>
+                    </div>
+                    </div>
                   </div>
                 )}
 
@@ -1840,6 +1844,8 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                             <div className="text-xs" style={{ color: 'var(--ink3)' }}>Sub-total: <span style={{ color: group.color, fontWeight: 600 }}>{fmt(gSum)}/yr</span></div>
                           </div>
                           <div className="px-5 py-2">
+                            <div style={isCouple ? { overflowX: 'auto' } : undefined}>
+                            <div style={isCouple ? { minWidth: 620 } : undefined}>
                             {isCouple && (
                               <div className="flex items-center gap-2 py-2 mb-1" style={{ borderBottom: '2px solid var(--line2)' }}>
                                 <div className="text-xs" style={{ width: 190, flexShrink: 0, color: 'var(--ink3)' }}>Item</div>
@@ -1921,6 +1927,8 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                                 <div style={{ width: 28 }} />
                               </div>
                             )}
+                          </div>
+                          </div>
                           </div>
                         </div>
                       )
@@ -2044,7 +2052,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
 
 
         {activeSection === 'assets' && (
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_300px]" style={{ gap: 20, alignItems: 'start' }}>
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_300px]" style={{ gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
               <AssetBlock title="CASH / NEAR CASH" color="var(--emerald)" total={cashTotal} totalClient={cashTotalC} totalSpouse={cashTotalS} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Savings / Current Account(s)', 'a_savings', 'a2_savings', 'a_savings_note')}
@@ -2163,7 +2171,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
               ))}
             </div>
             {/* Main content */}
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_300px]" style={{ gap: 20, alignItems: 'start' }}>
+            <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_300px]" style={{ gap: 20, alignItems: 'start' }}>
               <div className="space-y-4">
                 <PropertyPortfolioBlock
                   properties={ff.properties || []}
@@ -2244,7 +2252,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         )}
 
         {activeSection === 'liabilities' && (
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_300px]" style={{ gap: 20, alignItems: 'start' }}>
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_300px]" style={{ gap: 20, alignItems: 'start' }}>
             <div className="space-y-4">
               <AssetBlock title="SHORT TERM (<5 years)" color="var(--rouge)" total={stTotal} totalClient={stTotalC} totalSpouse={stTotalS} isCouple={isCouple} clientName={clientName} spouseName={spouseName}>
                 {assetRow('Credit Card / Credit Line', 'l_credit_card', 'l2_credit_card', 'l_credit_card_note')}
@@ -2332,7 +2340,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         )}
 
         {activeSection === 'risk' && (
-          <div className={isCouple ? 'grid grid-cols-1 md:grid-cols-2' : 'grid grid-cols-1 md:grid-cols-[1fr_340px]'} style={{ gap: 20, alignItems: 'start' }}>
+          <div className={isCouple ? 'grid grid-cols-1 md:grid-cols-2' : 'grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_340px]'} style={{ gap: 20, alignItems: 'start' }}>
             <div className="space-y-5">
               {isCouple && <div className="text-sm font-medium px-4 py-2" style={{ background: 'var(--gold-l)', color: 'var(--gold-tag)', border: '1px solid rgba(168,131,74,0.2)' }}>{clientName}</div>}
               <Card title="Risk Tolerance">
@@ -2390,7 +2398,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         )}
 
         {activeSection === 'health' && (
-          <div className={isCouple ? 'grid grid-cols-1 md:grid-cols-2' : 'grid grid-cols-1 md:grid-cols-[1fr_340px]'} style={{ gap: 20, alignItems: 'start' }}>
+          <div className={isCouple ? 'grid grid-cols-1 md:grid-cols-2' : 'grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_340px]'} style={{ gap: 20, alignItems: 'start' }}>
             {[{person:'person1' as const,p:p1,name:clientName},...(isCouple?[{person:'person2' as const,p:p2,name:spouseName}]:[])].map(({person,p,name})=>(
               <Card key={person} title="Health Declarations" subtitle={isCouple?name:undefined}>
                 <div className="space-y-5">
