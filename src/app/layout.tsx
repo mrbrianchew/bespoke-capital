@@ -6,12 +6,26 @@ import AppProviders from '@/components/AppProviders'
 export const metadata: Metadata = {
   title: 'Bespoke HeartWork — Financial Plan',
   description: 'Financial Planning Platform',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Bespoke HeartWork',
+  },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: '#1C1A17',
 }
 
 // next/font self-hosts these at build time and inlines the @font-face rules

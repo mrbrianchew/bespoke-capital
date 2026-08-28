@@ -1,3 +1,62 @@
+const withPWA = require('@ducanh2912/next-pwa').default({
+  dest: 'public',
+  disable: process.env.NODE_ENV === 'development',
+  register: true,
+  skipWaiting: true,
+  // Route-level (client-side) navigation caching is OFF on purpose: several
+  // dashboard routes render client PII/financial data and we don't want any
+  // chance of a stale cached view surfacing after logout or on a shared
+  // device. See runtimeCaching below for the same reasoning applied to the
+  // service worker's fetch interception.
+  cacheOnFrontEndNav: false,
+  workboxOptions: {
+    // This REPLACES next-pwa's default runtime caching (which caches API
+    // responses and page navigations by default) with an explicit allowlist.
+    // Anything not matched below simply isn't intercepted by the service
+    // worker and always goes straight to the network.
+    runtimeCaching: [
+      {
+        // Supabase (auth + all client/financial data) and our own API
+        // routes: never cache. This is the one that matters — it's the
+        // guarantee that no client PII or financial figures can ever be
+        // served stale from the service worker cache.
+        urlPattern: ({ url }) =>
+          url.origin.includes('.supabase.co') || url.pathname.startsWith('/api/'),
+        handler: 'NetworkOnly',
+      },
+      {
+        // Page navigations (HTML documents), including the token-gated
+        // /share, /statement, /report-print routes: never cache. If the
+        // network is down, the browser shows its normal offline error
+        // instead of a stale cached page — deliberate, not an oversight.
+        urlPattern: ({ request }) => request.mode === 'navigate',
+        handler: 'NetworkOnly',
+      },
+      {
+        // Hashed build output (JS/CSS chunks) — filenames change on every
+        // deploy, so caching them aggressively is safe and just makes
+        // repeat loads faster.
+        urlPattern: /^\/_next\/static\/.*/i,
+        handler: 'CacheFirst',
+        options: {
+          cacheName: 'next-static',
+          expiration: { maxEntries: 200 },
+        },
+      },
+      {
+        // Self-hosted fonts (next/font) and images/icons — static, no PII.
+        urlPattern: ({ request }) =>
+          request.destination === 'font' || request.destination === 'image',
+        handler: 'CacheFirst',
+        options: {
+          cacheName: 'static-assets',
+          expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
+        },
+      },
+    ],
+  },
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // @sparticuz/chromium ships a Chromium binary at a specific path relative
@@ -90,4 +149,4 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+module.exports = withPWA(nextConfig)

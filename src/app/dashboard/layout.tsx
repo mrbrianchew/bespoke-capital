@@ -14,6 +14,7 @@ import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttenti
 import { fetchNewBusinessAttentionCount } from '@/lib/newBusinessAttention'
 import { fetchPremiumAlertsAttentionCount } from '@/lib/premiumAlertsAttention'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { useInstallPrompt } from '@/hooks/useInstallPrompt'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -120,6 +121,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     setActiveClient, setClients, updateActiveClientFields,
   } = useDashboard()
   const confirmAction = useConfirm()
+  const { canInstall, promptInstall, isIOS, isStandalone } = useInstallPrompt()
   const [showClientDrop, setShowClientDrop] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
   const [showFolderModal, setShowFolderModal] = useState(false)
@@ -558,6 +560,24 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
             Report a bug
           </button>
+          {!isStandalone && (canInstall || isIOS) && (
+            <button
+              onClick={() => {
+                if (canInstall) {
+                  promptInstall()
+                } else {
+                  confirmAction(
+                    'Tap the Share icon in Safari, then "Add to Home Screen".',
+                    { title: 'Install this app', confirmLabel: 'Got it' }
+                  )
+                }
+              }}
+              className="text-xs transition-colors mt-2 block" style={{ color: 'var(--ink3)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
+              Install app
+            </button>
+          )}
         </div>
       </aside>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden pt-14 md:pt-0" style={{ background: 'var(--cream)' }}>

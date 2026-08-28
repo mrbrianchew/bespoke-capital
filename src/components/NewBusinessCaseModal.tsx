@@ -153,7 +153,25 @@ export default function NewBusinessCaseModal({
       notes: notes.trim() || null,
     }
 
-    const payload = caseType === 'prospect'
+    // Explicit type instead of letting TS infer the ternary branches as two
+    // separate object-literal shapes: with two distinct inferred shapes,
+    // Supabase's insert() typing (RejectExcessProperties) checks each
+    // branch's extra/narrower fields against the other and fails to compile,
+    // even though the payload is always a valid single row at runtime.
+    type NewBusinessCasePayload = typeof base & {
+      client_id: string | null
+      prospect_name: string | null
+      prospect_contact: string | null
+      prospect_email: string | null
+      prospect_spouse_name: string | null
+      prospect_spouse_contact: string | null
+      case_party: 'client' | 'spouse' | 'both'
+      spouse_family_member_id: string | null
+      source: string | null
+      referred_by: string | null
+    }
+
+    const payload: NewBusinessCasePayload = caseType === 'prospect'
       ? {
           ...base,
           client_id: null,
