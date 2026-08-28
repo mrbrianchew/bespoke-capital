@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import WillPrepPanel from './WillPrepPanel'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ export interface EstateProps {
   data: EstateData
   onChange: (updated: EstateData) => void
   isCouple: boolean
+  clientId?: string
   clientName?: string
   spouseName?: string
   clientLiquid?: number
@@ -576,6 +578,7 @@ function EstateChecklist({ clientPerson, spousePerson, isCouple, clientName, spo
 
 export default function EstateSection({
   data, onChange, isCouple,
+  clientId,
   clientName = 'Client', spouseName = 'Spouse',
   clientLiquid = 0, spouseLiquid = 0,
   clientCPF = 0, spouseCPF = 0,
@@ -655,6 +658,14 @@ useEffect(() => {
           />
         )}
       </div>
+
+      {/* ── WILL PREPARATION — client self-serve link + Prepare Now ── */}
+      {clientId && (
+        <>
+          <SubLabel color="var(--gold)">Will Preparation</SubLabel>
+          <WillPrepPanel clientId={clientId} clientName={clientName} />
+        </>
+      )}
 
       {/* ── BEQUESTS ── */}
       <SubLabel color="var(--gold)">Legacy &amp; Bequests</SubLabel>

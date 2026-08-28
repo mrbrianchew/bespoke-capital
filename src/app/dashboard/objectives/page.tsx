@@ -1627,6 +1627,7 @@ useEffect(() => {
       scheduleEstateSave(estate, netEstate)
     }}
     isCouple={isCouple}
+    clientId={clientId ?? ''}
     clientName={clientName}
     spouseName={spouseName}
     clientLiquid={(ff.a_savings as number ?? 0) + (ff.a_fixed_deposit as number ?? 0) + (ff.a_srs as number ?? 0) + (ff.a_shares as number ?? 0) + (ff.a_etf as number ?? 0) + (ff.a_unit_trust as number ?? 0) + (ff.a_bonds as number ?? 0) + (ff.a_alternatives as number ?? 0)}
