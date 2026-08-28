@@ -12,6 +12,7 @@ import IdleLogoutGuard from '@/components/IdleLogoutGuard'
 import { fetchClaimsAttentionCount } from '@/lib/claimsAttention'
 import { fetchServiceRequestsAttentionCount } from '@/lib/serviceRequestsAttention'
 import { fetchNewBusinessAttentionCount } from '@/lib/newBusinessAttention'
+import { useInstallPrompt } from '@/hooks/useInstallPrompt'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -129,6 +130,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
+  const { canInstall, promptInstall, isIOS, isStandalone } = useInstallPrompt()
 
   const [expandedGroup, setExpandedGroup] = useClientTabState<NavGroupId>('navGroup', 'planning')
   const visibleGroups = visibleNavGroups(advisor?.beta_features, advisor?.id)
@@ -523,6 +525,21 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
             Report a bug
           </button>
+          {!isStandalone && (canInstall || isIOS) && (
+            <button
+              onClick={() => {
+                if (canInstall) {
+                  promptInstall()
+                } else {
+                  window.alert('Install this app: tap the Share icon in Safari, then "Add to Home Screen".')
+                }
+              }}
+              className="text-xs transition-colors mt-2 block" style={{ color: 'var(--ink3)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--gold)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ink3)'}>
+              Install app
+            </button>
+          )}
         </div>
       </aside>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden pt-14 md:pt-0" style={{ background: 'var(--cream)' }}>
