@@ -18,8 +18,14 @@
 // - Apply is the only write path into fact_finding, gated behind the
 //   advisor's own RLS session, and logs pre-Apply values for a one-step Revert.
 //
-// UNITS: the statement stores ANNUAL figures for other income and expenses;
-// fact_finding stores those MONTHLY — Apply divides by 12 (rounded).
+// UNITS: the statement stores ANNUAL figures throughout. fact_finding's
+// income fields (person1/person2.gross_monthly, .other_incomes) are stored
+// MONTHLY, so Apply divides other_incomes by 12 (gross_monthly is already
+// monthly on both sides — no conversion needed). Expenses (s_*/d_* keys) are
+// stored ANNUAL in fact_finding — same as the statement — so Apply writes
+// them straight through with no conversion. Do NOT add a ÷12 here: the
+// Financials tab's own Expenses UI, its annual_surplus save calc, and the
+// Financial Report's Overview snapshot all read these fields as annual.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
@@ -114,22 +120,22 @@ function buildApplyPatch(section: SectionId, st: StatementData, person: Person):
     // flip a mode the Client already configured.
     if (person === 'client') fields.expense_mode = st.expense_mode
     if (st.expense_mode === 'simple') {
-      for (const f of EXP_SIMPLE_FIELDS) fields[keyFor(f.key, person)] = perMonth(st.exp_simple[f.key] || 0)
+      for (const f of EXP_SIMPLE_FIELDS) fields[keyFor(f.key, person)] = round0(st.exp_simple[f.key] || 0)
       const customAnnual = (st.exp_simple_custom || []).reduce((s, i) => s + (i.amount || 0), 0)
       if (customAnnual > 0) {
         const lifestyleKey = keyFor('s_lifestyle', person)
-        fields[lifestyleKey] = (fields[lifestyleKey] || 0) + perMonth(customAnnual)
+        fields[lifestyleKey] = (fields[lifestyleKey] || 0) + round0(customAnnual)
       }
     } else {
       for (const block of EXP_DETAILED_BLOCKS) {
-        for (const f of block.fields) fields[keyFor(f.key, person)] = perMonth(st.exp_detailed[f.key] || 0)
+        for (const f of block.fields) fields[keyFor(f.key, person)] = round0(st.exp_detailed[f.key] || 0)
         // Custom rows only exist on the Client's key (d_custom_*) — fold
         // Spouse-entered custom items in there too rather than inventing a
         // parallel d2_custom_* key that the advisor page doesn't read.
         const customKey = EXP_CUSTOM_KEY[block.id]
         const items = (st.exp_detailed_custom || [])
           .filter(i => i.cat === block.id && (i.label || i.amount))
-          .map(i => ({ label: person === 'spouse' ? `${i.label} (Spouse)` : i.label, amount: perMonth(i.amount) }))
+          .map(i => ({ label: person === 'spouse' ? `${i.label} (Spouse)` : i.label, amount: round0(i.amount) }))
         fields[customKey] = items
       }
     }
@@ -213,7 +219,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
   const [genYear, setGenYear] = useState(new Date().getFullYear())
   const [genPerson, setGenPerson] = useState<Person>('client')
   const [genPassword, setGenPassword] = useState('')
-  const [genHint, setGenHint] = useState('')
+  const [genHint, setGenHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
   const [genExpiry, setGenExpiry] = useState<'7d' | '30d' | 'never'>('30d')
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState('')
@@ -322,8 +328,8 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     const who = personLabel(row.person)
     const extra = section === 'properties'
       ? `\n\nNote: this REPLACES the entire Properties list on the Financials tab with what ${who} entered. If the other spouse also filled in Properties, make sure you're Applying the right one.`
-      : (section === 'expenses' || section === 'income')
-        ? '\n\nAnnual figures from the statement are converted to monthly (÷12) to match the Financials tab.'
+      : section === 'income'
+        ? '\n\nOther income figures from the statement are converted to monthly (÷12) to match the Financials tab. Gross Monthly and Bonus are unchanged.'
         : ''
     if (!await confirmAction(`Apply ${who}'s ${row.year} ${label} into this client's Financials data? The current values are logged so you can revert this once.${extra}`, { confirmLabel: 'Apply' })) return
 
@@ -554,7 +560,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
               )
             })}
             <div style={{ fontSize: 10.5, color: 'var(--ink3)', lineHeight: 1.6, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-              Apply notes: income &amp; expense figures convert annual → monthly (÷12). Applying Properties replaces the whole Properties list — if both {clientName} and {spouseName || 'the spouse'} entered properties, only Apply the one you want to keep. Client-added custom items in Simplified expense mode fold into Lifestyle &amp; Miscellaneous.
+              Apply notes: other income figures convert annual → monthly (÷12); Gross Monthly and Bonus don&apos;t. Expenses apply as annual figures, unchanged, matching the Financials tab. Applying Properties replaces the whole Properties list — if both {clientName} and {spouseName || 'the spouse'} entered properties, only Apply the one you want to keep. Client-added custom items in Simplified expense mode fold into Lifestyle &amp; Miscellaneous.
             </div>
           </div>
         )}
