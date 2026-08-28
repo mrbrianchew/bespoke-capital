@@ -25,7 +25,14 @@ export function useInstallPrompt() {
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true
     )
-    setIsIOS(/iphone|ipad|ipod/i.test(window.navigator.userAgent))
+    // iPadOS Safari has reported a desktop-class user agent (no "iPad"
+    // substring) since iPadOS 13, by design — it presents as Mac Safari so
+    // sites don't downgrade to a mobile layout. The reliable signal is
+    // touch support on a "MacIntel" platform, since a real Mac reports 0
+    // maxTouchPoints. iPhone/iPod still identify themselves normally.
+    const ua = window.navigator.userAgent
+    const isIPadDesktopUA = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+    setIsIOS(/iphone|ipad|ipod/i.test(ua) || isIPadDesktopUA)
 
     const handler = (e: Event) => {
       e.preventDefault()
