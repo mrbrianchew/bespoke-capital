@@ -312,7 +312,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8), inset 1px 0 0 rgba(255,255,255,0.4), 0 24px 60px rgba(28,26,23,0.14), 0 6px 16px rgba(28,26,23,0.08)',
         }}>
         <div className="px-6 py-7" style={{ borderBottom: '1px solid var(--line)' }}>
-          <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>{advisor?.firm || 'Bespoke Heartwork'}</div>
+          <div className="font-serif text-lg font-semibold" style={{ color: 'var(--ink)' }}>{advisor?.firm || 'Bespoke Capital'}</div>
 <div className="text-xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--ink3)' }}>Financial Plan</div>
         </div>
         {businessAccess && (

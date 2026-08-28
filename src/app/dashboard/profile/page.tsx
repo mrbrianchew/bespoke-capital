@@ -68,7 +68,7 @@ export default function ProfilePage() {
           <input value={firm} onChange={e => setFirm(e.target.value)} placeholder="e.g. Financial Alliance Pte Ltd"
             className="w-full px-3 py-2.5 text-sm outline-none"
             style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'white' }} />
-          <div className="text-xs mt-1.5" style={{ color: 'var(--ink3)' }}>Leave blank to use the default "Bespoke Heartwork" branding.</div>
+          <div className="text-xs mt-1.5" style={{ color: 'var(--ink3)' }}>Leave blank to use the default "Bespoke Capital" branding.</div>
         </div>
         <div>
           <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Email</label>

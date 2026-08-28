@@ -4,13 +4,13 @@ import './globals.css'
 import AppProviders from '@/components/AppProviders'
 
 export const metadata: Metadata = {
-  title: 'Bespoke HeartWork — Financial Plan',
+  title: 'Bespoke Capital — Financial Plan',
   description: 'Financial Planning Platform',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Bespoke HeartWork',
+    title: 'Bespoke Capital',
   },
   icons: {
     icon: [
