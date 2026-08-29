@@ -590,12 +590,30 @@ function ReviewBlock({ title, lines }: { title: string; lines: string[] }) {
   )
 }
 
+function useViewportWidth() {
+  const [vw, setVw] = useState(0)
+  useEffect(() => {
+    const update = () => setVw(window.innerWidth)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  return vw
+}
+
 function Shell({ children, clientName, saving, lastSavedAt }: {
   children: React.ReactNode; clientName: string; saving?: boolean; lastSavedAt?: string | null
 }) {
+  const vw = useViewportWidth()
+  // Mobile stays a phone-width card (matches how it's actually used there).
+  // Tablet and desktop get meaningfully more room instead of sitting in a
+  // narrow column on a large screen.
+  const cardWidth = vw === 0 ? 480 : vw >= 1024 ? 760 : vw >= 640 ? 640 : 480
+  const gutter = cardWidth >= 640 ? '48px 32px' : '32px 16px'
+
   return (
-    <div style={{ minHeight: '100vh', background: '#DCD7CD', display: 'flex', justifyContent: 'center', padding: '32px 16px', fontFamily: 'Inter, sans-serif' }}>
-      <div style={{ width: 480, maxWidth: '100%', background: T.cream, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 48px rgba(26,24,22,0.18)', display: 'flex', flexDirection: 'column', minHeight: 640 }}>
+    <div style={{ minHeight: '100vh', background: '#DCD7CD', display: 'flex', justifyContent: 'center', padding: gutter, fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ width: cardWidth, maxWidth: '100%', background: T.cream, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 48px rgba(26,24,22,0.18)', display: 'flex', flexDirection: 'column', minHeight: 640, transition: 'width 0.15s ease' }}>
         <div style={{ padding: '20px 22px 14px', textAlign: 'center', borderBottom: `1px solid ${T.line}`, background: '#fff' }}>
           <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 19, fontWeight: 600 }}>Bespoke Capital</div>
           <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: T.ink3, marginTop: 3, letterSpacing: '0.03em' }}>
