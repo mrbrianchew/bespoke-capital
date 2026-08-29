@@ -285,19 +285,19 @@ export default function WillPrepPage() {
   // ── RENDER STATES ──
 
   if (loading) {
-    return <Shell clientName=""><div style={{ padding: '80px 0', textAlign: 'center', color: T.ink3, fontSize: 13 }}>Loading…</div></Shell>
+    return <Shell clientName="" centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>Loading…</div></Shell>
   }
   if (notFound) {
-    return <Shell clientName=""><div style={{ padding: '80px 0', textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link isn't valid. Please check with your advisor for the correct link.</div></Shell>
+    return <Shell clientName="" centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link isn't valid. Please check with your advisor for the correct link.</div></Shell>
   }
   if (expired && !submitted) {
-    return <Shell clientName={clientName}><div style={{ padding: '80px 0', textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link has expired. Please ask your advisor to send you a new one.</div></Shell>
+    return <Shell clientName={clientName} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link has expired. Please ask your advisor to send you a new one.</div></Shell>
   }
 
   if (!unlocked) {
     return (
-      <Shell clientName={clientName}>
-        <div style={{ padding: '48px 0' }}>
+      <Shell clientName={clientName} centerContent>
+        <div>
           <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Getting Started</p>
           <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 27, margin: '0 0 10px', fontWeight: 500 }}>Verify it's you</h1>
           <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 26 }}>
@@ -329,8 +329,8 @@ export default function WillPrepPage() {
 
   if (submitted && step === 'done') {
     return (
-      <Shell clientName={clientName}>
-        <div style={{ padding: '80px 0', textAlign: 'center' }}>
+      <Shell clientName={clientName} centerContent>
+        <div style={{ textAlign: 'center' }}>
           <div style={{ width: 60, height: 60, borderRadius: '50%', background: T.emeraldBg, color: T.emerald, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 24px', fontWeight: 700 }}>✓</div>
           <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, margin: '0 0 10px' }}>Submitted</h1>
           <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.65, maxWidth: 440, margin: '0 auto' }}>
@@ -613,8 +613,8 @@ function useViewportWidth() {
 // Website layout — no floating card, no drop shadow. Full-width page
 // background with a real header/footer, and a content column that widens
 // on tablet/desktop instead of staying phone-width everywhere.
-function Shell({ children, clientName, saving, lastSavedAt }: {
-  children: React.ReactNode; clientName: string; saving?: boolean; lastSavedAt?: string | null
+function Shell({ children, clientName, saving, lastSavedAt, centerContent }: {
+  children: React.ReactNode; clientName: string; saving?: boolean; lastSavedAt?: string | null; centerContent?: boolean
 }) {
   const vw = useViewportWidth()
   const contentWidth = vw === 0 ? 520 : vw >= 1024 ? 720 : vw >= 640 ? 640 : 520
@@ -636,7 +636,7 @@ function Shell({ children, clientName, saving, lastSavedAt }: {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '0 24px' }}>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: centerContent ? 'center' : 'flex-start', padding: '0 24px' }}>
         <div style={{ width: contentWidth, maxWidth: '100%' }}>
           {children}
         </div>
