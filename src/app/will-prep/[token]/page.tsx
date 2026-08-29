@@ -355,26 +355,40 @@ export default function WillPrepPage() {
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20, maxWidth: 560 }}>
             <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Please read before filling up the form</p>
-            <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: T.ink3, lineHeight: 1.65 }}>
-              <li style={{ marginBottom: 6 }}>Please fill out this form as accurately as possible to avoid any delays in drafting the Will.</li>
-              <li style={{ marginBottom: 6 }}>If you have more Beneficiaries, Executors, Guardians, Assets or Liabilities than what the form provides, please add accordingly.</li>
-              <li style={{ marginBottom: 6 }}>This form is not exhaustive, and should be taken as a reference guide. Other considerations may come up in the process of drafting a Will.</li>
-              <li style={{ marginBottom: 6 }}>This form is meant strictly for your own personal use to prepare for drafting of your Will. The information filled into this form should at all times be kept in strictest confidentiality. You have a responsibility over your own personal data.</li>
-              <li>The Will drafting and the Will generated are in English.</li>
-            </ol>
+            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.65 }}>
+              {[
+                'Please fill out this form as accurately as possible to avoid any delays in drafting the Will.',
+                'If you have more Beneficiaries, Executors, Guardians, Assets or Liabilities than what the form provides, please add accordingly.',
+                'This form is not exhaustive, and should be taken as a reference guide. Other considerations may come up in the process of drafting a Will.',
+                'This form is meant strictly for your own personal use to prepare for drafting of your Will. The information filled into this form should at all times be kept in strictest confidentiality. You have a responsibility over your own personal data.',
+                'The Will drafting and the Will generated are in English.',
+              ].map((t, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: i < 4 ? 6 : 0 }}>
+                  <span style={{ flexShrink: 0 }}>{i + 1}.</span>
+                  <span>{t}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20, maxWidth: 560 }}>
             <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>中文（仅供参考）</p>
             <p style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.65, marginBottom: 10 }}>您将会被联系以安排会面时间（如尚未确定日期）。本表格也提供华语翻译，仅供参考之用。</p>
             <p style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.5, margin: '0 0 8px', fontWeight: 600 }}>填写表格前请先阅读以下内容：</p>
-            <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: T.ink3, lineHeight: 1.65 }}>
-              <li style={{ marginBottom: 6 }}>请尽可能准确地填写本表格，以免延误遗嘱的拟定。</li>
-              <li style={{ marginBottom: 6 }}>若您的受益人、执行人、监护人、资产或负债数量超过表格所提供的栏位，请自行增添。</li>
-              <li style={{ marginBottom: 6 }}>本表格并非详尽无遗，仅作参考指南之用。在拟定遗嘱的过程中，可能会出现其他需考虑的事项。</li>
-              <li style={{ marginBottom: 6 }}>本表格仅供您个人用于准备拟定遗嘱之用。填写于本表格内的资料应始终严格保密。您对自己的个人资料负有责任。</li>
-              <li>遗嘱的拟定与生成均以英文进行。</li>
-            </ol>
+            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.65 }}>
+              {[
+                '请尽可能准确地填写本表格，以免延误遗嘱的拟定。',
+                '若您的受益人、执行人、监护人、资产或负债数量超过表格所提供的栏位，请自行增添。',
+                '本表格并非详尽无遗，仅作参考指南之用。在拟定遗嘱的过程中，可能会出现其他需考虑的事项。',
+                '本表格仅供您个人用于准备拟定遗嘱之用。填写于本表格内的资料应始终严格保密。您对自己的个人资料负有责任。',
+                '遗嘱的拟定与生成均以英文进行。',
+              ].map((t, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: i < 4 ? 6 : 0 }}>
+                  <span style={{ flexShrink: 0 }}>{i + 1}.</span>
+                  <span>{t}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 12.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20, maxWidth: 560 }}>
