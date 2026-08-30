@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useConfirm } from '@/components/ConfirmDialog'
 
@@ -62,6 +63,7 @@ function StatusChip({ status }: { status: PrepStatus }) {
 export default function WillPrepPanel({ clientId, clientName }: { clientId: string; clientName: string }) {
   const supabase = useMemo(() => createClient(), [])
   const confirmAction = useConfirm()
+  const router = useRouter()
 
   const [row, setRow] = useState<WillPrepRow | null>(null)
   const [logs, setLogs] = useState<ApplyLogRow[]>([])
@@ -157,37 +159,6 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
     }
   }
 
-  async function applyToRecord() {
-    if (!row) return
-    if (!await confirmAction(
-      `Apply ${clientName}'s submitted Will information to their Estate record? This is logged so you can revert it in one step.`,
-      { confirmLabel: 'Apply' }
-    )) return
-    setBusy(true)
-    try {
-      // Log the previous data before overwriting, so this is revertible —
-      // same pattern as financial_statement_apply_log.
-      const { error: logError } = await supabase.from('estate_will_prep_apply_log').insert({
-        will_prep_id: row.id,
-        previous_value: row.data,
-      })
-      if (logError) throw logError
-
-      const { error } = await supabase.from('estate_will_prep')
-        .update({ status: 'applied', updated_at: new Date().toISOString() })
-        .eq('id', row.id)
-      if (error) throw error
-
-      flash('Applied. This is now the working record for Prepare Now.')
-      await load()
-    } catch (e) {
-      console.error('Apply failed:', e)
-      flash('Failed to apply. Please try again.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function revertApply() {
     if (!row || logs.length === 0) return
     const latest = logs.find(l => !l.reverted_at)
@@ -272,11 +243,10 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
 
           {row.status === 'submitted' && (
             <button
-              disabled={busy}
-              onClick={applyToRecord}
-              style={{ marginTop: 10, width: '100%', fontFamily: 'Inter', fontSize: 12.5, fontWeight: 600, padding: 10, borderRadius: 8, border: '1px solid var(--emerald)', background: '#E8F2ED', color: 'var(--emerald)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+              onClick={() => router.push(`/dashboard/estate/will-prep/${row.id}`)}
+              style={{ marginTop: 10, width: '100%', fontFamily: 'Inter', fontSize: 12.5, fontWeight: 600, padding: 10, borderRadius: 8, border: '1px solid var(--emerald)', background: '#E8F2ED', color: 'var(--emerald)', cursor: 'pointer' }}
             >
-              Review &amp; Apply to record
+              Review submission →
             </button>
           )}
 
@@ -305,6 +275,12 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
           <p style={{ fontSize: 11, color: 'var(--ink3)', lineHeight: 1.5, marginTop: 4 }}>
             This is now the working data in "Prepare Now." Read it off from there when you draft with getArrange.
           </p>
+          <button
+            onClick={() => router.push(`/dashboard/estate/will-prep/${row.id}`)}
+            style={{ marginTop: 10, width: '100%', fontFamily: 'Inter', fontSize: 12.5, fontWeight: 600, padding: 10, borderRadius: 8, border: '1px solid var(--line)', background: '#fff', color: 'var(--ink)', cursor: 'pointer' }}
+          >
+            View submission
+          </button>
           {activeLog && (
             <button
               disabled={busy}
