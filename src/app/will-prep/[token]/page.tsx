@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import { BrandMark } from '@/components/BrandMark'
 
 // ─── TYPES ───────────────────────────────────────────────────────────────
 
@@ -665,8 +666,8 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
       <div style={{ background: '#fff', borderBottom: `1px solid ${T.line}` }}>
         <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: 'Cormorant Garamond, serif', flexShrink: 0 }}>B</div>
-            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 19, fontWeight: 600 }}>Bespoke Capital</div>
+            <BrandMark size={28} />
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 19, fontWeight: 600 }}>{firm || 'Will Preparation'}</div>
           </div>
           <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.ink3, textAlign: 'right', lineHeight: 1.5 }}>
             <div>WILL PREPARATION{clientName ? ` · ${clientName.toUpperCase()}` : ''}</div>
@@ -685,7 +686,7 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
 
       <div style={{ borderTop: `1px solid ${T.line}`, background: '#fff' }}>
         <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '16px 24px', textAlign: 'center', fontSize: 11, color: T.ink3 }}>
-          Bespoke Capital · Your information is kept private and confidential
+          {firm || 'Your Advisor'} · Your information is kept private and confidential
           {' · '}
           <button
             onClick={() => setShowTerms(true)}
