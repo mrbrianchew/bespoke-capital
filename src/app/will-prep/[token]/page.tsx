@@ -17,7 +17,14 @@ interface Asset {
   allocation: string
   additionalInstructions: string
 }
-interface Liability { name: string; value: string }
+interface Liability {
+  name: string
+  identifyingDetail: string
+  value: string
+  countryState: string
+  loanType: 'Sole' | 'Joint' | 'Shared %'
+  additionalInstructions: string
+}
 interface ResidualShare { name: string; pct: string }
 
 interface WillPrepData {
@@ -52,6 +59,7 @@ interface WillPrepData {
 
 const blankPerson = (): Person => ({ name: '', relationship: '', idNumber: '', mobile: '' })
 const blankAsset = (): Asset => ({ name: '', identifyingDetail: '', value: '', countryState: '', ownership: 'Sole', allocationType: 'none', allocation: '', additionalInstructions: '' })
+const blankLiability = (): Liability => ({ name: '', identifyingDetail: '', value: '', countryState: '', loanType: 'Sole', additionalInstructions: '' })
 
 // Validates the checksum on Singapore NRIC/FIN numbers (S/T/F/G prefixes).
 // Returns true for anything that doesn't look like an NRIC/FIN shape (e.g.
@@ -94,7 +102,7 @@ const DEFAULT_DATA: WillPrepData = {
   executors: [blankPerson()],
   subExecutors: [],
   assets: [blankAsset()],
-  liabilities: [{ name: '', value: '' }],
+  liabilities: [blankLiability()],
   residual: [{ name: '', pct: '' }],
   scope: 'Worldwide',
   survivorshipDays: '30',
@@ -799,24 +807,47 @@ export default function WillPrepPage() {
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1} 债务 {i + 1}</span>
               {data.liabilities.length > 1 && <span onClick={() => update({ liabilities: data.liabilities.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove 移除</span>}
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>What is it? 这是什么？</label>
-                <input style={inputStyle} placeholder="e.g. Home loan — DBS 例如：房屋贷款 — 星展银行" value={l.name} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+                <label style={labelStyle}>Liability Name (e.g. Home Loan) 债务名称</label>
+                <input style={inputStyle} placeholder="e.g. Home Loan — DBS 例如：房屋贷款 — 星展银行" value={l.name} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Identifying Detail (e.g. Loan No.) 债务识别详细信息</label>
+                <input style={inputStyle} value={l.identifyingDetail} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, identifyingDetail: e.target.value } : x) })} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 16 }}>
+                <div><label style={labelStyle}>Estimated value 债务估计市场价值</label>
+                  <input style={inputStyle} placeholder="S$" value={l.value} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
+                </div>
+                <div><label style={labelStyle}>Country &amp; State of Loan 债务所在国与州</label>
+                  <input style={inputStyle} value={l.countryState} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, countryState: e.target.value } : x) })} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Loan type 债务形式</label>
+                <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+                  <Pill label="Sole 独自" selected={l.loanType === 'Sole'} onClick={() => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, loanType: 'Sole' } : x) })} />
+                  <Pill label="Joint 共同" selected={l.loanType === 'Joint'} onClick={() => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, loanType: 'Joint' } : x) })} />
+                  <Pill label="% Shares 按份" selected={l.loanType === 'Shared %'} onClick={() => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, loanType: 'Shared %' } : x) })} />
+                </div>
               </div>
               <div>
-                <label style={labelStyle}>Outstanding amount 未偿还金额</label>
-                <input style={inputStyle} placeholder="S$" value={l.value} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
+                <label style={labelStyle}>Additional Instructions (if any) 额外指示（如有）</label>
+                <textarea style={{ ...inputStyle, minHeight: 70 }} value={l.additionalInstructions} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, additionalInstructions: e.target.value } : x) })} />
               </div>
             </div>
           ))}
-          <AddLink label="Add another liability 添加另一项债务" onClick={() => update({ liabilities: [...data.liabilities, { name: '', value: '' }] })} />
+          <AddLink label="Add another liability 添加另一项债务" onClick={() => update({ liabilities: [...data.liabilities, blankLiability()] })} />
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
       )}
 
       {step === 'residual' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={11} total={stepsWithProgress} section={section} title={<>Everything else you own<br />其余的所有资产</>} hint={<>Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%.<br />未在上方明确分配的资产，以及您日后取得的任何资产，都将按此方式分配。各份额加总应为100%。</>} />
+          <Head step={11} total={stepsWithProgress} section={section} title={<>Allocate Residual Assets<br />剩余资产分配</>} hint={<>All other assets (including assets listed above with &quot;No specific allocation&quot; selected, assets not listed in the Will, and future assets) shall be distributed to:<br />所有其他资产（包括上面列出的选择&quot;无具体分配&quot;的资产、遗嘱中未列出的资产以及未来资产）应分配给：</>} />
           <div style={{ maxWidth: 480 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `2px solid ${T.ink}`, fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: T.ink }}>
+              <span>Beneficiary(s) 受益人</span><span>Share 分配</span>
+            </div>
             {data.residual.map((r, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${T.line}`, fontSize: 15 }}>
                 <input style={{ flex: 1, border: `1px solid ${T.line}`, borderRadius: 6, padding: '8px 10px', fontSize: 15, marginRight: 10 }} placeholder="Beneficiary name 受益人姓名" value={r.name} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
