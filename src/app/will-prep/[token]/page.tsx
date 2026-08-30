@@ -106,20 +106,20 @@ type Step = typeof STEPS[number]
 // clear which part of the Will you're on (Beneficiaries, Guardian, etc.)
 // rather than just a bare step counter.
 const SECTION_LABEL: Partial<Record<Step, string>> = {
-  intro: 'Getting Started',
-  considerations: 'Getting Ready',
-  testator: 'Your Personal Details',
-  beneficiaries: 'Beneficiaries',
-  guardian: 'Guardian',
-  subguardians: 'Guardian — Backup',
-  executor: 'Executor',
-  subexecutors: 'Executor — Backup',
-  assets: 'Assets',
-  liabilities: 'Liabilities',
-  residual: 'Residual Allocation',
-  clauses: 'Clauses',
-  instructions: 'Additional Instructions',
-  review: 'Review',
+  intro: 'Getting Started 开始',
+  considerations: 'Getting Ready 准备工作',
+  testator: 'Your Personal Details 您的个人资料',
+  beneficiaries: 'Beneficiaries 受益人',
+  guardian: 'Guardian 监护人',
+  subguardians: 'Guardian — Backup 监护人（替代）',
+  executor: 'Executor 执行人',
+  subexecutors: 'Executor — Backup 执行人（替代）',
+  assets: 'Assets 资产',
+  liabilities: 'Liabilities 债务',
+  residual: 'Residual Allocation 剩余资产分配',
+  clauses: 'Clauses 条款',
+  instructions: 'Additional Instructions 其他指示',
+  review: 'Review 审阅',
 }
 
 // ─── STYLE TOKENS (matches EstateSection.tsx) ───────────────────────────
@@ -146,21 +146,21 @@ function PersonCard({ person, onChange, tag, onRemove }: {
   return (
     <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
       <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>{tag}</span>
-      {onRemove && <span onClick={onRemove} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
+      {onRemove && <span onClick={onRemove} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove 移除</span>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-        <div><label style={labelStyle}>Full name</label>
+        <div><label style={labelStyle}>Full name 全名</label>
           <input style={inputStyle} value={person.name} onChange={e => onChange({ ...person, name: e.target.value })} />
         </div>
-        <div><label style={labelStyle}>Relationship to you</label>
+        <div><label style={labelStyle}>Relationship to you 与您的关系</label>
           <input style={inputStyle} value={person.relationship} onChange={e => onChange({ ...person, relationship: e.target.value })} />
         </div>
-        <div><label style={labelStyle}>NRIC / FIN / Passport</label>
+        <div><label style={labelStyle}>NRIC / FIN / Passport 身份证/FIN/护照</label>
           <input style={inputStyle} value={person.idNumber} onChange={e => onChange({ ...person, idNumber: e.target.value })} />
           {person.idNumber.trim() !== '' && !isLikelyValidNric(person.idNumber) && (
-            <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it.</div>
+            <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it. 这看起来不是有效的身份证/FIN号码，请再次检查。</div>
           )}
         </div>
-        <div><label style={labelStyle}>Mobile number</label>
+        <div><label style={labelStyle}>Mobile number 手机号码</label>
           <input style={inputStyle} value={person.mobile} onChange={e => onChange({ ...person, mobile: e.target.value })} />
         </div>
       </div>
@@ -196,7 +196,7 @@ function Head({ step, total, section, title, hint }: { step: number; total: numb
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: 0 }}>{section}</p>
-        <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: T.ink3, margin: 0 }}>Step {step} of {total}</p>
+        <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: T.ink3, margin: 0 }}>Step {step} of {total} · 第 {step}/{total} 步</p>
       </div>
       <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, fontWeight: 500, margin: '0 0 8px' }}>{title}</h1>
       <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 26 }}>{hint}</p>
@@ -204,12 +204,12 @@ function Head({ step, total, section, title, hint }: { step: number; total: numb
   )
 }
 
-function NavBar({ onBack, onNext, backDisabled, nextLabel = 'Continue' }: {
+function NavBar({ onBack, onNext, backDisabled, nextLabel = 'Continue 继续' }: {
   onBack: () => void; onNext: () => void; backDisabled?: boolean; nextLabel?: string
 }) {
   return (
     <div style={{ display: 'flex', gap: 12, marginTop: 36, paddingBottom: 48 }}>
-      <button disabled={backDisabled} onClick={onBack} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, opacity: backDisabled ? 0.4 : 1, cursor: backDisabled ? 'default' : 'pointer' }}>Back</button>
+      <button disabled={backDisabled} onClick={onBack} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, opacity: backDisabled ? 0.4 : 1, cursor: backDisabled ? 'default' : 'pointer' }}>Back 返回</button>
       <button onClick={onNext} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.ink}`, background: T.ink, color: T.cream, cursor: 'pointer' }}>{nextLabel}</button>
     </div>
   )
@@ -318,7 +318,7 @@ export default function WillPrepPage() {
       })
       const j = await res.json()
       if (!res.ok) {
-        setGateError(j.error === 'wrong_password' ? 'That password did not match. Please try again.' : 'Something went wrong. Please try again.')
+        setGateError(j.error === 'wrong_password' ? 'That password did not match. Please try again. 密码不正确，请重试。' : 'Something went wrong. Please try again. 出了点问题，请重试。')
         return
       }
       setData({ ...DEFAULT_DATA, ...(j.data || {}) })
@@ -382,26 +382,27 @@ export default function WillPrepPage() {
   // ── RENDER STATES ──
 
   if (loading) {
-    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>Loading…</div></Shell>
+    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>Loading… 加载中…</div></Shell>
   }
   if (notFound) {
-    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>This link isn't valid. Please check with your advisor for the correct link.</div></Shell>
+    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>This link isn't valid. Please check with your advisor for the correct link. 此链接无效，请向您的顾问确认正确的链接。</div></Shell>
   }
   if (expired && !submitted) {
-    return <Shell clientName={clientName} firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>This link has expired. Please ask your advisor to send you a new one.</div></Shell>
+    return <Shell clientName={clientName} firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>This link has expired. Please ask your advisor to send you a new one. 此链接已过期，请向您的顾问索取新的链接。</div></Shell>
   }
 
   if (!unlocked) {
     return (
       <Shell clientName={clientName} firm={firm} centerContent>
         <div>
-          <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Getting Started</p>
-          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, margin: '0 0 10px', fontWeight: 500 }}>Verify it's you</h1>
+          <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Getting Started 开始</p>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, margin: '0 0 10px', fontWeight: 500 }}>Verify it's you 验证身份</h1>
           <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 26 }}>
             Enter the password your advisor sent you to continue. This keeps your information private.
+            <br />请输入您的顾问提供的密码以继续。这将确保您的资料保密。
           </p>
           <div style={{ maxWidth: 340 }}>
-            <label style={labelStyle}>Password</label>
+            <label style={labelStyle}>Password 密码</label>
             <input
               style={{ ...inputStyle, marginBottom: 8 }}
               type="password"
@@ -409,14 +410,14 @@ export default function WillPrepPage() {
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') unlock() }}
             />
-            {hint && <p style={{ fontSize: 13, color: T.ink3, margin: '0 0 20px', lineHeight: 1.5 }}>Hint: {hint}</p>}
+            {hint && <p style={{ fontSize: 13, color: T.ink3, margin: '0 0 20px', lineHeight: 1.5 }}>Hint 提示: {hint}</p>}
             {gateError && <p style={{ fontSize: 13.5, color: T.rouge, margin: '0 0 14px' }}>{gateError}</p>}
             <button
               disabled={gateBusy || !password}
               onClick={unlock}
               style={{ padding: '13px 28px', borderRadius: 8, border: 'none', background: T.ink, color: T.cream, fontWeight: 600, fontSize: 15, opacity: gateBusy || !password ? 0.6 : 1, cursor: gateBusy ? 'default' : 'pointer' }}
             >
-              {gateBusy ? 'Checking…' : 'Continue'}
+              {gateBusy ? 'Checking… 正在核实…' : 'Continue 继续'}
             </button>
           </div>
         </div>
@@ -429,10 +430,13 @@ export default function WillPrepPage() {
       <Shell clientName={clientName} firm={firm} centerContent>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 60, height: 60, borderRadius: '50%', background: T.emeraldBg, color: T.emerald, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 24px', fontWeight: 700 }}>✓</div>
-          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, margin: '0 0 10px' }}>Submitted</h1>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, margin: '0 0 10px' }}>Submitted 已提交</h1>
           <p style={{ fontSize: 15, color: T.ink3, lineHeight: 1.65, maxWidth: 440, margin: '0 auto' }}>
             Thank you — {firm ? `your advisor at ${firm}` : 'your advisor'} will review this and follow up to go through your wishes together before anything is finalised.
             You can reopen this link with the same password to see what you sent.
+            <br /><br />
+            谢谢您 — {firm ? `${firm}的顾问` : '您的顾问'}将会审阅此内容，并与您联系，在最终确定前一同核对您的意愿。
+            您可以使用相同密码重新打开此链接，查看您所提交的内容。
           </p>
         </div>
       </Shell>
@@ -446,8 +450,11 @@ export default function WillPrepPage() {
       {step === 'intro' && (
         <div style={{ padding: '48px 0 0' }}>
           <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>{section}</p>
-          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, fontWeight: 500, margin: '0 0 8px' }}>A few things to know</h1>
-          <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>You can leave and come back — your answers are saved as you go.</p>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, fontWeight: 500, margin: '0 0 8px' }}>A few things to know 几点须知</h1>
+          <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>
+            You can leave and come back — your answers are saved as you go.
+            <br />您可以随时离开并稍后返回 — 您的回答会自动保存。
+          </p>
           <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 22 }}>You will be contacted to arrange for a session if a date has not been fixed yet. A translation in Mandarin is also provided in this form, and should be used only as a reference.</p>
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
@@ -490,6 +497,7 @@ export default function WillPrepPage() {
 
           <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20 }}>
             This form gathers your instructions ahead of your meeting. It is not your Will and has no legal effect on its own. Your advisor will go through everything with you before anything is finalised.
+            <br /><br />本表格用于收集您在会面前的指示，并非您的遗嘱，本身不具法律效力。您的顾问将在最终确定前与您逐一核对所有内容。
           </div>
           <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 4 }}>
             By proceeding, you agree to the{' '}
@@ -497,7 +505,7 @@ export default function WillPrepPage() {
               onClick={() => setShowIntroTerms(true)}
               style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: T.ink, textDecoration: 'underline', cursor: 'pointer' }}
             >
-              Terms and Conditions
+              Terms and Conditions 条款与细则
             </button>
             .
           </p>
@@ -508,12 +516,15 @@ export default function WillPrepPage() {
 
       {step === 'considerations' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={1} total={stepsWithProgress} section={section} title="A few things to prepare" hint="This isn't something to fill in now — just a preview of what's ahead, so you can have the right information on hand." />
+          <Head step={1} total={stepsWithProgress} section={section} title="A few things to prepare 几项准备工作" hint="This isn't something to fill in now — just a preview of what's ahead, so you can have the right information on hand. 这部分现在无需填写 — 只是让您预先了解接下来的内容，以便准备好相关资料。" />
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13.5, color: T.ink, lineHeight: 1.6 }}>
             <strong>Please bring along your identification document (e.g. NRIC / Foreign ID / Passport) on the day of the meeting.</strong>
             <br />请在会面当天携带身份证件（例如NRIC / 外国身份证 / 护照）。
-            <p style={{ marginTop: 10, marginBottom: 0, color: T.ink3, fontWeight: 400 }}>Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.</p>
+            <p style={{ marginTop: 10, marginBottom: 0, color: T.ink3, fontWeight: 400 }}>
+              Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.
+              <br />请尽量准备好：受益人、执行人及监护人的身份证号码，以及您主要资产的大概价值。
+            </p>
           </div>
 
           <ChecklistSection title="Personnel" titleZh="人员">
@@ -538,28 +549,28 @@ export default function WillPrepPage() {
 
       {step === 'testator' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={2} total={stepsWithProgress} section={section} title="A few details about you, the Testator" hint={'"Testator" is simply the legal term for the person making the Will — that\'s you. These details go on the Will itself, so they need to match your ID exactly.'} />
+          <Head step={2} total={stepsWithProgress} section={section} title="A few details about you, the Testator 关于您（遗嘱人）的资料" hint={'"Testator" is simply the legal term for the person making the Will — that\'s you. These details go on the Will itself, so they need to match your ID exactly. "遗嘱人"是指立遗嘱的人，也就是您本人。这些资料将写入遗嘱正本，请确保与您的身份证件完全一致。'} />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Full Name 全名</label>
-              <input style={inputStyle} value={data.testatorFullName} onChange={e => update({ testatorFullName: e.target.value })} placeholder="As per your NRIC / passport" />
+              <input style={inputStyle} value={data.testatorFullName} onChange={e => update({ testatorFullName: e.target.value })} placeholder="As per your NRIC / passport 请与身份证/护照一致" />
             </div>
             <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>ID No. (e.g. NRIC) 身份证号码</label>
                 <input style={inputStyle} value={data.testatorIdNo} onChange={e => update({ testatorIdNo: e.target.value })} />
                 {data.testatorIdNo.trim() !== '' && !isLikelyValidNric(data.testatorIdNo) && (
-                  <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it.</div>
+                  <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it. 这看起来不是有效的身份证/FIN号码，请再次检查。</div>
                 )}
               </div>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>ID Issuing Country 身份证签发国</label>
-                <input style={inputStyle} value={data.testatorIdIssuingCountry} onChange={e => update({ testatorIdIssuingCountry: e.target.value })} placeholder="e.g. Singapore" />
+                <input style={inputStyle} value={data.testatorIdIssuingCountry} onChange={e => update({ testatorIdIssuingCountry: e.target.value })} placeholder="e.g. Singapore 例如：新加坡" />
               </div>
             </div>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Country of Residence 居住国家</label>
-              <input style={inputStyle} value={data.testatorCountryOfResidence} onChange={e => update({ testatorCountryOfResidence: e.target.value })} placeholder="e.g. Singapore" />
+              <input style={inputStyle} value={data.testatorCountryOfResidence} onChange={e => update({ testatorCountryOfResidence: e.target.value })} placeholder="e.g. Singapore 例如：新加坡" />
             </div>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Residential Address 住址</label>
@@ -568,8 +579,8 @@ export default function WillPrepPage() {
             <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>Gender 性别</label>
               <div style={{ display: 'flex', gap: 9 }}>
-                <Pill label="Male" selected={data.testatorGender === 'Male'} onClick={() => update({ testatorGender: 'Male' })} />
-                <Pill label="Female" selected={data.testatorGender === 'Female'} onClick={() => update({ testatorGender: 'Female' })} />
+                <Pill label="Male 男" selected={data.testatorGender === 'Male'} onClick={() => update({ testatorGender: 'Male' })} />
+                <Pill label="Female 女" selected={data.testatorGender === 'Female'} onClick={() => update({ testatorGender: 'Female' })} />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
@@ -585,10 +596,10 @@ export default function WillPrepPage() {
             <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>Marital Status 婚姻状况</label>
               <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-                <Pill label="Single" selected={data.testatorMaritalStatus === 'Single'} onClick={() => update({ testatorMaritalStatus: 'Single' })} />
-                <Pill label="Married" selected={data.testatorMaritalStatus === 'Married'} onClick={() => update({ testatorMaritalStatus: 'Married' })} />
-                <Pill label="Divorced" selected={data.testatorMaritalStatus === 'Divorced'} onClick={() => update({ testatorMaritalStatus: 'Divorced' })} />
-                <Pill label="Widowed" selected={data.testatorMaritalStatus === 'Widowed'} onClick={() => update({ testatorMaritalStatus: 'Widowed' })} />
+                <Pill label="Single 单身" selected={data.testatorMaritalStatus === 'Single'} onClick={() => update({ testatorMaritalStatus: 'Single' })} />
+                <Pill label="Married 已婚" selected={data.testatorMaritalStatus === 'Married'} onClick={() => update({ testatorMaritalStatus: 'Married' })} />
+                <Pill label="Divorced 离婚" selected={data.testatorMaritalStatus === 'Divorced'} onClick={() => update({ testatorMaritalStatus: 'Divorced' })} />
+                <Pill label="Widowed 丧偶" selected={data.testatorMaritalStatus === 'Widowed'} onClick={() => update({ testatorMaritalStatus: 'Widowed' })} />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 14 }}>
@@ -608,30 +619,30 @@ export default function WillPrepPage() {
 
       {step === 'beneficiaries' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={3} total={stepsWithProgress} section={section} title="Who should receive your assets?" hint="List everyone you want to leave something to. You will decide exactly what they receive in a later step." />
+          <Head step={3} total={stepsWithProgress} section={section} title="Who should receive your assets? 谁将获得您的资产？" hint="List everyone you want to leave something to. You will decide exactly what they receive in a later step. 列出所有您想留下遗产的人，具体分配将在稍后步骤中决定。" />
           {data.beneficiaries.map((b, i) => (
-            <PersonCard key={i} tag={`Beneficiary 0${i + 1}`} person={b}
+            <PersonCard key={i} tag={`Beneficiary 0${i + 1} 受益人 0${i + 1}`} person={b}
               onChange={p => update({ beneficiaries: data.beneficiaries.map((x, xi) => xi === i ? p : x) })}
               onRemove={data.beneficiaries.length > 1 ? () => update({ beneficiaries: data.beneficiaries.filter((_, xi) => xi !== i) }) : undefined} />
           ))}
-          <AddLink label="Add another beneficiary" onClick={() => update({ beneficiaries: [...data.beneficiaries, blankPerson()] })} />
+          <AddLink label="Add another beneficiary 添加另一位受益人" onClick={() => update({ beneficiaries: [...data.beneficiaries, blankPerson()] })} />
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
       )}
 
       {step === 'guardian' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={4} total={stepsWithProgress} section={section} title="Who should care for your children?" hint="Only needed if you have children under 21. Skip ahead if this does not apply to you." />
+          <Head step={4} total={stepsWithProgress} section={section} title="Who should care for your children? 谁来照顾您的孩子？" hint="Only needed if you have children under 21. Skip ahead if this does not apply to you. 仅在您有21岁以下子女时才需要填写。若不适用，可跳过此步骤。" />
           <div style={{ marginBottom: 22, maxWidth: 480 }}>
-            <label style={labelStyle}>If something happens to you</label>
+            <label style={labelStyle}>If something happens to you 如果您发生不测</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              <Pill label="This doesn't apply to me" selected={data.guardianClause === 'none'} onClick={() => update({ guardianClause: 'none' })} />
-              <Pill label="Care jointly with my surviving partner" selected={data.guardianClause === 'joint'} onClick={() => update({ guardianClause: 'joint' })} />
-              <Pill label="Only step in if neither parent is around" selected={data.guardianClause === 'if_no_parent'} onClick={() => update({ guardianClause: 'if_no_parent' })} />
+              <Pill label="This doesn't apply to me 这不适用于我" selected={data.guardianClause === 'none'} onClick={() => update({ guardianClause: 'none' })} />
+              <Pill label="Care jointly with my surviving partner 与我的在世伴侣共同照顾" selected={data.guardianClause === 'joint'} onClick={() => update({ guardianClause: 'joint' })} />
+              <Pill label="Only step in if neither parent is around 仅在父母双方都不在时介入" selected={data.guardianClause === 'if_no_parent'} onClick={() => update({ guardianClause: 'if_no_parent' })} />
             </div>
           </div>
           {data.guardianClause !== 'none' && (
-            <PersonCard tag="Guardian" person={data.guardian} onChange={p => update({ guardian: p })} />
+            <PersonCard tag="Guardian 监护人" person={data.guardian} onChange={p => update({ guardian: p })} />
           )}
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
@@ -639,27 +650,27 @@ export default function WillPrepPage() {
 
       {step === 'subguardians' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={5} total={stepsWithProgress} section={section} title="Anyone as a backup?" hint="If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through." />
+          <Head step={5} total={stepsWithProgress} section={section} title="Anyone as a backup? 有后备人选吗？" hint="If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through. 若您的首选监护人无法履行职责，下一位人选是谁？此项为选填，但值得考虑。" />
           {data.subGuardians.map((g, i) => (
-            <PersonCard key={i} tag={`Backup ${i + 1}`} person={g}
+            <PersonCard key={i} tag={`Backup ${i + 1} 后备 ${i + 1}`} person={g}
               onChange={p => update({ subGuardians: data.subGuardians.map((x, xi) => xi === i ? p : x) })}
               onRemove={() => update({ subGuardians: data.subGuardians.filter((_, xi) => xi !== i) })} />
           ))}
-          <AddLink label="Add a backup guardian" onClick={() => update({ subGuardians: [...data.subGuardians, blankPerson()] })} />
+          <AddLink label="Add a backup guardian 添加后备监护人" onClick={() => update({ subGuardians: [...data.subGuardians, blankPerson()] })} />
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
       )}
 
       {step === 'executor' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={6} total={stepsWithProgress} section={section} title="Who should carry out your wishes?" hint="Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one." />
+          <Head step={6} total={stepsWithProgress} section={section} title="Who should carry out your wishes? 谁来执行您的意愿？" hint="Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one. 您的执行人将管理您的遗产并确保遗嘱得以执行。您最多可指定4人共同担任，或仅指定一人。" />
           {data.executors.map((ex, i) => (
-            <PersonCard key={i} tag={`Executor ${i + 1}`} person={ex}
+            <PersonCard key={i} tag={`Executor ${i + 1} 执行人 ${i + 1}`} person={ex}
               onChange={p => update({ executors: data.executors.map((x, xi) => xi === i ? p : x) })}
               onRemove={data.executors.length > 1 ? () => update({ executors: data.executors.filter((_, xi) => xi !== i) }) : undefined} />
           ))}
           {data.executors.length < 4 && (
-            <AddLink label="Add a joint executor" onClick={() => update({ executors: [...data.executors, blankPerson()] })} />
+            <AddLink label="Add a joint executor 添加联合执行人" onClick={() => update({ executors: [...data.executors, blankPerson()] })} />
           )}
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
@@ -667,90 +678,90 @@ export default function WillPrepPage() {
 
       {step === 'subexecutors' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={7} total={stepsWithProgress} section={section} title="A backup executor?" hint="If your first choice cannot act, who should step in? Optional." />
+          <Head step={7} total={stepsWithProgress} section={section} title="A backup executor? 后备执行人？" hint="If your first choice cannot act, who should step in? Optional. 若您的首选执行人无法履行职责，应由谁接替？此项为选填。" />
           {data.subExecutors.map((ex, i) => (
-            <PersonCard key={i} tag={`Backup ${i + 1}`} person={ex}
+            <PersonCard key={i} tag={`Backup ${i + 1} 后备 ${i + 1}`} person={ex}
               onChange={p => update({ subExecutors: data.subExecutors.map((x, xi) => xi === i ? p : x) })}
               onRemove={() => update({ subExecutors: data.subExecutors.filter((_, xi) => xi !== i) })} />
           ))}
-          <AddLink label="Add a backup executor" onClick={() => update({ subExecutors: [...data.subExecutors, blankPerson()] })} />
+          <AddLink label="Add a backup executor 添加后备执行人" onClick={() => update({ subExecutors: [...data.subExecutors, blankPerson()] })} />
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
       )}
 
       {step === 'assets' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={8} total={stepsWithProgress} section={section} title="What do you own?" hint="Bank accounts, property, insurance, investments — anything of value. Rough figures are fine." />
+          <Head step={8} total={stepsWithProgress} section={section} title="What do you own? 您拥有哪些资产？" hint="Bank accounts, property, insurance, investments — anything of value. Rough figures are fine. 银行账户、房产、保险、投资 — 任何有价值的资产皆可。大概金额即可。" />
           {data.assets.map((a, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1}</span>
-              {data.assets.length > 1 && <span onClick={() => update({ assets: data.assets.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1} 资产 {i + 1}</span>
+              {data.assets.length > 1 && <span onClick={() => update({ assets: data.assets.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove 移除</span>}
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>What is it?</label>
-                <input style={inputStyle} placeholder="e.g. DBS savings account" value={a.name} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+                <label style={labelStyle}>What is it? 这是什么？</label>
+                <input style={inputStyle} placeholder="e.g. DBS savings account 例如：星展储蓄账户" value={a.name} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 16 }}>
-                <div><label style={labelStyle}>Estimated value</label>
+                <div><label style={labelStyle}>Estimated value 估计价值</label>
                   <input style={inputStyle} placeholder="S$" value={a.value} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
                 </div>
-                <div><label style={labelStyle}>Ownership</label>
+                <div><label style={labelStyle}>Ownership 所有权</label>
                   <select style={inputStyle} value={a.ownership} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, ownership: e.target.value as Asset['ownership'] } : x) })}>
-                    <option>Sole</option><option>Joint</option><option>Shared %</option>
+                    <option>Sole 独有</option><option>Joint 共有</option><option>Shared % 按比例共有</option>
                   </select>
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Leave this to (optional — leave blank to split per your general wishes later)</label>
-                <input style={inputStyle} placeholder="e.g. Michelle Chia" value={a.allocation} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, allocation: e.target.value } : x) })} />
+                <label style={labelStyle}>Leave this to (optional — leave blank to split per your general wishes later) 留给谁（选填 — 留空则按您稍后的整体分配意愿处理）</label>
+                <input style={inputStyle} placeholder="e.g. Michelle Chia 例如：陈美玲" value={a.allocation} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, allocation: e.target.value } : x) })} />
               </div>
             </div>
           ))}
-          <AddLink label="Add another asset" onClick={() => update({ assets: [...data.assets, { name: '', value: '', ownership: 'Sole', allocation: '' }] })} />
+          <AddLink label="Add another asset 添加另一项资产" onClick={() => update({ assets: [...data.assets, { name: '', value: '', ownership: 'Sole', allocation: '' }] })} />
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
       )}
 
       {step === 'liabilities' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={9} total={stepsWithProgress} section={section} title="Any outstanding debts?" hint="Home loans, car loans, credit cards — anything still owing. Skip if none." />
+          <Head step={9} total={stepsWithProgress} section={section} title="Any outstanding debts? 有任何未偿还的债务吗？" hint="Home loans, car loans, credit cards — anything still owing. Skip if none. 房屋贷款、车贷、信用卡 — 任何仍未偿还的款项。若没有可跳过。" />
           {data.liabilities.map((l, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1}</span>
-              {data.liabilities.length > 1 && <span onClick={() => update({ liabilities: data.liabilities.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1} 债务 {i + 1}</span>
+              {data.liabilities.length > 1 && <span onClick={() => update({ liabilities: data.liabilities.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove 移除</span>}
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>What is it?</label>
-                <input style={inputStyle} placeholder="e.g. Home loan — DBS" value={l.name} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+                <label style={labelStyle}>What is it? 这是什么？</label>
+                <input style={inputStyle} placeholder="e.g. Home loan — DBS 例如：房屋贷款 — 星展银行" value={l.name} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
               </div>
               <div>
-                <label style={labelStyle}>Outstanding amount</label>
+                <label style={labelStyle}>Outstanding amount 未偿还金额</label>
                 <input style={inputStyle} placeholder="S$" value={l.value} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
               </div>
             </div>
           ))}
-          <AddLink label="Add another liability" onClick={() => update({ liabilities: [...data.liabilities, { name: '', value: '' }] })} />
+          <AddLink label="Add another liability 添加另一项债务" onClick={() => update({ liabilities: [...data.liabilities, { name: '', value: '' }] })} />
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
       )}
 
       {step === 'residual' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={10} total={stepsWithProgress} section={section} title="Everything else you own" hint="Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%." />
+          <Head step={10} total={stepsWithProgress} section={section} title="Everything else you own 其余的所有资产" hint="Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%. 未在上方明确分配的资产，以及您日后取得的任何资产，都将按此方式分配。各份额加总应为100%。" />
           <div style={{ maxWidth: 480 }}>
             {data.residual.map((r, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${T.line}`, fontSize: 15 }}>
-                <input style={{ flex: 1, border: `1px solid ${T.line}`, borderRadius: 6, padding: '8px 10px', fontSize: 15, marginRight: 10 }} placeholder="Beneficiary name" value={r.name} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+                <input style={{ flex: 1, border: `1px solid ${T.line}`, borderRadius: 6, padding: '8px 10px', fontSize: 15, marginRight: 10 }} placeholder="Beneficiary name 受益人姓名" value={r.name} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
                 <input style={{ width: 60, textAlign: 'right', border: `1px solid ${T.line}`, borderRadius: 6, padding: '6px 8px', fontSize: 14.5, fontFamily: 'DM Mono, monospace' }} value={r.pct} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, pct: e.target.value } : x) })} />
                 <span style={{ marginLeft: 6 }}>%</span>
               </div>
             ))}
             <div style={{ marginTop: 14 }}>
-              <AddLink label="Add another share" onClick={() => update({ residual: [...data.residual, { name: '', pct: '' }] })} />
+              <AddLink label="Add another share 添加另一份分配" onClick={() => update({ residual: [...data.residual, { name: '', pct: '' }] })} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontWeight: 600, fontSize: 15.5, color: residualTotal === 100 ? T.emerald : T.rouge }}>
-              <span>Total</span><span>{residualTotal}%</span>
+              <span>Total 总计</span><span>{residualTotal}%</span>
             </div>
             {residualTotal !== 100 && (
-              <p style={{ fontSize: 13.5, color: T.rouge, lineHeight: 1.55, marginTop: 8 }}>Shares should add up to 100% — your advisor can help you fix this if you're not sure yet.</p>
+              <p style={{ fontSize: 13.5, color: T.rouge, lineHeight: 1.55, marginTop: 8 }}>Shares should add up to 100% — your advisor can help you fix this if you're not sure yet. 各份额加总应为100% — 若您还不确定，您的顾问可以协助您调整。</p>
             )}
           </div>
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
@@ -759,33 +770,33 @@ export default function WillPrepPage() {
 
       {step === 'clauses' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={11} total={stepsWithProgress} section={section} title="A few standard choices" hint="Your advisor can explain any of these further when you meet." />
+          <Head step={11} total={stepsWithProgress} section={section} title="A few standard choices 几项标准条款" hint="Your advisor can explain any of these further when you meet. 您的顾问会在会面时进一步为您解释这些内容。" />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 22 }}>
-              <label style={labelStyle}>Which of your assets does this cover?</label>
+              <label style={labelStyle}>Which of your assets does this cover? 此遗嘱涵盖哪些资产？</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <Pill label="Everything, worldwide" selected={data.scope === 'Worldwide'} onClick={() => update({ scope: 'Worldwide' })} />
-                <Pill label="Worldwide, except certain assets" selected={data.scope === 'Excluding'} onClick={() => update({ scope: 'Excluding' })} />
-                <Pill label="Singapore assets only" selected={data.scope === 'Singapore'} onClick={() => update({ scope: 'Singapore' })} />
+                <Pill label="Everything, worldwide 全球范围内的所有资产" selected={data.scope === 'Worldwide'} onClick={() => update({ scope: 'Worldwide' })} />
+                <Pill label="Worldwide, except certain assets 全球范围，但排除特定资产" selected={data.scope === 'Excluding'} onClick={() => update({ scope: 'Excluding' })} />
+                <Pill label="Singapore assets only 仅限新加坡境内资产" selected={data.scope === 'Singapore'} onClick={() => update({ scope: 'Singapore' })} />
               </div>
             </div>
             <div style={{ marginBottom: 22, maxWidth: 200 }}>
-              <label style={labelStyle}>Survivorship period (days)</label>
+              <label style={labelStyle}>Survivorship period (days) 生存期限（天）</label>
               <input style={inputStyle} value={data.survivorshipDays} onChange={e => update({ survivorshipDays: e.target.value })} />
             </div>
-            <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginTop: -14, marginBottom: 22, maxWidth: 480 }}>If a beneficiary passes away within this many days after you, they're treated as if they passed before you — so their share goes to your backup plan instead of into their own estate.</p>
+            <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginTop: -14, marginBottom: 22, maxWidth: 480 }}>If a beneficiary passes away within this many days after you, they're treated as if they passed before you — so their share goes to your backup plan instead of into their own estate. 若受益人在您身故后的此期限内也身故，将被视为先于您身故 — 其份额将按您的后备安排分配，而非归入其自身遗产。</p>
             <div style={{ marginBottom: 22 }}>
-              <label style={labelStyle}>If a beneficiary passes away before you, their share should</label>
+              <label style={labelStyle}>If a beneficiary passes away before you, their share should 若受益人先于您身故，其份额应</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <Pill label="Be redistributed among the others" selected={data.lapsedGift === 'redistribute'} onClick={() => update({ lapsedGift: 'redistribute' })} />
-                <Pill label="Still pass to their own estate" selected={data.lapsedGift === 'to_estate'} onClick={() => update({ lapsedGift: 'to_estate' })} />
+                <Pill label="Be redistributed among the others 重新分配给其他受益人" selected={data.lapsedGift === 'redistribute'} onClick={() => update({ lapsedGift: 'redistribute' })} />
+                <Pill label="Still pass to their own estate 仍归入其自身遗产" selected={data.lapsedGift === 'to_estate'} onClick={() => update({ lapsedGift: 'to_estate' })} />
               </div>
             </div>
             <div>
-              <label style={labelStyle}>Assets left to a child under 21 should be managed by</label>
+              <label style={labelStyle}>Assets left to a child under 21 should be managed by 留给21岁以下子女的资产应由谁管理</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <Pill label="The Executor" selected={data.minorManager === 'executor'} onClick={() => update({ minorManager: 'executor' })} />
-                <Pill label="The Guardian" selected={data.minorManager === 'guardian'} onClick={() => update({ minorManager: 'guardian' })} />
+                <Pill label="The Executor 执行人" selected={data.minorManager === 'executor'} onClick={() => update({ minorManager: 'executor' })} />
+                <Pill label="The Guardian 监护人" selected={data.minorManager === 'guardian'} onClick={() => update({ minorManager: 'guardian' })} />
               </div>
             </div>
           </div>
@@ -795,19 +806,19 @@ export default function WillPrepPage() {
 
       {step === 'instructions' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={12} total={stepsWithProgress} section={section} title="Anything else?" hint="All optional." />
+          <Head step={12} total={stepsWithProgress} section={section} title="Anything else? 还有其他补充吗？" hint="All optional. 以下均为选填。" />
           <div style={{ maxWidth: 560 }}>
             <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Other instructions for your Will</label>
-              <textarea style={{ ...inputStyle, minHeight: 90 }} placeholder="Anything specific you'd like included" value={data.otherInstructions} onChange={e => update({ otherInstructions: e.target.value })} />
+              <label style={labelStyle}>Other instructions for your Will 其他遗嘱指示</label>
+              <textarea style={{ ...inputStyle, minHeight: 90 }} placeholder="Anything specific you'd like included 您想加入的其他具体事项" value={data.otherInstructions} onChange={e => update({ otherInstructions: e.target.value })} />
             </div>
             <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Funeral wishes</label>
-              <textarea style={{ ...inputStyle, minHeight: 90 }} placeholder="Optional" value={data.funeralWishes} onChange={e => update({ funeralWishes: e.target.value })} />
+              <label style={labelStyle}>Funeral wishes 葬礼安排</label>
+              <textarea style={{ ...inputStyle, minHeight: 90 }} placeholder="Optional 选填" value={data.funeralWishes} onChange={e => update({ funeralWishes: e.target.value })} />
             </div>
             <div>
-              <label style={labelStyle}>A few final words</label>
-              <textarea style={{ ...inputStyle, minHeight: 90 }} placeholder="Optional — a personal note, if you'd like to leave one" value={data.finalWords} onChange={e => update({ finalWords: e.target.value })} />
+              <label style={labelStyle}>A few final words 几句心里话</label>
+              <textarea style={{ ...inputStyle, minHeight: 90 }} placeholder="Optional — a personal note, if you'd like to leave one 选填 — 若您想留下一段话" value={data.finalWords} onChange={e => update({ finalWords: e.target.value })} />
             </div>
           </div>
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
@@ -816,18 +827,18 @@ export default function WillPrepPage() {
 
       {step === 'review' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={13} total={stepsWithProgress} section={section} title="Review before you submit" hint="Take a moment to check everything looks right. You can go back and change anything." />
+          <Head step={13} total={stepsWithProgress} section={section} title="Review before you submit 提交前请审阅" hint="Take a moment to check everything looks right. You can go back and change anything. 请花点时间检查所有内容是否正确。您可以随时返回修改。" />
           <div style={{ maxWidth: 560 }}>
-            <ReviewBlock title="Beneficiaries" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet)'}`)} />
-            <ReviewBlock title="Executor" lines={data.executors.map(e => e.name || '(not named yet)')} />
-            <ReviewBlock title="Residual split" lines={data.residual.map(r => `${r.pct || 0}%: ${r.name || '(not named yet)'}`)} />
+            <ReviewBlock title="Beneficiaries 受益人" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet) 尚未填写姓名'}`)} />
+            <ReviewBlock title="Executor 执行人" lines={data.executors.map(e => e.name || '(not named yet) 尚未填写姓名')} />
+            <ReviewBlock title="Residual split 剩余资产分配" lines={data.residual.map(r => `${r.pct || 0}%: ${r.name || '(not named yet) 尚未填写姓名'}`)} />
             <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20 }}>
-              Submitting sends this to your advisor to review. It doesn't finalise your Will — they'll go through everything with you first.
+              Submitting sends this to your advisor to review. It doesn't finalise your Will — they'll go through everything with you first. 提交后将发送给您的顾问审阅，这并不会最终确定您的遗嘱 — 顾问会先与您逐一核对所有内容。
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 8, paddingBottom: 48 }}>
-            <button onClick={() => go(-1)} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, cursor: 'pointer' }}>Back</button>
-            <button onClick={submit} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.ink}`, background: T.ink, color: T.cream, cursor: 'pointer' }}>Submit</button>
+            <button onClick={() => go(-1)} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, cursor: 'pointer' }}>Back 返回</button>
+            <button onClick={submit} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.ink}`, background: T.ink, color: T.cream, cursor: 'pointer' }}>Submit 提交</button>
           </div>
         </div>
       )}
@@ -875,7 +886,7 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
             <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600 }}>{firm || 'Will Preparation'}</div>
           </div>
           <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: T.ink3, textAlign: 'right', lineHeight: 1.5 }}>
-            <div>WILL PREPARATION{clientName ? ` · ${clientName.toUpperCase()}` : ''}</div>
+            <div>WILL PREPARATION 遗嘱准备{clientName ? ` · ${clientName.toUpperCase()}` : ''}</div>
             {typeof saving !== 'undefined' && (
               <div>{saving ? 'Saving…' : lastSavedAt ? 'Saved' : ''}</div>
             )}
@@ -891,7 +902,7 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
 
       <div style={{ borderTop: `1px solid ${T.line}`, background: '#fff' }}>
         <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '16px 24px', textAlign: 'center', fontSize: 12, color: T.ink3 }}>
-          {firm || 'Your Advisor'} · Your information is kept private and confidential
+          {firm || 'Your Advisor'} · Your information is kept private and confidential 您的信息将严格保密
         </div>
       </div>
     </div>
