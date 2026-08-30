@@ -178,6 +178,7 @@ export default function WillPrepPage() {
   const [hint, setHint] = useState('')
   const [clientName, setClientName] = useState('')
   const [firm, setFirm] = useState<string | null>(null)
+  const [showIntroTerms, setShowIntroTerms] = useState(false)
 
   const [unlocked, setUnlocked] = useState(false)
   const [password, setPassword] = useState('')
@@ -396,7 +397,18 @@ export default function WillPrepPage() {
             This form gathers your instructions ahead of your meeting. It is not your Will and has no legal effect on its own. Your advisor will go through everything with you before anything is finalised.
           </div>
           <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6 }}>Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.</p>
+          <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 4 }}>
+            By proceeding, you agree to the{' '}
+            <button
+              onClick={() => setShowIntroTerms(true)}
+              style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: T.ink, textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              Terms and Conditions
+            </button>
+            .
+          </p>
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} backDisabled />
+          {showIntroTerms && <TermsModal firm={firm} onClose={() => setShowIntroTerms(false)} />}
         </div>
       )}
 
@@ -659,7 +671,6 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
 }) {
   const vw = useViewportWidth()
   const contentWidth = vw === 0 ? 520 : vw >= 1024 ? 720 : vw >= 640 ? 640 : 520
-  const [showTerms, setShowTerms] = useState(false)
 
   return (
     <div style={{ minHeight: '100vh', background: '#FAF8F5', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
@@ -687,17 +698,8 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
       <div style={{ borderTop: `1px solid ${T.line}`, background: '#fff' }}>
         <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '16px 24px', textAlign: 'center', fontSize: 12, color: T.ink3 }}>
           {firm || 'Your Advisor'} · Your information is kept private and confidential
-          {' · '}
-          <button
-            onClick={() => setShowTerms(true)}
-            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: T.ink3, textDecoration: 'underline', cursor: 'pointer' }}
-          >
-            Terms and Conditions
-          </button>
         </div>
       </div>
-
-      {showTerms && <TermsModal firm={firm} onClose={() => setShowTerms(false)} />}
     </div>
   )
 }
