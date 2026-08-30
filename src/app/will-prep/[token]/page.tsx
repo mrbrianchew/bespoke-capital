@@ -285,18 +285,18 @@ export default function WillPrepPage() {
   // ── RENDER STATES ──
 
   if (loading) {
-    return <Shell clientName="" centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>Loading…</div></Shell>
+    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>Loading…</div></Shell>
   }
   if (notFound) {
-    return <Shell clientName="" centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link isn't valid. Please check with your advisor for the correct link.</div></Shell>
+    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link isn't valid. Please check with your advisor for the correct link.</div></Shell>
   }
   if (expired && !submitted) {
-    return <Shell clientName={clientName} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link has expired. Please ask your advisor to send you a new one.</div></Shell>
+    return <Shell clientName={clientName} firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link has expired. Please ask your advisor to send you a new one.</div></Shell>
   }
 
   if (!unlocked) {
     return (
-      <Shell clientName={clientName} centerContent>
+      <Shell clientName={clientName} firm={firm} centerContent>
         <div>
           <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Getting Started</p>
           <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 27, margin: '0 0 10px', fontWeight: 500 }}>Verify it's you</h1>
@@ -329,7 +329,7 @@ export default function WillPrepPage() {
 
   if (submitted && step === 'done') {
     return (
-      <Shell clientName={clientName} centerContent>
+      <Shell clientName={clientName} firm={firm} centerContent>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 60, height: 60, borderRadius: '50%', background: T.emeraldBg, color: T.emerald, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 24px', fontWeight: 700 }}>✓</div>
           <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, margin: '0 0 10px' }}>Submitted</h1>
@@ -345,7 +345,7 @@ export default function WillPrepPage() {
   // ── STEP CONTENT ──
 
   return (
-    <Shell clientName={clientName} saving={saving} lastSavedAt={lastSavedAt}>
+    <Shell clientName={clientName} firm={firm} saving={saving} lastSavedAt={lastSavedAt}>
       {step === 'intro' && (
         <div style={{ padding: '48px 0 0' }}>
           <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>{section}</p>
@@ -653,11 +653,12 @@ function useViewportWidth() {
 // Website layout — no floating card, no drop shadow. Full-width page
 // background with a real header/footer, and a content column that widens
 // on tablet/desktop instead of staying phone-width everywhere.
-function Shell({ children, clientName, saving, lastSavedAt, centerContent }: {
-  children: React.ReactNode; clientName: string; saving?: boolean; lastSavedAt?: string | null; centerContent?: boolean
+function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent }: {
+  children: React.ReactNode; clientName: string; firm?: string | null; saving?: boolean; lastSavedAt?: string | null; centerContent?: boolean
 }) {
   const vw = useViewportWidth()
   const contentWidth = vw === 0 ? 520 : vw >= 1024 ? 720 : vw >= 640 ? 640 : 520
+  const [showTerms, setShowTerms] = useState(false)
 
   return (
     <div style={{ minHeight: '100vh', background: '#FAF8F5', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
@@ -685,6 +686,83 @@ function Shell({ children, clientName, saving, lastSavedAt, centerContent }: {
       <div style={{ borderTop: `1px solid ${T.line}`, background: '#fff' }}>
         <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '16px 24px', textAlign: 'center', fontSize: 11, color: T.ink3 }}>
           Bespoke Capital · Your information is kept private and confidential
+          {' · '}
+          <button
+            onClick={() => setShowTerms(true)}
+            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: T.ink3, textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            Terms and Conditions
+          </button>
+        </div>
+      </div>
+
+      {showTerms && <TermsModal firm={firm} onClose={() => setShowTerms(false)} />}
+    </div>
+  )
+}
+
+function TermsModal({ firm, onClose }: { firm?: string | null; onClose: () => void }) {
+  const firmName = firm || 'your Advisor\u2019s firm'
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,22,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 100 }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: '#fff', borderRadius: 12, width: 640, maxWidth: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+      >
+        <div style={{ padding: '20px 28px', borderBottom: `1px solid ${T.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600 }}>Terms and Conditions</div>
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', fontSize: 20, color: T.ink3, cursor: 'pointer', lineHeight: 1, padding: 4 }}
+            aria-label="Close"
+          >×</button>
+        </div>
+        <div style={{ padding: '20px 28px', overflowY: 'auto', fontSize: 12.5, color: T.ink3, lineHeight: 1.7 }}>
+          <p style={{ margin: '0 0 14px' }}>Last updated: 30 August 2026</p>
+          <p style={{ margin: '0 0 14px' }}>This Will Writing Preparation form (&quot;this Form&quot;) is provided to you by <strong>{firmName}</strong> (&quot;we&quot;, &quot;us&quot;, &quot;the Firm&quot;), through the adviser who sent you the link to this Form (&quot;your Advisor&quot;). This Form runs on software licensed from a third-party technology provider, which operates the Form on the Firm&apos;s behalf but has no direct relationship with you.</p>
+          <p style={{ margin: '0 0 14px' }}><strong>Your Advisor and the Firm are your point of contact for everything relating to your estate planning.</strong> The technology provider does not advise you, does not draft your Will, and is not a party to the professional relationship between you and your Advisor.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>1. What this Form is — and what it is not</p>
+          <p style={{ margin: '0 0 10px' }}>This Form is a <strong>data-gathering tool only</strong>. It allows you to record information about your intended beneficiaries, executors, guardians, assets, liabilities, and wishes, ahead of a Will-planning discussion with your Advisor.</p>
+          <p style={{ margin: '0 0 10px' }}><strong>This Form is not a Will.</strong> Nothing you submit through this Form has any legal effect, and no Will is created, executed, or generated by this Form itself.</p>
+          <p style={{ margin: '0 0 10px' }}><strong>Submitting this Form does not, by itself, result in a Will being drafted.</strong> Your Advisor, or a Certified Estate Planner or lawyer that your Advisor works with, will use the information you provide here to prepare for and inform a separate Will-drafting discussion with you. Depending on your Advisor&apos;s own qualifications, your Advisor may themselves be a Certified Estate Planner or otherwise licensed to assist with Will drafting — or your information may be passed to a Certified Estate Planner or lawyer for that purpose. Either way, the actual drafting of your Will takes place separately from this Form.</p>
+          <p style={{ margin: '0 0 10px' }}>You should raise any questions about who will be preparing your Will, and under what capacity, directly with your Advisor.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>2. Two different roles — please understand the distinction</p>
+          <p style={{ margin: '0 0 10px' }}><strong>{firmName} and your Advisor</strong> are responsible for the advice given to you, the accuracy and appropriateness of the estate-planning process, how your information is used in that process, and their own professional and regulatory obligations to you.</p>
+          <p style={{ margin: '0 0 10px' }}><strong>The technology provider</strong> is responsible only for keeping the Form&apos;s software running and securing the data infrastructure it runs on — not for the content, advice, or professional service delivered to you, or the outcome of any Will eventually drafted.</p>
+          <p style={{ margin: '0 0 10px' }}>For anything relating to your estate planning, your data, or your Will — <strong>contact your Advisor</strong>, not the technology provider.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>3. By using this Form, you accept these terms</p>
+          <p style={{ margin: '0 0 10px' }}>Submitting information through this Form means you accept these terms in full. If you do not agree, do not use this Form — speak to your Advisor about alternative arrangements instead.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>4. Accuracy of information</p>
+          <p style={{ margin: '0 0 10px' }}>You are solely responsible for the accuracy and completeness of the information you submit. Errors, omissions, or delays caused by inaccurate information may affect the drafting of your Will.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>5. How your information is used and who controls it</p>
+          <p style={{ margin: '0 0 10px' }}>For the purposes of Singapore&apos;s Personal Data Protection Act 2012, <strong>{firmName} is the organisation responsible for the personal data you submit through this Form</strong>. The technology provider processes and stores this data only as an infrastructure provider acting on the Firm&apos;s instructions, and does not use your data for its own independent purposes.</p>
+          <p style={{ margin: '0 0 10px' }}>Any request to access, correct, or withdraw consent for the processing of your personal data should be directed to your Advisor or the Firm.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>6. Confidentiality and data security</p>
+          <p style={{ margin: '0 0 10px' }}>Your submission is transmitted and stored using industry-standard encryption and access controls. Access to your information is restricted to your Advisor and personnel authorised by the Firm. Keep any link, password, or access credential provided to you confidential.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>7. No warranty</p>
+          <p style={{ margin: '0 0 10px' }}>This Form is provided on an &quot;as is&quot; and &quot;as available&quot; basis. It is not warranted to be uninterrupted, error-free, or fully exhaustive of every consideration relevant to your estate — it is a starting reference only.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>8. Limitation of liability</p>
+          <p style={{ margin: '0 0 10px' }}>The technology provider&apos;s role is limited to operating the Form&apos;s software and is not liable for the advice given by your Advisor or the Firm, any inaccuracy in the information you provide, or any issue with the eventual drafting, validity, or enforceability of your Will. These matters are the sole responsibility of {firmName} and your Advisor.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>9. Your responsibilities</p>
+          <p style={{ margin: '0 0 10px' }}>You agree not to provide false or misleading information, use the Form unlawfully, access another person&apos;s submission without authorisation, or attempt to copy or reverse-engineer the Form.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>10. Governing law</p>
+          <p style={{ margin: '0 0 10px' }}>These terms are governed by the laws of Singapore, and any disputes are subject to the exclusive jurisdiction of the Singapore courts.</p>
+
+          <p style={{ fontWeight: 600, color: T.ink, margin: '20px 0 8px' }}>11. Contact</p>
+          <p style={{ margin: 0 }}>For questions about your estate planning, your Will, or how your information is being used — contact your Advisor, the person who sent you the link to this Form.</p>
         </div>
       </div>
     </div>
