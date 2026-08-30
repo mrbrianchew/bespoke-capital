@@ -97,7 +97,7 @@ const DEFAULT_DATA: WillPrepData = {
 
 const STEPS = [
   'gate', 'intro', 'considerations', 'testator', 'beneficiaries', 'guardian', 'subguardians',
-  'executor', 'subexecutors', 'assets', 'liabilities', 'residual',
+  'executor', 'subexecutors', 'assetsReference', 'assets', 'liabilities', 'residual',
   'clauses', 'instructions', 'review', 'done',
 ] as const
 type Step = typeof STEPS[number]
@@ -114,6 +114,7 @@ const SECTION_LABEL: Partial<Record<Step, string>> = {
   subguardians: 'Substitute Guardian 替代监护人',
   executor: 'Executor 执行人',
   subexecutors: 'Substitute Executor 替代执行人',
+  assetsReference: 'Assets & Liabilities 资产与债务',
   assets: 'Assets 资产',
   liabilities: 'Liabilities 债务',
   residual: 'Residual Allocation 剩余资产分配',
@@ -689,9 +690,48 @@ export default function WillPrepPage() {
         </div>
       )}
 
+      {step === 'assetsReference' && (
+        <div style={{ padding: '48px 0 0' }}>
+          <Head step={8} total={stepsWithProgress} section={section} title={<>What counts as an asset or debt?<br />什么算是资产或债务？</>} hint={<>A quick reference before you list what you own and owe.<br />在您列出资产与债务前的快速参考。</>} />
+
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 28, fontSize: 13.5, color: T.ink, lineHeight: 1.6, fontStyle: 'italic' }}>
+            You do not need to specifically distribute every asset to specific beneficiary(s). You can leave the assets as &quot;No specific allocation&quot; which will be distributed as per the &quot;Allocate Residual Assets&quot; section thereafter.
+            <br /><br />
+            注意：您不需将每项资产具体分配给特定的受益人。您可以将资产保留为&quot;无具体分配&quot;，之后将按照&quot;分配剩余资产&quot;部分进行分配。
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32 }}>
+            <div style={{ flex: '1 1 260px' }}>
+              <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 19, fontWeight: 600, margin: '0 0 16px' }}>List of what you may own / owe</h3>
+              <p style={{ fontWeight: 700, fontSize: 14, color: T.ink, margin: '0 0 8px' }}>Types of Assets:</p>
+              <ul style={{ margin: '0 0 22px', paddingLeft: 20, fontSize: 13.5, color: T.ink, lineHeight: 1.9 }}>
+                {['Bank Account', 'Investment Account', 'Insurance Policy', 'Pension', 'Business', 'Real Estate', 'Motor Vehicle', 'Safe Deposit Box', 'Intellectual Property', 'Personal Possession', 'SRS', 'Other Assets'].map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
+              <p style={{ fontWeight: 700, fontSize: 14, color: T.ink, margin: '0 0 8px' }}>Types of Liabilities:</p>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13.5, color: T.ink, lineHeight: 1.9 }}>
+                {['Bank Loan', 'Secured Loan', 'Education Loan', 'Credit Card Debt', 'Informal Debt', 'Outstanding Tax', 'Other Liabilities'].map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
+            </div>
+            <div style={{ flex: '1 1 260px', borderLeft: `1px solid ${T.line}`, paddingLeft: 32 }}>
+              <h3 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 19, fontWeight: 600, margin: '0 0 16px' }}>作为参考的各种资产与债务</h3>
+              <p style={{ fontWeight: 700, fontSize: 14, color: T.ink, margin: '0 0 8px' }}>各种资产：</p>
+              <ul style={{ margin: '0 0 22px', paddingLeft: 20, fontSize: 13.5, color: T.ink, lineHeight: 1.9 }}>
+                {['银行户口', '投资户口', '人寿保险，年金', '退休金', '商业', '房地产', '汽车，货车，摩托，飞机', '保管箱', '知识产权', '个人财物', '补充退休户口', '其他资产'].map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
+              <p style={{ fontWeight: 700, fontSize: 14, color: T.ink, margin: '0 0 8px' }}>各种债务：</p>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13.5, color: T.ink, lineHeight: 1.9 }}>
+                {['银行贷款', '有抵押贷款', '教育贷款', '信用卡贷款', '个人贷款', '未付所得税', '其他债务'].map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
+            </div>
+          </div>
+
+          <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
+        </div>
+      )}
+
       {step === 'assets' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={8} total={stepsWithProgress} section={section} title={<>What do you own?<br />您拥有哪些资产？</>} hint={<>Bank accounts, property, insurance, investments — anything of value. Rough figures are fine.<br />银行账户、房产、保险、投资 — 任何有价值的资产皆可。大概金额即可。</>} />
+          <Head step={9} total={stepsWithProgress} section={section} title={<>What do you own?<br />您拥有哪些资产？</>} hint={<>Bank accounts, property, insurance, investments — anything of value. Rough figures are fine.<br />银行账户、房产、保险、投资 — 任何有价值的资产皆可。大概金额即可。</>} />
           {data.assets.map((a, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1} 资产 {i + 1}</span>
@@ -723,7 +763,7 @@ export default function WillPrepPage() {
 
       {step === 'liabilities' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={9} total={stepsWithProgress} section={section} title={<>Any outstanding debts?<br />有任何未偿还的债务吗？</>} hint={<>Home loans, car loans, credit cards — anything still owing. Skip if none.<br />房屋贷款、车贷、信用卡 — 任何仍未偿还的款项。若没有可跳过。</>} />
+          <Head step={10} total={stepsWithProgress} section={section} title={<>Any outstanding debts?<br />有任何未偿还的债务吗？</>} hint={<>Home loans, car loans, credit cards — anything still owing. Skip if none.<br />房屋贷款、车贷、信用卡 — 任何仍未偿还的款项。若没有可跳过。</>} />
           {data.liabilities.map((l, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1} 债务 {i + 1}</span>
@@ -745,7 +785,7 @@ export default function WillPrepPage() {
 
       {step === 'residual' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={10} total={stepsWithProgress} section={section} title={<>Everything else you own<br />其余的所有资产</>} hint={<>Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%.<br />未在上方明确分配的资产，以及您日后取得的任何资产，都将按此方式分配。各份额加总应为100%。</>} />
+          <Head step={11} total={stepsWithProgress} section={section} title={<>Everything else you own<br />其余的所有资产</>} hint={<>Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%.<br />未在上方明确分配的资产，以及您日后取得的任何资产，都将按此方式分配。各份额加总应为100%。</>} />
           <div style={{ maxWidth: 480 }}>
             {data.residual.map((r, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${T.line}`, fontSize: 15 }}>
@@ -770,7 +810,7 @@ export default function WillPrepPage() {
 
       {step === 'clauses' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={11} total={stepsWithProgress} section={section} title={<>A few standard choices<br />几项标准条款</>} hint={<>Your advisor can explain any of these further when you meet.<br />您的顾问会在会面时进一步为您解释这些内容。</>} />
+          <Head step={12} total={stepsWithProgress} section={section} title={<>A few standard choices<br />几项标准条款</>} hint={<>Your advisor can explain any of these further when you meet.<br />您的顾问会在会面时进一步为您解释这些内容。</>} />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>Which of your assets does this cover? 此遗嘱涵盖哪些资产？</label>
@@ -806,7 +846,7 @@ export default function WillPrepPage() {
 
       {step === 'instructions' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={12} total={stepsWithProgress} section={section} title={<>Anything else?<br />还有其他补充吗？</>} hint={<>All optional.<br />以下均为选填。</>} />
+          <Head step={13} total={stepsWithProgress} section={section} title={<>Anything else?<br />还有其他补充吗？</>} hint={<>All optional.<br />以下均为选填。</>} />
           <div style={{ maxWidth: 560 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Other instructions for your Will 其他遗嘱指示</label>
@@ -827,7 +867,7 @@ export default function WillPrepPage() {
 
       {step === 'review' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={13} total={stepsWithProgress} section={section} title={<>Review before you submit<br />提交前请审阅</>} hint={<>Take a moment to check everything looks right. You can go back and change anything.<br />请花点时间检查所有内容是否正确。您可以随时返回修改。</>} />
+          <Head step={14} total={stepsWithProgress} section={section} title={<>Review before you submit<br />提交前请审阅</>} hint={<>Take a moment to check everything looks right. You can go back and change anything.<br />请花点时间检查所有内容是否正确。您可以随时返回修改。</>} />
           <div style={{ maxWidth: 560 }}>
             <ReviewBlock title="Beneficiaries 受益人" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet) 尚未填写姓名'}`)} />
             <ReviewBlock title="Executor 执行人" lines={data.executors.map(e => e.name || '(not named yet) 尚未填写姓名')} />
