@@ -355,7 +355,7 @@ export default function WillPrepPage() {
           <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>You can leave and come back — your answers are saved as you go.</p>
           <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 22 }}>You will be contacted to arrange for a session if a date has not been fixed yet. A translation in Mandarin is also provided in this form, and should be used only as a reference.</p>
 
-          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20, maxWidth: 560 }}>
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
             <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Please read before filling up the form</p>
             <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.65 }}>
               {[
@@ -373,7 +373,7 @@ export default function WillPrepPage() {
             </div>
           </div>
 
-          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20, maxWidth: 560 }}>
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
             <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>中文（仅供参考）</p>
             <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.65, marginBottom: 10 }}>您将会被联系以安排会面时间（如尚未确定日期）。本表格也提供华语翻译，仅供参考之用。</p>
             <p style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, margin: '0 0 8px', fontWeight: 600 }}>填写表格前请先阅读以下内容：</p>
@@ -393,7 +393,7 @@ export default function WillPrepPage() {
             </div>
           </div>
 
-          <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20, maxWidth: 560 }}>
+          <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20 }}>
             This form gathers your instructions ahead of your meeting. It is not your Will and has no legal effect on its own. Your advisor will go through everything with you before anything is finalised.
           </div>
           <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6 }}>Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.</p>
