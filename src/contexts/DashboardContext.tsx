@@ -107,6 +107,15 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       router.push('/auth')
       return
     }
+    // Firm and phone are mandatory profile fields (no DB-level constraint —
+    // the handle_new_user() signup trigger only sets id/name/email, so a
+    // NOT NULL constraint on firm would break every new signup). Enforced
+    // here instead: any advisor missing either field is sent to onboarding
+    // to complete their profile before they can use the dashboard.
+    if (!adv.firm || !adv.phone) {
+      router.push('/onboarding')
+      return
+    }
     setUser(user)
     setAdvisor(adv)
     // Ping last_active_at at most once per 24h — cheap "is this advisor

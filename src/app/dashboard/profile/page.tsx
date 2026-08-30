@@ -9,6 +9,7 @@ export default function ProfilePage() {
   const { user, advisor, authLoading, setAdvisor } = useDashboard()
   const [name, setName] = useState('')
   const [firm, setFirm] = useState('')
+  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [digestEmail, setDigestEmail] = useState('')
   const [saving, setSaving] = useState(false)
@@ -21,6 +22,7 @@ export default function ProfilePage() {
     if (advisor) {
       setName(advisor.name || '')
       setFirm(advisor.firm || '')
+      setPhone(advisor.phone || '')
       setEmail(advisor.email || user?.email || '')
       setDigestEmail(advisor.digest_email || '')
     }
@@ -28,6 +30,9 @@ export default function ProfilePage() {
 
   async function save() {
     if (!name.trim()) { setError('Name is required'); return }
+    if (!firm.trim()) { setError('Firm/Team Name is required'); return }
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits.length < 8) { setError('Please enter a valid phone number'); return }
     if (digestEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(digestEmail.trim())) {
       setError('Digest email looks invalid')
       return
@@ -36,7 +41,7 @@ export default function ProfilePage() {
     setError('')
     setSaved(false)
     setSaving(true)
-    const updateFields = { name: name.trim(), firm: firm.trim() || null, digest_email: digestEmail.trim() || null }
+    const updateFields = { name: name.trim(), firm: firm.trim(), phone: phone.trim(), digest_email: digestEmail.trim() || null }
     const { error: err } = await supabase
       .from('advisors')
       .update(updateFields)
@@ -68,7 +73,13 @@ export default function ProfilePage() {
           <input value={firm} onChange={e => setFirm(e.target.value)} placeholder="e.g. Financial Alliance Pte Ltd"
             className="w-full px-3 py-2.5 text-sm outline-none"
             style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'white' }} />
-          <div className="text-xs mt-1.5" style={{ color: 'var(--ink3)' }}>Leave blank to use the default "Bespoke Capital" branding.</div>
+          <div className="text-xs mt-1.5" style={{ color: 'var(--ink3)' }}>Appears on client-facing reports and forms, including the Will Preparation form your clients see.</div>
+        </div>
+        <div>
+          <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Phone Number</label>
+          <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. 9123 4567"
+            className="w-full px-3 py-2.5 text-sm outline-none"
+            style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'white' }} />
         </div>
         <div>
           <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>Email</label>
