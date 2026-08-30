@@ -873,31 +873,39 @@ export default function WillPrepPage() {
         <div style={{ padding: '48px 0 0' }}>
           <Head step={12} total={stepsWithProgress} section={section} title={<>A few standard choices<br />几项标准条款</>} hint={<>Your advisor can explain any of these further when you meet.<br />您的顾问会在会面时进一步为您解释这些内容。</>} />
           <div style={{ maxWidth: 520 }}>
-            <div style={{ marginBottom: 22 }}>
-              <label style={labelStyle}>Which of your assets does this cover? 此遗嘱涵盖哪些资产？</label>
+            <div style={{ marginBottom: 30 }}>
+              <label style={labelStyle}>Scope of Assets 资产范围</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <Pill label="Everything, worldwide 全球范围内的所有资产" selected={data.scope === 'Worldwide'} onClick={() => update({ scope: 'Worldwide' })} />
-                <Pill label="Worldwide, except certain assets 全球范围，但排除特定资产" selected={data.scope === 'Excluding'} onClick={() => update({ scope: 'Excluding' })} />
-                <Pill label="Singapore assets only 仅限新加坡境内资产" selected={data.scope === 'Singapore'} onClick={() => update({ scope: 'Singapore' })} />
+                <Pill label={<>Worldwide<br />全球</>} selected={data.scope === 'Worldwide'} onClick={() => update({ scope: 'Worldwide' })} />
+                <Pill label={<>Worldwide excluding<br />全球范围内但不包括</>} selected={data.scope === 'Excluding'} onClick={() => update({ scope: 'Excluding' })} />
+                <Pill label={<>Singapore Only<br />仅限于新加坡</>} selected={data.scope === 'Singapore'} onClick={() => update({ scope: 'Singapore' })} />
               </div>
             </div>
-            <div style={{ marginBottom: 22, maxWidth: 200 }}>
-              <label style={labelStyle}>Survivorship period (days) 生存期限（天）</label>
-              <input style={inputStyle} value={data.survivorshipDays} onChange={e => update({ survivorshipDays: e.target.value })} />
-            </div>
-            <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginTop: -14, marginBottom: 22, maxWidth: 480 }}>If a beneficiary passes away within this many days after you, they're treated as if they passed before you — so their share goes to your backup plan instead of into their own estate. 若受益人在您身故后的此期限内也身故，将被视为先于您身故 — 其份额将按您的后备安排分配，而非归入其自身遗产。</p>
+
+            <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 14px' }}>Customisable Clauses 可定制的条款</p>
+
             <div style={{ marginBottom: 22 }}>
-              <label style={labelStyle}>If a beneficiary passes away before you, their share should 若受益人先于您身故，其份额应</label>
+              <label style={labelStyle}>No. of Days 天数</label>
+              <input style={{ ...inputStyle, maxWidth: 120, marginBottom: 10 }} value={data.survivorshipDays} onChange={e => update({ survivorshipDays: e.target.value })} />
+              <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, maxWidth: 480, margin: 0 }}>
+                Anyone who dies during the {data.survivorshipDays || 'XX'} days immediately following my death is treated for the purposes of this Will as having died before me. (Default: 30 days)
+                <br />就本遗嘱而言，任何在我去世后 {data.survivorshipDays || 'XX'} 天内去世的人，均被视为在我之前死去。（默认：30天）
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 22 }}>
+              <label style={labelStyle}>If any Beneficiary(s) die before me, his/her share shall: 如果任何受益人在我之前死去，他/她的份额应：</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <Pill label="Be redistributed among the others 重新分配给其他受益人" selected={data.lapsedGift === 'redistribute'} onClick={() => update({ lapsedGift: 'redistribute' })} />
-                <Pill label="Still pass to their own estate 仍归入其自身遗产" selected={data.lapsedGift === 'to_estate'} onClick={() => update({ lapsedGift: 'to_estate' })} />
+                <Pill label={<>Still be given to him/her (to be distributed based on his/her estate)<br />仍然给予他/她（即根据他的遗产分配）</>} selected={data.lapsedGift === 'to_estate'} onClick={() => update({ lapsedGift: 'to_estate' })} />
+                <Pill label={<>Redistribute as &quot;Residual Assets&quot;<br />根据&quot;剩余资产分配&quot;按比例重新分配</>} selected={data.lapsedGift === 'redistribute'} onClick={() => update({ lapsedGift: 'redistribute' })} />
               </div>
             </div>
+
             <div>
-              <label style={labelStyle}>Assets left to a child under 21 should be managed by 留给21岁以下子女的资产应由谁管理</label>
+              <label style={labelStyle}>All assets given to minor Beneficiary(s) shall be managed by: 给予未成年受益人的所有资产应由以下人员管理：</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-                <Pill label="The Executor 执行人" selected={data.minorManager === 'executor'} onClick={() => update({ minorManager: 'executor' })} />
-                <Pill label="The Guardian 监护人" selected={data.minorManager === 'guardian'} onClick={() => update({ minorManager: 'guardian' })} />
+                <Pill label={<>Executor(s)<br />执行人</>} selected={data.minorManager === 'executor'} onClick={() => update({ minorManager: 'executor' })} />
+                <Pill label={<>Guardian(s)<br />监护人</>} selected={data.minorManager === 'guardian'} onClick={() => update({ minorManager: 'guardian' })} />
               </div>
             </div>
           </div>
