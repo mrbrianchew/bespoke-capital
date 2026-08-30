@@ -223,7 +223,7 @@ function DateInput({ value, onChange }: { value: string; onChange: (isoDate: str
   }
 
   return (
-    <input style={inputStyle} type="text" inputMode="numeric" placeholder="DD/MM/YYYY" value={text} onChange={handleChange} maxLength={10} />
+    <input style={{ ...inputStyle, paddingLeft: 16 }} type="text" inputMode="numeric" placeholder="DD/MM/YYYY" value={text} onChange={handleChange} maxLength={10} />
   )
 }
 
@@ -262,18 +262,31 @@ function Pill({ label, selected, onClick }: { label: React.ReactNode; selected: 
   )
 }
 
-function Head({ step, total, section, title, hint, onJump }: { step: number; total: number; section: string; title: React.ReactNode; hint: React.ReactNode; onJump?: (step: number) => void }) {
+function Head({ step, total, section, title, hint, onJump, stepLabels }: { step: number; total: number; section: string; title: React.ReactNode; hint: React.ReactNode; onJump?: (step: number) => void; stepLabels?: string[] }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   return (
     <>
       <div style={{ display: 'flex', gap: 4, marginBottom: 22 }}>
         {Array.from({ length: total }).map((_, i) => {
           const dotStep = i + 1
           return (
-            <div
-              key={i}
-              onClick={onJump ? () => onJump(dotStep) : undefined}
-              style={{ flex: 1, height: 3, borderRadius: 2, background: dotStep < step ? T.emerald : dotStep === step ? T.gold : T.line, cursor: onJump ? 'pointer' : 'default' }}
-            />
+            <div key={i} style={{ position: 'relative', flex: 1 }}>
+              <div
+                onClick={onJump ? () => onJump(dotStep) : undefined}
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)}
+                style={{ height: 3, borderRadius: 2, background: dotStep < step ? T.emerald : dotStep === step ? T.gold : T.line, cursor: onJump ? 'pointer' : 'default' }}
+              />
+              {hoverIdx === i && stepLabels?.[i] && (
+                <div style={{
+                  position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 7,
+                  background: T.ink, color: T.cream, fontSize: 11.5, fontWeight: 500, padding: '5px 10px', borderRadius: 6,
+                  whiteSpace: 'nowrap', zIndex: 10, pointerEvents: 'none',
+                }}>
+                  {stepLabels[i]}
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
@@ -454,7 +467,11 @@ export default function WillPrepPage() {
   }
 
   const residualTotal = data.residual.reduce((s, r) => s + (parseFloat(r.pct) || 0), 0)
-  const stepsWithProgress = STEPS.length - 2 // exclude 'gate' and 'done' from the dots
+  const stepsWithProgress = STEPS.length - 3 // exclude 'gate', 'intro' (unnumbered), and 'done' from the dots
+  // Dot i (0-indexed) corresponds to STEPS[i+2] — offset by 2 because
+  // STEPS[0] is 'gate' and STEPS[1] is 'intro', neither of which has its
+  // own numbered dot. Used to label each dot with its section on hover.
+  const progressStepLabels = STEPS.slice(2, 2 + stepsWithProgress).map(s => SECTION_LABEL[s] || '')
   const step: Step = STEPS[stepIdx]
   const section = SECTION_LABEL[step] || ''
 
@@ -612,7 +629,7 @@ export default function WillPrepPage() {
 
       {step === 'considerations' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={1} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A few things to prepare<br />几项准备工作</>} hint={<>This isn't something to fill in now — just a preview of what's ahead, so you can have the right information on hand.<br />这部分现在无需填写 — 只是让您预先了解接下来的内容，以便准备好相关资料。</>} />
+          <Head step={1} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>A few things to prepare<br />几项准备工作</>} hint={<>This isn't something to fill in now — just a preview of what's ahead, so you can have the right information on hand.<br />这部分现在无需填写 — 只是让您预先了解接下来的内容，以便准备好相关资料。</>} />
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13.5, color: T.ink, lineHeight: 1.6 }}>
             <strong>Please bring along your identification document (e.g. NRIC / Foreign ID / Passport) on the day of the meeting.</strong>
@@ -645,7 +662,7 @@ export default function WillPrepPage() {
 
       {step === 'testator' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={2} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A few details about you, the Testator<br />关于您（遗嘱人）的资料</>} hint={<>&quot;Testator&quot; is simply the legal term for the person making the Will — that&apos;s you. These details go on the Will itself, so they need to match your ID exactly.<br />&quot;遗嘱人&quot;是指立遗嘱的人，也就是您本人。这些资料将写入遗嘱正本，请确保与您的身份证件完全一致。</>} />
+          <Head step={2} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>A few details about you, the Testator<br />关于您（遗嘱人）的资料</>} hint={<>&quot;Testator&quot; is simply the legal term for the person making the Will — that&apos;s you. These details go on the Will itself, so they need to match your ID exactly.<br />&quot;遗嘱人&quot;是指立遗嘱的人，也就是您本人。这些资料将写入遗嘱正本，请确保与您的身份证件完全一致。</>} />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Full Name 全名</label>
@@ -715,7 +732,7 @@ export default function WillPrepPage() {
 
       {step === 'beneficiaries' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={3} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Who should receive your assets?<br />谁将获得您的资产？</>} hint={<>List everyone you want to leave something to. You will decide exactly what they receive in a later step.<br />列出所有您想留下遗产的人，具体分配将在稍后步骤中决定。</>} />
+          <Head step={3} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>Who should receive your assets?<br />谁将获得您的资产？</>} hint={<>List everyone you want to leave something to. You will decide exactly what they receive in a later step.<br />列出所有您想留下遗产的人，具体分配将在稍后步骤中决定。</>} />
           {data.beneficiaries.map((b, i) => (
             <PersonCard key={i} tag={`Beneficiary 0${i + 1} 受益人 0${i + 1}`} person={b}
               onChange={p => update({ beneficiaries: data.beneficiaries.map((x, xi) => xi === i ? p : x) })}
@@ -728,7 +745,7 @@ export default function WillPrepPage() {
 
       {step === 'guardian' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={4} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Who should care for your children?<br />谁来照顾您的孩子？</>} hint={<>Only needed if you have children under 21. Skip ahead if this does not apply to you.<br />仅在您有21岁以下子女时才需要填写。若不适用，可跳过此步骤。</>} />
+          <Head step={4} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>Who should care for your children?<br />谁来照顾您的孩子？</>} hint={<>Only needed if you have children under 21. Skip ahead if this does not apply to you.<br />仅在您有21岁以下子女时才需要填写。若不适用，可跳过此步骤。</>} />
           <div style={{ marginBottom: 22, maxWidth: 480 }}>
             <label style={labelStyle}>Guardianship Clause 监护条款</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -746,7 +763,7 @@ export default function WillPrepPage() {
 
       {step === 'subguardians' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={5} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A substitute guardian?<br />替代监护人？</>} hint={<>If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through.<br />若您的首选监护人无法履行职责，下一位人选是谁？此项为选填，但值得考虑。</>} />
+          <Head step={5} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>A substitute guardian?<br />替代监护人？</>} hint={<>If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through.<br />若您的首选监护人无法履行职责，下一位人选是谁？此项为选填，但值得考虑。</>} />
           {data.subGuardians.map((g, i) => (
             <PersonCard key={i} tag={`Substitute ${i + 1} 替代 ${i + 1}`} person={g}
               onChange={p => update({ subGuardians: data.subGuardians.map((x, xi) => xi === i ? p : x) })}
@@ -759,7 +776,7 @@ export default function WillPrepPage() {
 
       {step === 'executor' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={6} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Who should carry out your wishes?<br />谁来执行您的意愿？</>} hint={<>Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one.<br />您的执行人将管理您的遗产并确保遗嘱得以执行。您最多可指定4人共同担任，或仅指定一人。</>} />
+          <Head step={6} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>Who should carry out your wishes?<br />谁来执行您的意愿？</>} hint={<>Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one.<br />您的执行人将管理您的遗产并确保遗嘱得以执行。您最多可指定4人共同担任，或仅指定一人。</>} />
           {data.executors.map((ex, i) => (
             <PersonCard key={i} tag={`Executor ${i + 1} 执行人 ${i + 1}`} person={ex}
               onChange={p => update({ executors: data.executors.map((x, xi) => xi === i ? p : x) })}
@@ -774,7 +791,7 @@ export default function WillPrepPage() {
 
       {step === 'subexecutors' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={7} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A substitute executor?<br />替代执行人？</>} hint={<>If your first choice cannot act, who should step in? Optional.<br />若您的首选执行人无法履行职责，应由谁接替？此项为选填。</>} />
+          <Head step={7} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>A substitute executor?<br />替代执行人？</>} hint={<>If your first choice cannot act, who should step in? Optional.<br />若您的首选执行人无法履行职责，应由谁接替？此项为选填。</>} />
           {data.subExecutors.map((ex, i) => (
             <PersonCard key={i} tag={`Substitute ${i + 1} 替代 ${i + 1}`} person={ex}
               onChange={p => update({ subExecutors: data.subExecutors.map((x, xi) => xi === i ? p : x) })}
@@ -787,7 +804,7 @@ export default function WillPrepPage() {
 
       {step === 'assetsReference' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={8} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>What counts as an asset or debt?<br />什么算是资产或债务？</>} hint={<>A quick reference before you list what you own and owe.<br />在您列出资产与债务前的快速参考。</>} />
+          <Head step={8} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>What counts as an asset or debt?<br />什么算是资产或债务？</>} hint={<>A quick reference before you list what you own and owe.<br />在您列出资产与债务前的快速参考。</>} />
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 28, fontSize: 13.5, color: T.ink, lineHeight: 1.6, fontStyle: 'italic' }}>
             You do not need to specifically distribute every asset to specific beneficiary(s). You can leave the assets as &quot;No specific allocation&quot; which will be distributed as per the &quot;Allocate Residual Assets&quot; section thereafter.
@@ -826,7 +843,7 @@ export default function WillPrepPage() {
 
       {step === 'assets' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={9} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>What do you own?<br />您拥有哪些资产？</>} hint={<>Bank accounts, property, insurance, investments — anything of value. Rough figures are fine.<br />银行账户、房产、保险、投资 — 任何有价值的资产皆可。大概金额即可。</>} />
+          <Head step={9} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>What do you own?<br />您拥有哪些资产？</>} hint={<>Bank accounts, property, insurance, investments — anything of value. Rough figures are fine.<br />银行账户、房产、保险、投资 — 任何有价值的资产皆可。大概金额即可。</>} />
           {data.assets.map((a, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1} 资产 {i + 1}</span>
@@ -878,7 +895,7 @@ export default function WillPrepPage() {
 
       {step === 'liabilities' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={10} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Any outstanding debts?<br />有任何未偿还的债务吗？</>} hint={<>Home loans, car loans, credit cards — anything still owing. Skip if none.<br />房屋贷款、车贷、信用卡 — 任何仍未偿还的款项。若没有可跳过。</>} />
+          <Head step={10} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>Any outstanding debts?<br />有任何未偿还的债务吗？</>} hint={<>Home loans, car loans, credit cards — anything still owing. Skip if none.<br />房屋贷款、车贷、信用卡 — 任何仍未偿还的款项。若没有可跳过。</>} />
           {data.liabilities.map((l, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1} 债务 {i + 1}</span>
@@ -920,7 +937,7 @@ export default function WillPrepPage() {
 
       {step === 'residual' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={11} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Allocate Residual Assets<br />剩余资产分配</>} hint={<>All other assets (including assets listed above with &quot;No specific allocation&quot; selected, assets not listed in the Will, and future assets) shall be distributed to:<br />所有其他资产（包括上面列出的选择&quot;无具体分配&quot;的资产、遗嘱中未列出的资产以及未来资产）应分配给：</>} />
+          <Head step={11} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>Allocate Residual Assets<br />剩余资产分配</>} hint={<>All other assets (including assets listed above with &quot;No specific allocation&quot; selected, assets not listed in the Will, and future assets) shall be distributed to:<br />所有其他资产（包括上面列出的选择&quot;无具体分配&quot;的资产、遗嘱中未列出的资产以及未来资产）应分配给：</>} />
           <div style={{ maxWidth: 480 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `2px solid ${T.ink}`, fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: T.ink }}>
               <span>Beneficiary(s) 受益人</span><span>Share 分配</span>
@@ -948,7 +965,7 @@ export default function WillPrepPage() {
 
       {step === 'clauses' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={12} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A few standard choices<br />几项标准条款</>} hint={<>Your advisor can explain any of these further when you meet.<br />您的顾问会在会面时进一步为您解释这些内容。</>} />
+          <Head step={12} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>A few standard choices<br />几项标准条款</>} hint={<>Your advisor can explain any of these further when you meet.<br />您的顾问会在会面时进一步为您解释这些内容。</>} />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 30 }}>
               <label style={labelStyle}>Scope of Assets 资产范围</label>
@@ -992,7 +1009,7 @@ export default function WillPrepPage() {
 
       {step === 'instructions' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={13} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Anything else?<br />还有其他补充吗？</>} hint={<>All optional.<br />以下均为选填。</>} />
+          <Head step={13} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>Anything else?<br />还有其他补充吗？</>} hint={<>All optional.<br />以下均为选填。</>} />
           <div style={{ maxWidth: 560 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Other instructions for your Will 其他遗嘱指示</label>
@@ -1013,7 +1030,7 @@ export default function WillPrepPage() {
 
       {step === 'review' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={14} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Review before you submit<br />提交前请审阅</>} hint={<>Take a moment to check everything looks right. You can go back and change anything.<br />请花点时间检查所有内容是否正确。您可以随时返回修改。</>} />
+          <Head step={14} total={stepsWithProgress} onJump={goToProgressStep} stepLabels={progressStepLabels} section={section} title={<>Review before you submit<br />提交前请审阅</>} hint={<>Take a moment to check everything looks right. You can go back and change anything.<br />请花点时间检查所有内容是否正确。您可以随时返回修改。</>} />
           <div style={{ maxWidth: 560 }}>
             <ReviewBlock title="Beneficiaries 受益人" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet) 尚未填写姓名'}`)} onEdit={() => goToStep('beneficiaries')} />
             <ReviewBlock title="Executor 执行人" lines={data.executors.map(e => e.name || '(not named yet) 尚未填写姓名')} onEdit={() => goToStep('executor')} />
