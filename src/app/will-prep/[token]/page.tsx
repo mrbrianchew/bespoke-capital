@@ -86,10 +86,10 @@ const T = {
 
 const inputStyle: React.CSSProperties = {
   width: '100%', border: `1px solid ${T.line}`, borderRadius: 8, background: '#fff',
-  padding: '11px 13px', fontFamily: 'Inter', fontSize: 14, color: T.ink,
+  padding: '11px 13px', fontFamily: 'Inter', fontSize: 15.5, color: T.ink,
 }
 const labelStyle: React.CSSProperties = {
-  fontSize: 12, color: T.ink3, marginBottom: 7, display: 'block', fontWeight: 500,
+  fontSize: 13, color: T.ink3, marginBottom: 7, display: 'block', fontWeight: 500,
 }
 
 // ─── SMALL COMPONENTS ────────────────────────────────────────────────────
@@ -99,8 +99,8 @@ function PersonCard({ person, onChange, tag, onRemove }: {
 }) {
   return (
     <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
-      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>{tag}</span>
-      {onRemove && <span onClick={onRemove} style={{ position: 'absolute', top: 20, right: 22, fontSize: 12, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
+      <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>{tag}</span>
+      {onRemove && <span onClick={onRemove} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
         <div><label style={labelStyle}>Full name</label>
           <input style={inputStyle} value={person.name} onChange={e => onChange({ ...person, name: e.target.value })} />
@@ -121,8 +121,8 @@ function PersonCard({ person, onChange, tag, onRemove }: {
 
 function AddLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <div onClick={onClick} style={{ fontSize: 13, color: T.emerald, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
-      <span style={{ width: 18, height: 18, border: `1px solid ${T.emerald}`, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>+</span>
+    <div onClick={onClick} style={{ fontSize: 14.5, color: T.emerald, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
+      <span style={{ width: 18, height: 18, border: `1px solid ${T.emerald}`, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>+</span>
       {label}
     </div>
   )
@@ -131,7 +131,7 @@ function AddLink({ label, onClick }: { label: string; onClick: () => void }) {
 function Pill({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
   return (
     <div onClick={onClick} style={{
-      border: `1px solid ${selected ? T.emerald : T.line}`, borderRadius: 8, padding: '12px 16px', fontSize: 13.5, cursor: 'pointer',
+      border: `1px solid ${selected ? T.emerald : T.line}`, borderRadius: 8, padding: '12px 16px', fontSize: 15, cursor: 'pointer',
       background: selected ? T.emeraldBg : '#fff', color: selected ? T.emerald : T.ink, fontWeight: selected ? 600 : 400,
     }}>{label}</div>
   )
@@ -146,11 +146,11 @@ function Head({ step, total, section, title, hint }: { step: number; total: numb
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: 0 }}>{section}</p>
-        <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.ink3, margin: 0 }}>Step {step} of {total}</p>
+        <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: 0 }}>{section}</p>
+        <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: T.ink3, margin: 0 }}>Step {step} of {total}</p>
       </div>
-      <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 27, fontWeight: 500, margin: '0 0 8px' }}>{title}</h1>
-      <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 26 }}>{hint}</p>
+      <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, fontWeight: 500, margin: '0 0 8px' }}>{title}</h1>
+      <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 26 }}>{hint}</p>
     </>
   )
 }
@@ -160,8 +160,8 @@ function NavBar({ onBack, onNext, backDisabled, nextLabel = 'Continue' }: {
 }) {
   return (
     <div style={{ display: 'flex', gap: 12, marginTop: 36, paddingBottom: 48 }}>
-      <button disabled={backDisabled} onClick={onBack} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, opacity: backDisabled ? 0.4 : 1, cursor: backDisabled ? 'default' : 'pointer' }}>Back</button>
-      <button onClick={onNext} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: `1px solid ${T.ink}`, background: T.ink, color: T.cream, cursor: 'pointer' }}>{nextLabel}</button>
+      <button disabled={backDisabled} onClick={onBack} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, opacity: backDisabled ? 0.4 : 1, cursor: backDisabled ? 'default' : 'pointer' }}>Back</button>
+      <button onClick={onNext} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.ink}`, background: T.ink, color: T.cream, cursor: 'pointer' }}>{nextLabel}</button>
     </div>
   )
 }
@@ -286,22 +286,22 @@ export default function WillPrepPage() {
   // ── RENDER STATES ──
 
   if (loading) {
-    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>Loading…</div></Shell>
+    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>Loading…</div></Shell>
   }
   if (notFound) {
-    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link isn't valid. Please check with your advisor for the correct link.</div></Shell>
+    return <Shell clientName="" firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>This link isn't valid. Please check with your advisor for the correct link.</div></Shell>
   }
   if (expired && !submitted) {
-    return <Shell clientName={clientName} firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 13 }}>This link has expired. Please ask your advisor to send you a new one.</div></Shell>
+    return <Shell clientName={clientName} firm={firm} centerContent><div style={{ textAlign: 'center', color: T.ink3, fontSize: 14.5 }}>This link has expired. Please ask your advisor to send you a new one.</div></Shell>
   }
 
   if (!unlocked) {
     return (
       <Shell clientName={clientName} firm={firm} centerContent>
         <div>
-          <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Getting Started</p>
-          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 27, margin: '0 0 10px', fontWeight: 500 }}>Verify it's you</h1>
-          <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 26 }}>
+          <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Getting Started</p>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, margin: '0 0 10px', fontWeight: 500 }}>Verify it's you</h1>
+          <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 26 }}>
             Enter the password your advisor sent you to continue. This keeps your information private.
           </p>
           <div style={{ maxWidth: 340 }}>
@@ -313,12 +313,12 @@ export default function WillPrepPage() {
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') unlock() }}
             />
-            {hint && <p style={{ fontSize: 12, color: T.ink3, margin: '0 0 20px', lineHeight: 1.5 }}>Hint: {hint}</p>}
-            {gateError && <p style={{ fontSize: 12.5, color: T.rouge, margin: '0 0 14px' }}>{gateError}</p>}
+            {hint && <p style={{ fontSize: 13, color: T.ink3, margin: '0 0 20px', lineHeight: 1.5 }}>Hint: {hint}</p>}
+            {gateError && <p style={{ fontSize: 13.5, color: T.rouge, margin: '0 0 14px' }}>{gateError}</p>}
             <button
               disabled={gateBusy || !password}
               onClick={unlock}
-              style={{ padding: '13px 28px', borderRadius: 8, border: 'none', background: T.ink, color: T.cream, fontWeight: 600, fontSize: 13.5, opacity: gateBusy || !password ? 0.6 : 1, cursor: gateBusy ? 'default' : 'pointer' }}
+              style={{ padding: '13px 28px', borderRadius: 8, border: 'none', background: T.ink, color: T.cream, fontWeight: 600, fontSize: 15, opacity: gateBusy || !password ? 0.6 : 1, cursor: gateBusy ? 'default' : 'pointer' }}
             >
               {gateBusy ? 'Checking…' : 'Continue'}
             </button>
@@ -333,8 +333,8 @@ export default function WillPrepPage() {
       <Shell clientName={clientName} firm={firm} centerContent>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 60, height: 60, borderRadius: '50%', background: T.emeraldBg, color: T.emerald, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 24px', fontWeight: 700 }}>✓</div>
-          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 26, margin: '0 0 10px' }}>Submitted</h1>
-          <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.65, maxWidth: 440, margin: '0 auto' }}>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, margin: '0 0 10px' }}>Submitted</h1>
+          <p style={{ fontSize: 15, color: T.ink3, lineHeight: 1.65, maxWidth: 440, margin: '0 auto' }}>
             Thank you — {firm ? `your advisor at ${firm}` : 'your advisor'} will review this and follow up to go through your wishes together before anything is finalised.
             You can reopen this link with the same password to see what you sent.
           </p>
@@ -349,14 +349,14 @@ export default function WillPrepPage() {
     <Shell clientName={clientName} firm={firm} saving={saving} lastSavedAt={lastSavedAt}>
       {step === 'intro' && (
         <div style={{ padding: '48px 0 0' }}>
-          <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>{section}</p>
-          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 27, fontWeight: 500, margin: '0 0 8px' }}>A few things to know</h1>
-          <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>You can leave and come back — your answers are saved as you go.</p>
-          <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 22 }}>You will be contacted to arrange for a session if a date has not been fixed yet. A translation in Mandarin is also provided in this form, and should be used only as a reference.</p>
+          <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>{section}</p>
+          <h1 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, fontWeight: 500, margin: '0 0 8px' }}>A few things to know</h1>
+          <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>You can leave and come back — your answers are saved as you go.</p>
+          <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6, marginBottom: 22 }}>You will be contacted to arrange for a session if a date has not been fixed yet. A translation in Mandarin is also provided in this form, and should be used only as a reference.</p>
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20, maxWidth: 560 }}>
-            <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Please read before filling up the form</p>
-            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.65 }}>
+            <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>Please read before filling up the form</p>
+            <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.65 }}>
               {[
                 'Please fill out this form as accurately as possible to avoid any delays in drafting the Will.',
                 'If you have more Beneficiaries, Executors, Guardians, Assets or Liabilities than what the form provides, please add accordingly.',
@@ -373,10 +373,10 @@ export default function WillPrepPage() {
           </div>
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 20, maxWidth: 560 }}>
-            <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>中文（仅供参考）</p>
-            <p style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.65, marginBottom: 10 }}>您将会被联系以安排会面时间（如尚未确定日期）。本表格也提供华语翻译，仅供参考之用。</p>
-            <p style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.5, margin: '0 0 8px', fontWeight: 600 }}>填写表格前请先阅读以下内容：</p>
-            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.65 }}>
+            <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: '0 0 10px' }}>中文（仅供参考）</p>
+            <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.65, marginBottom: 10 }}>您将会被联系以安排会面时间（如尚未确定日期）。本表格也提供华语翻译，仅供参考之用。</p>
+            <p style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, margin: '0 0 8px', fontWeight: 600 }}>填写表格前请先阅读以下内容：</p>
+            <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.65 }}>
               {[
                 '请尽可能准确地填写本表格，以免延误遗嘱的拟定。',
                 '若您的受益人、执行人、监护人、资产或负债数量超过表格所提供的栏位，请自行增添。',
@@ -392,10 +392,10 @@ export default function WillPrepPage() {
             </div>
           </div>
 
-          <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 12.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20, maxWidth: 560 }}>
+          <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20, maxWidth: 560 }}>
             This form gathers your instructions ahead of your meeting. It is not your Will and has no legal effect on its own. Your advisor will go through everything with you before anything is finalised.
           </div>
-          <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.</p>
+          <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6 }}>Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.</p>
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} backDisabled />
         </div>
       )}
@@ -477,8 +477,8 @@ export default function WillPrepPage() {
           <Head step={6} total={stepsWithProgress} section={section} title="What do you own?" hint="Bank accounts, property, insurance, investments — anything of value. Rough figures are fine." />
           {data.assets.map((a, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1}</span>
-              {data.assets.length > 1 && <span onClick={() => update({ assets: data.assets.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 12, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1}</span>
+              {data.assets.length > 1 && <span onClick={() => update({ assets: data.assets.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
               <div style={{ marginBottom: 16 }}>
                 <label style={labelStyle}>What is it?</label>
                 <input style={inputStyle} placeholder="e.g. DBS savings account" value={a.name} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
@@ -509,8 +509,8 @@ export default function WillPrepPage() {
           <Head step={7} total={stepsWithProgress} section={section} title="Any outstanding debts?" hint="Home loans, car loans, credit cards — anything still owing. Skip if none." />
           {data.liabilities.map((l, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
-              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1}</span>
-              {data.liabilities.length > 1 && <span onClick={() => update({ liabilities: data.liabilities.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 12, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1}</span>
+              {data.liabilities.length > 1 && <span onClick={() => update({ liabilities: data.liabilities.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove</span>}
               <div style={{ marginBottom: 16 }}>
                 <label style={labelStyle}>What is it?</label>
                 <input style={inputStyle} placeholder="e.g. Home loan — DBS" value={l.name} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
@@ -531,20 +531,20 @@ export default function WillPrepPage() {
           <Head step={8} total={stepsWithProgress} section={section} title="Everything else you own" hint="Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%." />
           <div style={{ maxWidth: 480 }}>
             {data.residual.map((r, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${T.line}`, fontSize: 13.5 }}>
-                <input style={{ flex: 1, border: `1px solid ${T.line}`, borderRadius: 6, padding: '8px 10px', fontSize: 13.5, marginRight: 10 }} placeholder="Beneficiary name" value={r.name} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
-                <input style={{ width: 60, textAlign: 'right', border: `1px solid ${T.line}`, borderRadius: 6, padding: '6px 8px', fontSize: 13, fontFamily: 'DM Mono, monospace' }} value={r.pct} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, pct: e.target.value } : x) })} />
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${T.line}`, fontSize: 15 }}>
+                <input style={{ flex: 1, border: `1px solid ${T.line}`, borderRadius: 6, padding: '8px 10px', fontSize: 15, marginRight: 10 }} placeholder="Beneficiary name" value={r.name} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+                <input style={{ width: 60, textAlign: 'right', border: `1px solid ${T.line}`, borderRadius: 6, padding: '6px 8px', fontSize: 14.5, fontFamily: 'DM Mono, monospace' }} value={r.pct} onChange={e => update({ residual: data.residual.map((x, xi) => xi === i ? { ...x, pct: e.target.value } : x) })} />
                 <span style={{ marginLeft: 6 }}>%</span>
               </div>
             ))}
             <div style={{ marginTop: 14 }}>
               <AddLink label="Add another share" onClick={() => update({ residual: [...data.residual, { name: '', pct: '' }] })} />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontWeight: 600, fontSize: 14, color: residualTotal === 100 ? T.emerald : T.rouge }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, fontWeight: 600, fontSize: 15.5, color: residualTotal === 100 ? T.emerald : T.rouge }}>
               <span>Total</span><span>{residualTotal}%</span>
             </div>
             {residualTotal !== 100 && (
-              <p style={{ fontSize: 12.5, color: T.rouge, lineHeight: 1.55, marginTop: 8 }}>Shares should add up to 100% — your advisor can help you fix this if you're not sure yet.</p>
+              <p style={{ fontSize: 13.5, color: T.rouge, lineHeight: 1.55, marginTop: 8 }}>Shares should add up to 100% — your advisor can help you fix this if you're not sure yet.</p>
             )}
           </div>
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
@@ -567,7 +567,7 @@ export default function WillPrepPage() {
               <label style={labelStyle}>Survivorship period (days)</label>
               <input style={inputStyle} value={data.survivorshipDays} onChange={e => update({ survivorshipDays: e.target.value })} />
             </div>
-            <p style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.6, marginTop: -14, marginBottom: 22, maxWidth: 480 }}>If a beneficiary passes away within this many days after you, they're treated as if they passed before you — so their share goes to your backup plan instead of into their own estate.</p>
+            <p style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginTop: -14, marginBottom: 22, maxWidth: 480 }}>If a beneficiary passes away within this many days after you, they're treated as if they passed before you — so their share goes to your backup plan instead of into their own estate.</p>
             <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>If a beneficiary passes away before you, their share should</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -615,13 +615,13 @@ export default function WillPrepPage() {
             <ReviewBlock title="Beneficiaries" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet)'}`)} />
             <ReviewBlock title="Executor" lines={data.executors.map(e => e.name || '(not named yet)')} />
             <ReviewBlock title="Residual split" lines={data.residual.map(r => `${r.pct || 0}%: ${r.name || '(not named yet)'}`)} />
-            <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 12.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20 }}>
+            <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20 }}>
               Submitting sends this to your advisor to review. It doesn't finalise your Will — they'll go through everything with you first.
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 8, paddingBottom: 48 }}>
-            <button onClick={() => go(-1)} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, cursor: 'pointer' }}>Back</button>
-            <button onClick={submit} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: `1px solid ${T.ink}`, background: T.ink, color: T.cream, cursor: 'pointer' }}>Submit</button>
+            <button onClick={() => go(-1)} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.line}`, background: '#fff', color: T.ink3, cursor: 'pointer' }}>Back</button>
+            <button onClick={submit} style={{ padding: '13px 26px', borderRadius: 8, fontSize: 14.5, fontWeight: 600, border: `1px solid ${T.ink}`, background: T.ink, color: T.cream, cursor: 'pointer' }}>Submit</button>
           </div>
         </div>
       )}
@@ -632,9 +632,9 @@ export default function WillPrepPage() {
 function ReviewBlock({ title, lines }: { title: string; lines: string[] }) {
   return (
     <div style={{ marginBottom: 20 }}>
-      <h5 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 16, fontWeight: 600, margin: '0 0 8px', color: T.gold }}>{title}</h5>
+      <h5 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 600, margin: '0 0 8px', color: T.gold }}>{title}</h5>
       {lines.map((l, i) => (
-        <div key={i} style={{ fontSize: 13, color: T.ink, padding: '6px 0', borderBottom: `1px dashed ${T.line}` }}>{l}</div>
+        <div key={i} style={{ fontSize: 14.5, color: T.ink, padding: '6px 0', borderBottom: `1px dashed ${T.line}` }}>{l}</div>
       ))}
     </div>
   )
@@ -667,9 +667,9 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
         <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <BrandMark size={28} />
-            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 19, fontWeight: 600 }}>{firm || 'Will Preparation'}</div>
+            <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600 }}>{firm || 'Will Preparation'}</div>
           </div>
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.ink3, textAlign: 'right', lineHeight: 1.5 }}>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11.5, color: T.ink3, textAlign: 'right', lineHeight: 1.5 }}>
             <div>WILL PREPARATION{clientName ? ` · ${clientName.toUpperCase()}` : ''}</div>
             {typeof saving !== 'undefined' && (
               <div>{saving ? 'Saving…' : lastSavedAt ? 'Saved' : ''}</div>
@@ -685,7 +685,7 @@ function Shell({ children, clientName, firm, saving, lastSavedAt, centerContent 
       </div>
 
       <div style={{ borderTop: `1px solid ${T.line}`, background: '#fff' }}>
-        <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '16px 24px', textAlign: 'center', fontSize: 11, color: T.ink3 }}>
+        <div style={{ maxWidth: contentWidth, margin: '0 auto', padding: '16px 24px', textAlign: 'center', fontSize: 12, color: T.ink3 }}>
           {firm || 'Your Advisor'} · Your information is kept private and confidential
           {' · '}
           <button
@@ -714,14 +714,14 @@ function TermsModal({ firm, onClose }: { firm?: string | null; onClose: () => vo
         style={{ background: '#fff', borderRadius: 12, width: 640, maxWidth: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
       >
         <div style={{ padding: '20px 28px', borderBottom: `1px solid ${T.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 20, fontWeight: 600 }}>Terms and Conditions</div>
+          <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 21, fontWeight: 600 }}>Terms and Conditions</div>
           <button
             onClick={onClose}
             style={{ background: 'none', border: 'none', fontSize: 20, color: T.ink3, cursor: 'pointer', lineHeight: 1, padding: 4 }}
             aria-label="Close"
           >×</button>
         </div>
-        <div style={{ padding: '20px 28px', overflowY: 'auto', fontSize: 12.5, color: T.ink3, lineHeight: 1.7 }}>
+        <div style={{ padding: '20px 28px', overflowY: 'auto', fontSize: 13.5, color: T.ink3, lineHeight: 1.7 }}>
           <p style={{ margin: '0 0 14px' }}>Last updated: 30 August 2026</p>
           <p style={{ margin: '0 0 14px' }}>This Will Writing Preparation form (&quot;this Form&quot;) is provided to you by <strong>{firmName}</strong> (&quot;we&quot;, &quot;us&quot;, &quot;the Firm&quot;), through the adviser who sent you the link to this Form (&quot;your Advisor&quot;). This Form runs on software licensed from a third-party technology provider, which operates the Form on the Firm&apos;s behalf but has no direct relationship with you.</p>
           <p style={{ margin: '0 0 14px' }}><strong>Your Advisor and the Firm are your point of contact for everything relating to your estate planning.</strong> The technology provider does not advise you, does not draft your Will, and is not a party to the professional relationship between you and your Advisor.</p>
