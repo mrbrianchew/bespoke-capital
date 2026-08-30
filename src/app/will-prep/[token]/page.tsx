@@ -377,6 +377,13 @@ export default function WillPrepPage() {
   const [gateBusy, setGateBusy] = useState(false)
 
   const [stepIdx, setStepIdx] = useState(0) // index into STEPS, starts at 'gate'
+
+  // On mobile especially, without this the next step renders at whatever
+  // scroll position the previous (often longer) step was left at, instead
+  // of starting from the top.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [stepIdx])
   const [data, setData] = useState<WillPrepData>(DEFAULT_DATA)
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
