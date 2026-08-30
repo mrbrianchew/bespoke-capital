@@ -12,6 +12,17 @@ interface Liability { name: string; value: string }
 interface ResidualShare { name: string; pct: string }
 
 interface WillPrepData {
+  testatorFullName: string
+  testatorIdNo: string
+  testatorIdIssuingCountry: string
+  testatorCountryOfResidence: string
+  testatorAddress: string
+  testatorGender: 'Male' | 'Female' | ''
+  testatorDob: string
+  testatorReligion: string
+  testatorMaritalStatus: 'Single' | 'Married' | 'Divorced' | 'Widowed' | ''
+  testatorNumChildren: string
+  testatorMobile: string
   beneficiaries: Person[]
   guardianClause: 'none' | 'joint' | 'if_no_parent'
   guardian: Person
@@ -33,6 +44,17 @@ interface WillPrepData {
 const blankPerson = (): Person => ({ name: '', relationship: '', idNumber: '', mobile: '' })
 
 const DEFAULT_DATA: WillPrepData = {
+  testatorFullName: '',
+  testatorIdNo: '',
+  testatorIdIssuingCountry: '',
+  testatorCountryOfResidence: '',
+  testatorAddress: '',
+  testatorGender: '',
+  testatorDob: '',
+  testatorReligion: '',
+  testatorMaritalStatus: '',
+  testatorNumChildren: '',
+  testatorMobile: '',
   beneficiaries: [blankPerson()],
   guardianClause: 'joint',
   guardian: blankPerson(),
@@ -52,7 +74,7 @@ const DEFAULT_DATA: WillPrepData = {
 }
 
 const STEPS = [
-  'gate', 'intro', 'considerations', 'beneficiaries', 'guardian', 'subguardians',
+  'gate', 'intro', 'considerations', 'testator', 'beneficiaries', 'guardian', 'subguardians',
   'executor', 'subexecutors', 'assets', 'liabilities', 'residual',
   'clauses', 'instructions', 'review', 'done',
 ] as const
@@ -64,6 +86,7 @@ type Step = typeof STEPS[number]
 const SECTION_LABEL: Partial<Record<Step, string>> = {
   intro: 'Getting Started',
   considerations: 'Getting Ready',
+  testator: 'Your Personal Details',
   beneficiaries: 'Beneficiaries',
   guardian: 'Guardian',
   subguardians: 'Guardian — Backup',
@@ -488,9 +511,76 @@ export default function WillPrepPage() {
         </div>
       )}
 
+      {step === 'testator' && (
+        <div style={{ padding: '48px 0 0' }}>
+          <Head step={2} total={stepsWithProgress} section={section} title="A few details about you" hint="This goes on the Will itself, so it needs to match your ID exactly." />
+          <div style={{ maxWidth: 520 }}>
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Full Name 全名</label>
+              <input style={inputStyle} value={data.testatorFullName} onChange={e => update({ testatorFullName: e.target.value })} placeholder="As per your NRIC / passport" />
+            </div>
+            <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>ID No. (e.g. NRIC) 身份证号码</label>
+                <input style={inputStyle} value={data.testatorIdNo} onChange={e => update({ testatorIdNo: e.target.value })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>ID Issuing Country 身份证签发国</label>
+                <input style={inputStyle} value={data.testatorIdIssuingCountry} onChange={e => update({ testatorIdIssuingCountry: e.target.value })} placeholder="e.g. Singapore" />
+              </div>
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Country of Residence 居住国家</label>
+              <input style={inputStyle} value={data.testatorCountryOfResidence} onChange={e => update({ testatorCountryOfResidence: e.target.value })} placeholder="e.g. Singapore" />
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Residential Address 住址</label>
+              <textarea style={{ ...inputStyle, minHeight: 70 }} value={data.testatorAddress} onChange={e => update({ testatorAddress: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: 22 }}>
+              <label style={labelStyle}>Gender 性别</label>
+              <div style={{ display: 'flex', gap: 9 }}>
+                <Pill label="Male" selected={data.testatorGender === 'Male'} onClick={() => update({ testatorGender: 'Male' })} />
+                <Pill label="Female" selected={data.testatorGender === 'Female'} onClick={() => update({ testatorGender: 'Female' })} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Date of Birth 出生日期</label>
+                <input type="date" style={inputStyle} value={data.testatorDob} onChange={e => update({ testatorDob: e.target.value })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Religion 宗教</label>
+                <input style={inputStyle} value={data.testatorReligion} onChange={e => update({ testatorReligion: e.target.value })} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 22 }}>
+              <label style={labelStyle}>Marital Status 婚姻状况</label>
+              <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+                <Pill label="Single" selected={data.testatorMaritalStatus === 'Single'} onClick={() => update({ testatorMaritalStatus: 'Single' })} />
+                <Pill label="Married" selected={data.testatorMaritalStatus === 'Married'} onClick={() => update({ testatorMaritalStatus: 'Married' })} />
+                <Pill label="Divorced" selected={data.testatorMaritalStatus === 'Divorced'} onClick={() => update({ testatorMaritalStatus: 'Divorced' })} />
+                <Pill label="Widowed" selected={data.testatorMaritalStatus === 'Widowed'} onClick={() => update({ testatorMaritalStatus: 'Widowed' })} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 14 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>No. of Children 几个子女</label>
+                <input type="number" min="0" style={inputStyle} value={data.testatorNumChildren} onChange={e => update({ testatorNumChildren: e.target.value })} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Mobile Number 手机号码</label>
+                <input style={inputStyle} value={data.testatorMobile} onChange={e => update({ testatorMobile: e.target.value })} />
+              </div>
+            </div>
+          </div>
+          <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
+        </div>
+      )}
+
       {step === 'beneficiaries' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={2} total={stepsWithProgress} section={section} title="Who should receive your assets?" hint="List everyone you want to leave something to. You will decide exactly what they receive in a later step." />
+          <Head step={3} total={stepsWithProgress} section={section} title="Who should receive your assets?" hint="List everyone you want to leave something to. You will decide exactly what they receive in a later step." />
           {data.beneficiaries.map((b, i) => (
             <PersonCard key={i} tag={`Beneficiary 0${i + 1}`} person={b}
               onChange={p => update({ beneficiaries: data.beneficiaries.map((x, xi) => xi === i ? p : x) })}
@@ -503,7 +593,7 @@ export default function WillPrepPage() {
 
       {step === 'guardian' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={3} total={stepsWithProgress} section={section} title="Who should care for your children?" hint="Only needed if you have children under 21. Skip ahead if this does not apply to you." />
+          <Head step={4} total={stepsWithProgress} section={section} title="Who should care for your children?" hint="Only needed if you have children under 21. Skip ahead if this does not apply to you." />
           <div style={{ marginBottom: 22, maxWidth: 480 }}>
             <label style={labelStyle}>If something happens to you</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -521,7 +611,7 @@ export default function WillPrepPage() {
 
       {step === 'subguardians' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={4} total={stepsWithProgress} section={section} title="Anyone as a backup?" hint="If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through." />
+          <Head step={5} total={stepsWithProgress} section={section} title="Anyone as a backup?" hint="If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through." />
           {data.subGuardians.map((g, i) => (
             <PersonCard key={i} tag={`Backup ${i + 1}`} person={g}
               onChange={p => update({ subGuardians: data.subGuardians.map((x, xi) => xi === i ? p : x) })}
@@ -534,7 +624,7 @@ export default function WillPrepPage() {
 
       {step === 'executor' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={5} total={stepsWithProgress} section={section} title="Who should carry out your wishes?" hint="Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one." />
+          <Head step={6} total={stepsWithProgress} section={section} title="Who should carry out your wishes?" hint="Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one." />
           {data.executors.map((ex, i) => (
             <PersonCard key={i} tag={`Executor ${i + 1}`} person={ex}
               onChange={p => update({ executors: data.executors.map((x, xi) => xi === i ? p : x) })}
@@ -549,7 +639,7 @@ export default function WillPrepPage() {
 
       {step === 'subexecutors' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={6} total={stepsWithProgress} section={section} title="A backup executor?" hint="If your first choice cannot act, who should step in? Optional." />
+          <Head step={7} total={stepsWithProgress} section={section} title="A backup executor?" hint="If your first choice cannot act, who should step in? Optional." />
           {data.subExecutors.map((ex, i) => (
             <PersonCard key={i} tag={`Backup ${i + 1}`} person={ex}
               onChange={p => update({ subExecutors: data.subExecutors.map((x, xi) => xi === i ? p : x) })}
@@ -562,7 +652,7 @@ export default function WillPrepPage() {
 
       {step === 'assets' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={7} total={stepsWithProgress} section={section} title="What do you own?" hint="Bank accounts, property, insurance, investments — anything of value. Rough figures are fine." />
+          <Head step={8} total={stepsWithProgress} section={section} title="What do you own?" hint="Bank accounts, property, insurance, investments — anything of value. Rough figures are fine." />
           {data.assets.map((a, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1}</span>
@@ -594,7 +684,7 @@ export default function WillPrepPage() {
 
       {step === 'liabilities' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={8} total={stepsWithProgress} section={section} title="Any outstanding debts?" hint="Home loans, car loans, credit cards — anything still owing. Skip if none." />
+          <Head step={9} total={stepsWithProgress} section={section} title="Any outstanding debts?" hint="Home loans, car loans, credit cards — anything still owing. Skip if none." />
           {data.liabilities.map((l, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1}</span>
@@ -616,7 +706,7 @@ export default function WillPrepPage() {
 
       {step === 'residual' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={9} total={stepsWithProgress} section={section} title="Everything else you own" hint="Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%." />
+          <Head step={10} total={stepsWithProgress} section={section} title="Everything else you own" hint="Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%." />
           <div style={{ maxWidth: 480 }}>
             {data.residual.map((r, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${T.line}`, fontSize: 15 }}>
@@ -641,7 +731,7 @@ export default function WillPrepPage() {
 
       {step === 'clauses' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={10} total={stepsWithProgress} section={section} title="A few standard choices" hint="Your advisor can explain any of these further when you meet." />
+          <Head step={11} total={stepsWithProgress} section={section} title="A few standard choices" hint="Your advisor can explain any of these further when you meet." />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>Which of your assets does this cover?</label>
@@ -677,7 +767,7 @@ export default function WillPrepPage() {
 
       {step === 'instructions' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={11} total={stepsWithProgress} section={section} title="Anything else?" hint="All optional." />
+          <Head step={12} total={stepsWithProgress} section={section} title="Anything else?" hint="All optional." />
           <div style={{ maxWidth: 560 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Other instructions for your Will</label>
@@ -698,7 +788,7 @@ export default function WillPrepPage() {
 
       {step === 'review' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={12} total={stepsWithProgress} section={section} title="Review before you submit" hint="Take a moment to check everything looks right. You can go back and change anything." />
+          <Head step={13} total={stepsWithProgress} section={section} title="Review before you submit" hint="Take a moment to check everything looks right. You can go back and change anything." />
           <div style={{ maxWidth: 560 }}>
             <ReviewBlock title="Beneficiaries" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet)'}`)} />
             <ReviewBlock title="Executor" lines={data.executors.map(e => e.name || '(not named yet)')} />
