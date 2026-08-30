@@ -156,6 +156,11 @@ const inputStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   fontSize: 13, color: T.ink3, marginBottom: 7, display: 'block', fontWeight: 500,
 }
+// Same as labelStyle, but reserves enough height for a label to wrap onto
+// a second line. Used only inside side-by-side rows, where one label being
+// longer than its neighbor (e.g. "NRIC / FIN / Passport") would otherwise
+// push just that one input down and break the row's alignment.
+const gridLabelStyle: React.CSSProperties = { ...labelStyle, minHeight: 34 }
 
 // ─── SMALL COMPONENTS ────────────────────────────────────────────────────
 
@@ -167,19 +172,19 @@ function PersonCard({ person, onChange, tag, onRemove }: {
       <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>{tag}</span>
       {onRemove && <span onClick={onRemove} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove 移除</span>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 18 }}>
-        <div><label style={labelStyle}>Full name 全名</label>
+        <div><label style={gridLabelStyle}>Full name 全名</label>
           <input style={inputStyle} value={person.name} onChange={e => onChange({ ...person, name: e.target.value })} />
         </div>
-        <div><label style={labelStyle}>Relationship to you 与您的关系</label>
+        <div><label style={gridLabelStyle}>Relationship to you 与您的关系</label>
           <input style={inputStyle} value={person.relationship} onChange={e => onChange({ ...person, relationship: e.target.value })} />
         </div>
-        <div><label style={labelStyle}>NRIC / FIN / Passport 身份证/FIN/护照</label>
+        <div><label style={gridLabelStyle}>NRIC / FIN / Passport 身份证/FIN/护照</label>
           <input style={inputStyle} value={person.idNumber} onChange={e => onChange({ ...person, idNumber: e.target.value })} />
           {person.idNumber.trim() !== '' && !isLikelyValidNric(person.idNumber) && (
             <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it. 这看起来不是有效的身份证/FIN号码，请再次检查。</div>
           )}
         </div>
-        <div><label style={labelStyle}>Mobile number 手机号码</label>
+        <div><label style={gridLabelStyle}>Mobile number 手机号码</label>
           <input style={inputStyle} value={person.mobile} onChange={e => onChange({ ...person, mobile: e.target.value })} />
         </div>
       </div>
@@ -677,14 +682,14 @@ export default function WillPrepPage() {
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
               <div style={{ flex: '1 1 180px' }}>
-                <label style={labelStyle}>ID No. (e.g. NRIC) 身份证号码</label>
+                <label style={gridLabelStyle}>ID No. (e.g. NRIC) 身份证号码</label>
                 <input style={inputStyle} value={data.testatorIdNo} onChange={e => update({ testatorIdNo: e.target.value })} />
                 {data.testatorIdNo.trim() !== '' && !isLikelyValidNric(data.testatorIdNo) && (
                   <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it. 这看起来不是有效的身份证/FIN号码，请再次检查。</div>
                 )}
               </div>
               <div style={{ flex: '1 1 180px' }}>
-                <label style={labelStyle}>ID Issuing Country 身份证签发国</label>
+                <label style={gridLabelStyle}>ID Issuing Country 身份证签发国</label>
                 <input style={inputStyle} value={data.testatorIdIssuingCountry} onChange={e => update({ testatorIdIssuingCountry: e.target.value })} placeholder="e.g. Singapore 例如：新加坡" />
               </div>
             </div>
@@ -705,11 +710,11 @@ export default function WillPrepPage() {
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
               <div style={{ flex: '1 1 180px' }}>
-                <label style={labelStyle}>Date of Birth 出生日期</label>
+                <label style={gridLabelStyle}>Date of Birth 出生日期</label>
                 <DateInput value={data.testatorDob} onChange={v => update({ testatorDob: v })} />
               </div>
               <div style={{ flex: '1 1 180px' }}>
-                <label style={labelStyle}>Religion 宗教</label>
+                <label style={gridLabelStyle}>Religion 宗教</label>
                 <input style={inputStyle} value={data.testatorReligion} onChange={e => update({ testatorReligion: e.target.value })} />
               </div>
             </div>
@@ -724,11 +729,11 @@ export default function WillPrepPage() {
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
               <div style={{ flex: '1 1 180px' }}>
-                <label style={labelStyle}>No. of Children 几个子女</label>
+                <label style={gridLabelStyle}>No. of Children 几个子女</label>
                 <input type="number" min="0" style={inputStyle} value={data.testatorNumChildren} onChange={e => update({ testatorNumChildren: e.target.value })} />
               </div>
               <div style={{ flex: '1 1 180px' }}>
-                <label style={labelStyle}>Mobile Number 手机号码</label>
+                <label style={gridLabelStyle}>Mobile Number 手机号码</label>
                 <input style={inputStyle} value={data.testatorMobile} onChange={e => update({ testatorMobile: e.target.value })} />
               </div>
             </div>
@@ -864,10 +869,10 @@ export default function WillPrepPage() {
                 <input style={inputStyle} value={a.identifyingDetail} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, identifyingDetail: e.target.value } : x) })} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 18, marginBottom: 16 }}>
-                <div><label style={labelStyle}>Estimated market value 估计市场价值</label>
+                <div><label style={gridLabelStyle}>Estimated market value 估计市场价值</label>
                   <CurrencyInput value={a.value} onChange={v => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, value: v } : x) })} />
                 </div>
-                <div><label style={labelStyle}>Country &amp; State of Asset 资产所在国与州</label>
+                <div><label style={gridLabelStyle}>Country &amp; State of Asset 资产所在国与州</label>
                   <input style={inputStyle} value={a.countryState} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, countryState: e.target.value } : x) })} />
                 </div>
               </div>
@@ -916,10 +921,10 @@ export default function WillPrepPage() {
                 <input style={inputStyle} value={l.identifyingDetail} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, identifyingDetail: e.target.value } : x) })} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 18, marginBottom: 16 }}>
-                <div><label style={labelStyle}>Estimated value 债务估计市场价值</label>
+                <div><label style={gridLabelStyle}>Estimated value 债务估计市场价值</label>
                   <CurrencyInput value={l.value} onChange={v => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, value: v } : x) })} />
                 </div>
-                <div><label style={labelStyle}>Country &amp; State of Loan 债务所在国与州</label>
+                <div><label style={gridLabelStyle}>Country &amp; State of Loan 债务所在国与州</label>
                   <input style={inputStyle} value={l.countryState} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, countryState: e.target.value } : x) })} />
                 </div>
               </div>
