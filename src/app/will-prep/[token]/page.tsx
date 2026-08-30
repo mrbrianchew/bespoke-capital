@@ -7,7 +7,16 @@ import { BrandMark } from '@/components/BrandMark'
 // ─── TYPES ───────────────────────────────────────────────────────────────
 
 interface Person { name: string; relationship: string; idNumber: string; mobile: string }
-interface Asset { name: string; value: string; ownership: 'Sole' | 'Joint' | 'Shared %'; allocation: string }
+interface Asset {
+  name: string
+  identifyingDetail: string
+  value: string
+  countryState: string
+  ownership: 'Sole' | 'Joint' | 'Shared %'
+  allocationType: 'none' | 'specific'
+  allocation: string
+  additionalInstructions: string
+}
 interface Liability { name: string; value: string }
 interface ResidualShare { name: string; pct: string }
 
@@ -42,6 +51,7 @@ interface WillPrepData {
 }
 
 const blankPerson = (): Person => ({ name: '', relationship: '', idNumber: '', mobile: '' })
+const blankAsset = (): Asset => ({ name: '', identifyingDetail: '', value: '', countryState: '', ownership: 'Sole', allocationType: 'none', allocation: '', additionalInstructions: '' })
 
 // Validates the checksum on Singapore NRIC/FIN numbers (S/T/F/G prefixes).
 // Returns true for anything that doesn't look like an NRIC/FIN shape (e.g.
@@ -83,7 +93,7 @@ const DEFAULT_DATA: WillPrepData = {
   subGuardians: [],
   executors: [blankPerson()],
   subExecutors: [],
-  assets: [{ name: '', value: '', ownership: 'Sole', allocation: '' }],
+  assets: [blankAsset()],
   liabilities: [{ name: '', value: '' }],
   residual: [{ name: '', pct: '' }],
   scope: 'Worldwide',
@@ -178,7 +188,7 @@ function AddLink({ label, onClick }: { label: string; onClick: () => void }) {
   )
 }
 
-function Pill({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+function Pill({ label, selected, onClick }: { label: React.ReactNode; selected: boolean; onClick: () => void }) {
   return (
     <div onClick={onClick} style={{
       border: `1px solid ${selected ? T.emerald : T.line}`, borderRadius: 8, padding: '12px 16px', fontSize: 15, cursor: 'pointer',
@@ -737,26 +747,46 @@ export default function WillPrepPage() {
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1} 资产 {i + 1}</span>
               {data.assets.length > 1 && <span onClick={() => update({ assets: data.assets.filter((_, xi) => xi !== i) })} style={{ position: 'absolute', top: 20, right: 22, fontSize: 13, color: T.ink3, cursor: 'pointer' }}>Remove 移除</span>}
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>What is it? 这是什么？</label>
-                <input style={inputStyle} placeholder="e.g. DBS savings account 例如：星展储蓄账户" value={a.name} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+                <label style={labelStyle}>Asset Name (e.g. DBS Bank) 资产名称</label>
+                <input style={inputStyle} placeholder="e.g. DBS Bank 例如：星展银行" value={a.name} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x) })} />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Identifying Detail (e.g. Acct No.) 资产识别详细信息</label>
+                <input style={inputStyle} value={a.identifyingDetail} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, identifyingDetail: e.target.value } : x) })} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 16 }}>
-                <div><label style={labelStyle}>Estimated value 估计价值</label>
+                <div><label style={labelStyle}>Estimated market value 估计市场价值</label>
                   <input style={inputStyle} placeholder="S$" value={a.value} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
                 </div>
-                <div><label style={labelStyle}>Ownership 所有权</label>
-                  <select style={inputStyle} value={a.ownership} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, ownership: e.target.value as Asset['ownership'] } : x) })}>
-                    <option>Sole 独有</option><option>Joint 共有</option><option>Shared % 按比例共有</option>
-                  </select>
+                <div><label style={labelStyle}>Country &amp; State of Asset 资产所在国与州</label>
+                  <input style={inputStyle} value={a.countryState} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, countryState: e.target.value } : x) })} />
                 </div>
               </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Ownership type 所有权形式</label>
+                <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+                  <Pill label="Sole 独自" selected={a.ownership === 'Sole'} onClick={() => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, ownership: 'Sole' } : x) })} />
+                  <Pill label="Joint 共同共有" selected={a.ownership === 'Joint'} onClick={() => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, ownership: 'Joint' } : x) })} />
+                  <Pill label="% Shares 按份共有" selected={a.ownership === 'Shared %'} onClick={() => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, ownership: 'Shared %' } : x) })} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Asset Allocation 资产分配</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  <Pill label={<>No specific allocation (distributed as per &quot;Allocate Residual Assets&quot;)<br />无具体分配（按照&quot;剩余资产分配&quot;分配）</>} selected={a.allocationType === 'none'} onClick={() => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, allocationType: 'none' } : x) })} />
+                  <Pill label={<>I give this asset to:<br />分配给特定的受益人：</>} selected={a.allocationType === 'specific'} onClick={() => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, allocationType: 'specific' } : x) })} />
+                </div>
+                {a.allocationType === 'specific' && (
+                  <input style={{ ...inputStyle, marginTop: 10 }} placeholder="e.g. Michelle Chia 例如：陈美玲" value={a.allocation} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, allocation: e.target.value } : x) })} />
+                )}
+              </div>
               <div>
-                <label style={labelStyle}>Leave this to (optional — leave blank to split per your general wishes later) 留给谁（选填 — 留空则按您稍后的整体分配意愿处理）</label>
-                <input style={inputStyle} placeholder="e.g. Michelle Chia 例如：陈美玲" value={a.allocation} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, allocation: e.target.value } : x) })} />
+                <label style={labelStyle}>Additional Instructions (if any) 额外指示（如有）</label>
+                <textarea style={{ ...inputStyle, minHeight: 70 }} value={a.additionalInstructions} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, additionalInstructions: e.target.value } : x) })} />
               </div>
             </div>
           ))}
-          <AddLink label="Add another asset 添加另一项资产" onClick={() => update({ assets: [...data.assets, { name: '', value: '', ownership: 'Sole', allocation: '' }] })} />
+          <AddLink label="Add another asset 添加另一项资产" onClick={() => update({ assets: [...data.assets, blankAsset()] })} />
           <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
         </div>
       )}
