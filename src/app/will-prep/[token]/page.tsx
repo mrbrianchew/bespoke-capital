@@ -43,6 +43,28 @@ interface WillPrepData {
 
 const blankPerson = (): Person => ({ name: '', relationship: '', idNumber: '', mobile: '' })
 
+// Validates the checksum on Singapore NRIC/FIN numbers (S/T/F/G prefixes).
+// Returns true for anything that doesn't look like an NRIC/FIN shape (e.g.
+// a foreign passport number) since those aren't subject to this checksum
+// at all — this only catches typos in numbers that are meant to be
+// NRIC/FIN. M-series FINs (issued from 2022) use a less publicly
+// documented algorithm and are deliberately left unchecked here to avoid
+// wrongly flagging a valid M-series number as an error.
+function isLikelyValidNric(raw: string): boolean {
+  const v = raw.trim().toUpperCase()
+  const m = /^([STFG])(\d{7})([A-Z])$/.exec(v)
+  if (!m) return true
+  const [, prefix, digitsStr, letter] = m
+  const weights = [2, 7, 6, 5, 4, 3, 2]
+  let sum = digitsStr.split('').reduce((acc, d, i) => acc + Number(d) * weights[i], 0)
+  if (prefix === 'T' || prefix === 'G') sum += 4
+  const remainder = sum % 11
+  const table = (prefix === 'S' || prefix === 'T')
+    ? ['J', 'Z', 'I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A']
+    : ['X', 'W', 'U', 'T', 'R', 'Q', 'P', 'N', 'J', 'L', 'K']
+  return table[remainder] === letter
+}
+
 const DEFAULT_DATA: WillPrepData = {
   testatorFullName: '',
   testatorIdNo: '',
@@ -134,6 +156,9 @@ function PersonCard({ person, onChange, tag, onRemove }: {
         </div>
         <div><label style={labelStyle}>NRIC / FIN / Passport</label>
           <input style={inputStyle} value={person.idNumber} onChange={e => onChange({ ...person, idNumber: e.target.value })} />
+          {person.idNumber.trim() !== '' && !isLikelyValidNric(person.idNumber) && (
+            <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it.</div>
+          )}
         </div>
         <div><label style={labelStyle}>Mobile number</label>
           <input style={inputStyle} value={person.mobile} onChange={e => onChange({ ...person, mobile: e.target.value })} />
@@ -513,7 +538,7 @@ export default function WillPrepPage() {
 
       {step === 'testator' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={2} total={stepsWithProgress} section={section} title="A few details about you" hint="This goes on the Will itself, so it needs to match your ID exactly." />
+          <Head step={2} total={stepsWithProgress} section={section} title="A few details about you, the Testator" hint={'"Testator" is simply the legal term for the person making the Will — that\'s you. These details go on the Will itself, so they need to match your ID exactly.'} />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Full Name 全名</label>
@@ -523,6 +548,9 @@ export default function WillPrepPage() {
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>ID No. (e.g. NRIC) 身份证号码</label>
                 <input style={inputStyle} value={data.testatorIdNo} onChange={e => update({ testatorIdNo: e.target.value })} />
+                {data.testatorIdNo.trim() !== '' && !isLikelyValidNric(data.testatorIdNo) && (
+                  <div style={{ fontSize: 12, color: T.rouge, marginTop: 4 }}>This doesn't look like a valid NRIC/FIN — please double-check it.</div>
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>ID Issuing Country 身份证签发国</label>
