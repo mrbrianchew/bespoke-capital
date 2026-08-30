@@ -52,7 +52,7 @@ const DEFAULT_DATA: WillPrepData = {
 }
 
 const STEPS = [
-  'gate', 'intro', 'beneficiaries', 'guardian', 'subguardians',
+  'gate', 'intro', 'considerations', 'beneficiaries', 'guardian', 'subguardians',
   'executor', 'subexecutors', 'assets', 'liabilities', 'residual',
   'clauses', 'instructions', 'review', 'done',
 ] as const
@@ -63,6 +63,7 @@ type Step = typeof STEPS[number]
 // rather than just a bare step counter.
 const SECTION_LABEL: Partial<Record<Step, string>> = {
   intro: 'Getting Started',
+  considerations: 'Getting Ready',
   beneficiaries: 'Beneficiaries',
   guardian: 'Guardian',
   subguardians: 'Guardian — Backup',
@@ -166,6 +167,48 @@ function NavBar({ onBack, onNext, backDisabled, nextLabel = 'Continue' }: {
   )
 }
 
+// ─── CONSIDERATIONS CHECKLIST HELPERS ───────────────────────────────────
+// Bilingual "things to prepare" checklist — local-only ticks, not saved.
+
+function ChecklistSection({ title, titleZh, children }: { title: string; titleZh: string; children: React.ReactNode }) {
+  return (
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
+      <div style={{ padding: '13px 18px', borderBottom: `1px solid ${T.line}`, background: T.cream, fontWeight: 700, fontSize: 14.5, color: T.ink }}>
+        {title} <span style={{ fontWeight: 500 }}>{titleZh}</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function ChecklistRow({ num, en, zh, checked, onToggle, last }: {
+  num: string; en: string; zh: string; checked: boolean; onToggle: () => void; last?: boolean
+}) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, padding: '14px 18px', borderBottom: last ? 'none' : `1px solid ${T.line}` }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <span style={{ fontSize: 13.5, color: T.ink3, flexShrink: 0 }}>{num}.</span>
+        <div>
+          <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{en}</div>
+          <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.5, marginTop: 2 }}>{zh}</div>
+        </div>
+      </div>
+      <input type="checkbox" checked={checked} onChange={onToggle} style={{ width: 20, height: 20, flexShrink: 0, marginTop: 2, accentColor: T.gold, cursor: 'pointer' }} />
+    </div>
+  )
+}
+
+function ChecklistSingleRow({ en, zh, checked, onToggle }: { en: string; zh: string; checked: boolean; onToggle: () => void }) {
+  return (
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, marginBottom: 12, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 14.5, color: T.ink }}>
+        {en} <span style={{ fontWeight: 500 }}>{zh}</span>
+      </div>
+      <input type="checkbox" checked={checked} onChange={onToggle} style={{ width: 20, height: 20, flexShrink: 0, accentColor: T.gold, cursor: 'pointer' }} />
+    </div>
+  )
+}
+
 // ─── MAIN PAGE ─────────────────────────────────────────────────────────
 
 export default function WillPrepPage() {
@@ -179,6 +222,10 @@ export default function WillPrepPage() {
   const [clientName, setClientName] = useState('')
   const [firm, setFirm] = useState<string | null>(null)
   const [showIntroTerms, setShowIntroTerms] = useState(false)
+  // Purely a personal "have I got this ready" aid for the client — not part
+  // of the saved form data, so it's local-only state, not persisted.
+  const [checklist, setChecklist] = useState<Record<string, boolean>>({})
+  const toggleChecklist = (key: string) => setChecklist(prev => ({ ...prev, [key]: !prev[key] }))
 
   const [unlocked, setUnlocked] = useState(false)
   const [password, setPassword] = useState('')
@@ -396,7 +443,6 @@ export default function WillPrepPage() {
           <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20 }}>
             This form gathers your instructions ahead of your meeting. It is not your Will and has no legal effect on its own. Your advisor will go through everything with you before anything is finalised.
           </div>
-          <p style={{ fontSize: 14.5, color: T.ink3, lineHeight: 1.6 }}>Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.</p>
           <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 4 }}>
             By proceeding, you agree to the{' '}
             <button
@@ -412,9 +458,39 @@ export default function WillPrepPage() {
         </div>
       )}
 
+      {step === 'considerations' && (
+        <div style={{ padding: '48px 0 0' }}>
+          <Head step={1} total={stepsWithProgress} section={section} title="A few things to prepare" hint="This isn't something to fill in now — just a preview of what's ahead, so you can have the right information on hand." />
+
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13.5, color: T.ink, lineHeight: 1.6 }}>
+            <strong>Please bring along your identification document (e.g. NRIC / Foreign ID / Passport) on the day of the meeting.</strong>
+            <br />请在会面当天携带身份证件（例如NRIC / 外国身份证 / 护照）。
+            <p style={{ marginTop: 10, marginBottom: 0, color: T.ink3, fontWeight: 400 }}>Have these on hand if possible: NRIC numbers for your beneficiaries, executor and guardian, and rough values for your major assets.</p>
+          </div>
+
+          <ChecklistSection title="Personnel" titleZh="人员">
+            <ChecklistRow num="i" en="Who do you want to gift your assets to (Beneficiary)" zh="谁将收到您的资产（受益人）" checked={!!checklist.beneficiary} onToggle={() => toggleChecklist('beneficiary')} />
+            <ChecklistRow num="ii" en="Who will take care of your minor children (Guardian)" zh="谁来照顾您的未成年子女（监护人）" checked={!!checklist.guardian} onToggle={() => toggleChecklist('guardian')} />
+            <ChecklistRow num="iii" en="Who (sole or joint) will oversee the execution of your Will (Executor)" zh="谁（单独或联合）将执行您的遗嘱（执行人）" checked={!!checklist.executor} onToggle={() => toggleChecklist('executor')} />
+            <ChecklistRow num="iv" en="Substitutes for ii. and iii." zh="ii. 和 iii. 的替代人" checked={!!checklist.substitutes} onToggle={() => toggleChecklist('substitutes')} last />
+          </ChecklistSection>
+
+          <ChecklistSection title="Assets / Debts" titleZh="资产与债务">
+            <ChecklistRow num="i" en="What assets / debts do you have (Identifying details, Estimated Value, Ownership Type)" zh="您拥有哪些资产与债务（识别详细信息，估计市场价值，所有权形式）" checked={!!checklist.assetsDebts} onToggle={() => toggleChecklist('assetsDebts')} />
+            <ChecklistRow num="ii" en="How do you want to distribute them" zh="您想如何分配" checked={!!checklist.distribution} onToggle={() => toggleChecklist('distribution')} last />
+          </ChecklistSection>
+
+          <ChecklistSingleRow en="Others Instructions" zh="遗嘱中的其他指示" checked={!!checklist.otherInstructions} onToggle={() => toggleChecklist('otherInstructions')} />
+          <ChecklistSingleRow en="Funeral Wishes (if any)" zh="葬礼安排（如有）" checked={!!checklist.funeralWishes} onToggle={() => toggleChecklist('funeralWishes')} />
+          <ChecklistSingleRow en="Last Words (if any)" zh="任何遗言（如有）" checked={!!checklist.lastWords} onToggle={() => toggleChecklist('lastWords')} />
+
+          <NavBar onBack={() => go(-1)} onNext={() => go(1)} />
+        </div>
+      )}
+
       {step === 'beneficiaries' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={1} total={stepsWithProgress} section={section} title="Who should receive your assets?" hint="List everyone you want to leave something to. You will decide exactly what they receive in a later step." />
+          <Head step={2} total={stepsWithProgress} section={section} title="Who should receive your assets?" hint="List everyone you want to leave something to. You will decide exactly what they receive in a later step." />
           {data.beneficiaries.map((b, i) => (
             <PersonCard key={i} tag={`Beneficiary 0${i + 1}`} person={b}
               onChange={p => update({ beneficiaries: data.beneficiaries.map((x, xi) => xi === i ? p : x) })}
@@ -427,7 +503,7 @@ export default function WillPrepPage() {
 
       {step === 'guardian' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={2} total={stepsWithProgress} section={section} title="Who should care for your children?" hint="Only needed if you have children under 21. Skip ahead if this does not apply to you." />
+          <Head step={3} total={stepsWithProgress} section={section} title="Who should care for your children?" hint="Only needed if you have children under 21. Skip ahead if this does not apply to you." />
           <div style={{ marginBottom: 22, maxWidth: 480 }}>
             <label style={labelStyle}>If something happens to you</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -445,7 +521,7 @@ export default function WillPrepPage() {
 
       {step === 'subguardians' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={3} total={stepsWithProgress} section={section} title="Anyone as a backup?" hint="If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through." />
+          <Head step={4} total={stepsWithProgress} section={section} title="Anyone as a backup?" hint="If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through." />
           {data.subGuardians.map((g, i) => (
             <PersonCard key={i} tag={`Backup ${i + 1}`} person={g}
               onChange={p => update({ subGuardians: data.subGuardians.map((x, xi) => xi === i ? p : x) })}
@@ -458,7 +534,7 @@ export default function WillPrepPage() {
 
       {step === 'executor' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={4} total={stepsWithProgress} section={section} title="Who should carry out your wishes?" hint="Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one." />
+          <Head step={5} total={stepsWithProgress} section={section} title="Who should carry out your wishes?" hint="Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one." />
           {data.executors.map((ex, i) => (
             <PersonCard key={i} tag={`Executor ${i + 1}`} person={ex}
               onChange={p => update({ executors: data.executors.map((x, xi) => xi === i ? p : x) })}
@@ -473,7 +549,7 @@ export default function WillPrepPage() {
 
       {step === 'subexecutors' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={5} total={stepsWithProgress} section={section} title="A backup executor?" hint="If your first choice cannot act, who should step in? Optional." />
+          <Head step={6} total={stepsWithProgress} section={section} title="A backup executor?" hint="If your first choice cannot act, who should step in? Optional." />
           {data.subExecutors.map((ex, i) => (
             <PersonCard key={i} tag={`Backup ${i + 1}`} person={ex}
               onChange={p => update({ subExecutors: data.subExecutors.map((x, xi) => xi === i ? p : x) })}
@@ -486,7 +562,7 @@ export default function WillPrepPage() {
 
       {step === 'assets' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={6} total={stepsWithProgress} section={section} title="What do you own?" hint="Bank accounts, property, insurance, investments — anything of value. Rough figures are fine." />
+          <Head step={7} total={stepsWithProgress} section={section} title="What do you own?" hint="Bank accounts, property, insurance, investments — anything of value. Rough figures are fine." />
           {data.assets.map((a, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1}</span>
@@ -518,7 +594,7 @@ export default function WillPrepPage() {
 
       {step === 'liabilities' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={7} total={stepsWithProgress} section={section} title="Any outstanding debts?" hint="Home loans, car loans, credit cards — anything still owing. Skip if none." />
+          <Head step={8} total={stepsWithProgress} section={section} title="Any outstanding debts?" hint="Home loans, car loans, credit cards — anything still owing. Skip if none." />
           {data.liabilities.map((l, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1}</span>
@@ -540,7 +616,7 @@ export default function WillPrepPage() {
 
       {step === 'residual' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={8} total={stepsWithProgress} section={section} title="Everything else you own" hint="Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%." />
+          <Head step={9} total={stepsWithProgress} section={section} title="Everything else you own" hint="Anything not specifically assigned above — and anything you acquire in future — gets split this way. Shares should add up to 100%." />
           <div style={{ maxWidth: 480 }}>
             {data.residual.map((r, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: `1px solid ${T.line}`, fontSize: 15 }}>
@@ -565,7 +641,7 @@ export default function WillPrepPage() {
 
       {step === 'clauses' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={9} total={stepsWithProgress} section={section} title="A few standard choices" hint="Your advisor can explain any of these further when you meet." />
+          <Head step={10} total={stepsWithProgress} section={section} title="A few standard choices" hint="Your advisor can explain any of these further when you meet." />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>Which of your assets does this cover?</label>
@@ -601,7 +677,7 @@ export default function WillPrepPage() {
 
       {step === 'instructions' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={10} total={stepsWithProgress} section={section} title="Anything else?" hint="All optional." />
+          <Head step={11} total={stepsWithProgress} section={section} title="Anything else?" hint="All optional." />
           <div style={{ maxWidth: 560 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Other instructions for your Will</label>
@@ -622,7 +698,7 @@ export default function WillPrepPage() {
 
       {step === 'review' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={11} total={stepsWithProgress} section={section} title="Review before you submit" hint="Take a moment to check everything looks right. You can go back and change anything." />
+          <Head step={12} total={stepsWithProgress} section={section} title="Review before you submit" hint="Take a moment to check everything looks right. You can go back and change anything." />
           <div style={{ maxWidth: 560 }}>
             <ReviewBlock title="Beneficiaries" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet)'}`)} />
             <ReviewBlock title="Executor" lines={data.executors.map(e => e.name || '(not named yet)')} />
