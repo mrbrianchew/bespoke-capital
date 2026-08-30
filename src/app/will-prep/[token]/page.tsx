@@ -196,6 +196,63 @@ function AddLink({ label, onClick }: { label: string; onClick: () => void }) {
   )
 }
 
+// Lets someone type a date as 8 continuous digits (DDMMYYYY) without
+// clicking between day/month/year segments — auto-inserts slashes as they
+// type, and only commits a value once all 8 digits are in. Stores the
+// underlying value as ISO (YYYY-MM-DD) for consistency, displays DD/MM/YYYY.
+function DateInput({ value, onChange }: { value: string; onChange: (isoDate: string) => void }) {
+  const isoToDisplay = (iso: string) => {
+    const [y, m, d] = (iso || '').split('-')
+    if (!y || !m || !d) return ''
+    return `${d}/${m}/${y}`
+  }
+  const [text, setText] = useState(() => isoToDisplay(value))
+  useEffect(() => { setText(isoToDisplay(value)) }, [value])
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
+    let formatted = digits
+    if (digits.length > 4) formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+    else if (digits.length > 2) formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`
+    setText(formatted)
+    if (digits.length === 8) {
+      onChange(`${digits.slice(4)}-${digits.slice(2, 4)}-${digits.slice(0, 2)}`)
+    } else if (digits.length === 0) {
+      onChange('')
+    }
+  }
+
+  return (
+    <input style={inputStyle} type="text" inputMode="numeric" placeholder="DD/MM/YYYY" value={text} onChange={handleChange} maxLength={10} />
+  )
+}
+
+// S$ currency field with thousand separators. Stores raw digits only (no
+// commas, no prefix) in the underlying data — the formatting is purely
+// display-layer, so nothing downstream (saving, PDF export) needs to parse
+// commas back out.
+function CurrencyInput({ value, onChange }: { value: string; onChange: (raw: string) => void }) {
+  const formatWithCommas = (raw: string) => {
+    const digits = raw.replace(/\D/g, '')
+    return digits ? Number(digits).toLocaleString('en-US') : ''
+  }
+  const [text, setText] = useState(() => formatWithCommas(value))
+  useEffect(() => { setText(formatWithCommas(value)) }, [value])
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const digits = e.target.value.replace(/\D/g, '')
+    setText(formatWithCommas(digits))
+    onChange(digits)
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: T.ink3, pointerEvents: 'none' }}>S$</span>
+      <input style={{ ...inputStyle, paddingLeft: 34 }} type="text" inputMode="numeric" value={text} onChange={handleChange} />
+    </div>
+  )
+}
+
 function Pill({ label, selected, onClick }: { label: React.ReactNode; selected: boolean; onClick: () => void }) {
   return (
     <div onClick={onClick} style={{
@@ -205,13 +262,20 @@ function Pill({ label, selected, onClick }: { label: React.ReactNode; selected: 
   )
 }
 
-function Head({ step, total, section, title, hint }: { step: number; total: number; section: string; title: React.ReactNode; hint: React.ReactNode }) {
+function Head({ step, total, section, title, hint, onJump }: { step: number; total: number; section: string; title: React.ReactNode; hint: React.ReactNode; onJump?: (step: number) => void }) {
   return (
     <>
       <div style={{ display: 'flex', gap: 4, marginBottom: 22 }}>
-        {Array.from({ length: total }).map((_, i) => (
-          <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i < step ? T.emerald : i === step ? T.gold : T.line }} />
-        ))}
+        {Array.from({ length: total }).map((_, i) => {
+          const dotStep = i + 1
+          return (
+            <div
+              key={i}
+              onClick={onJump ? () => onJump(dotStep) : undefined}
+              style={{ flex: 1, height: 3, borderRadius: 2, background: dotStep < step ? T.emerald : dotStep === step ? T.gold : T.line, cursor: onJump ? 'pointer' : 'default' }}
+            />
+          )
+        })}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <p style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, margin: 0 }}>{section}</p>
@@ -398,6 +462,19 @@ export default function WillPrepPage() {
     setStepIdx(i => Math.max(1, Math.min(STEPS.length - 1, i + delta)))
   }
 
+  // Progress-step number (as shown in Head, e.g. "Step 5 of 14") maps
+  // directly onto the STEPS array one position later, since STEPS[0] is
+  // 'gate' and STEPS[1] is 'intro' — neither of which carries a Head/step
+  // number of their own.
+  function goToProgressStep(n: number) {
+    setStepIdx(n + 1)
+  }
+
+  function goToStep(name: Step) {
+    const idx = STEPS.indexOf(name)
+    if (idx >= 0) setStepIdx(idx)
+  }
+
   // ── RENDER STATES ──
 
   if (loading) {
@@ -535,7 +612,7 @@ export default function WillPrepPage() {
 
       {step === 'considerations' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={1} total={stepsWithProgress} section={section} title={<>A few things to prepare<br />几项准备工作</>} hint={<>This isn't something to fill in now — just a preview of what's ahead, so you can have the right information on hand.<br />这部分现在无需填写 — 只是让您预先了解接下来的内容，以便准备好相关资料。</>} />
+          <Head step={1} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A few things to prepare<br />几项准备工作</>} hint={<>This isn't something to fill in now — just a preview of what's ahead, so you can have the right information on hand.<br />这部分现在无需填写 — 只是让您预先了解接下来的内容，以便准备好相关资料。</>} />
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '14px 18px', marginBottom: 24, fontSize: 13.5, color: T.ink, lineHeight: 1.6 }}>
             <strong>Please bring along your identification document (e.g. NRIC / Foreign ID / Passport) on the day of the meeting.</strong>
@@ -568,7 +645,7 @@ export default function WillPrepPage() {
 
       {step === 'testator' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={2} total={stepsWithProgress} section={section} title={<>A few details about you, the Testator<br />关于您（遗嘱人）的资料</>} hint={<>&quot;Testator&quot; is simply the legal term for the person making the Will — that&apos;s you. These details go on the Will itself, so they need to match your ID exactly.<br />&quot;遗嘱人&quot;是指立遗嘱的人，也就是您本人。这些资料将写入遗嘱正本，请确保与您的身份证件完全一致。</>} />
+          <Head step={2} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A few details about you, the Testator<br />关于您（遗嘱人）的资料</>} hint={<>&quot;Testator&quot; is simply the legal term for the person making the Will — that&apos;s you. These details go on the Will itself, so they need to match your ID exactly.<br />&quot;遗嘱人&quot;是指立遗嘱的人，也就是您本人。这些资料将写入遗嘱正本，请确保与您的身份证件完全一致。</>} />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Full Name 全名</label>
@@ -605,7 +682,7 @@ export default function WillPrepPage() {
             <div style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Date of Birth 出生日期</label>
-                <input type="date" style={inputStyle} value={data.testatorDob} onChange={e => update({ testatorDob: e.target.value })} />
+                <DateInput value={data.testatorDob} onChange={v => update({ testatorDob: v })} />
               </div>
               <div style={{ flex: 1 }}>
                 <label style={labelStyle}>Religion 宗教</label>
@@ -638,7 +715,7 @@ export default function WillPrepPage() {
 
       {step === 'beneficiaries' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={3} total={stepsWithProgress} section={section} title={<>Who should receive your assets?<br />谁将获得您的资产？</>} hint={<>List everyone you want to leave something to. You will decide exactly what they receive in a later step.<br />列出所有您想留下遗产的人，具体分配将在稍后步骤中决定。</>} />
+          <Head step={3} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Who should receive your assets?<br />谁将获得您的资产？</>} hint={<>List everyone you want to leave something to. You will decide exactly what they receive in a later step.<br />列出所有您想留下遗产的人，具体分配将在稍后步骤中决定。</>} />
           {data.beneficiaries.map((b, i) => (
             <PersonCard key={i} tag={`Beneficiary 0${i + 1} 受益人 0${i + 1}`} person={b}
               onChange={p => update({ beneficiaries: data.beneficiaries.map((x, xi) => xi === i ? p : x) })}
@@ -651,7 +728,7 @@ export default function WillPrepPage() {
 
       {step === 'guardian' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={4} total={stepsWithProgress} section={section} title={<>Who should care for your children?<br />谁来照顾您的孩子？</>} hint={<>Only needed if you have children under 21. Skip ahead if this does not apply to you.<br />仅在您有21岁以下子女时才需要填写。若不适用，可跳过此步骤。</>} />
+          <Head step={4} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Who should care for your children?<br />谁来照顾您的孩子？</>} hint={<>Only needed if you have children under 21. Skip ahead if this does not apply to you.<br />仅在您有21岁以下子女时才需要填写。若不适用，可跳过此步骤。</>} />
           <div style={{ marginBottom: 22, maxWidth: 480 }}>
             <label style={labelStyle}>Guardianship Clause 监护条款</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -669,7 +746,7 @@ export default function WillPrepPage() {
 
       {step === 'subguardians' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={5} total={stepsWithProgress} section={section} title={<>A substitute guardian?<br />替代监护人？</>} hint={<>If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through.<br />若您的首选监护人无法履行职责，下一位人选是谁？此项为选填，但值得考虑。</>} />
+          <Head step={5} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A substitute guardian?<br />替代监护人？</>} hint={<>If your first choice of guardian is not able to take on the role, who is next? Optional, but worth thinking through.<br />若您的首选监护人无法履行职责，下一位人选是谁？此项为选填，但值得考虑。</>} />
           {data.subGuardians.map((g, i) => (
             <PersonCard key={i} tag={`Substitute ${i + 1} 替代 ${i + 1}`} person={g}
               onChange={p => update({ subGuardians: data.subGuardians.map((x, xi) => xi === i ? p : x) })}
@@ -682,7 +759,7 @@ export default function WillPrepPage() {
 
       {step === 'executor' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={6} total={stepsWithProgress} section={section} title={<>Who should carry out your wishes?<br />谁来执行您的意愿？</>} hint={<>Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one.<br />您的执行人将管理您的遗产并确保遗嘱得以执行。您最多可指定4人共同担任，或仅指定一人。</>} />
+          <Head step={6} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Who should carry out your wishes?<br />谁来执行您的意愿？</>} hint={<>Your Executor manages your estate and makes sure your Will is followed. You can name up to 4 people to act together, or just one.<br />您的执行人将管理您的遗产并确保遗嘱得以执行。您最多可指定4人共同担任，或仅指定一人。</>} />
           {data.executors.map((ex, i) => (
             <PersonCard key={i} tag={`Executor ${i + 1} 执行人 ${i + 1}`} person={ex}
               onChange={p => update({ executors: data.executors.map((x, xi) => xi === i ? p : x) })}
@@ -697,7 +774,7 @@ export default function WillPrepPage() {
 
       {step === 'subexecutors' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={7} total={stepsWithProgress} section={section} title={<>A substitute executor?<br />替代执行人？</>} hint={<>If your first choice cannot act, who should step in? Optional.<br />若您的首选执行人无法履行职责，应由谁接替？此项为选填。</>} />
+          <Head step={7} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A substitute executor?<br />替代执行人？</>} hint={<>If your first choice cannot act, who should step in? Optional.<br />若您的首选执行人无法履行职责，应由谁接替？此项为选填。</>} />
           {data.subExecutors.map((ex, i) => (
             <PersonCard key={i} tag={`Substitute ${i + 1} 替代 ${i + 1}`} person={ex}
               onChange={p => update({ subExecutors: data.subExecutors.map((x, xi) => xi === i ? p : x) })}
@@ -710,7 +787,7 @@ export default function WillPrepPage() {
 
       {step === 'assetsReference' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={8} total={stepsWithProgress} section={section} title={<>What counts as an asset or debt?<br />什么算是资产或债务？</>} hint={<>A quick reference before you list what you own and owe.<br />在您列出资产与债务前的快速参考。</>} />
+          <Head step={8} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>What counts as an asset or debt?<br />什么算是资产或债务？</>} hint={<>A quick reference before you list what you own and owe.<br />在您列出资产与债务前的快速参考。</>} />
 
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: '16px 18px', marginBottom: 28, fontSize: 13.5, color: T.ink, lineHeight: 1.6, fontStyle: 'italic' }}>
             You do not need to specifically distribute every asset to specific beneficiary(s). You can leave the assets as &quot;No specific allocation&quot; which will be distributed as per the &quot;Allocate Residual Assets&quot; section thereafter.
@@ -749,7 +826,7 @@ export default function WillPrepPage() {
 
       {step === 'assets' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={9} total={stepsWithProgress} section={section} title={<>What do you own?<br />您拥有哪些资产？</>} hint={<>Bank accounts, property, insurance, investments — anything of value. Rough figures are fine.<br />银行账户、房产、保险、投资 — 任何有价值的资产皆可。大概金额即可。</>} />
+          <Head step={9} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>What do you own?<br />您拥有哪些资产？</>} hint={<>Bank accounts, property, insurance, investments — anything of value. Rough figures are fine.<br />银行账户、房产、保险、投资 — 任何有价值的资产皆可。大概金额即可。</>} />
           {data.assets.map((a, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Asset {i + 1} 资产 {i + 1}</span>
@@ -764,7 +841,7 @@ export default function WillPrepPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 16 }}>
                 <div><label style={labelStyle}>Estimated market value 估计市场价值</label>
-                  <input style={inputStyle} placeholder="S$" value={a.value} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
+                  <CurrencyInput value={a.value} onChange={v => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, value: v } : x) })} />
                 </div>
                 <div><label style={labelStyle}>Country &amp; State of Asset 资产所在国与州</label>
                   <input style={inputStyle} value={a.countryState} onChange={e => update({ assets: data.assets.map((x, xi) => xi === i ? { ...x, countryState: e.target.value } : x) })} />
@@ -801,7 +878,7 @@ export default function WillPrepPage() {
 
       {step === 'liabilities' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={10} total={stepsWithProgress} section={section} title={<>Any outstanding debts?<br />有任何未偿还的债务吗？</>} hint={<>Home loans, car loans, credit cards — anything still owing. Skip if none.<br />房屋贷款、车贷、信用卡 — 任何仍未偿还的款项。若没有可跳过。</>} />
+          <Head step={10} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Any outstanding debts?<br />有任何未偿还的债务吗？</>} hint={<>Home loans, car loans, credit cards — anything still owing. Skip if none.<br />房屋贷款、车贷、信用卡 — 任何仍未偿还的款项。若没有可跳过。</>} />
           {data.liabilities.map((l, i) => (
             <div key={i} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: '20px 24px', marginBottom: 14, background: '#fff', position: 'relative' }}>
               <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 12, display: 'block' }}>Liability {i + 1} 债务 {i + 1}</span>
@@ -816,7 +893,7 @@ export default function WillPrepPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 16 }}>
                 <div><label style={labelStyle}>Estimated value 债务估计市场价值</label>
-                  <input style={inputStyle} placeholder="S$" value={l.value} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })} />
+                  <CurrencyInput value={l.value} onChange={v => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, value: v } : x) })} />
                 </div>
                 <div><label style={labelStyle}>Country &amp; State of Loan 债务所在国与州</label>
                   <input style={inputStyle} value={l.countryState} onChange={e => update({ liabilities: data.liabilities.map((x, xi) => xi === i ? { ...x, countryState: e.target.value } : x) })} />
@@ -843,7 +920,7 @@ export default function WillPrepPage() {
 
       {step === 'residual' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={11} total={stepsWithProgress} section={section} title={<>Allocate Residual Assets<br />剩余资产分配</>} hint={<>All other assets (including assets listed above with &quot;No specific allocation&quot; selected, assets not listed in the Will, and future assets) shall be distributed to:<br />所有其他资产（包括上面列出的选择&quot;无具体分配&quot;的资产、遗嘱中未列出的资产以及未来资产）应分配给：</>} />
+          <Head step={11} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Allocate Residual Assets<br />剩余资产分配</>} hint={<>All other assets (including assets listed above with &quot;No specific allocation&quot; selected, assets not listed in the Will, and future assets) shall be distributed to:<br />所有其他资产（包括上面列出的选择&quot;无具体分配&quot;的资产、遗嘱中未列出的资产以及未来资产）应分配给：</>} />
           <div style={{ maxWidth: 480 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `2px solid ${T.ink}`, fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: T.ink }}>
               <span>Beneficiary(s) 受益人</span><span>Share 分配</span>
@@ -871,7 +948,7 @@ export default function WillPrepPage() {
 
       {step === 'clauses' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={12} total={stepsWithProgress} section={section} title={<>A few standard choices<br />几项标准条款</>} hint={<>Your advisor can explain any of these further when you meet.<br />您的顾问会在会面时进一步为您解释这些内容。</>} />
+          <Head step={12} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>A few standard choices<br />几项标准条款</>} hint={<>Your advisor can explain any of these further when you meet.<br />您的顾问会在会面时进一步为您解释这些内容。</>} />
           <div style={{ maxWidth: 520 }}>
             <div style={{ marginBottom: 30 }}>
               <label style={labelStyle}>Scope of Assets 资产范围</label>
@@ -915,7 +992,7 @@ export default function WillPrepPage() {
 
       {step === 'instructions' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={13} total={stepsWithProgress} section={section} title={<>Anything else?<br />还有其他补充吗？</>} hint={<>All optional.<br />以下均为选填。</>} />
+          <Head step={13} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Anything else?<br />还有其他补充吗？</>} hint={<>All optional.<br />以下均为选填。</>} />
           <div style={{ maxWidth: 560 }}>
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Other instructions for your Will 其他遗嘱指示</label>
@@ -936,11 +1013,11 @@ export default function WillPrepPage() {
 
       {step === 'review' && (
         <div style={{ padding: '48px 0 0' }}>
-          <Head step={14} total={stepsWithProgress} section={section} title={<>Review before you submit<br />提交前请审阅</>} hint={<>Take a moment to check everything looks right. You can go back and change anything.<br />请花点时间检查所有内容是否正确。您可以随时返回修改。</>} />
+          <Head step={14} total={stepsWithProgress} onJump={goToProgressStep} section={section} title={<>Review before you submit<br />提交前请审阅</>} hint={<>Take a moment to check everything looks right. You can go back and change anything.<br />请花点时间检查所有内容是否正确。您可以随时返回修改。</>} />
           <div style={{ maxWidth: 560 }}>
-            <ReviewBlock title="Beneficiaries 受益人" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet) 尚未填写姓名'}`)} />
-            <ReviewBlock title="Executor 执行人" lines={data.executors.map(e => e.name || '(not named yet) 尚未填写姓名')} />
-            <ReviewBlock title="Residual split 剩余资产分配" lines={data.residual.map(r => `${r.pct || 0}%: ${r.name || '(not named yet) 尚未填写姓名'}`)} />
+            <ReviewBlock title="Beneficiaries 受益人" lines={data.beneficiaries.map(b => `${b.relationship || '—'}: ${b.name || '(not named yet) 尚未填写姓名'}`)} onEdit={() => goToStep('beneficiaries')} />
+            <ReviewBlock title="Executor 执行人" lines={data.executors.map(e => e.name || '(not named yet) 尚未填写姓名')} onEdit={() => goToStep('executor')} />
+            <ReviewBlock title="Residual split 剩余资产分配" lines={data.residual.map(r => `${r.pct || 0}%: ${r.name || '(not named yet) 尚未填写姓名'}`)} onEdit={() => goToStep('residual')} />
             <div style={{ background: T.amberBg, borderLeft: `3px solid ${T.amber}`, borderRadius: '0 8px 8px 0', padding: '14px 18px', fontSize: 13.5, color: '#6B5730', lineHeight: 1.6, marginBottom: 20 }}>
               Submitting sends this to your advisor to review. It doesn't finalise your Will — they'll go through everything with you first. 提交后将发送给您的顾问审阅，这并不会最终确定您的遗嘱 — 顾问会先与您逐一核对所有内容。
             </div>
@@ -955,12 +1032,20 @@ export default function WillPrepPage() {
   )
 }
 
-function ReviewBlock({ title, lines }: { title: string; lines: string[] }) {
+function ReviewBlock({ title, lines, onEdit }: { title: string; lines: string[]; onEdit?: () => void }) {
+  const isIncomplete = (l: string) => l.includes('(not named yet)')
   return (
     <div style={{ marginBottom: 20 }}>
-      <h5 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 600, margin: '0 0 8px', color: T.gold }}>{title}</h5>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+        <h5 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 600, margin: 0, color: T.gold }}>{title}</h5>
+        {onEdit && <span onClick={onEdit} style={{ fontSize: 12.5, color: T.emerald, fontWeight: 600, cursor: 'pointer' }}>Edit 编辑</span>}
+      </div>
       {lines.map((l, i) => (
-        <div key={i} style={{ fontSize: 14.5, color: T.ink, padding: '6px 0', borderBottom: `1px dashed ${T.line}` }}>{l}</div>
+        <div
+          key={i}
+          onClick={onEdit}
+          style={{ fontSize: 14.5, color: isIncomplete(l) ? T.rouge : T.ink, padding: '6px 0', borderBottom: `1px dashed ${T.line}`, cursor: onEdit ? 'pointer' : 'default' }}
+        >{l}</div>
       ))}
     </div>
   )
