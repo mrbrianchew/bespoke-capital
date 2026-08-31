@@ -48,13 +48,18 @@ interface FullMeetingRow {
 // a Fri/Sat/Sun showed mostly-next-week items under a "This week" label.
 // Now buckets against the actual Mon-Sun calendar week, with a separate
 // Next Week bucket for the following Mon-Sun.)
-function weekBucket(dateStr: string | null): 'today' | 'week' | 'nextweek' | 'later' {
+// (Fixed Aug 2026 — "today" used to swallow anything with diffDays <= 0,
+// so overdue items from previous days sat under "Today" indistinguishably
+// from today's own items, showing only their original weekday label with
+// no indication they were stale. Overdue is now its own bucket.)
+function weekBucket(dateStr: string | null): 'overdue' | 'today' | 'week' | 'nextweek' | 'later' {
   if (!dateStr) return 'week'
   const d = new Date(dateStr + 'T00:00:00')
   if (isNaN(d.getTime())) return 'week'
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const diffDays = Math.round((d.getTime() - today.getTime()) / 86400000)
-  if (diffDays <= 0) return 'today'
+  if (diffDays < 0) return 'overdue'
+  if (diffDays === 0) return 'today'
   const dow = today.getDay() // 0=Sun..6=Sat
   const daysToSunday = dow === 0 ? 0 : 7 - dow
   const thisWeekEnd = new Date(today); thisWeekEnd.setDate(today.getDate() + daysToSunday)
@@ -257,10 +262,11 @@ export default function NewBusinessPipelinePage() {
     const meetingEntries: FollowupEntry[] = meetingsFull.map(m => ({ kind: 'meeting', id: m.id, caseId: m.case_id, title: m.title, date: m.meeting_date, time: m.meeting_time }))
     return [...todoEntries, ...meetingEntries].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || (a.time || '').localeCompare(b.time || ''))
   }, [todos, meetingsFull])
+  const overdueEntries = followupEntries.filter(e => weekBucket(e.date) === 'overdue')
   const todayEntries = followupEntries.filter(e => weekBucket(e.date) === 'today')
   const weekEntries = followupEntries.filter(e => weekBucket(e.date) === 'week')
   const nextWeekEntries = followupEntries.filter(e => weekBucket(e.date) === 'nextweek')
-  const followupCount = todayEntries.length + weekEntries.length + nextWeekEntries.length + needsFollowupCases.length
+  const followupCount = overdueEntries.length + todayEntries.length + weekEntries.length + nextWeekEntries.length + needsFollowupCases.length
 
   async function toggleTodoFromTab(id: string, done: boolean) {
     setTodos(prev => done ? prev.filter(t => t.id !== id) : prev)
@@ -404,19 +410,30 @@ export default function NewBusinessPipelinePage() {
               </div>
             </div>
           )}
-          {([['Today', todayEntries], ['This week', weekEntries], ['Next week', nextWeekEntries]] as const).map(([label, entries]) => entries.length > 0 && (
+          {([['Overdue', overdueEntries], ['Today', todayEntries], ['This week', weekEntries], ['Next week', nextWeekEntries]] as const).map(([label, entries]) => entries.length > 0 && (
             <div key={label} style={{ marginBottom: 24 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: label === 'Overdue' ? T.rose : T.textFaint, marginBottom: 8 }}>
                 {label} · {entries.length}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {entries.map(e => {
+                  const isOverdue = label === 'Overdue'
                   const meta = (
                     <>
                       <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 4, background: e.kind === 'meeting' ? T.slateSoft : T.cream2, color: e.kind === 'meeting' ? T.slate : T.textDim }}>
                         {e.kind === 'meeting' ? 'Meeting' : 'To-do'}
                       </span>
-                      {e.time ? (
+                      {/* Overdue always shows the full date (day + month) rather than
+                          just a weekday, since "Mon" alone is ambiguous once an item
+                          could be from any past week. Today/This week/Next week keep
+                          weekday-only (or the meeting's clock time) since same-week
+                          weekdays are unambiguous. */}
+                      {isOverdue ? (
+                        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.rose, whiteSpace: 'nowrap' }}>
+                          {e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) : ''}
+                          {e.time ? ` · ${e.time.slice(0, 5)}` : ''}
+                        </span>
+                      ) : e.time ? (
                         <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.textFaint, whiteSpace: 'nowrap' }}>{e.time.slice(0, 5)}</span>
                       ) : e.date ? (
                         <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10.5, color: T.textFaint, whiteSpace: 'nowrap' }}>{new Date(e.date + 'T00:00:00').toLocaleDateString('en-SG', { weekday: 'short' })}</span>
