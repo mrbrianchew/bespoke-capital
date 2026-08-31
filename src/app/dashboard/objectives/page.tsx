@@ -850,15 +850,38 @@ if (activeClient) {
 
   // ─── AUTO-SAVE ─────────────────────────────────────────────────────────────
 
+  // Merges with the existing DB row instead of overwriting it wholesale.
+  // Previously this wrote `data: { protection: updated }` directly, which
+  // blindly replaced the whole `protection` object — including the
+  // p1_dtpd_gross/mort/fd/edu/assets (and p1_ci_*) fields that
+  // saveNeedsToDatabase() writes into this same section on its own,
+  // longer (2000ms) debounce. Because this save fires sooner (800ms), any
+  // settings edit made just before the needs-save had a chance to
+  // complete could wipe those need totals from the DB entirely — which is
+  // exactly what happened to Cindy Chew Ai Ping's record (protection_needs
+  // had settings only, no saved p1_dtpd_* figures at all), collapsing her
+  // Coverage Needs Analysis chart's "Need after assets" line to the floor
+  // for her whole life, since ProtectionOverview scales that curve off of
+  // p1_dtpd_gross/assets and both were reading as 0. Reading-then-merging
+  // here (same pattern as saveNeedsToDatabase) means neither save can
+  // clobber fields the other is responsible for, regardless of which
+  // fires last.
   const scheduleSave = useCallback((updated: ProtectionData) => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       if (!clientId) return
       setSaving(true)
+      const { data: existing } = await supabase
+        .from('fact_finding')
+        .select('data')
+        .eq('client_id', clientId)
+        .eq('section', 'protection_needs')
+        .maybeSingle()
+      const existingData = existing?.data || {}
       await supabase
         .from('fact_finding')
         .upsert(
-          { client_id: clientId, section: 'protection_needs', data: { protection: updated }, updated_at: new Date().toISOString() },
+          { client_id: clientId, section: 'protection_needs', data: { ...existingData, protection: { ...existingData.protection, ...updated } }, updated_at: new Date().toISOString() },
           { onConflict: 'client_id,section' }
         )
       setSaving(false)
