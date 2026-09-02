@@ -180,6 +180,8 @@ export default function StatementPage() {
 
   const idBlockRef = useRef<HTMLDivElement>(null)
   const ackRef = useRef<HTMLDivElement>(null)
+  const autosavingRef = useRef(false)
+  const lastSavedDataRef = useRef<string>('')
 
   useEffect(() => {
     if (!token) return
@@ -269,6 +271,7 @@ export default function StatementPage() {
         setSaveErr('Save failed — please check your connection and try again.')
         return
       }
+      lastSavedDataRef.current = JSON.stringify(data)
       setLastSaved(new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }))
       if (action === 'submit') { setStatus('submitted'); setSubmittedAt(j.savedAt || new Date().toISOString()) }
     } catch {
@@ -277,6 +280,52 @@ export default function StatementPage() {
       setSaving(false)
     }
   }
+
+  // Background autosave — used on section navigation (Next/Back) and on a
+  // 30s timer. Deliberately silent: no toasts, no identity-error nagging, no
+  // confirm dialogs, no disabling of the explicit Save/Submit buttons. Skips
+  // entirely if identity fields aren't filled yet (explicit Save/Submit
+  // still enforce and surface that), if the statement is already submitted,
+  // if a save is already in flight, or if nothing has actually changed since
+  // the last successful save.
+  async function silentSave() {
+    if (status === 'submitted') return
+    if (!name.trim() || !occupation.trim()) return
+    if (autosavingRef.current) return
+    const snapshot = JSON.stringify(data)
+    if (snapshot === lastSavedDataRef.current) return
+    autosavingRef.current = true
+    try {
+      const res = await fetch(`/api/statement/${token}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save', password: passwordRef.current, data, name: name.trim(), occupation: occupation.trim() }),
+      })
+      if (res.ok) {
+        lastSavedDataRef.current = snapshot
+        setLastSaved(new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' }))
+        setSaveErr('')
+      }
+      // Failures are swallowed on purpose — the next navigation or timer
+      // tick will simply retry with the latest data. Explicit Save/Submit
+      // remain the source of truth for surfaced errors.
+    } catch {
+      // same as above — retried on the next trigger
+    } finally {
+      autosavingRef.current = false
+    }
+  }
+
+  // Keep a ref to the latest silentSave so the 30s timer below can call it
+  // without needing to tear down and recreate the interval on every keystroke.
+  const silentSaveRef = useRef(silentSave)
+  silentSaveRef.current = silentSave
+
+  // 30s periodic autosave while the client is actively on the form
+  useEffect(() => {
+    if (phase !== 'form' || status === 'submitted') return
+    const id = setInterval(() => { silentSaveRef.current() }, 30000)
+    return () => clearInterval(id)
+  }, [phase, status])
 
   // ---------- Immutable update helpers ----------
   const setIncome = (patch: Partial<StatementData['income']>) =>
@@ -317,6 +366,7 @@ export default function StatementPage() {
   function goTo(i: number) {
     setSectionIdx(i)
     setMaxVisited(m => Math.max(m, i))
+    if (status !== 'submitted') silentSave()
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
