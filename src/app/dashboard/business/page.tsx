@@ -194,7 +194,7 @@ export default function BusinessOverviewPage() {
       if (cases.length > 0) {
         const caseIds = cases.map(c => c.id)
         const [meetingsRes, todosRes, productsRes] = await Promise.all([
-          supabase.from('new_business_case_meetings').select('id, case_id, title, meeting_date, meeting_time, is_scheduled').in('case_id', caseIds).eq('is_scheduled', true),
+          supabase.from('new_business_case_meetings').select('id, case_id, title, meeting_date, meeting_time, is_scheduled').in('case_id', caseIds).eq('is_scheduled', true).is('outcome', null),
           supabase.from('new_business_case_todos').select('id, case_id, text, due_date').in('case_id', caseIds).eq('done', false),
           supabase.from('new_business_case_products').select('case_id, premium, premium_frequency, status, outcome').in('case_id', caseIds),
         ])

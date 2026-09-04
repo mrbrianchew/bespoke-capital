@@ -5,6 +5,7 @@ import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { logClientActivity } from '@/lib/logClientActivity'
+import { setMeetingOutcome, postponeMeeting, MeetingOutcome } from '@/lib/meetingOutcomes'
 
 // Meetings + to-dos for a New Business case. Meetings reuse
 // /api/service-requests/schedule-meeting as-is — that route only ever
@@ -83,7 +84,8 @@ function waLink(phoneRaw: string, text: string): string | null {
 
 const T = {
   gold: 'var(--gold)', goldText: 'var(--gold-tag)', goldSoft: 'rgba(168,131,74,.12)',
-  emerald: 'var(--emerald)', rose: 'var(--rouge)',
+  emerald: 'var(--emerald)', emeraldSoft: 'rgba(45,90,78,.12)',
+  rose: 'var(--rouge)', roseSoft: 'rgba(138,40,40,.10)',
   text: 'var(--ink)', textDim: 'var(--ink2)', textFaint: 'var(--ink3)',
   line: 'var(--line)', cream2: 'var(--cream2)',
 }
@@ -106,6 +108,7 @@ interface MeetingRow {
   meeting_link: string | null
   location: string | null
   phone_number: string | null
+  outcome: MeetingOutcome | null
   created_at: string
 }
 
@@ -198,6 +201,15 @@ export default function NewBusinessCaseExtras({
   const [durationMinutes, setDurationMinutes] = useState(30)
   const [meetingNotes, setMeetingNotes] = useState('')
   const [videoPlatformSel, setVideoPlatformSel] = useState<VideoPlatform>('google_meet')
+
+  // Meeting outcome resolution (Met / Postponed / Cancelled) — see
+  // lib/meetingOutcomes.ts. postponingMeetingId tracks which row's inline
+  // "pick a new date" mini-form is open; resolvingId disables the buttons
+  // on the row that's mid-save so a double-click can't fire two writes.
+  const [postponingMeetingId, setPostponingMeetingId] = useState<string | null>(null)
+  const [postponeDate, setPostponeDate] = useState('')
+  const [postponeTime, setPostponeTime] = useState('')
+  const [resolvingMeetingId, setResolvingMeetingId] = useState<string | null>(null)
   const [meetingLinkDraft, setMeetingLinkDraft] = useState('')
   const [locationDraft, setLocationDraft] = useState('')
   const [phoneDraft, setPhoneDraft] = useState('')
@@ -551,6 +563,34 @@ export default function NewBusinessCaseExtras({
     onMeetingsChanged?.()
   }
 
+  async function resolveMeeting(m: MeetingRow, outcome: 'met' | 'cancelled') {
+    setResolvingMeetingId(m.id)
+    const { error } = await setMeetingOutcome(supabase, m, outcome)
+    setResolvingMeetingId(null)
+    if (error) { toast('Could not save: ' + error, 'error'); return }
+    setMeetings(prev => prev.map(row => row.id === m.id ? { ...row, outcome } : row))
+    onMeetingsChanged?.()
+  }
+
+  function openPostponeForm(m: MeetingRow) {
+    setPostponingMeetingId(m.id)
+    setPostponeDate(m.meeting_date)
+    setPostponeTime(m.meeting_time ? m.meeting_time.slice(0, 5) : '')
+  }
+
+  async function confirmPostpone(m: MeetingRow) {
+    if (!postponeDate) return
+    setResolvingMeetingId(m.id)
+    const { newMeeting, error } = await postponeMeeting(supabase, m, postponeDate, postponeTime, {
+      clientId, advisorId: advisor?.id,
+    })
+    setResolvingMeetingId(null)
+    if (error) { toast('Could not reschedule: ' + error, 'error'); return }
+    setMeetings(prev => [newMeeting, ...prev.map(row => row.id === m.id ? { ...row, outcome: 'postponed' as MeetingOutcome } : row)])
+    setPostponingMeetingId(null)
+    onMeetingsChanged?.()
+  }
+
   async function addTodo() {
     if (!todoDraft.trim()) return
     const { data, error } = await supabase.from('new_business_case_todos')
@@ -686,9 +726,53 @@ export default function NewBusinessCaseExtras({
             {m.location && <div style={{ fontSize: 10.5, color: T.textDim }}>{m.location}</div>}
             {m.phone_number && <div style={{ fontSize: 10.5, color: T.textDim }}>{m.phone_number}</div>}
             {m.notes && <p style={{ fontSize: 12, color: T.textDim, margin: '4px 0 0' }}>{m.notes}</p>}
-            {m.is_scheduled && (
+            {m.is_scheduled && !m.outcome && (
               <p style={{ fontSize: 10.5, color: m.google_calendar_event_id ? T.emerald : T.textFaint, margin: '4px 0 0' }}>
                 {m.google_calendar_event_id ? '✓ synced to calendar' : 'scheduled — calendar not connected'}
+              </p>
+            )}
+
+            {/* Outcome resolution — only scheduled meetings need one, and
+                only once (a resolved meeting shows its status badge below
+                instead). This is what clears a meeting out of the
+                Upcoming follow-ups feed once its date is reached. */}
+            {m.is_scheduled && !m.outcome && postponingMeetingId !== m.id && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button onClick={() => resolveMeeting(m, 'met')} disabled={resolvingMeetingId === m.id}
+                  style={{ fontSize: 11, fontWeight: 700, color: T.emerald, background: T.emeraldSoft, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 9px', opacity: resolvingMeetingId === m.id ? 0.6 : 1 }}>
+                  ✓ Met
+                </button>
+                <button onClick={() => openPostponeForm(m)} disabled={resolvingMeetingId === m.id}
+                  style={{ fontSize: 11, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 9px', opacity: resolvingMeetingId === m.id ? 0.6 : 1 }}>
+                  Postpone
+                </button>
+                <button onClick={() => resolveMeeting(m, 'cancelled')} disabled={resolvingMeetingId === m.id}
+                  style={{ fontSize: 11, fontWeight: 700, color: T.rose, background: T.roseSoft, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 9px', opacity: resolvingMeetingId === m.id ? 0.6 : 1 }}>
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {postponingMeetingId === m.id && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, background: T.cream2, border: `1px solid ${T.line}`, borderRadius: 8, padding: 8 }}>
+                <span style={{ fontSize: 11, color: T.textDim, fontWeight: 600 }}>New date:</span>
+                <input type="date" value={postponeDate} onChange={e => setPostponeDate(e.target.value)} style={{ ...inputStyle, padding: '5px 7px', fontSize: 11.5 }} />
+                <input type="time" value={postponeTime} onChange={e => setPostponeTime(e.target.value)} style={{ ...inputStyle, padding: '5px 7px', fontSize: 11.5 }} />
+                <button onClick={() => confirmPostpone(m)} disabled={resolvingMeetingId === m.id || !postponeDate}
+                  style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: T.text, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '5px 10px', opacity: resolvingMeetingId === m.id || !postponeDate ? 0.6 : 1 }}>
+                  {resolvingMeetingId === m.id ? 'Saving…' : 'Confirm'}
+                </button>
+                <button onClick={() => setPostponingMeetingId(null)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '5px 6px' }}>Cancel</button>
+              </div>
+            )}
+
+            {m.outcome && (
+              <p style={{
+                fontSize: 10.5, fontWeight: 700, margin: '6px 0 0', display: 'inline-block', padding: '3px 8px', borderRadius: 5,
+                color: m.outcome === 'met' ? T.emerald : m.outcome === 'cancelled' ? T.rose : T.goldText,
+                background: m.outcome === 'met' ? T.emeraldSoft : m.outcome === 'cancelled' ? T.roseSoft : T.goldSoft,
+              }}>
+                {m.outcome === 'met' ? '✓ Met' : m.outcome === 'cancelled' ? '✕ Cancelled' : '↻ Postponed — rescheduled below'}
               </p>
             )}
 

@@ -61,7 +61,7 @@ export default function NewApplicationsServicingPage() {
       if (ids.length > 0) {
         const [productsRes, meetingsRes] = await Promise.all([
           supabase.from('new_business_case_products').select('*').in('case_id', ids),
-          supabase.from('new_business_case_meetings').select('case_id, meeting_date, is_scheduled').in('case_id', ids).eq('is_scheduled', true),
+          supabase.from('new_business_case_meetings').select('case_id, meeting_date, is_scheduled').in('case_id', ids).eq('is_scheduled', true).is('outcome', null),
         ])
         if (cancelled) return
         setProducts((productsRes.data || []) as ProductRow[])

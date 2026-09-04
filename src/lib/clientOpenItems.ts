@@ -89,7 +89,7 @@ async function fetchNewBusinessTargets(supabase: any, clientId: string): Promise
 
   const [todosRes, meetingsRes] = await Promise.all([
     supabase.from('new_business_case_todos').select('id, case_id, text, due_date').in('case_id', caseIds).eq('done', false),
-    supabase.from('new_business_case_meetings').select('id, case_id, title, meeting_date, meeting_time, is_scheduled').in('case_id', caseIds),
+    supabase.from('new_business_case_meetings').select('id, case_id, title, meeting_date, meeting_time, is_scheduled').in('case_id', caseIds).is('outcome', null),
   ])
   const todosByCase: Record<string, OpenTodo[]> = {}
   ;(todosRes.data || []).forEach((t: any) => { (todosByCase[t.case_id] ||= []).push({ id: t.id, text: t.text, due_date: t.due_date }) })

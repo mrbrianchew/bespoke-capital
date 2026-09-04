@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { STAGES, Stage, daysInStage, hasUpcomingMeeting, staleLevel, calcAfyp, AttentionCase, AttentionMeeting } from '@/lib/newBusinessAttention'
+import { setMeetingOutcome, postponeMeeting } from '@/lib/meetingOutcomes'
 import NewBusinessCaseModal from '@/components/NewBusinessCaseModal'
 import CaseDrawer, { CaseRow, ProductRow, T, btnSmStyle } from '@/components/NewBusinessCaseDrawer'
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, closestCenter } from '@dnd-kit/core'
@@ -39,9 +40,17 @@ interface FullMeetingRow {
   id: string
   case_id: string
   title: string
+  meeting_type: string
   meeting_date: string
   meeting_time: string | null
+  duration_minutes: number
+  notes: string | null
   is_scheduled: boolean
+  google_calendar_event_id: string | null
+  video_platform: string | null
+  meeting_link: string | null
+  location: string | null
+  phone_number: string | null
 }
 
 // (Fixed Aug 2026 — the old version used a rolling 7-day window, which on
@@ -131,6 +140,13 @@ export default function NewBusinessPipelinePage() {
   const [savingOutcome, setSavingOutcome] = useState(false)
   const [outcomeDraft, setOutcomeDraft] = useState<{ type: 'lost' | 'deferred'; reason: string; revisitDate: string } | null>(null)
 
+  // Meeting outcome resolution inline on the follow-up list — same
+  // Met/Postponed/Cancelled flow as the case drawer (lib/meetingOutcomes.ts).
+  const [postponingMeetingId, setPostponingMeetingId] = useState<string | null>(null)
+  const [postponeDate, setPostponeDate] = useState('')
+  const [postponeTime, setPostponeTime] = useState('')
+  const [resolvingMeetingId, setResolvingMeetingId] = useState<string | null>(null)
+
   // Drag-and-drop stage moves — distance threshold keeps a plain click on
   // the card (opens the drawer) from being swallowed as a drag; only the
   // grip handle on the card actually starts a drag (see CaseCard below),
@@ -166,7 +182,9 @@ export default function NewBusinessPipelinePage() {
       if (ids.length > 0) {
         const [productsRes, meetingsRes, todosRes] = await Promise.all([
           supabase.from('new_business_case_products').select('*').in('case_id', ids),
-          supabase.from('new_business_case_meetings').select('id, case_id, title, meeting_date, meeting_time, is_scheduled').in('case_id', ids).eq('is_scheduled', true),
+          supabase.from('new_business_case_meetings')
+            .select('id, case_id, title, meeting_type, meeting_date, meeting_time, duration_minutes, notes, is_scheduled, google_calendar_event_id, video_platform, meeting_link, location, phone_number')
+            .in('case_id', ids).eq('is_scheduled', true).is('outcome', null),
           supabase.from('new_business_case_todos').select('id, case_id, text, done, due_date').in('case_id', ids).eq('done', false),
         ])
         if (cancelled) return
@@ -272,6 +290,38 @@ export default function NewBusinessPipelinePage() {
     setTodos(prev => done ? prev.filter(t => t.id !== id) : prev)
     const { error } = await supabase.from('new_business_case_todos').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)
     if (error) toast('Save failed: ' + error.message, 'error')
+  }
+
+  async function resolveMeetingFromTab(m: FullMeetingRow, outcome: 'met' | 'cancelled') {
+    setResolvingMeetingId(m.id)
+    const { error } = await setMeetingOutcome(supabase, m, outcome)
+    setResolvingMeetingId(null)
+    if (error) { toast('Could not save: ' + error, 'error'); return }
+    setMeetingsFull(prev => prev.filter(row => row.id !== m.id))
+    setMeetings(prev => prev.filter(row => !(row.case_id === m.case_id && row.meeting_date === m.meeting_date)))
+  }
+
+  function openPostponeFromTab(m: FullMeetingRow) {
+    setPostponingMeetingId(m.id)
+    setPostponeDate(m.meeting_date)
+    setPostponeTime(m.meeting_time ? m.meeting_time.slice(0, 5) : '')
+  }
+
+  async function confirmPostponeFromTab(m: FullMeetingRow) {
+    if (!postponeDate) return
+    setResolvingMeetingId(m.id)
+    const parentCase = casesById[m.case_id]
+    const { newMeeting, error } = await postponeMeeting(supabase, m, postponeDate, postponeTime, {
+      clientId: parentCase?.client_id, advisorId: advisor?.id,
+    })
+    setResolvingMeetingId(null)
+    if (error) { toast('Could not reschedule: ' + error, 'error'); return }
+    setMeetingsFull(prev => [newMeeting, ...prev.filter(row => row.id !== m.id)])
+    setMeetings(prev => [
+      { case_id: newMeeting.case_id, meeting_date: newMeeting.meeting_date, is_scheduled: newMeeting.is_scheduled },
+      ...prev.filter(row => !(row.case_id === m.case_id && row.meeting_date === m.meeting_date)),
+    ])
+    setPostponingMeetingId(null)
   }
 
   async function moveStage(id: string, stage: Stage) {
@@ -418,6 +468,36 @@ export default function NewBusinessPipelinePage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {entries.map(e => {
                   const isOverdue = label === 'Overdue'
+                  const fullMeeting = e.kind === 'meeting' ? meetingsFull.find(fm => fm.id === e.id) || null : null
+                  const isPostponingThis = postponingMeetingId === e.id
+                  const meetingActions = fullMeeting && !isPostponingThis ? (
+                    <div onClick={ev => ev.stopPropagation()} style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button onClick={() => resolveMeetingFromTab(fullMeeting, 'met')} disabled={resolvingMeetingId === e.id}
+                        style={{ fontSize: 11, fontWeight: 700, color: T.emerald, background: T.emeraldSoft, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 9px', opacity: resolvingMeetingId === e.id ? 0.6 : 1 }}>
+                        ✓ Met
+                      </button>
+                      <button onClick={() => openPostponeFromTab(fullMeeting)} disabled={resolvingMeetingId === e.id}
+                        style={{ fontSize: 11, fontWeight: 700, color: T.goldText, background: T.goldSoft, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 9px', opacity: resolvingMeetingId === e.id ? 0.6 : 1 }}>
+                        Postpone
+                      </button>
+                      <button onClick={() => resolveMeetingFromTab(fullMeeting, 'cancelled')} disabled={resolvingMeetingId === e.id}
+                        style={{ fontSize: 11, fontWeight: 700, color: T.rose, background: T.roseSoft, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '4px 9px', opacity: resolvingMeetingId === e.id ? 0.6 : 1 }}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : null
+                  const postponeForm = fullMeeting && isPostponingThis ? (
+                    <div onClick={ev => ev.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, background: T.cream2, border: `1px solid ${T.line}`, borderRadius: 8, padding: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: T.textDim, fontWeight: 600 }}>New date:</span>
+                      <input type="date" value={postponeDate} onChange={ev => setPostponeDate(ev.target.value)} style={{ padding: '5px 7px', fontSize: 11.5, border: `1px solid ${T.line}`, borderRadius: 7, background: '#fff', color: T.text }} />
+                      <input type="time" value={postponeTime} onChange={ev => setPostponeTime(ev.target.value)} style={{ padding: '5px 7px', fontSize: 11.5, border: `1px solid ${T.line}`, borderRadius: 7, background: '#fff', color: T.text }} />
+                      <button onClick={() => confirmPostponeFromTab(fullMeeting)} disabled={resolvingMeetingId === e.id || !postponeDate}
+                        style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: T.text, border: 'none', borderRadius: 6, cursor: 'pointer', padding: '5px 10px', opacity: resolvingMeetingId === e.id || !postponeDate ? 0.6 : 1 }}>
+                        {resolvingMeetingId === e.id ? 'Saving…' : 'Confirm'}
+                      </button>
+                      <button onClick={() => setPostponingMeetingId(null)} style={{ fontSize: 11, color: T.textFaint, background: 'none', border: 'none', cursor: 'pointer', padding: '5px 6px' }}>Cancel</button>
+                    </div>
+                  ) : null
                   const meta = (
                     <>
                       <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '2px 6px', borderRadius: 4, background: e.kind === 'meeting' ? T.slateSoft : T.cream2, color: e.kind === 'meeting' ? T.slate : T.textDim }}>
@@ -459,18 +539,22 @@ export default function NewBusinessPipelinePage() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingLeft: 28 }}>{meta}</div>
+                      {(meetingActions || postponeForm) && <div style={{ paddingLeft: 28 }}>{meetingActions}{postponeForm}</div>}
                     </div>
                   ) : (
                     <div key={`${e.kind}-${e.id}`} onClick={() => setEditingId(e.caseId)} style={{
                       background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 14px',
-                      display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', cursor: 'pointer',
                     }}>
-                      {icon}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{e.title}</div>
-                        <div style={{ fontSize: 11.5, color: T.goldText, marginTop: 2 }}>{casesById[e.caseId]?.case_title || '—'}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {icon}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{e.title}</div>
+                          <div style={{ fontSize: 11.5, color: T.goldText, marginTop: 2 }}>{casesById[e.caseId]?.case_title || '—'}</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>{meta}</div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>{meta}</div>
+                      {(meetingActions || postponeForm) && <div style={{ paddingLeft: 28 }}>{meetingActions}{postponeForm}</div>}
                     </div>
                   )
                 })}

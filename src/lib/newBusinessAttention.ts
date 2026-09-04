@@ -118,7 +118,7 @@ export async function fetchNewBusinessAttentionCount(supabase: any): Promise<num
   if (rows.length === 0) return 0
   const ids = rows.map(r => r.id)
   const [meetingsRes, todosRes] = await Promise.all([
-    supabase.from('new_business_case_meetings').select('case_id, meeting_date, is_scheduled').in('case_id', ids).eq('is_scheduled', true),
+    supabase.from('new_business_case_meetings').select('case_id, meeting_date, is_scheduled').in('case_id', ids).eq('is_scheduled', true).is('outcome', null),
     supabase.from('new_business_case_todos').select('id, case_id, due_date, done').in('case_id', ids).eq('done', false),
   ])
   const meetings = (meetingsRes.data || []) as AttentionMeeting[]
