@@ -1513,7 +1513,7 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
         .from('fact_finding').select('data')
         .eq('client_id', client.id).eq('section', 'protection_portfolio').maybeSingle()
       if (error) throw error
-      const policies: any[] = (row?.data as any)?.policies || []
+      const policies: any[] = (row?.data as any)?.risk_management?.policies || []
       const ACTIVE = ['In-Force', 'Premium Holiday', 'Paid-up']
       const active = policies.filter(p => ACTIVE.includes(p.status))
 
