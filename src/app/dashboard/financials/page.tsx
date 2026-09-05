@@ -371,6 +371,49 @@ function Field({ label, value, onChange, type = 'text', prefix, placeholder, hin
   )
 }
 
+function CurrencyField({ label, value, onChange, placeholder, hint }: {
+  label: string; value: number | undefined; onChange: (v: number) => void
+  placeholder?: string; hint?: string
+}) {
+  const formatWithCommas = (v: number) => v ? v.toLocaleString('en-US') : ''
+  const [text, setText] = useState(() => formatWithCommas(value ?? 0))
+  const lastEmitted = useRef<number>(value ?? 0)
+
+  useEffect(() => {
+    // Only resync display from the parent when the value changed for a reason
+    // other than our own typing (e.g. switching client, initial load) — otherwise
+    // an in-progress edit (like an emptied field) gets clobbered back to a formatted "0".
+    const v = value ?? 0
+    if (v !== lastEmitted.current) {
+      setText(formatWithCommas(v))
+      lastEmitted.current = v
+    }
+  }, [value])
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const digits = e.target.value.replace(/\D/g, '')
+    const num = digits === '' ? 0 : parseInt(digits, 10)
+    setText(digits === '' ? '' : Number(digits).toLocaleString('en-US'))
+    lastEmitted.current = num
+    onChange(num)
+  }
+
+  return (
+    <div>
+      <Lbl>{label}</Lbl>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--ink3)' }}>$</span>
+        <input type="text" inputMode="numeric" value={text} onChange={handleChange} placeholder={placeholder}
+          className="w-full px-3 py-2.5 text-sm outline-none"
+          style={{ paddingLeft: 28, border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
+          onFocus={e => (e.currentTarget.style.borderColor = 'var(--gold)')}
+          onBlur={e => (e.currentTarget.style.borderColor = 'var(--line)')} />
+      </div>
+      {hint && <div className="text-xs mt-1" style={{ color: 'var(--ink3)' }}>{hint}</div>}
+    </div>
+  )
+}
+
 function Sel({ label, value, onChange, options }: { label: string; value: string | undefined; onChange: (v: string) => void; options: string[] }) {
   return (
     <div>
@@ -1141,8 +1184,8 @@ function PersonIncomePanel({ p, onChange, age, config, label }: { p: PersonData;
       </Card>
       <Card title="Gross Salary" subtitle="Before CPF deductions">
         <div className="space-y-3">
-          <Field label="Gross Monthly" value={p.gross_monthly} onChange={v => onChange('gross_monthly', n(v))} type="number" prefix="$" placeholder="0" />
-          <Field label="Gross Annual Bonus" value={p.gross_bonus} onChange={v => onChange('gross_bonus', n(v))} type="number" prefix="$" placeholder="0" hint="Total bonus/yr (AWS + variable)" />
+          <CurrencyField label="Gross Monthly" value={p.gross_monthly} onChange={v => onChange('gross_monthly', v)} placeholder="0" />
+          <CurrencyField label="Gross Annual Bonus" value={p.gross_bonus} onChange={v => onChange('gross_bonus', v)} placeholder="0" hint="Total bonus/yr (AWS + variable)" />
         </div>
       </Card>
       <Card title="Other Income" subtitle="Rental, dividends, commissions, etc.">
