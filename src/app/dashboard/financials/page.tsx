@@ -1319,6 +1319,7 @@ function FactFindingPage() {
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
   const [pullingPortfolio, setPullingPortfolio] = useState<'insurance' | 'savings' | null>(null)
+  const [pullError, setPullError] = useState<{ kind: 'insurance' | 'savings'; message: string } | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -1506,10 +1507,12 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   async function pullFromPortfolio(kind: 'insurance' | 'savings') {
     if (!client) return
     setPullingPortfolio(kind)
+    setPullError(null)
     try {
-      const { data: row } = await supabase
+      const { data: row, error } = await supabase
         .from('fact_finding').select('data')
         .eq('client_id', client.id).eq('section', 'protection_portfolio').maybeSingle()
+      if (error) throw error
       const policies: any[] = (row?.data as any)?.policies || []
       const ACTIVE = ['In-Force', 'Premium Holiday', 'Paid-up']
       const active = policies.filter(p => ACTIVE.includes(p.status))
@@ -1548,6 +1551,8 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
         upd('d_regular_savings', Math.round(sumFor('client', true)))
         if (isCouple) upd('d2_regular_savings', Math.round(sumFor('spouse', true)))
       }
+    } catch (err: any) {
+      setPullError({ kind, message: err?.message || 'Could not pull from Portfolio — please try again.' })
     } finally {
       setPullingPortfolio(null)
     }
@@ -2002,13 +2007,19 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                                   <div style={{ width: 190, flexShrink: 0 }}>
                                     <div className="text-xs" style={{ color: 'var(--ink2)' }}>{group.labels[i]}</div>
                                     {pullKind && (
-                                      <button
-                                        onClick={() => pullFromPortfolio(pullKind)}
-                                        disabled={pullingPortfolio === pullKind}
-                                        className="text-xs mt-0.5"
-                                        style={{ color: 'var(--gold-tag)', background: 'none', border: 'none', cursor: pullingPortfolio === pullKind ? 'default' : 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 2 }}>
-                                        {pullingPortfolio === pullKind ? 'Pulling…' : 'Pull from Portfolio'}
-                                      </button>
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => pullFromPortfolio(pullKind)}
+                                          disabled={pullingPortfolio === pullKind}
+                                          className="text-xs mt-0.5"
+                                          style={{ color: 'var(--gold-tag)', background: 'none', border: 'none', cursor: pullingPortfolio === pullKind ? 'default' : 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                                          {pullingPortfolio === pullKind ? 'Pulling…' : 'Pull from Portfolio'}
+                                        </button>
+                                        {pullError && pullError.kind === pullKind && pullingPortfolio === null && (
+                                          <div className="text-xs mt-0.5" style={{ color: '#B04A4A' }}>{pullError.message}</div>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                   <input type="text" value={(ff[noteKey] as string) || ''} placeholder="Add a note"
