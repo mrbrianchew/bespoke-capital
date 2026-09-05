@@ -1221,56 +1221,10 @@ function CoverageChart({
     status: 'covered' | 'shortfall'
   }
 
-  function RadialDial({ breakdown, size = 128 }: { breakdown: DialBreakdown; size?: number }) {
-    const strokeW = 10
-    const r = size / 2 - strokeW
-    const c = size / 2
-    const circumference = 2 * Math.PI * r
-    const total = breakdown.maxCapitalRequired > 0 ? breakdown.maxCapitalRequired : 1
-
-    const goldLen = circumference * Math.min(1, breakdown.existingCoverage / total)
-    const sageLen = circumference * Math.max(0, Math.min(1 - breakdown.existingCoverage / total, breakdown.assetMitigation / total))
-    const shortfallLen = breakdown.status === 'shortfall' ? Math.max(0, circumference - goldLen - sageLen) : 0
-
-    const pct = breakdown.maxCapitalRequired > 0
-      ? Math.min(100, Math.round(((breakdown.existingCoverage + breakdown.assetMitigation) / breakdown.maxCapitalRequired) * 100))
-      : 100
-
-    return (
-      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
-        {/* Neutral base track underneath every segment */}
-        <circle cx={c} cy={c} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={strokeW} />
-        {shortfallLen > 0 && (
-          <circle cx={c} cy={c} r={r} fill="none" stroke="#E8544A" strokeWidth={strokeW} strokeLinecap="round"
-            strokeDasharray={`${shortfallLen} ${circumference}`} strokeDashoffset={-(goldLen + sageLen)} transform={`rotate(-90 ${c} ${c})`} />
-        )}
-        {sageLen > 0 && (
-          <circle cx={c} cy={c} r={r} fill="none" stroke="#7FC47F" strokeWidth={strokeW} strokeLinecap="round"
-            strokeDasharray={`${sageLen} ${circumference}`} strokeDashoffset={-goldLen} transform={`rotate(-90 ${c} ${c})`} />
-        )}
-        {goldLen > 0 && (
-          <circle cx={c} cy={c} r={r} fill="none" stroke="#c8a96e" strokeWidth={strokeW} strokeLinecap="round"
-            strokeDasharray={`${goldLen} ${circumference}`} transform={`rotate(-90 ${c} ${c})`} />
-        )}
-        <text x={c} y={c - 3} textAnchor="middle" fontFamily="Georgia, serif" fontWeight={400} fontSize={size * 0.19} fill="#F0EDE8">
-          {pct}%
-        </text>
-        <text x={c} y={c + 16} textAnchor="middle" fontSize={size * 0.075} letterSpacing="0.1em" fill="rgba(255,255,255,0.4)">
-          PROTECTED
-        </text>
-      </svg>
-    )
-  }
-
-  function LegendRow({ swatch, label, value }: { swatch: string; label: string; value: number }) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', flex: 1 }}>{label}</span>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#F0EDE8' }}>{fmt(value)}</span>
-      </div>
-    )
-  }
+  // RadialDial and LegendRow removed — replaced by the linear stack bar and
+  // inline legend built directly into ScenarioDialCell's verdict module
+  // below. Percentage-covered is no longer the headline; the dollar
+  // shortfall is. See ScenarioDialCell for the new layout.
 
   // Distinct per-category colors so "Family living", "Mortgage", "Education"
   // etc. read as different lines at a glance, consistent across both the
@@ -1294,17 +1248,17 @@ function CoverageChart({
     return (
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ fontSize: 13, color: '#55524b', display: 'flex', alignItems: 'center', gap: 7 }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: swatch, flexShrink: 0, display: 'inline-block' }} />
             {label}
           </span>
-          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#F0EDE8', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
+          <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1A1816', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
         </div>
-        <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 99 }}>
+        <div style={{ height: 3, background: '#EFEAE0', borderRadius: 99 }}>
           <div style={{ width: `${barPct}%`, height: '100%', background: swatch, borderRadius: 99 }} />
         </div>
         {durationYears != null && durationYears > 0 && (
-          <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.3)', marginTop: 5 }}>{durationYears} yrs</div>
+          <div style={{ fontSize: 10.5, color: '#b0aba1', marginTop: 5 }}>{durationYears} yrs</div>
         )}
       </div>
     )
@@ -1348,97 +1302,129 @@ function CoverageChart({
       ? Math.min(100, Math.round(((breakdown.existingCoverage + breakdown.assetMitigation) / breakdown.maxCapitalRequired) * 100))
       : 100
 
+    if (!hasNeed) {
+      return (
+        <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontStyle: 'italic', fontSize: 14, color: '#a39d90' }}>
+          No need identified yet.
+        </div>
+      )
+    }
+
+    // Stack widths as percentages of total need — same proportions the old
+    // ring used (existing coverage, then asset mitigation, then whatever's
+    // left as shortfall), just measured as bar width instead of arc length.
+    const total = breakdown.maxCapitalRequired > 0 ? breakdown.maxCapitalRequired : 1
+    const insurancePct = Math.min(100, (breakdown.existingCoverage / total) * 100)
+    const assetPct = Math.max(0, Math.min(100 - insurancePct, (breakdown.assetMitigation / total) * 100))
+    const shortfallPct = breakdown.status === 'shortfall' ? Math.max(0, 100 - insurancePct - assetPct) : 0
+    const isShortfall = breakdown.status === 'shortfall'
+
     return (
       <div>
-        {/* Person header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 24 }}>
+        {/* Dark verdict module — the only dark surface in this card. Person
+            header, the dollar figure (not a percentage), and the stack bar
+            all live here; everything below drops back to the light card. */}
+        <div style={{
+          position: 'relative', borderRadius: 16, overflow: 'hidden',
+          background: 'linear-gradient(155deg, #221F1A 0%, #17150F 100%)',
+          padding: '26px 28px 24px', marginBottom: 26,
+        }}>
           <div style={{
-            width: 28, height: 28, borderRadius: '50%', background: initialsBg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, fontWeight: 500, color: initialsColor, flexShrink: 0,
-          }}>{initials}</div>
-          <div style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: initialsColor, fontWeight: 500 }}>
-            {personLabel}, {age}
-          </div>
-          {income > 0 && (
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginLeft: 2 }}>
-              · {fmt(income)}/mo
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'radial-gradient(circle at 12% 10%, rgba(200,169,110,0.10), transparent 45%)',
+          }} />
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%', background: initialsBg,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10.5, fontWeight: 500, color: initialsColor, flexShrink: 0,
+            }}>{initials}</div>
+            <div style={{ fontSize: 11.5, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: initialsColor, fontWeight: 500 }}>
+              {personLabel}, {age}
             </div>
-          )}
+            {income > 0 && (
+              <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.3)', marginLeft: 2 }}>
+                · {fmt(income)}/mo
+              </div>
+            )}
+          </div>
+
+          <div style={{
+            position: 'relative', fontFamily: 'Cormorant Garamond, Georgia, serif', fontWeight: 400, fontSize: 40,
+            color: isShortfall ? '#FF8A80' : '#8fd6a8', lineHeight: 1.05, marginBottom: 4,
+          }}>
+            {isShortfall ? fmt(breakdown.shortfall) : 'Fully funded'}
+          </div>
+          <div style={{
+            position: 'relative', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase',
+            color: isShortfall ? 'rgba(255,138,128,0.6)' : 'rgba(143,214,168,0.6)', marginBottom: 20,
+          }}>
+            {isShortfall ? `Shortfall against ${fmt(breakdown.maxCapitalRequired)} need` : `${fmt(breakdown.maxCapitalRequired)} need fully covered`}
+          </div>
+
+          <div style={{ position: 'relative', height: 18, borderRadius: 6, overflow: 'hidden', display: 'flex', background: 'rgba(255,255,255,0.06)', marginBottom: 10 }}>
+            <div style={{ width: `${insurancePct}%`, height: '100%', background: '#c8a96e' }} />
+            <div style={{ width: `${assetPct}%`, height: '100%', background: '#7FC47F' }} />
+            {shortfallPct > 0 && <div style={{ width: `${shortfallPct}%`, height: '100%', background: '#E8544A' }} />}
+          </div>
+          <div style={{ position: 'relative', display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: '#c8a96e', display: 'inline-block' }} />
+              Insurance {fmt(breakdown.existingCoverage)}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: '#7FC47F', display: 'inline-block' }} />
+              Assets {fmt(breakdown.assetMitigation)}
+            </span>
+            {isShortfall && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: '#E8544A', display: 'inline-block' }} />
+                Gap {fmt(breakdown.shortfall)}
+              </span>
+            )}
+          </div>
         </div>
 
-        {!hasNeed ? (
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontStyle: 'italic', fontSize: 14, color: 'rgba(255,255,255,0.35)' }}>
-            No need identified yet.
+        {type === 'ci' && belowFloor && floor && breakdown.shortfall > 0 && (
+          <div style={{ marginBottom: 20, padding: '10px 14px', borderRadius: 10, background: '#FBEEEE', border: '1px solid #F0D3D3' }}>
+            <div style={{ fontSize: 11, color: '#A13D3D', fontWeight: 600, marginBottom: 3 }}>Below {fmt(floor)} survival floor</div>
+            <div style={{ fontSize: 11, color: '#8a857c', lineHeight: 1.5 }}>CI protection is needed for life — not just working years</div>
           </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36, alignItems: 'start' }}>
-            {/* Left: dial + shortfall + legend */}
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
-                <RadialDial breakdown={breakdown} />
-              </div>
-              {breakdown.status === 'shortfall' && (
-                <div style={{ textAlign: 'center', fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 24, color: '#FF8A80', marginBottom: 4 }}>
-                  {fmt(breakdown.shortfall)}
-                </div>
-              )}
-              {breakdown.status === 'shortfall' && (
-                <div style={{ textAlign: 'center', fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,138,128,0.65)', marginBottom: 18 }}>
-                  Shortfall
-                </div>
-              )}
+        )}
 
-              {type === 'ci' && belowFloor && floor && breakdown.shortfall > 0 && (
-                <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(192,57,43,0.14)', border: '1px solid rgba(232,160,160,0.22)' }}>
-                  <div style={{ fontSize: 11, color: 'rgba(255,138,128,0.9)', fontWeight: 600, marginBottom: 3 }}>Below {fmt(floor)} survival floor</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>CI protection is needed for life — not just working years</div>
-                </div>
-              )}
-
-              <div style={{ marginTop: 12, paddingTop: 8, width: '100%', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <LegendRow swatch="#c8a96e" label="Insurance" value={breakdown.existingCoverage} />
-                <LegendRow swatch="#7FC47F" label="Assets" value={breakdown.assetMitigation} />
-              </div>
+        {/* Light need-composition section */}
+        <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#a39d90', marginBottom: 16, fontWeight: 500 }}>
+          Need composition
+        </div>
+        <div>
+          {visibleRows.map((r, i) => (
+            <ScenarioBreakdownRow
+              key={i}
+              label={r.label}
+              value={r.value}
+              maxValue={maxRowValue}
+              durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+            />
+          ))}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 4, borderTop: '1px solid rgba(168,131,74,0.16)', fontSize: 14, fontWeight: 600, color: '#1A1816' }}>
+          <span>Total need</span>
+          <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
+        </div>
+        {type === 'ci' && recoveryWindowYears != null && (
+          <>
+            <div style={{
+              marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px', borderRadius: 10,
+              background: '#EAF3EE', border: '1px solid #CFE7D8',
+            }}>
+              <span style={{ fontSize: 11, color: '#2D6A4F', fontWeight: 500 }}>Recovery window</span>
+              <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#1A1816' }}>{recoveryWindowYears} years</span>
             </div>
-
-            {/* Right: need composition */}
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 20, fontWeight: 500 }}>
-                Need composition
-              </div>
-              <div>
-                {visibleRows.map((r, i) => (
-                  <ScenarioBreakdownRow
-                    key={i}
-                    label={r.label}
-                    value={r.value}
-                    maxValue={maxRowValue}
-                    durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
-                  />
-                ))}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 14, marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.09)', fontSize: 14, fontWeight: 600, color: '#F0EDE8' }}>
-                <span>Total need</span>
-                <span style={{ fontFamily: 'DM Mono, monospace' }}>{fmt(breakdown.maxCapitalRequired)}</span>
-              </div>
-              {type === 'ci' && recoveryWindowYears != null && (
-                <>
-                  <div style={{
-                    marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 14px', borderRadius: 10,
-                    background: 'rgba(127,196,127,0.10)', border: '1px solid rgba(127,196,127,0.22)',
-                  }}>
-                    <span style={{ fontSize: 11, color: 'rgba(160,220,160,0.9)', fontWeight: 500 }}>Recovery window</span>
-                    <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#F0EDE8' }}>{recoveryWindowYears} years</span>
-                  </div>
-                  <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.3)', marginTop: 7, lineHeight: 1.55 }}>
-                    Funded {fundedPct}% of a {recoveryWindowYears}-year income-replacement window — CI planning covers the recovery period after diagnosis, not a permanent loss like D/TPD.
-                  </div>
-                </>
-              )}
+            <div style={{ fontSize: 10.5, color: '#a39d90', marginTop: 7, lineHeight: 1.55 }}>
+              Funded {fundedPct}% of a {recoveryWindowYears}-year income-replacement window — CI planning covers the recovery period after diagnosis, not a permanent loss like D/TPD.
             </div>
-          </div>
+          </>
         )}
       </div>
     )
@@ -1491,26 +1477,24 @@ function CoverageChart({
         </div>
       )}
 
-      {/* ① D/TPD SCENARIO PANEL — single frosted card, no nested boxes */}
+      {/* ① D/TPD — one continuous light card: narrative → chart → detail,
+          each section separated by a hairline instead of stacked as
+          separate dark/white boxes. */}
       <div style={{
-        position: 'relative', borderRadius: 22, overflow: 'hidden',
-        background: 'linear-gradient(180deg, #221F1A 0%, #17150F 100%)',
-        border: '1px solid rgba(255,255,255,0.09)',
-        boxShadow: '0 24px 60px -20px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
+        background: '#FDFCFA', borderRadius: 22,
+        border: '1px solid rgba(168,131,74,0.18)',
+        boxShadow: '0 1px 2px rgba(26,24,22,0.04), 0 20px 44px -28px rgba(26,24,22,0.16)',
+        padding: '38px 40px 34px',
       }}>
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(circle at 15% 8%, rgba(200,169,110,0.10), transparent 45%), radial-gradient(circle at 90% 95%, rgba(127,196,127,0.09), transparent 50%)',
-        }} />
         {/* Narrative */}
-        <div style={{ position: 'relative', padding: '34px 36px 20px' }}>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontWeight: 500, fontSize: 21, letterSpacing: '0.01em', color: 'rgba(200,169,110,0.9)', marginBottom: 14 }}>
+        <div style={{ paddingBottom: 30, marginBottom: 30, borderBottom: '1px solid rgba(168,131,74,0.16)' }}>
+          <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#A8834A', fontWeight: 500, marginBottom: 14 }}>
             Death &amp; total permanent disability
           </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 27, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            <>If <span style={{ color: '#c8a96e', fontSize: 31 }}>{activeName}</span> were gone tomorrow —</>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 26, fontWeight: 400, color: '#1A1816', lineHeight: 1.4, marginBottom: 8 }}>
+            <>If <span style={{ color: '#A13D3D', fontWeight: 500 }}>{activeName}</span> were gone tomorrow —</>
           </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 300, color: '#55524b', lineHeight: 1.65 }}>
             {children.length > 0
               ? `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would be left to raise ${children.map((c: any) => c.name || 'your child').join(' and ')} alone. The mortgage, school fees, and daily life continue — but the income that makes it possible would not.`
               : `${effectiveIsCouple ? 'The surviving spouse' : 'Your family'} would face an immediate income gap. The mortgage and daily expenses continue — but without your income to fund them.`
@@ -1518,49 +1502,20 @@ function CoverageChart({
           </div>
         </div>
 
-        <div style={{ position: 'relative', margin: '0 36px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
-
-        {/* Coverage cells */}
-        {!protectionSnapshot ? (
-          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
-        ) : !activeProfile ? (
-          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
-        ) : (
-          <div style={{ position: 'relative', padding: '24px 36px 34px' }}>
-            <ScenarioDialCell
-              personLabel={activeName}
-              initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-              initialsColor={activeInitialsColor}
-              initialsBg={activeInitialsBg}
-              age={activeAge}
-              income={activeIncome}
-              breakdown={activeProfile.dtpd}
-              rows={[
-                { label: 'Family living', value: activeProfile.dtpd.familyDependency, milestoneType: 'retirement' },
-                { label: 'Mortgage / Debts', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
-                { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
-              ]}
-              timeline={activeProfile.dtpdTimeline}
-              type="dtpd"
-            />
-          </div>
-        )}
-      </div>
-
-      {/* D/TPD CHART — sits directly under the D/TPD scenario card above */}
-      <div style={{ background: 'white', borderRadius: 20, padding: '26px 30px' }}>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 4 }}>
+        {/* Chart — unchanged from before. Same CoverageChart call, same
+            props, same data source, same formulas. Only its outer white
+            card wrapper is gone, since it now sits inside this card. */}
+        <div style={{ paddingBottom: 30, marginBottom: 30, borderBottom: '1px solid rgba(168,131,74,0.16)' }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 4, fontWeight: 500 }}>
             Coverage needs analysis
           </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17' }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 18, fontWeight: 400, color: '#1A1816' }}>
             Death / TPD coverage need — {aName}
           </div>
-          <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
+          <div style={{ fontSize: 10.5, color: '#a39d90', marginTop: 3, marginBottom: 16 }}>
             Required capital vs portfolio · sharp drops at uni · mortgage slope · permanent floor
           </div>
-        </div>
-        <CoverageChart
+          <CoverageChart
   data={chartData}
   type="dtpd"
   floor={aFloor}
@@ -1569,84 +1524,72 @@ function CoverageChart({
   milestones={milestoneAges}
   personName={aName} 
 />
-        <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-          Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
+          <div style={{ fontSize: 10, color: '#b0aba1', marginTop: 8, fontStyle: 'italic' }}>
+            Floor = higher of inflated basic living expenses or $300,000 — permanent regardless of age.
+          </div>
+          <div style={{ fontSize: 10, color: '#b0aba1', marginTop: 2, fontStyle: 'italic' }}>
+            {floorExplanation(aName, aFloorDetail, Math.round(inflation * 100))}
+          </div>
         </div>
-        <div style={{ fontSize: 10, color: '#bbb', marginTop: 2, fontStyle: 'italic' }}>
-          {floorExplanation(aName, aFloorDetail, Math.round(inflation * 100))}
-        </div>
+
+        {/* Detail — verdict module + need composition, self-contained in ScenarioDialCell */}
+        {!protectionSnapshot ? (
+          <div style={{ fontSize: 12, color: '#a39d90' }}>Loading coverage breakdown…</div>
+        ) : !activeProfile ? (
+          <div style={{ fontSize: 12, color: '#a39d90' }}>No data for {activeName} yet.</div>
+        ) : (
+          <ScenarioDialCell
+            personLabel={activeName}
+            initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            initialsColor={activeInitialsColor}
+            initialsBg={activeInitialsBg}
+            age={activeAge}
+            income={activeIncome}
+            breakdown={activeProfile.dtpd}
+            rows={[
+              { label: 'Family living', value: activeProfile.dtpd.familyDependency, milestoneType: 'retirement' },
+              { label: 'Mortgage / Debts', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
+              { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
+            ]}
+            timeline={activeProfile.dtpdTimeline}
+            type="dtpd"
+          />
+        )}
       </div>
 
-      {/* ② CI SCENARIO PANEL — single frosted card, no nested boxes */}
+      {/* ② CI — one continuous light card, same narrative → chart → detail
+          structure as D/TPD above. */}
       <div style={{
-        position: 'relative', borderRadius: 22, overflow: 'hidden',
-        background: 'linear-gradient(180deg, #221F1A 0%, #17150F 100%)',
-        border: '1px solid rgba(255,255,255,0.09)',
-        boxShadow: '0 24px 60px -20px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
+        background: '#FDFCFA', borderRadius: 22,
+        border: '1px solid rgba(168,131,74,0.18)',
+        boxShadow: '0 1px 2px rgba(26,24,22,0.04), 0 20px 44px -28px rgba(26,24,22,0.16)',
+        padding: '38px 40px 34px',
       }}>
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(circle at 15% 8%, rgba(200,169,110,0.10), transparent 45%), radial-gradient(circle at 90% 95%, rgba(127,196,127,0.09), transparent 50%)',
-        }} />
-        <div style={{ position: 'relative', padding: '34px 36px 20px' }}>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontWeight: 500, fontSize: 21, letterSpacing: '0.01em', color: 'rgba(127,196,127,0.9)', marginBottom: 14 }}>
+        {/* Narrative */}
+        <div style={{ paddingBottom: 30, marginBottom: 30, borderBottom: '1px solid rgba(168,131,74,0.16)' }}>
+          <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#2D6A4F', fontWeight: 500, marginBottom: 14 }}>
             Critical illness
           </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 27, fontWeight: 300, color: '#F0EDE8', lineHeight: 1.45, marginBottom: 8 }}>
-            <>If <span style={{ color: '#7FC47F', fontSize: 31 }}>{activeName}</span> received a critical illness diagnosis —</>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 26, fontWeight: 400, color: '#1A1816', lineHeight: 1.4, marginBottom: 8 }}>
+            <>If <span style={{ color: '#2D6A4F', fontWeight: 500 }}>{activeName}</span> received a critical illness diagnosis —</>
           </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 19, fontWeight: 300, color: 'rgba(240,237,232,0.7)', lineHeight: 1.65 }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 17, fontWeight: 300, color: '#55524b', lineHeight: 1.65 }}>
             Life would not end — but income would pause. Recovery takes years, not months. And CI coverage is not just for working years. Even at retirement, a diagnosis without a payout is still a crisis.
           </div>
         </div>
 
-        <div style={{ position: 'relative', margin: '0 36px', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
-
-        {!protectionSnapshot ? (
-          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading coverage breakdown…</div>
-        ) : !activeProfile ? (
-          <div style={{ position: 'relative', padding: '24px 36px 34px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No data for {activeName} yet.</div>
-        ) : (
-          <div style={{ position: 'relative', padding: '24px 36px 34px' }}>
-            <ScenarioDialCell
-              personLabel={activeName}
-              initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-              initialsColor={activeInitialsColor}
-              initialsBg={activeInitialsBg}
-              age={activeAge}
-              income={activeIncome}
-              breakdown={activeProfile.ci}
-              rows={[
-                { label: 'Family living', value: activeProfile.ci.familyDependency },
-                { label: 'Mortgage / Debts', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
-                { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education' },
-                { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
-                { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer },
-              ]}
-              timeline={activeProfile.ciTimeline}
-              type="ci"
-              recoveryWindowYears={activeProfile.ci.ciYears}
-              belowFloor={activeCIBelowFloor}
-              floor={activeFloor}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* CI CHART — sits directly under the CI scenario card above */}
-      <div style={{ background: 'white', borderRadius: 20, padding: '26px 30px' }}>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#2D6A4F', marginBottom: 4 }}>
+        {/* Chart — unchanged. Same CoverageChart call, same props, same data. */}
+        <div style={{ paddingBottom: 30, marginBottom: 30, borderBottom: '1px solid rgba(168,131,74,0.16)' }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#2D6A4F', marginBottom: 4, fontWeight: 500 }}>
             Coverage needs analysis
           </div>
-          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 20, fontWeight: 400, color: '#1C1A17' }}>
+          <div style={{ fontFamily: 'Cormorant Garamond, Georgia, serif', fontSize: 18, fontWeight: 400, color: '#1A1816' }}>
             Critical illness coverage need — {aName}
           </div>
-          <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
+          <div style={{ fontSize: 10.5, color: '#a39d90', marginTop: 3, marginBottom: 16 }}>
             Income window · sharp drops at uni · mortgage slope · survival floor forever
           </div>
-        </div>
-        <CoverageChart
+          <CoverageChart
   data={chartData}
   type="ci"
   floor={aFloor}
@@ -1655,12 +1598,42 @@ function CoverageChart({
   milestones={milestoneAges}
   personName={aName}
 />
-        <div style={{ fontSize: 10, color: '#bbb', marginTop: 4, fontStyle: 'italic' }}>
-          Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
+          <div style={{ fontSize: 10, color: '#b0aba1', marginTop: 8, fontStyle: 'italic' }}>
+            Even at age 100 — no mortgage, no dependants — a CI diagnosis without the survival floor is still a crisis.
+          </div>
+          <div style={{ fontSize: 10, color: '#b0aba1', marginTop: 2, fontStyle: 'italic' }}>
+            {floorExplanation(aName, aFloorDetail, Math.round(inflation * 100))}
+          </div>
         </div>
-        <div style={{ fontSize: 10, color: '#bbb', marginTop: 2, fontStyle: 'italic' }}>
-          {floorExplanation(aName, aFloorDetail, Math.round(inflation * 100))}
-        </div>
+
+        {/* Detail */}
+        {!protectionSnapshot ? (
+          <div style={{ fontSize: 12, color: '#a39d90' }}>Loading coverage breakdown…</div>
+        ) : !activeProfile ? (
+          <div style={{ fontSize: 12, color: '#a39d90' }}>No data for {activeName} yet.</div>
+        ) : (
+          <ScenarioDialCell
+            personLabel={activeName}
+            initials={activeName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            initialsColor={activeInitialsColor}
+            initialsBg={activeInitialsBg}
+            age={activeAge}
+            income={activeIncome}
+            breakdown={activeProfile.ci}
+            rows={[
+              { label: 'Family living', value: activeProfile.ci.familyDependency },
+              { label: 'Mortgage / Debts', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
+              { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education' },
+              { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
+              { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer },
+            ]}
+            timeline={activeProfile.ciTimeline}
+            type="ci"
+            recoveryWindowYears={activeProfile.ci.ciYears}
+            belowFloor={activeCIBelowFloor}
+            floor={activeFloor}
+          />
+        )}
       </div>
 
       {/* ④ INTENTION GAP */}
