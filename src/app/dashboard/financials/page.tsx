@@ -1557,13 +1557,16 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
         active
           .filter(p => (p.categoryCode === 'endowment') === isEndowment && belongsTo(p, personKey, personName))
           .reduce((s, p) => s + annualCashPrem(p) * splitFrac(p, personKey), 0)
+      // Round to the nearest cent, not the nearest dollar — plain floating-
+      // point sums (e.g. 1100.10 * 12) can land on 13201.199999999999.
+      const round2 = (n: number) => Math.round(n * 100) / 100
 
       if (kind === 'insurance') {
-        upd('d_insurance', Math.round(sumFor('client', clientName, false)))
-        if (isCouple) upd('d2_insurance', Math.round(sumFor('spouse', spouseName, false)))
+        upd('d_insurance', round2(sumFor('client', clientName, false)))
+        if (isCouple) upd('d2_insurance', round2(sumFor('spouse', spouseName, false)))
       } else {
-        upd('d_regular_savings', Math.round(sumFor('client', clientName, true)))
-        if (isCouple) upd('d2_regular_savings', Math.round(sumFor('spouse', spouseName, true)))
+        upd('d_regular_savings', round2(sumFor('client', clientName, true)))
+        if (isCouple) upd('d2_regular_savings', round2(sumFor('spouse', spouseName, true)))
       }
     } catch (err: any) {
       setPullError({ kind, message: err?.message || 'Could not pull from Portfolio — please try again.' })
