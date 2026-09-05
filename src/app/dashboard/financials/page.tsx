@@ -1517,16 +1517,19 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
       const ACTIVE = ['In-Force', 'Premium Holiday', 'Paid-up']
       const active = policies.filter(p => ACTIVE.includes(p.status))
 
-      const annualPrem = (p: any) => {
+      // Cash/Credit Card portion only — Medisave and CPF (OA/SA/SRS)
+      // contributions aren't out-of-pocket cash outflow, so they're
+      // excluded here, same treatment already given to CPF OA mortgage
+      // payments elsewhere on this page ("not included in cash expenses").
+      const annualCashPrem = (p: any) => {
         if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
         const cash = p.isUSD ? (p.premiumCash || 0) * (p.fxRate || 1.35) : (p.premiumCash || 0)
-        const total = cash + (p.premiumMedisave || 0)
         switch (p.frequency) {
-          case 'Semi-Annual': return total * 2
-          case 'Quarterly': return total * 4
-          case 'Monthly': return total * 12
+          case 'Semi-Annual': return cash * 2
+          case 'Quarterly': return cash * 4
+          case 'Monthly': return cash * 12
           case 'Single': return 0
-          default: return total
+          default: return cash
         }
       }
       // Same joint-account split logic as the Portfolio tab — full premium
@@ -1537,19 +1540,30 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
         const owner = p.jointOwners.find((o: any) => o.personKey === personKey)
         return owner ? (owner.splitPercent || 0) / 100 : 0
       }
-      const belongsTo = (p: any, personKey: string) =>
-        p.person === personKey || !!(p.jointOwners && p.jointOwners.some((o: any) => o.personKey === personKey))
-      const sumFor = (personKey: string, isEndowment: boolean) =>
+      // A policy belongs to a parent either directly (their own tab, or a
+      // joint-owned account) or — for a dependent's policy — when that
+      // parent is the one actually paying for it. Dependents don't pay
+      // their own premiums, so a child's policy is attributed to whichever
+      // parent is named as policyholder, not left out entirely.
+      const belongsTo = (p: any, personKey: string, personName: string) => {
+        if (p.person === personKey) return true
+        if (p.jointOwners && p.jointOwners.some((o: any) => o.personKey === personKey)) return true
+        if (typeof p.person === 'string' && p.person.startsWith('child_')) {
+          return p.policyholder === personName
+        }
+        return false
+      }
+      const sumFor = (personKey: string, personName: string, isEndowment: boolean) =>
         active
-          .filter(p => (p.categoryCode === 'endowment') === isEndowment && belongsTo(p, personKey))
-          .reduce((s, p) => s + annualPrem(p) * splitFrac(p, personKey), 0)
+          .filter(p => (p.categoryCode === 'endowment') === isEndowment && belongsTo(p, personKey, personName))
+          .reduce((s, p) => s + annualCashPrem(p) * splitFrac(p, personKey), 0)
 
       if (kind === 'insurance') {
-        upd('d_insurance', Math.round(sumFor('client', false)))
-        if (isCouple) upd('d2_insurance', Math.round(sumFor('spouse', false)))
+        upd('d_insurance', Math.round(sumFor('client', clientName, false)))
+        if (isCouple) upd('d2_insurance', Math.round(sumFor('spouse', spouseName, false)))
       } else {
-        upd('d_regular_savings', Math.round(sumFor('client', true)))
-        if (isCouple) upd('d2_regular_savings', Math.round(sumFor('spouse', true)))
+        upd('d_regular_savings', Math.round(sumFor('client', clientName, true)))
+        if (isCouple) upd('d2_regular_savings', Math.round(sumFor('spouse', spouseName, true)))
       }
     } catch (err: any) {
       setPullError({ kind, message: err?.message || 'Could not pull from Portfolio — please try again.' })
