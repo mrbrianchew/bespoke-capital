@@ -351,6 +351,40 @@ function Lbl({ children }: { children: React.ReactNode }) {
   return <label className="block text-xs tracking-widest uppercase mb-1.5" style={{ color: 'var(--ink3)' }}>{children}</label>
 }
 
+// Auto-growing textarea. The previous inline ref-callback approach only
+// recalculated height on mount/re-mount, not reliably on every keystroke
+// once content exceeded a few lines — so long entries (e.g. Pre-existing
+// Conditions) stayed clipped to the box's start height with an internal
+// scrollbar instead of growing. A ref+effect keyed on `value` recalculates
+// height every time the text actually changes, regardless of render timing.
+function AutosizeTextarea({ value, onChange, rows = 4, placeholder, className, style, onFocus, onBlur }: {
+  value: string; onChange: (v: string) => void; rows?: number
+  placeholder?: string; className?: string; style?: React.CSSProperties
+  onFocus?: React.FocusEventHandler<HTMLTextAreaElement>; onBlur?: React.FocusEventHandler<HTMLTextAreaElement>
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const resize = () => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }
+  useEffect(resize, [value])
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={e => { onChange(e.target.value); resize() }}
+      rows={rows}
+      placeholder={placeholder}
+      className={className}
+      style={{ ...style, overflow: 'hidden' }}
+      onFocus={onFocus}
+      onBlur={onBlur}
+    />
+  )
+}
+
 function Field({ label, value, onChange, type = 'text', prefix, placeholder, hint }: {
   label: string; value: string | number | undefined; onChange: (v: string) => void
   type?: string; prefix?: string; placeholder?: string; hint?: string
@@ -1284,6 +1318,7 @@ function FactFindingPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [pullingPortfolio, setPullingPortfolio] = useState<'insurance' | 'savings' | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -1462,6 +1497,61 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   const an1 = cpf1.annualTakeHome + other1 * 12; const an2 = cpf2 ? cpf2.annualTakeHome + other2 * 12 : 0; const anTotal = an1 + an2
 
   const expMode = ff.expense_mode || 'simple'
+
+  // Pull annualized premiums from the Risk Management → Portfolio tab
+  // (protection_portfolio fact_finding section) into Insurance Payments /
+  // Regular Savings-Investments. Overwrites whatever's currently in the
+  // field — the person can still type over the result afterward, this
+  // just saves re-typing numbers that already live in the Portfolio tab.
+  async function pullFromPortfolio(kind: 'insurance' | 'savings') {
+    if (!client) return
+    setPullingPortfolio(kind)
+    try {
+      const { data: row } = await supabase
+        .from('fact_finding').select('data')
+        .eq('client_id', client.id).eq('section', 'protection_portfolio').maybeSingle()
+      const policies: any[] = (row?.data as any)?.policies || []
+      const ACTIVE = ['In-Force', 'Premium Holiday', 'Paid-up']
+      const active = policies.filter(p => ACTIVE.includes(p.status))
+
+      const annualPrem = (p: any) => {
+        if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
+        const cash = p.isUSD ? (p.premiumCash || 0) * (p.fxRate || 1.35) : (p.premiumCash || 0)
+        const total = cash + (p.premiumMedisave || 0)
+        switch (p.frequency) {
+          case 'Semi-Annual': return total * 2
+          case 'Quarterly': return total * 4
+          case 'Monthly': return total * 12
+          case 'Single': return 0
+          default: return total
+        }
+      }
+      // Same joint-account split logic as the Portfolio tab — full premium
+      // for a single-owner policy, that owner's splitPercent share for a
+      // jointly-owned Endowment/Annuity/Investment/ILP account.
+      const splitFrac = (p: any, personKey: string) => {
+        if (!p.jointOwners || p.jointOwners.length < 2) return 1
+        const owner = p.jointOwners.find((o: any) => o.personKey === personKey)
+        return owner ? (owner.splitPercent || 0) / 100 : 0
+      }
+      const belongsTo = (p: any, personKey: string) =>
+        p.person === personKey || !!(p.jointOwners && p.jointOwners.some((o: any) => o.personKey === personKey))
+      const sumFor = (personKey: string, isEndowment: boolean) =>
+        active
+          .filter(p => (p.categoryCode === 'endowment') === isEndowment && belongsTo(p, personKey))
+          .reduce((s, p) => s + annualPrem(p) * splitFrac(p, personKey), 0)
+
+      if (kind === 'insurance') {
+        upd('d_insurance', Math.round(sumFor('client', false)))
+        if (isCouple) upd('d2_insurance', Math.round(sumFor('spouse', false)))
+      } else {
+        upd('d_regular_savings', Math.round(sumFor('client', true)))
+        if (isCouple) upd('d2_regular_savings', Math.round(sumFor('spouse', true)))
+      }
+    } finally {
+      setPullingPortfolio(null)
+    }
+  }
 
 // Detailed mode subtotals per category
 const detailedSum = (keys: string[], customKey: keyof FactFinding) => {
@@ -1905,9 +1995,22 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                               const v1 = (ff[k as keyof FactFinding] as number) || 0
                               const v2 = isCouple ? ((ff[k2 as keyof FactFinding] as number) || 0) : 0
                               const vSum = v1 + v2
+                              const pullKind: 'insurance' | 'savings' | null =
+                                k === 'd_insurance' ? 'insurance' : k === 'd_regular_savings' ? 'savings' : null
                               return (
                                 <div key={k} className="flex items-center py-2 gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
-                                  <div className="text-xs" style={{ width: 190, flexShrink: 0, color: 'var(--ink2)' }}>{group.labels[i]}</div>
+                                  <div style={{ width: 190, flexShrink: 0 }}>
+                                    <div className="text-xs" style={{ color: 'var(--ink2)' }}>{group.labels[i]}</div>
+                                    {pullKind && (
+                                      <button
+                                        onClick={() => pullFromPortfolio(pullKind)}
+                                        disabled={pullingPortfolio === pullKind}
+                                        className="text-xs mt-0.5"
+                                        style={{ color: 'var(--gold-tag)', background: 'none', border: 'none', cursor: pullingPortfolio === pullKind ? 'default' : 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 2 }}>
+                                        {pullingPortfolio === pullKind ? 'Pulling…' : 'Pull from Portfolio'}
+                                      </button>
+                                    )}
+                                  </div>
                                   <input type="text" value={(ff[noteKey] as string) || ''} placeholder="Add a note"
                                     onChange={e => upd(noteKey, e.target.value)}
                                     className="flex-1 text-xs outline-none italic"
@@ -2459,12 +2562,16 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
                   </div>
                   <div>
                     <Lbl>Pre-existing Conditions</Lbl>
-                    <textarea value={p.pre_existing??''} onChange={e=>updP(person,'pre_existing',e.target.value)} rows={4}
+                    <AutosizeTextarea
+                      value={p.pre_existing ?? ''}
+                      onChange={v => updP(person, 'pre_existing', v)}
+                      rows={4}
                       placeholder="Conditions, surgeries, medications, family history…"
                       className="w-full px-3 py-2.5 text-sm outline-none resize-none"
-                      style={{ border:'1px solid var(--line)',background:'white',color:'var(--ink)' }}
+                      style={{ border: '1px solid var(--line)', background: 'white', color: 'var(--ink)' }}
                       onFocus={e=>(e.currentTarget.style.borderColor='var(--gold)')}
-                      onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')} />
+                      onBlur={e=>(e.currentTarget.style.borderColor='var(--line)')}
+                    />
                   </div>
                 </div>
               </Card>
