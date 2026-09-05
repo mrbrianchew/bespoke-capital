@@ -68,6 +68,13 @@ export interface Policy {
   // USD policy flag
   isUSD?:  boolean
   fxRate?: number   // USD/SGD rate stored at time of entry
+  // Joint ownership (Endowment/Annuity/Investment/ILP only) — when set with
+  // 2 entries, the policy displays in full (undivided cash value/benefits)
+  // under both owners' Portfolio tabs, with only the premium split by
+  // splitPercent. personKey matches the same 'client' | 'spouse' |
+  // 'child_{id}' convention as the `person` field above. splitPercent
+  // values across the array should sum to 100.
+  jointOwners?: { personKey: string; splitPercent: number }[]
 }
 
 // Shape of the protection_portfolio.risk_management JSONB blob — shared
@@ -186,7 +193,11 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
       premiumMaturity: code === 'medical' ? 'Renewable' : (prev.premiumMaturity === 'Renewable' ? '' : prev.premiumMaturity),
       coverageMaturity: code === 'medical' ? 'Renewable' : (prev.coverageMaturity === 'Renewable' ? '' : prev.coverageMaturity),
       benefitTerm: '',
-      payoutTerm: ''
+      payoutTerm: '',
+      // Joint Account only applies to Endowment/Annuity/Investment/ILP —
+      // clear it if the category is switched away so a stale split doesn't
+      // silently carry over onto e.g. a Life policy.
+      jointOwners: code === 'endowment' ? prev.jointOwners : undefined,
     }));
     setIsOtherBenefitTerm(false);
     setIsOtherPayoutTerm(false);
@@ -626,6 +637,71 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
                   </div>
                 )
               })}
+
+              {/* ── Joint Account toggle (Endowment/Annuity/Investment/ILP) ── */}
+              {(() => {
+                const isJoint = !!(form.jointOwners && form.jointOwners.length > 1)
+                const primaryKey = form.jointOwners?.[0]?.personKey || form.person
+                const coOwner = form.jointOwners?.[1]
+                return (
+                  <div style={{background: isJoint ? '#FDF6EC' : '#FAFAF8', border: `1px solid ${isJoint ? '#c8a96e' : 'var(--line)'}`, borderRadius: 4, padding: '12px 16px'}}>
+                    <div style={{display:'flex', alignItems:'center', gap:10}}>
+                      <div onClick={()=>{
+                          if (isJoint) { f('jointOwners', undefined); return }
+                          const other = allPeople.find(p=>p.key!==primaryKey)?.key || ''
+                          f('jointOwners', other
+                            ? [{personKey:primaryKey, splitPercent:50}, {personKey:other, splitPercent:50}]
+                            : undefined)
+                        }}
+                        style={{width:36,height:20,borderRadius:10,background:isJoint?'#c8a96e':'#D1CEC9',cursor:'pointer',position:'relative',transition:'background 0.2s',flexShrink:0}}>
+                        <div style={{position:'absolute',top:2,left:isJoint?18:2,width:16,height:16,borderRadius:'50%',background:'white',boxShadow:'0 1px 3px rgba(0,0,0,0.2)',transition:'left 0.2s'}}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:600,color: isJoint ? '#A8834A' : 'var(--ink3)'}}>Joint Account</div>
+                        <div style={{fontSize:10,color:'var(--ink3)',marginTop:1}}>Cash value shows in full on both tabs — only the premium splits</div>
+                      </div>
+                    </div>
+                    {isJoint && (
+                      <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--line)'}}>
+                        <div style={g2}>
+                          <div>
+                            <label style={lbl}>Co-owner</label>
+                            <select value={coOwner?.personKey||''} onChange={e=>{
+                                const a = form.jointOwners![0]
+                                f('jointOwners', [a, {personKey:e.target.value, splitPercent:100-(a.splitPercent||50)}])
+                              }} style={s}>
+                              <option value="">Select…</option>
+                              {allPeople.filter(p=>p.key!==primaryKey).map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={lbl}>Split (%)</label>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <input type="number" min={0} max={100} value={form.jointOwners![0].splitPercent}
+                                onChange={e=>{
+                                  const pct = Math.max(0,Math.min(100,+e.target.value))
+                                  const owners = [...form.jointOwners!]
+                                  owners[0] = {...owners[0], splitPercent:pct}
+                                  owners[1] = {...owners[1], splitPercent:100-pct}
+                                  f('jointOwners', owners)
+                                }} style={{...inp,width:64}}/>
+                              <span style={{fontSize:11,color:'var(--ink3)'}}>/</span>
+                              <input type="number" min={0} max={100} value={form.jointOwners![1]?.splitPercent||0}
+                                onChange={e=>{
+                                  const pct = Math.max(0,Math.min(100,+e.target.value))
+                                  const owners = [...form.jointOwners!]
+                                  owners[1] = {...owners[1], splitPercent:pct}
+                                  owners[0] = {...owners[0], splitPercent:100-pct}
+                                  f('jointOwners', owners)
+                                }} style={{...inp,width:64}}/>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </>
           )}
 

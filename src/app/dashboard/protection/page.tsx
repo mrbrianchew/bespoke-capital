@@ -43,6 +43,35 @@ function useNarrow(breakpoint: number): boolean {
   return narrow
 }
 
+// A policy belongs to a person's tab either the normal way (p.person===key)
+// or, for a jointly-owned Endowment/Annuity/Investment/ILP account, when
+// that person is one of the listed jointOwners — so the same policy record
+// surfaces on both owners' tabs instead of just the primary one.
+function policyBelongsToPerson(p: Policy, key: string): boolean {
+  return p.person === key || !!(p.jointOwners && p.jointOwners.some(o => o.personKey === key))
+}
+// Fraction (0–1) of a policy's premium attributable to `personKey`. Non-joint
+// policies always return 1 (the full premium, unchanged behavior). Joint
+// policies return that owner's splitPercent/100 — coverage/cash value are
+// never scaled by this, only premium display and per-tab premium totals.
+function jointSplitFraction(p: Policy, personKey: string): number {
+  if (!p.jointOwners || p.jointOwners.length < 2) return 1
+  const owner = p.jointOwners.find(o => o.personKey === personKey)
+  return owner ? (owner.splitPercent || 0) / 100 : 0
+}
+// Same as above but for a dependents-style tab that groups several child
+// keys under one heading — matches whichever key in the group is a listed
+// joint owner (joint accounts between two children aren't a real case, but
+// this keeps behavior correct rather than silently zeroing the premium out).
+function jointSplitFractionAny(p: Policy, keys: string[]): number {
+  if (!p.jointOwners || p.jointOwners.length < 2) return keys.includes(p.person) ? 1 : 0
+  for (const k of keys) {
+    const owner = p.jointOwners.find(o => o.personKey === k)
+    if (owner) return (owner.splitPercent || 0) / 100
+  }
+  return 0
+}
+
 function gapSt(need: number, have: number) {
   if (need <= 0) return { label: 'N/A',     color: '#555',    bg: '#F0EEE9' }
   if (have >= need) return { label: 'Covered', color: '#2D6A4F', bg: '#E8F5E9' }
@@ -752,9 +781,9 @@ async function revokeShare(token: string, clear: () => void) {
           <div style={{display:'flex',gap:0,marginBottom:28,borderBottom:'1px solid var(--line)'}} className="no-print">
             {sections.map(({key,label,isDependent,childKeys})=>{
               const tabPolicies = isDependent&&childKeys
-                ? activePolicies.filter(p=>childKeys.includes(p.person))
-                : activePolicies.filter(p=>p.person===key)
-              const tabPrem = tabPolicies.reduce((s,p)=>s+annualPremSGD(p),0)
+                ? activePolicies.filter(p=>childKeys.some(ck=>policyBelongsToPerson(p,ck)))
+                : activePolicies.filter(p=>policyBelongsToPerson(p,key))
+              const tabPrem = tabPolicies.reduce((s,p)=>s+annualPremSGD(p)*(isDependent&&childKeys?jointSplitFractionAny(p,childKeys):jointSplitFraction(p,key)),0)
               const isActive = portfolioPerson===key
               return (
                 <button key={key} onClick={()=>setPortfolioPerson(key)}
@@ -772,15 +801,15 @@ async function revokeShare(token: string, clear: () => void) {
           {sections.map(({key,label,isDependent,childKeys})=>{
             if (portfolioPerson!==key) return null
             const policies = isDependent&&childKeys
-              ? activePolicies.filter(p=>childKeys.includes(p.person))
-              : activePolicies.filter(p=>p.person===key)
+              ? activePolicies.filter(p=>childKeys.some(ck=>policyBelongsToPerson(p,ck)))
+              : activePolicies.filter(p=>policyBelongsToPerson(p,key))
             
             const inactiveTabPols = isDependent&&childKeys
-              ? rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && childKeys.includes(p.person))
-              : rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && p.person===key)
+              ? rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && childKeys.some(ck=>policyBelongsToPerson(p,ck)))
+              : rmData.policies.filter(p=>!ACTIVE_STATUSES.includes(p.status) && policyBelongsToPerson(p,key))
 
             const addKey = isDependent&&childKeys ? (childKeys[0]||key) : key
-            const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p),0)
+            const secPrem = policies.reduce((s,p)=>s+annualPremSGD(p)*(isDependent&&childKeys?jointSplitFractionAny(p,childKeys):jointSplitFraction(p,key)),0)
             // Dependents skip the full PersonPortfolioCharts block below (no single
             // age to chart a Coverage Timeline against for a multi-child group), so
             // surface the Cash/Medisave/Savings split as inline text here instead —
@@ -859,7 +888,7 @@ async function revokeShare(token: string, clear: () => void) {
                     {catBuckets.map(cat=>{
                       const catPols = policies.filter(p=>p.categoryCode===cat.code)
                       if (catPols.length===0) return null
-                      const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p),0)
+                      const catPrem = catPols.reduce((s,p)=>s+annualPremSGD(p)*(isDependent&&childKeys?jointSplitFractionAny(p,childKeys):jointSplitFraction(p,key)),0)
                       const isEssential = ['medical','ltc','general'].includes(cat.code)
                       const isLifeOrEndowment = ['life','endowment'].includes(cat.code)
                       
@@ -889,6 +918,8 @@ async function revokeShare(token: string, clear: () => void) {
                             onDelete={delPolicy}
                             onReorder={reorderPolicies}
                             historyMap={policyHistoryMap}
+                            personKeys={isDependent&&childKeys?childKeys:[key]}
+                            allPeople={allPeople}
                           />
                           
                           {/* Policy Remarks - Attached to table */}
@@ -1779,8 +1810,27 @@ function MobilePolicyCard({p,front,hidden,onEdit,onDelete}:{p:Policy;front:{labe
   )
 }
 
-function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,historyMap}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void;onReorder?:(orderedIds:string[])=>void;historyMap?:Record<string,PolicyHistoryEntry>}) {
+function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,historyMap,personKeys,allPeople}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void;onReorder?:(orderedIds:string[])=>void;historyMap?:Record<string,PolicyHistoryEntry>;personKeys?:string[];allPeople?:{key:string;label:string}[]}) {
   const narrow = useNarrow(760)
+  // Joint-account helpers — personKeys is the tab(s) this table is rendering
+  // for (a single key normally, several for a grouped Dependents tab). Only
+  // Endowment/Annuity/Investment/ILP policies ever carry jointOwners.
+  const splitFrac = (p: Policy) => {
+    if (!p.jointOwners || p.jointOwners.length < 2) return 1
+    if (!personKeys || personKeys.length === 0) return 1
+    for (const k of personKeys) {
+      const owner = p.jointOwners.find(o => o.personKey === k)
+      if (owner) return (owner.splitPercent || 0) / 100
+    }
+    return 0
+  }
+  const jointCoOwnerLabel = (p: Policy) => {
+    if (!p.jointOwners || p.jointOwners.length < 2 || !personKeys) return null
+    const mine = p.jointOwners.find(o => personKeys.includes(o.personKey))
+    const other = p.jointOwners.find(o => o !== mine)
+    if (!mine || !other) return null
+    return allPeople?.find(ap => ap.key === other.personKey)?.label || other.personKey
+  }
   // Variant D — quiet line under PH/LA, only rendered when a policy has a
   // logged Servicing History entry. Shared by all three layout branches below.
   function ServicingUpdateLine({policyId}:{policyId:string}) {
@@ -1812,12 +1862,13 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
     if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
     const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
     const total = cash + (p.premiumMedisave||0)
+    const frac = splitFrac(p)
     switch (p.frequency) {
-      case 'Semi-Annual': return total*2
-      case 'Quarterly':   return total*4
-      case 'Monthly':     return total*12
+      case 'Semi-Annual': return total*2*frac
+      case 'Quarterly':   return total*4*frac
+      case 'Monthly':     return total*12*frac
       case 'Single':      return 0 // one-time payment, not a recurring annual premium
-      default:            return total
+      default:            return total*frac
     }
   }
   
@@ -1832,23 +1883,25 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
   function _subMedisave(p: Policy) {
     if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
     const ms = p.premiumMedisave || 0
+    const frac = splitFrac(p)
     switch (p.frequency) {
-      case 'Semi-Annual': return ms*2
-      case 'Quarterly':   return ms*4
-      case 'Monthly':     return ms*12
+      case 'Semi-Annual': return ms*2*frac
+      case 'Quarterly':   return ms*4*frac
+      case 'Monthly':     return ms*12*frac
       case 'Single':      return 0
-      default:            return ms
+      default:            return ms*frac
     }
   }
   function _subCash(p: Policy) {
     if (p.status === 'Paid-up' || p.status === 'Premium Holiday') return 0
     const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
+    const frac = splitFrac(p)
     switch (p.frequency) {
-      case 'Semi-Annual': return cash*2
-      case 'Quarterly':   return cash*4
-      case 'Monthly':     return cash*12
+      case 'Semi-Annual': return cash*2*frac
+      case 'Quarterly':   return cash*4*frac
+      case 'Monthly':     return cash*12*frac
       case 'Single':      return 0
-      default:            return cash
+      default:            return cash*frac
     }
   }
 
@@ -2152,15 +2205,18 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
       <div>
         {policies.map(p=>{
           const mainBen = p.baseDeath || p.baseAdvCI || p.monthlyBenefit || p.sumAssured
+          const frac = splitFrac(p)
+          const coOwner = jointCoOwnerLabel(p)
           const front = [
             {label:'Death benefit', value:p.isUSD && mainBen ? `USD ${Math.round(mainBen).toLocaleString()}` : fmt(mainBen)},
-            {label:'Premium', value:p.premiumMedisave>0 ? `${fmtPremium(p.premiumCash)} +${fmtPremium(p.premiumMedisave)} MS` : fmtPremium(p.premiumCash)},
+            {label:coOwner?`Premium (${Math.round(frac*100)}% share)`:'Premium', value:p.premiumMedisave>0 ? `${fmtPremium(p.premiumCash*frac)} +${fmtPremium(p.premiumMedisave*frac)} MS` : fmtPremium(p.premiumCash*frac)},
           ]
           const hidden = [
             {label:'Freq / Mode', value:`${p.frequency||'—'} · ${p.premiumMode||'—'}`},
             {label:'Start date', value:formatDate(p.inceptionDate)},
             {label:'Premium term', value:formatDate(p.premiumMaturity)},
             {label:'Coverage term', value:formatDate(p.coverageMaturity)},
+            ...(coOwner ? [{label:'Joint account', value:`${Math.round(frac*100)}/${100-Math.round(frac*100)} with ${coOwner}`}] : []),
           ]
           return <MobilePolicyCard key={p.id} p={p} front={front} hidden={hidden} onEdit={onEdit} onDelete={onDelete}/>
         })}
@@ -2182,6 +2238,8 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
         <SortableContext items={policies.map(p=>p.id)} strategy={verticalListSortingStrategy}>
       {policies.map((p,i)=>{
         const mainBen = p.baseDeath || p.baseAdvCI || p.monthlyBenefit || p.sumAssured
+        const frac = splitFrac(p)
+        const coOwner = jointCoOwnerLabel(p)
         return(
           <SortablePolicyRow key={p.id} id={p.id} cols={cols} zebra={i%2===0} isLast={i===policies.length-1} disabled={!dragEnabled}>
             <div>
@@ -2197,6 +2255,9 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
                 {p.lifeAssured&&p.lifeAssured!==p.policyholder&&<span> · LA: {p.lifeAssured}</span>}
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
+              {coOwner&&<div onClick={()=>onEdit(p)} style={{display:'inline-flex',alignItems:'center',gap:4,marginTop:4,padding:'2px 7px',background:'#FDF6EC',border:'1px solid rgba(168,131,74,0.35)',borderRadius:5,fontSize:9,color:'#A8834A',cursor:'pointer'}}>
+                Joint · {Math.round(frac*100)}/{100-Math.round(frac*100)} with {coOwner}
+              </div>}
               <ServicingUpdateLine policyId={p.id}/>
             </div>
             {/* Death Benefit */}
@@ -2211,8 +2272,9 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
             </div>
             {/* Premium */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-              {fmtPremium(p.premiumCash)}
-              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmtPremium(p.premiumMedisave)} MS</div>}
+              {fmtPremium(p.premiumCash*frac)}
+              {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmtPremium(p.premiumMedisave*frac)} MS</div>}
+              {coOwner&&<div style={{fontSize:9,color:'var(--ink3)',marginTop:1}}>of {fmtPremium(p.premiumCash+p.premiumMedisave)} full</div>}
             </div>
             {/* Frequency + Mode */}
             <div style={{fontSize:10,color:'var(--ink3)'}}>
