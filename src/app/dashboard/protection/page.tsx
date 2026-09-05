@@ -821,7 +821,7 @@ async function revokeShare(token: string, clear: () => void) {
                   .reduce((s,p)=>{ const sp=_annualPremSplit(p); return {cash:s.cash+sp.cash, medisave:s.medisave+sp.medisave} }, {cash:0, medisave:0})
               : null
             const secSavings = isDependent
-              ? policies.filter(p=>p.categoryCode==='endowment').reduce((s,p)=>s+_annualPrem(p),0)
+              ? policies.filter(p=>p.categoryCode==='endowment').reduce((s,p)=>s+_annualPrem(p)*jointSplitFractionAny(p,childKeys||[]),0)
               : 0
             const personAge = key==='client' ? clientAge : spouseAge
 
@@ -843,6 +843,7 @@ async function revokeShare(token: string, clear: () => void) {
                       personName={label}
                       personAge={personAge}
                       policies={policies}
+                      personKey={key}
                     />
                   <div style={{pageBreakAfter:'always',breakAfter:'page'}} />
                   </>
@@ -2772,9 +2773,17 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
 
 
 // ─── PersonPortfolioCharts (Apple-Style Premium Design) ──────────────────────
-function PersonPortfolioCharts({ personName, personAge, policies }: {
-  personName: string; personAge: number; policies: Policy[]
+function PersonPortfolioCharts({ personName, personAge, policies, personKey }: {
+  personName: string; personAge: number; policies: Policy[]; personKey: string
 }) {
+  // Joint-account split — same fraction logic as PolicyTable. Only
+  // Endowment/Annuity/Investment/ILP policies ever carry jointOwners, so
+  // this is a no-op (returns 1) for every other category here.
+  const splitFrac = (p: Policy) => {
+    if (!p.jointOwners || p.jointOwners.length < 2) return 1
+    const owner = p.jointOwners.find(o => o.personKey === personKey)
+    return owner ? (owner.splitPercent || 0) / 100 : 0
+  }
   // ── Coverage timeline ──────────────────────────────────────────────────────
   const timeline: {age:number;d:number;t:number;ci:number}[] = []
   for (let age = personAge; age <= 100; age++) {
@@ -2794,7 +2803,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
       if (p.status === 'Paid-up' || p.status === 'Premium Holiday') continue
       if (_payMonths(p).includes(mi+1)) {
         const cash = p.isUSD ? (p.premiumCash||0)*(p.fxRate||1.35) : (p.premiumCash||0)
-        total += cash + (p.premiumMedisave||0)
+        total += (cash + (p.premiumMedisave||0)) * splitFrac(p)
       }
     }
     return total
@@ -2812,7 +2821,7 @@ function PersonPortfolioCharts({ personName, personAge, policies }: {
   // (Wealth Accumulation / Endowment), same _annualPrem logic, just filtered
   // by category so the two don't get shown as one intimidating number.
   const totPremProtection = policies.filter(p=>p.categoryCode!=='endowment').reduce((s,p)=>s+_annualPrem(p),0)
-  const totSavings         = policies.filter(p=>p.categoryCode==='endowment').reduce((s,p)=>s+_annualPrem(p),0)
+  const totSavings         = policies.filter(p=>p.categoryCode==='endowment').reduce((s,p)=>s+_annualPrem(p)*splitFrac(p),0)
   const protectionSplit = policies.filter(p=>p.categoryCode!=='endowment')
     .reduce((s,p)=>{ const sp=_annualPremSplit(p); return {cash:s.cash+sp.cash, medisave:s.medisave+sp.medisave} }, {cash:0, medisave:0})
 
