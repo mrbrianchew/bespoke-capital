@@ -650,11 +650,11 @@ export default function SharePage({ params }: { params: { token: string } }) {
 
     if (hasClient && hasSpouse && hasDependents) return `${cName}, ${sName} & Family`
     if (hasClient && hasSpouse) return `${cName} & ${sName}`
-    if (hasClient && hasDependents) return `${cName} & Family`
-    if (hasSpouse && hasDependents) return `${sName} & Family`
+    if (hasClient && hasDependents) return `${cName} & Dependent(s)`
+    if (hasSpouse && hasDependents) return `${sName} & Dependent(s)`
     if (hasClient) return cName
     if (hasSpouse) return sName
-    if (hasDependents) return 'Family'
+    if (hasDependents) return 'Dependent(s)'
     return cName // fallback — should not happen since at least one must be selected
   }
 

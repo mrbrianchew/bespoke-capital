@@ -590,11 +590,11 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_gross   || 0) || localSpouseCI)  
 
     if (hasClient && hasSpouse && hasDependents) return `${clientName}, ${spouseName} & Family`
     if (hasClient && hasSpouse) return `${clientName} & ${spouseName}`
-    if (hasClient && hasDependents) return `${clientName} & Family`
-    if (hasSpouse && hasDependents) return `${spouseName} & Family`
+    if (hasClient && hasDependents) return `${clientName} & Dependent(s)`
+    if (hasSpouse && hasDependents) return `${spouseName} & Dependent(s)`
     if (hasClient) return clientName
     if (hasSpouse) return spouseName
-    if (hasDependents) return 'Family'
+    if (hasDependents) return 'Dependent(s)'
     return clientName // fallback — should not happen since at least one must be selected
   }
 
