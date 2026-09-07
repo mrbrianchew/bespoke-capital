@@ -581,6 +581,23 @@ const spouseCI   = isCouple ? (Number(ff.p2_ci_gross   || 0) || localSpouseCI)  
     }] : []),
   ]
 
+  // Builds the payment-summary share title from the selected life-assureds,
+  // instead of always defaulting to the client's name.
+  function paymentShareTitleName(included: string[]): string {
+    const hasClient = included.includes('client')
+    const hasSpouse = included.includes('spouse')
+    const hasDependents = included.some(k => k.startsWith('child_'))
+
+    if (hasClient && hasSpouse && hasDependents) return `${clientName}, ${spouseName} & Family`
+    if (hasClient && hasSpouse) return `${clientName} & ${spouseName}`
+    if (hasClient && hasDependents) return `${clientName} & Family`
+    if (hasSpouse && hasDependents) return `${spouseName} & Family`
+    if (hasClient) return clientName
+    if (hasSpouse) return spouseName
+    if (hasDependents) return 'Family'
+    return clientName // fallback — should not happen since at least one must be selected
+  }
+
   function openNew(person: string) {
     const label = allPeople.find(p=>p.key===person)?.label||person
     setEditingPolicy(emptyPolicy(person, label, label))
@@ -1143,7 +1160,7 @@ async function revokeShare(token: string, clear: () => void) {
             <div style={{padding:'16px',background:'#F5F3EE',border:'1px solid #E0DDD6'}}>
               <div style={{fontSize:10,color:'var(--ink3)',marginBottom:6,letterSpacing:'0.08em',textTransform:'uppercase'}}>Your shareable link</div>
               <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:16,color:'var(--ink)',marginBottom:6}}>
-                Payment Summary {new Date().getFullYear()} — {clientName}
+                Payment Summary {new Date().getFullYear()} — {paymentShareTitleName(psShareIncluded)}
               </div>
               <div style={{fontSize:10,color:'var(--ink3)',fontFamily:'DM Mono,monospace',wordBreak:'break-all' as const}}>{psShareLink}</div>
             </div>
@@ -1152,13 +1169,13 @@ async function revokeShare(token: string, clear: () => void) {
             </div>
             <button onClick={async()=>{
               const year = new Date().getFullYear()
-              const text = `Payment Summary ${year} — ${clientName}\n\n${psShareLink}`
+              const text = `Payment Summary ${year} — ${paymentShareTitleName(psShareIncluded)}\n\n${psShareLink}`
               await navigator.clipboard.writeText(text)
               setPsShareCopied(true)
               setTimeout(()=>setPsShareCopied(false),3000)
             }}
               style={{padding:'10px',background:'#1C1A17',color:'#c8a96e',border:'none',cursor:'pointer',fontSize:13,fontWeight:500}}>
-              {psShareCopied?'✓ Copied to clipboard!':'Copy "Payment Summary ' + new Date().getFullYear() + ' — ' + clientName + '"'}
+              {psShareCopied?'✓ Copied to clipboard!':'Copy "Payment Summary ' + new Date().getFullYear() + ' — ' + paymentShareTitleName(psShareIncluded) + '"'}
             </button>
             <div style={{fontSize:11,color:'var(--ink3)',textAlign:'center'}}>
               {psShareExpiry==='permanent'?'This link does not expire.':psShareExpiry==='7d'?'Expires in 7 days.':'Expires in 30 days.'}

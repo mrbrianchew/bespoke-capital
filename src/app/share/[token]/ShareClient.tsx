@@ -638,6 +638,26 @@ export default function SharePage({ params }: { params: { token: string } }) {
     <PasswordGate hint={hint} onUnlock={handleUnlock} wrongPw={wrongPw} firm={firmName}/>
   )
 
+  // Builds the payment-summary display title from which persons were actually
+  // included in the share, instead of always showing the client's name.
+  function paymentShareTitleName(): string {
+    const included = includedPersons
+    const hasClient = included.includes('client')
+    const hasSpouse = included.includes('spouse')
+    const hasDependents = included.some(k => k.startsWith('child_'))
+    const cName = personLabels.client || clientName
+    const sName = personLabels.spouse || 'Spouse'
+
+    if (hasClient && hasSpouse && hasDependents) return `${cName}, ${sName} & Family`
+    if (hasClient && hasSpouse) return `${cName} & ${sName}`
+    if (hasClient && hasDependents) return `${cName} & Family`
+    if (hasSpouse && hasDependents) return `${sName} & Family`
+    if (hasClient) return cName
+    if (hasSpouse) return sName
+    if (hasDependents) return 'Family'
+    return cName // fallback — should not happen since at least one must be selected
+  }
+
   // ── FINANCIAL PLAN SHARE VIEW ──────────────────────────────────────────────
   if (shareType === 'financial_plan' && planSnapshot) {
     return (
@@ -833,7 +853,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
             <div style={{ fontSize:10, letterSpacing:'0.15em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', flexShrink:0 }}>{firmName}</div>
             <div className="ps-nav-title" style={{ width:1, height:14, background:'rgba(255,255,255,0.15)', flexShrink:0 }} />
             <div className="ps-nav-title" style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:15, fontWeight:300, color:'#F0EDE8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              Payment Summary {year} — {clientName}
+              Payment Summary {year} — {paymentShareTitleName()}
             </div>
           </div>
           <button onClick={()=>window.print()} style={{ padding:'8px 16px', background:'#A8834A', color:'white', border:'none', cursor:'pointer', fontSize:11, letterSpacing:'0.1em', textTransform:'uppercase', fontFamily:'Inter,sans-serif', fontWeight:500, flexShrink:0 }}>
@@ -845,7 +865,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
           <div>
             <div style={{ fontSize:10, letterSpacing:'0.18em', textTransform:'uppercase', color:'rgba(168,131,74,0.7)', marginBottom:6 }}>{firmName} · Wealth Protection</div>
             <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:24, fontWeight:300, color:'#F0EDE8' }}>Payment Summary {year}</div>
-            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:18, fontWeight:300, color:'rgba(240,237,232,0.7)', marginTop:2 }}>{clientName}</div>
+            <div style={{ fontFamily:'Cormorant Garamond,Georgia,serif', fontSize:18, fontWeight:300, color:'rgba(240,237,232,0.7)', marginTop:2 }}>{paymentShareTitleName()}</div>
           </div>
           <div className="ps-hero-prem" style={{ textAlign:'right' }}>
             <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)', marginBottom:2 }}>Total Annual Premium</div>
@@ -941,7 +961,7 @@ export default function SharePage({ params }: { params: { token: string } }) {
         </div>
         {/* Footer */}
         <div className="ps-footer" style={{ background:'#1C1A17', padding:'20px 40px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)' }}>This document is confidential and prepared solely for {clientName}. © {year} {firmName}.</div>
+          <div style={{ fontSize:10, color:'rgba(255,255,255,0.3)' }}>This document is confidential and prepared solely for {paymentShareTitleName()}. © {year} {firmName}.</div>
           <div style={{ fontSize:10, color:'rgba(168,131,74,0.6)' }}>{advisorName ? `${advisorName} · ${firmName}` : firmName}</div>
         </div>
       </div>
