@@ -604,8 +604,10 @@ export default function BusinessClaimsBoardPage() {
   // life-assured person, rather than creating a new claim container every
   // time. personKey is 'client' | 'spouse' | 'child_<id>' — same vocabulary
   // policies.person already uses. Only inserts a new claims row when this
-  // person genuinely has none yet. Either way, the actual line item is added
-  // on the per-client page (via addSection) — not duplicated here.
+  // person genuinely has none yet, fetching their policies fresh (see note
+  // below — don't reuse the policiesByClient cache here). Either way, the
+  // actual line item is added on the per-client page (via addSection) — not
+  // duplicated here.
   async function addLineItemForClient(client: ClientRow, personKey: string, section: 'pre' | 'in' | 'post') {
     setAddClaimSaving(true)
     setAddClaimError('')
@@ -621,7 +623,20 @@ export default function BusinessClaimsBoardPage() {
 
     let claimId = existing?.id
     if (!claimId) {
-      const personPolicies = (policiesByClient[client.id] || []).filter(p => p.person === personKey)
+      // Don't rely on policiesByClient here — that map is only populated for
+      // clients who already appear in the claims list above, so a client's
+      // (or a dependent's) very first-ever claim would always come up empty.
+      // Fetch this client's policies fresh instead, so this works regardless
+      // of claim history.
+      const { data: ffRow, error: ffError } = await supabase
+        .from('fact_finding').select('data').eq('client_id', client.id).eq('section', 'protection_portfolio').maybeSingle()
+      if (ffError) {
+        setAddClaimSaving(false)
+        setAddClaimError('Could not load policies: ' + ffError.message)
+        return
+      }
+      const allPolicies: PolicyLite[] = (ffRow?.data as any)?.risk_management?.policies || []
+      const personPolicies = allPolicies.filter(p => p.categoryCode === 'medical' && p.person === personKey)
       const firstMain = personPolicies.find(p => p.policyTypeCode?.toLowerCase() === 'main') || personPolicies[0]
       if (!firstMain) {
         setAddClaimSaving(false)
