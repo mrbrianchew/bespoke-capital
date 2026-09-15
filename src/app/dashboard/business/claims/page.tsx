@@ -257,6 +257,7 @@ export default function BusinessClaimsBoardPage() {
   const [addClaimSaving, setAddClaimSaving] = useState(false)
   const [addClaimError, setAddClaimError] = useState('')
   const [addClaimClient, setAddClaimClient] = useState<ClientRow | null>(null) // step 2: which client, waiting on section pick
+  const [addClaimPerson, setAddClaimPerson] = useState<string | null>(null) // step 2.5: life assured — 'client' | 'spouse' | 'child_<id>', skipped when no family on file
 
   // ── Edit-in-place modal state (opened by clicking a card) ──
   const [editingCard, setEditingCard] = useState<CardData | null>(null)
@@ -599,12 +600,13 @@ export default function BusinessClaimsBoardPage() {
     if (error) toast('Save failed: ' + error.message, 'error')
   }
 
-  // Reuses the client's most recent existing claim if one exists (life_assured
-  // = client themself — the same default the old flow used) rather than
-  // creating a new claim container every time. Only inserts a new claims row
-  // when this client genuinely has none yet. Either way, the actual line item
-  // is added on the per-client page (via addSection) — not duplicated here.
-  async function addLineItemForClient(client: ClientRow, section: 'pre' | 'in' | 'post') {
+  // Reuses the client's most recent existing claim if one exists for this
+  // life-assured person, rather than creating a new claim container every
+  // time. personKey is 'client' | 'spouse' | 'child_<id>' — same vocabulary
+  // policies.person already uses. Only inserts a new claims row when this
+  // person genuinely has none yet. Either way, the actual line item is added
+  // on the per-client page (via addSection) — not duplicated here.
+  async function addLineItemForClient(client: ClientRow, personKey: string, section: 'pre' | 'in' | 'post') {
     setAddClaimSaving(true)
     setAddClaimError('')
 
@@ -614,20 +616,20 @@ export default function BusinessClaimsBoardPage() {
     // if claims get closed promptly), most-recent is a reasonable fallback
     // rather than blocking on a picker for what should be a rare edge case.
     const existing = claims
-      .filter(c => c.client_id === client.id && c.life_assured_person === 'client' && c.status === 'open')
+      .filter(c => c.client_id === client.id && c.life_assured_person === personKey && c.status === 'open')
       .sort((a, b) => new Date(b.opened_date).getTime() - new Date(a.opened_date).getTime())[0]
 
     let claimId = existing?.id
     if (!claimId) {
-      const clientPolicies = (policiesByClient[client.id] || []).filter(p => p.person === 'client')
-      const firstMain = clientPolicies.find(p => p.policyTypeCode?.toLowerCase() === 'main') || clientPolicies[0]
+      const personPolicies = (policiesByClient[client.id] || []).filter(p => p.person === personKey)
+      const firstMain = personPolicies.find(p => p.policyTypeCode?.toLowerCase() === 'main') || personPolicies[0]
       if (!firstMain) {
         setAddClaimSaving(false)
-        setAddClaimError(`${client.name} has no medical policy on file yet — add one on the Protection page first.`)
+        setAddClaimError(`${lifeAssuredLabel(client.id, personKey)} has no medical policy on file yet — add one on the Protection page first.`)
         return
       }
       const { data, error } = await supabase.from('claims').insert({
-        client_id: client.id, policy_id: firstMain.id, life_assured_person: 'client',
+        client_id: client.id, policy_id: firstMain.id, life_assured_person: personKey,
         label: 'New Claim', status: 'open', opened_date: new Date().toISOString().slice(0, 10),
       }).select().maybeSingle()
       if (error || !data) {
@@ -816,7 +818,7 @@ export default function BusinessClaimsBoardPage() {
             {loading ? 'Loading…' : `${totalInProgress} claim line item${totalInProgress === 1 ? '' : 's'} in progress across all clients`}
           </div>
         </div>
-        <button onClick={() => { setShowAddClaim(true); setAddClaimSearch(''); setAddClaimError(''); setAddClaimClient(null) }}
+        <button onClick={() => { setShowAddClaim(true); setAddClaimSearch(''); setAddClaimError(''); setAddClaimClient(null); setAddClaimPerson(null) }}
           style={{ padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--charcoal)', border: 'none', borderRadius: 8, cursor: 'pointer', flexShrink: 0 }}>
           + Add Claim
         </button>
@@ -1061,7 +1063,7 @@ export default function BusinessClaimsBoardPage() {
       )}
       {showAddClaim && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}
-          onClick={() => { if (!addClaimSaving) { setShowAddClaim(false); setAddClaimClient(null) } }}>
+          onClick={() => { if (!addClaimSaving) { setShowAddClaim(false); setAddClaimClient(null); setAddClaimPerson(null) } }}>
           <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 12 }} onClick={e => e.stopPropagation()}>
             {!addClaimClient ? (
               <>
@@ -1081,7 +1083,14 @@ export default function BusinessClaimsBoardPage() {
                     .filter(c => c.name?.toLowerCase().includes(addClaimSearch.trim().toLowerCase()))
                     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                     .map(c => (
-                      <button key={c.id} onClick={() => { setAddClaimClient(c); setAddClaimError('') }}
+                      <button key={c.id} onClick={() => {
+                        setAddClaimClient(c); setAddClaimError('')
+                        // Skip the "who is this for" step entirely when the client
+                        // has no family on file — no point asking a question with
+                        // only one possible answer.
+                        const hasFamily = (familyByClient[c.id] || []).length > 0
+                        setAddClaimPerson(hasFamily ? null : 'client')
+                      }}
                         style={{ width: '100%', textAlign: 'left', padding: '9px 10px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: T.text }}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--cream)'}
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
@@ -1099,18 +1108,52 @@ export default function BusinessClaimsBoardPage() {
                   </button>
                 </div>
               </>
-            ) : (
+            ) : !addClaimPerson ? (
               <>
                 <div style={{ padding: '20px 20px 4px' }}>
                   <div className="font-serif" style={{ fontSize: 19, color: T.text }}>{addClaimClient.name}</div>
-                  <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>Which section is this line item for?</div>
+                  <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>Who is this claim for?</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '14px 20px 20px' }}>
+                  <button onClick={() => setAddClaimPerson('client')}
+                    style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'transparent', cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: T.text }}>
+                    {addClaimClient.name} <span style={{ fontWeight: 400, color: T.textFaint }}>· Policyholder</span>
+                  </button>
+                  {(familyByClient[addClaimClient.id] || []).map(m => {
+                    const personKey = m.relationship === 'Spouse' ? 'spouse' : `child_${m.id}`
+                    return (
+                      <button key={m.id} onClick={() => setAddClaimPerson(personKey)}
+                        style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: `1px solid ${T.line}`, background: 'transparent', cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: T.text }}>
+                        {m.name || m.relationship} <span style={{ fontWeight: 400, color: T.textFaint }}>· {m.relationship}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'space-between' }}>
+                  <button onClick={() => { setAddClaimClient(null) }}
+                    style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: 'pointer' }}>
+                    ← Back
+                  </button>
+                  <button onClick={() => { setShowAddClaim(false); setAddClaimClient(null); setAddClaimPerson(null) }}
+                    style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ padding: '20px 20px 4px' }}>
+                  <div className="font-serif" style={{ fontSize: 19, color: T.text }}>{lifeAssuredLabel(addClaimClient.id, addClaimPerson)}</div>
+                  <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>
+                    {addClaimPerson !== 'client' && <>Policyholder: {addClaimClient.name} · </>}Which section is this line item for?
+                  </div>
                 </div>
                 {addClaimError && (
                   <div style={{ margin: '14px 20px 0', padding: '8px 10px', background: T.roseSoft, color: T.rose, fontSize: 12, borderRadius: 8 }}>{addClaimError}</div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 20px' }}>
                   {(['pre', 'in', 'post'] as const).map(sec => (
-                    <button key={sec} disabled={addClaimSaving} onClick={() => addLineItemForClient(addClaimClient, sec)}
+                    <button key={sec} disabled={addClaimSaving} onClick={() => addLineItemForClient(addClaimClient, addClaimPerson, sec)}
                       style={{
                         textAlign: 'left', padding: '11px 14px', borderRadius: 10, border: `1px solid ${T.line}`,
                         background: 'var(--cream)', cursor: addClaimSaving ? 'default' : 'pointer', fontSize: 13.5, fontWeight: 600, color: T.text,
@@ -1120,11 +1163,15 @@ export default function BusinessClaimsBoardPage() {
                   ))}
                 </div>
                 <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'space-between' }}>
-                  <button onClick={() => { setAddClaimClient(null); setAddClaimError('') }} disabled={addClaimSaving}
+                  <button onClick={() => {
+                    setAddClaimError('')
+                    const hasFamily = (familyByClient[addClaimClient.id] || []).length > 0
+                    if (hasFamily) { setAddClaimPerson(null) } else { setAddClaimClient(null); setAddClaimPerson(null) }
+                  }} disabled={addClaimSaving}
                     style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: addClaimSaving ? 'default' : 'pointer' }}>
                     ← Back
                   </button>
-                  <button onClick={() => { setShowAddClaim(false); setAddClaimClient(null) }} disabled={addClaimSaving}
+                  <button onClick={() => { setShowAddClaim(false); setAddClaimClient(null); setAddClaimPerson(null) }} disabled={addClaimSaving}
                     style={{ padding: '8px 16px', fontSize: 13, color: T.textDim, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: addClaimSaving ? 'default' : 'pointer' }}>
                     {addClaimSaving ? 'Working…' : 'Cancel'}
                   </button>
