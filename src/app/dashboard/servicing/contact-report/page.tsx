@@ -612,14 +612,15 @@ export default function ContactReportPage() {
                     <div style={{ ...chevron, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</div>
                   </div>
 
+                  {entry.manual?.notes && (
+                    <div style={{ ...logDetail, paddingBottom: isExpanded ? 0 : 16 }}>
+                      <div style={detailLabel}>Notes</div>
+                      <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{entry.manual.notes}</div>
+                    </div>
+                  )}
+
                   {isExpanded && (
                   <div style={logDetail} onClick={e => e.stopPropagation()}>
-                    {entry.manual?.notes && (
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={detailLabel}>Notes</div>
-                        <div style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{entry.manual.notes}</div>
-                      </div>
-                    )}
                     {entry.kind === 'auto' && entry.auto?.source_table && EDITABLE_AUTO_DETAILS_SOURCES.has(entry.auto.source_table) ? (
                       <div style={{ marginBottom: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -739,7 +740,7 @@ export default function ContactReportPage() {
 
 // ─── STYLES ─────────────────────────────────────────────────────────────────
 
-const pageWrap: React.CSSProperties = { padding: '24px 32px 60px', maxWidth: 760 }
+const pageWrap: React.CSSProperties = { padding: '24px 32px 60px', maxWidth: '100%' }
 
 // Vertical dotted-line timeline — replaces the old flat bordered list. Each
 // entry gets a colored dot (see DOT_COLOR) sitting on a thin rail, so the
