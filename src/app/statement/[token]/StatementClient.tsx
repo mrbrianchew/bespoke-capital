@@ -35,6 +35,15 @@ const parseAmt = (v: string): number => {
   return isNaN(n) ? 0 : n
 }
 
+// Standard mortgage PMT formula, mirrors dashboard/financials calcPMT.
+const calcPMT = (outstanding: number, annualRate: number, tenureYears: number): number => {
+  if (!outstanding || !tenureYears) return 0
+  if (!annualRate) return Math.round(outstanding / (tenureYears * 12))
+  const r = annualRate / 100 / 12
+  const n = tenureYears * 12
+  return Math.round(outstanding * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1))
+}
+
 // ---------- Small building blocks (module-level: never define components inside components) ----------
 
 function AmountInput({ value, onChange, placeholder }: {
@@ -620,7 +629,11 @@ export default function StatementPage() {
               {data.properties.length === 0 && (
                 <div className="st-empty">No properties added. If you own property, add it below — otherwise you can skip this section.</div>
               )}
-              {data.properties.map((p, idx) => (
+              {data.properties.map((p, idx) => {
+                const pmtCalc = (p.outstanding && p.remainingTenure)
+                  ? calcPMT(p.outstanding, p.interestRate || 0, p.remainingTenure)
+                  : 0
+                return (
                 <div className="st-prop" key={p.id}>
                   <div className="st-prop-head">
                     <span className="pt">PROPERTY {idx + 1}</span>
@@ -667,10 +680,20 @@ export default function StatementPage() {
                     <div className="st-field"><label>Interest Rate (%)</label>
                       <DecimalInput value={p.interestRate} onChange={n => updProp(p.id, { interestRate: n })} placeholder="0.00" />
                     </div>
-                    <div className="st-field"><label>Monthly Repayment</label><AmountInput value={p.monthlyRepayment} onChange={n => updProp(p.id, { monthlyRepayment: n })} /></div>
+                    <div className="st-field"><label>Monthly Repayment</label>
+                      <AmountInput value={p.monthlyRepayment || pmtCalc || undefined} onChange={n => updProp(p.id, { monthlyRepayment: n })} placeholder={pmtCalc ? String(pmtCalc) : '$ 0'} />
+                      {pmtCalc > 0 && (
+                        <span className="st-fhint" style={{ color: '#2A5E46' }}>
+                          Auto-calculated: ${pmtCalc.toLocaleString()}/mo
+                          {p.monthlyRepayment && p.monthlyRepayment !== pmtCalc && (
+                            <button type="button" onClick={() => updProp(p.id, { monthlyRepayment: 0 })} style={{ marginLeft: 6, textDecoration: 'underline', color: '#8B867E', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, padding: 0 }}>use calc</button>
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              ))}
+              )})}
               {!locked && <button type="button" className="st-add" onClick={addProperty}>+ Add another property</button>}
               <SubtotalStrip label="Total Property Equity" value={totals.equity} />
             </div>
