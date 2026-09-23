@@ -96,6 +96,12 @@ interface ProtectionData {
   wpSubTab?: number
   expenseCategories?: { financial?: boolean; household?: boolean; personal?: boolean; children?: boolean; lifestyle?: boolean }
   expenseSubItems?: Record<string, boolean>
+  // D/TPD Family Dependency only — "Fund spouse's premium instead of own" on the
+  // Insurance Premium line item. When true for a person, that person's own D/TPD need
+  // uses the OTHER person's entered Insurance Premium amount instead of their own
+  // (their own premium normally lapses at death). See getInsurancePremiumAmount.
+  insuranceFundSpouseClient?: boolean
+  insuranceFundSpouseSpouse?: boolean
   expenseCoverPctClient?: number
   expenseCoverPctSpouse?: number
   fdModeClient?: 'own' | 'combined'
@@ -268,6 +274,40 @@ const DETAILED_EXPENSE_LABELS: Record<string, string> = {
   d_hobbies: 'Hobbies & Leisure',
   d_allowance_parents: 'Allowance for Parents',
   d_others_lifestyle: 'Other Lifestyle Expenses',
+}
+
+// Per-item toggle key lookup shared by getIncomeTaxOneOff / getInsurancePremiumAmount
+// below and EditSubItemsModal — mirrors getDetailedCategoryTotal's own inclusion check
+// in protectionSnapshot.ts (personKey = key + '_c'/'_s' in couple mode, bare key in
+// individual mode) so a line item ticked off there is respected here too.
+function isDetailedItemIncluded(key: string, who: 'client' | 'spouse', subItems: Record<string, boolean>): boolean {
+  const personKey = who === 'spouse' ? key + '_s' : key + '_c'
+  if (personKey in subItems) return subItems[personKey] !== false
+  return who === 'client' ? subItems[key] !== false : true
+}
+
+// Death/TPD only — Income Tax: Brian's correction (Sep 2026): outstanding income tax is
+// a one-time settlement at death, not a recurring household expense that keeps recurring
+// every year of the coverage term. Pulled out of the annuitized Family Dependency stream
+// in calcDTPDNeed and added once, undiscounted, to that person's gross need instead.
+// Detailed mode only — Simple mode has no separate income tax field (it's blended into
+// one Financial Obligations figure with insurance/savings), so there's nothing to isolate
+// there and Simple-mode behavior is unchanged.
+function getIncomeTaxOneOff(ff: FactFinding, who: 'client' | 'spouse', subItems: Record<string, boolean>): number {
+  if (!isDetailedItemIncluded('d_income_tax', who, subItems)) return 0
+  return (ff[who === 'spouse' ? 'd2_income_tax' : 'd_income_tax'] as number) || 0
+}
+
+// Death/TPD only — Insurance Premium: a person's own life-insurance premium normally
+// lapses at their death (the policy pays out), so it shouldn't be funded going forward.
+// What can genuinely need funding is the SURVIVING spouse's own premiums. Used by
+// calcDTPDNeed together with p.insuranceFundSpouseClient/Spouse (toggled from the
+// Insurance Premium row in EditSubItemsModal) to swap in the other person's entered
+// premium amount instead of this person's own, within the normal annuitized stream
+// (not a one-off — same coverageTerm as the rest of Family Dependency, per Brian).
+function getInsurancePremiumAmount(ff: FactFinding, who: 'client' | 'spouse', subItems: Record<string, boolean>): number {
+  if (!isDetailedItemIncluded('d_insurance', who, subItems)) return 0
+  return (ff[who === 'spouse' ? 'd2_insurance' : 'd_insurance'] as number) || 0
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -1230,13 +1270,33 @@ const coverageTerm = (() => {
   function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; assetsCash: number; assetsProperty: number; net: number; fd: number; mort: number; edu: number } {
     const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
+    const subItems = p.expenseSubItems ?? {}
+
+    // Income Tax: pulled out of the recurring stream, added once below instead.
+    // Insurance Premium: normally each person's own entry; swapped for the OTHER
+    // person's entry when that person's "fund spouse's premium" toggle is on — their
+    // own premium lapses at death, so it shouldn't be funded going forward.
+    // Both detailed-mode only — see getIncomeTaxOneOff / getInsurancePremiumAmount.
+    const clientTaxOneOff = isDetailed ? getIncomeTaxOneOff(ff, 'client', subItems) : 0
+    const spouseTaxOneOff = isDetailed ? getIncomeTaxOneOff(ff, 'spouse', subItems) : 0
+    const clientInsuranceAdj = isDetailed && p.insuranceFundSpouseClient
+      ? getInsurancePremiumAmount(ff, 'spouse', subItems) - getInsurancePremiumAmount(ff, 'client', subItems)
+      : 0
+    const spouseInsuranceAdj = isDetailed && p.insuranceFundSpouseSpouse
+      ? getInsurancePremiumAmount(ff, 'client', subItems) - getInsurancePremiumAmount(ff, 'spouse', subItems)
+      : 0
+    const annExpClientAdj = annExpClient - clientTaxOneOff + clientInsuranceAdj
+    const annExpSpouseAdj = annExpSpouse - spouseTaxOneOff + spouseInsuranceAdj
+    const annExpTotalAdj = annExpClientAdj + annExpSpouseAdj
+    const incomeTaxOneOff = who === 'client' ? clientTaxOneOff : spouseTaxOneOff
+
     const fdBase = fdMode === 'own'
-      ? (who === 'client' ? annExpClient : annExpSpouse)
-      : annExpTotal * coverPct
+      ? (who === 'client' ? annExpClientAdj : annExpSpouseAdj)
+      : annExpTotalAdj * coverPct
     const fd = fv(inflation, coverageTerm, fdBase)
     const mort = calcMortgageForPerson(who)
     const edu = calcEducationForPerson(who)
-    const gross = fd + mort + edu
+    const gross = fd + mort + edu + incomeTaxOneOff
     const assets = getAssetOffset(ff, who, 'dtpd', p)
     const assetBreakdown = getAssetOffsetBreakdown(ff, who, p)
     return { gross, assets, assetsCash: assetBreakdown.cash, assetsProperty: assetBreakdown.property, net: Math.max(0, gross - assets), fd, mort, edu }
@@ -4590,6 +4650,32 @@ function EditSubItemsModal({ category, ff, p, updateP, onClose, isCouple, client
             )
           })}
         </div>
+
+        {/* Insurance Premium — Fund spouse's premium instead of own. D/TPD only: a
+            person's own premium normally lapses at their death (the policy pays out),
+            so their D/TPD need shouldn't keep funding it — this instead pulls the
+            OTHER person's entered premium amount into their need. Doesn't change the
+            $ shown above (still each person's own entered figure) or the Selected
+            Total below — only the actual Family Dependency capital calculation. */}
+        {category === 'financial' && isCouple && (
+          <div style={{ marginTop: 14, padding: '12px 14px', background: '#F5F0E8', borderRadius: 6 }}>
+            <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter', marginBottom: 8 }}>
+              Insurance Premium — fund the other person's premium instead of my own if I pass away
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontFamily: 'Inter', color: '#1C1A17', cursor: 'pointer' }}>
+                <input type="checkbox" checked={p.insuranceFundSpouseClient ?? false}
+                  onChange={e => updateP({ insuranceFundSpouseClient: e.target.checked })} />
+                {clientName}'s D/TPD need funds {spouseName}'s premium instead of {clientName}'s own
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontFamily: 'Inter', color: '#1C1A17', cursor: 'pointer' }}>
+                <input type="checkbox" checked={p.insuranceFundSpouseSpouse ?? false}
+                  onChange={e => updateP({ insuranceFundSpouseSpouse: e.target.checked })} />
+                {spouseName}'s D/TPD need funds {clientName}'s premium instead of {spouseName}'s own
+              </label>
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: 16, padding: '12px 14px', background: '#1C1A17', borderRadius: 6 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
