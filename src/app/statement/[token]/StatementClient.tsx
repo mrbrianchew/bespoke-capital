@@ -50,6 +50,38 @@ function AmountInput({ value, onChange, placeholder }: {
   )
 }
 
+// Decimal-aware input: keeps a local text buffer so a trailing "." (e.g. typing "3.5")
+// isn't clobbered by the controlled re-render on every keystroke (AmountInput has this bug too,
+// but it only bites fields where users actually type decimals, like interest rate).
+function DecimalInput({ value, onChange, placeholder, className }: {
+  value: number | undefined; onChange: (n: number) => void; placeholder?: string; className?: string
+}) {
+  const toStr = (n: number | undefined) => (n !== undefined && n !== 0 ? String(n) : '')
+  const [raw, setRaw] = useState(toStr(value))
+
+  useEffect(() => {
+    // Only resync from props when they've diverged from what typing produced
+    // (e.g. external reset), so we don't fight the user mid-keystroke.
+    if (parseAmt(raw) !== (value || 0)) setRaw(toStr(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  return (
+    <input
+      type="text" inputMode="decimal" placeholder={placeholder || '0.00'}
+      value={raw}
+      onChange={e => {
+        const v = e.target.value
+        if (/^-?\d*\.?\d*$/.test(v)) {
+          setRaw(v)
+          onChange(parseAmt(v))
+        }
+      }}
+      className={className || 'st-amt'}
+    />
+  )
+}
+
 function FRow({ label, unit, hint, value, onChange }: {
   label: string; unit?: string; hint?: string
   value: number | undefined; onChange: (n: number) => void
@@ -633,7 +665,7 @@ export default function StatementPage() {
                   </div>
                   <div className="st-field-row">
                     <div className="st-field"><label>Interest Rate (%)</label>
-                      <input type="text" inputMode="decimal" className="st-amt" placeholder="0.00" value={p.interestRate !== undefined && p.interestRate !== 0 ? String(p.interestRate) : ''} onChange={e => updProp(p.id, { interestRate: parseAmt(e.target.value) })} />
+                      <DecimalInput value={p.interestRate} onChange={n => updProp(p.id, { interestRate: n })} placeholder="0.00" />
                     </div>
                     <div className="st-field"><label>Monthly Repayment</label><AmountInput value={p.monthlyRepayment} onChange={n => updProp(p.id, { monthlyRepayment: n })} /></div>
                   </div>
