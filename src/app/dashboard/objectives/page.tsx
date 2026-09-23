@@ -291,19 +291,36 @@ function getAge(dob?: string): number {
 // getDetailedCategoryTotal / getDetailedTotal moved to src/lib/protectionSnapshot.ts —
 // this used to be a separate copy of the same logic that could (and did) drift out of
 // sync with the live Protection page's version. Now imported below instead.
-function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
+//
+// SIMPLE_EXPENSE_MAP / getSimpleCategoryAmount: single source of truth for Simple-mode
+// field names, matching the Financial Profile (Simple mode) schema in financials/page.tsx —
+// s_financial / s_household / s_personal / s_children / s_lifestyle (s2_ for spouse).
+// Both getSimpleCategoryTotal (below) and the Expense Categories row UI must read through
+// this helper rather than keeping their own copies of the field map — a second, separately
+// maintained copy inline in the row UI previously used pre-consolidation field names
+// (s_income_tax, s_housing, s_transport, s_others) that no longer exist, so Simple-mode
+// showed $0 in that UI even after getSimpleCategoryTotal itself was fixed. Don't reintroduce
+// a second copy.
+const SIMPLE_EXPENSE_MAP: Record<string, string> = {
+  financial: 'financial',
+  household: 'household',
+  personal:  'personal',
+  children:  'children',
+  lifestyle: 'lifestyle',
+}
+
+function getSimpleCategoryAmount(ff: FactFinding, category: string, prefix: 'client' | 'spouse'): number {
   const p = prefix === 'spouse' ? 's2_' : 's_'
+  const suffix = SIMPLE_EXPENSE_MAP[category]
+  if (!suffix) return 0
+  return (ff[`${p}${suffix}`] as number) || 0
+}
+
+function getSimpleCategoryTotal(ff: FactFinding, categories: Record<string, boolean>, prefix: 'client' | 'spouse'): number {
   let total = 0
-  const catMap: Record<string, string[]> = {
-    financial: [`${p}income_tax`, `${p}insurance`, `${p}regular_savings`],
-    household: [`${p}housing`, `${p}utilities`, `${p}family_food`],
-    personal:  [`${p}transport`],
-    children:  [`${p}children`],
-    lifestyle: [`${p}lifestyle`, `${p}others`],
-  }
   Object.entries(categories).forEach(([cat, enabled]) => {
     if (!enabled) return
-    catMap[cat]?.forEach(k => { total += (ff[k] as number || 0) })
+    total += getSimpleCategoryAmount(ff, cat, prefix)
   })
   return total
 }
@@ -2017,20 +2034,13 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {Object.entries(EXPENSE_CATEGORY_LABELS).map(([key, label]) => {
-            const simpleMap: Record<string, string[]> = {
-              financial: ['s_income_tax','s_insurance','s_regular_savings'],
-              household: ['s_housing','s_utilities','s_family_food'],
-              personal:  ['s_transport'],
-              children:  ['s_children'],
-              lifestyle: ['s_lifestyle','s_others'],
-            }
             let clientAmt = 0, spouseAmt = 0
             if (isDetailed) {
               clientAmt = getDetailedCategoryTotal(ff, key, 'client', p.expenseSubItems ?? {})
               spouseAmt = getDetailedCategoryTotal(ff, key, 'spouse', p.expenseSubItems ?? {})
             } else {
-              clientAmt = (simpleMap[key] ?? []).reduce((s, k) => s + (ff[k] as number || 0), 0)
-              spouseAmt = (simpleMap[key] ?? []).map(k => k.replace('s_','s2_')).reduce((s, k) => s + (ff[k] as number || 0), 0)
+              clientAmt = getSimpleCategoryAmount(ff, key, 'client')
+              spouseAmt = getSimpleCategoryAmount(ff, key, 'spouse')
             }
             const catTotal = clientAmt + spouseAmt
             const clientPct = catTotal > 0 ? Math.round(clientAmt / catTotal * 100) : 0
