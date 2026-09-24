@@ -190,6 +190,34 @@ export default function WillPrepReviewPage() {
     }
   }
 
+  // Flips the row back to 'draft' — same link, same password — so the
+  // client can edit their submission again. Does not touch the token or
+  // password_hash, unlike WillPrepPanel's "Resend / regenerate" which
+  // rotates the password too. Only offered while status is 'submitted';
+  // once Applied, use "Revert this Apply" on the panel first if you also
+  // want to let the client edit again.
+  async function reopenForEdits() {
+    if (!row) return
+    if (!await confirmAction(
+      `Reopen this link for ${row.client_name || 'the client'} to edit? Their submission will no longer be marked "needs review" until they resubmit.`,
+      { confirmLabel: 'Reopen' }
+    )) return
+    setBusy(true)
+    try {
+      const { error: updError } = await supabase.from('estate_will_prep')
+        .update({ status: 'draft', submitted_at: null, updated_at: new Date().toISOString() })
+        .eq('id', row.id)
+      if (updError) throw updError
+
+      await load()
+    } catch (e) {
+      console.error('Reopen failed:', e)
+      setError('Failed to reopen. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loading) {
     return <div style={{ padding: 40, fontFamily: 'Inter', fontSize: 13, color: 'var(--ink3)' }}>Loading submission…</div>
   }
@@ -229,7 +257,16 @@ export default function WillPrepReviewPage() {
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-          {row.status !== 'applied' && (
+          {row.status === 'submitted' && (
+            <button
+              disabled={busy}
+              onClick={reopenForEdits}
+              style={{ fontFamily: 'Inter', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 7, border: '1px solid var(--line)', background: '#fff', color: 'var(--ink)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+            >
+              {busy ? 'Reopening…' : 'Reopen for edits'}
+            </button>
+          )}
+          {row.status === 'submitted' && (
             <button
               disabled={busy}
               onClick={applyToRecord}
@@ -245,10 +282,10 @@ export default function WillPrepReviewPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0 8px' }}>
         <span style={{
           fontFamily: 'Inter', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '4px 11px', borderRadius: 5,
-          background: row.status === 'applied' ? 'var(--emerald-l)' : '#EAF0F7',
-          color: row.status === 'applied' ? 'var(--emerald)' : '#3A5A82',
+          background: row.status === 'applied' ? 'var(--emerald-l)' : row.status === 'draft' ? '#F5EFE3' : '#EAF0F7',
+          color: row.status === 'applied' ? 'var(--emerald)' : row.status === 'draft' ? '#8A6C3A' : '#3A5A82',
         }}>
-          {row.status === 'applied' ? '✓ Applied to record' : 'Submitted — needs review'}
+          {row.status === 'applied' ? '✓ Applied to record' : row.status === 'draft' ? 'Reopened — awaiting resubmission' : 'Submitted — needs review'}
         </span>
         {anyFlag && (
           <span style={{ fontFamily: 'Inter', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '4px 11px', borderRadius: 5, background: 'var(--rouge-l)', color: 'var(--rouge)' }}>
@@ -438,16 +475,27 @@ export default function WillPrepReviewPage() {
         <span style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--ink3)' }}>
           {row.status === 'applied'
             ? 'This is now the working data for Prepare Now. Read it off from here when drafting with getArrange.'
+            : row.status === 'draft'
+            ? `Reopened for ${clientName} to edit — this view still shows their last submission until they resubmit.`
             : 'Applying writes to estate_will_prep_apply_log so this can be reverted in one step.'}
         </span>
-        {row.status !== 'applied' && (
-          <button
-            disabled={busy}
-            onClick={applyToRecord}
-            style={{ fontFamily: 'Inter', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 7, border: '1px solid var(--charcoal)', background: 'var(--charcoal)', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
-          >
-            {busy ? 'Applying…' : 'Apply to record'}
-          </button>
+        {row.status === 'submitted' && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              disabled={busy}
+              onClick={reopenForEdits}
+              style={{ fontFamily: 'Inter', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 7, border: '1px solid var(--line)', background: '#fff', color: 'var(--ink)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+            >
+              {busy ? 'Reopening…' : 'Reopen for edits'}
+            </button>
+            <button
+              disabled={busy}
+              onClick={applyToRecord}
+              style={{ fontFamily: 'Inter', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 7, border: '1px solid var(--charcoal)', background: 'var(--charcoal)', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+            >
+              {busy ? 'Applying…' : 'Apply to record'}
+            </button>
+          </div>
         )}
       </div>
     </div>
