@@ -8,10 +8,12 @@ import { useConfirm } from '@/components/ConfirmDialog'
 // ─── TYPES ───────────────────────────────────────────────────────────────
 
 type PrepStatus = 'draft' | 'submitted' | 'applied'
+type PrepPerson = 'client' | 'spouse'
 
 interface WillPrepRow {
   id: string
   client_id: string
+  person: PrepPerson
   token: string
   password_hint: string | null
   expires_at: string | null
@@ -60,10 +62,11 @@ function StatusChip({ status }: { status: PrepStatus }) {
 
 // ─── MAIN PANEL ──────────────────────────────────────────────────────────
 
-export default function WillPrepPanel({ clientId, clientName }: { clientId: string; clientName: string }) {
+export default function WillPrepPanel({ clientId, clientName, person = 'client' }: { clientId: string; clientName: string; person?: PrepPerson }) {
   const supabase = useMemo(() => createClient(), [])
   const confirmAction = useConfirm()
   const router = useRouter()
+  const personLabel = person === 'spouse' ? 'Spouse' : 'Client'
 
   const [row, setRow] = useState<WillPrepRow | null>(null)
   const [logs, setLogs] = useState<ApplyLogRow[]>([])
@@ -81,7 +84,7 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
   const load = useCallback(async () => {
     setLoading(true)
     const { data: prepRow } = await supabase
-      .from('estate_will_prep').select('*').eq('client_id', clientId)
+      .from('estate_will_prep').select('*').eq('client_id', clientId).eq('person', person)
       .order('created_at', { ascending: false }).limit(1).maybeSingle()
     setRow((prepRow as WillPrepRow) || null)
     if (prepRow) {
@@ -93,7 +96,7 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
       setLogs([])
     }
     setLoading(false)
-  }, [clientId, supabase])
+  }, [clientId, person, supabase])
 
   useEffect(() => { load() }, [load])
 
@@ -141,7 +144,7 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
       } else {
         const token = crypto.randomUUID().replace(/-/g, '')
         const { error } = await supabase.from('estate_will_prep').insert({
-          client_id: clientId, token,
+          client_id: clientId, person, token,
           password_hash: hash, password_hint: genHint || null, expires_at: expiresAt,
           status: 'draft', data: {}, client_name: clientName,
         })
@@ -198,10 +201,10 @@ export default function WillPrepPanel({ clientId, clientName }: { clientId: stri
   return (
     <div style={cardStyle}>
       <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, fontWeight: 500, marginBottom: 4 }}>
-        Will Preparation — Client Link
+        Will Preparation — {personLabel} Link
       </div>
       <p style={{ fontSize: 12, color: 'var(--ink3)', lineHeight: 1.55, marginBottom: 16 }}>
-        Generates a password-protected link where {clientName} fills in beneficiaries, guardian, executor and asset instructions on their own.
+        Generates a password-protected link where {clientName} fills in beneficiaries, guardian, executor and asset instructions on their own. Wills are separate legal documents per person — this is {clientName}'s own will, not a joint submission.
       </p>
 
       {notice && (

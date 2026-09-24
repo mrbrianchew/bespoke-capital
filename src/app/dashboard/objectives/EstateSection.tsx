@@ -660,10 +660,18 @@ useEffect(() => {
       </div>
 
       {/* ── WILL PREPARATION — client self-serve link + Prepare Now ── */}
+      {/* Wills are separate legal documents per person, so a couple gets two
+          independent links/records, distinguished by the `person` column on
+          estate_will_prep (same client_id, person: 'client' | 'spouse'). */}
       {clientId && (
         <>
           <SubLabel color="var(--gold)">Will Preparation</SubLabel>
-          <WillPrepPanel clientId={clientId} clientName={clientName} />
+          <div style={{ display: 'grid', gridTemplateColumns: isCouple ? '1fr 1fr' : '1fr', gap: 16 }}>
+            <WillPrepPanel clientId={clientId} clientName={clientName} person="client" />
+            {isCouple && (
+              <WillPrepPanel clientId={clientId} clientName={spouseName} person="spouse" />
+            )}
+          </div>
         </>
       )}
 

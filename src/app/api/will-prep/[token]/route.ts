@@ -59,12 +59,17 @@ function isExpired(expiresAt: string | null): boolean {
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const { data: prep } = await supabaseAdmin
     .from('estate_will_prep')
-    .select('password_hint,expires_at,status,client_id')
+    .select('password_hint,expires_at,status,client_id,client_name')
     .eq('token', params.token)
     .maybeSingle()
   if (!prep) return NextResponse.json({ error: 'not_found' }, { status: 404 })
   const firm = await resolveFirmForClient(prep.client_id)
-  const clientName = await resolveClientName(prep.client_id)
+  // The row's own client_name is the display name for THIS link (the
+  // client's or the spouse's, per the `person` column) — re-deriving from
+  // the clients table would always show the client's name, even on a
+  // spouse's own will link. Only fall back for legacy rows saved before
+  // client_name was populated at creation.
+  const clientName = prep.client_name || await resolveClientName(prep.client_id)
   return NextResponse.json({
     hint: prep.password_hint || '',
     expired: isExpired(prep.expires_at),
@@ -99,7 +104,9 @@ export async function POST(req: Request, { params }: { params: { token: string }
   if (!ok) return NextResponse.json({ error: 'wrong_password' }, { status: 401 })
 
   const firm = await resolveFirmForClient(prep.client_id)
-  const clientName = await resolveClientName(prep.client_id)
+  // Same reasoning as GET above — use this row's own stored name, not the
+  // client record's name, so a spouse's link shows the spouse's name.
+  const clientName = prep.client_name || await resolveClientName(prep.client_id)
 
   if (action === 'unlock') {
     return NextResponse.json({
