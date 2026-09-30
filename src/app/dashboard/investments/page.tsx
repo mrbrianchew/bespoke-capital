@@ -5,6 +5,7 @@ import { useClientTabState } from '@/hooks/useClientTabState'
 import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { sumSelectedExpenses } from '@/lib/retirementExpenses'
+import { buildPayoutMarkers, createPayoutMarkerPlugin, ownerToClientAge, payoutPopupHtml } from '@/lib/payoutMarkers'
 import { Chart, registerables } from 'chart.js'
 import MonthInput from '@/components/MonthInput'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -1677,7 +1678,7 @@ export default function CapitalMandatePage() {
             const w = cpfLifeWindow(p, clientAge, spouseAge, lifeExpectancy, spouseLifeExpectancy)
             if (a >= w.start && a < w.end) guaranteedAnnual += (p.cpfMonthlyPayout || 0) * 12
           }
-          if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) {
+          if (p.vehicleType === 'annuity' && a >= ownerToClientAge(p.owner, p.annuityStartAge || 65, clientAge, spouseAge)) {
             guaranteedAnnual += (p.annuityMonthlyIncome || 0) * 12
           }
           if (p.vehicleType === 'rental' && a <= (p.rentalStopAge || 75)) {
@@ -1837,7 +1838,8 @@ export default function CapitalMandatePage() {
       }
       if (p.vehicleType === 'annuity') {
         // Annuity: runs from annuityStartAge for annuityGuaranteeYears
-        const startOffset = Math.max(0, (p.annuityStartAge || retirementAge) - retirementAge)
+        const annStartClientAge = p.annuityStartAge ? ownerToClientAge(p.owner, p.annuityStartAge, clientAge, spouseAge) : retirementAge
+        const startOffset = Math.max(0, annStartClientAge - retirementAge)
         const guaranteeYears = Math.min(p.annuityGuaranteeYears || n, n - startOffset)
         const pv = pvFixedAnnuityDue((p.annuityMonthlyIncome || 0) * 12, Math.max(0, guaranteeYears))
         return sum + pv / Math.pow(1 + rr, startOffset)
@@ -2010,6 +2012,18 @@ export default function CapitalMandatePage() {
     portfolioXIRRRef.current = portfolioXIRR
   }, [portfolioXIRR])
 
+  // Payout-start markers (CPF Life / annuity) for the lifecycle chart
+  const payoutMarkers = useMemo(() => {
+    const spouseInClientYears = spouseLifeExpectancy + (clientAge - spouseAge)
+    const lastAge = Math.max(lifeExpectancy, spouseInClientYears, clientAge + 35, 85)
+    return buildPayoutMarkers(filteredPortfolio, {
+      clientAge, spouseAge, lastAge, currentYear: new Date().getFullYear(), clientName, spouseName,
+    })
+  }, [filteredPortfolio, clientAge, spouseAge, lifeExpectancy, spouseLifeExpectancy, clientName, spouseName])
+  const payoutMarkersRef = useRef(payoutMarkers)
+  payoutMarkersRef.current = payoutMarkers
+  const payoutPopupRef = useRef<HTMLDivElement>(null)
+
  // ── CHART ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (loading) return
@@ -2175,7 +2189,19 @@ export default function CapitalMandatePage() {
       try {
         chartInstance.current = new Chart(canvasCtx, {
           type: 'line',
-          plugins: [retireLinePlugin, milestonePlugin],
+          plugins: [retireLinePlugin, milestonePlugin, createPayoutMarkerPlugin({
+            getMarkers: () => payoutMarkersRef.current,
+            onHover: (h) => {
+              const el = payoutPopupRef.current, cv = chartRef.current
+              if (!el) return
+              if (!h || !cv) { el.style.opacity = '0'; return }
+              el.innerHTML = payoutPopupHtml(h.marker, planMode === 'couple', clientAge, spouseAge)
+              const flip = h.x + 300 > cv.offsetWidth
+              el.style.left = Math.max(4, cv.offsetLeft + (flip ? h.x - 306 : h.x + 22)) + 'px'
+              el.style.top = (cv.offsetTop + h.y + 4) + 'px'
+              el.style.opacity = '1'
+            },
+          })],
           data: {
             labels: ages.map(a => fmtAge(a, planMode === 'couple', clientAge, spouseAge)),
             datasets,
@@ -2261,7 +2287,7 @@ export default function CapitalMandatePage() {
              y: {
                 ticks: { callback: (v: any) => fmt(v), color: '#9A9690', font: { size: 9 } },
                 grid: { color: 'rgba(26,24,22,0.04)' }, min: 0,
-                max: Math.max(...requiredLine.filter(v => isFinite(v))) * 1.15,
+                max: Math.max(...requiredLine.filter(v => isFinite(v))) * (payoutMarkers.length ? 1.32 : 1.15), // extra headroom for payout coins
               },
             },
           },
@@ -2282,7 +2308,7 @@ export default function CapitalMandatePage() {
     loading, projectedPortfolioData, fullLifecycleSeries, filteredGoals, settings,
     clientAge, spouseAge, retirementAge, spouseRetirementAge, lifeExpectancy, spouseLifeExpectancy,
     effectiveRetirementIncome, postRetirementReturn, retirementInflation, planMode,
-    earliestRetirementAge,
+    earliestRetirementAge, payoutMarkers,
   ])
 
   // ── RENDER ────────────────────────────────────────────────────────────────
@@ -2569,9 +2595,15 @@ export default function CapitalMandatePage() {
               ))
             })()}
           </div>
-          <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 400 }}>
+          <div style={{ padding: '12px 24px 20px', background: 'var(--cream)', height: 400, position: 'relative' }}>
             <canvas key={chartKey} ref={chartRef} />
+            <div ref={payoutPopupRef} role="tooltip" style={{ position: 'absolute', zIndex: 5, width: 280, opacity: 0, transition: 'opacity .12s', pointerEvents: 'none', background: 'rgba(26,24,22,0.96)', color: 'rgba(240,237,232,0.88)', borderRadius: 10, padding: '14px 16px', fontFamily: 'Inter', fontSize: 11, lineHeight: 1.5, boxShadow: '0 10px 30px rgba(0,0,0,.25)' }} />
           </div>
+          {payoutMarkers.length > 0 && (
+            <div style={{ padding: '0 24px 14px', background: 'var(--cream)', fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)' }}>
+              Coin markers show when CPF Life and annuity income starts — hover or tap a coin for details.
+            </div>
+          )}
         </div>
 
         {/* ── 4. RETIREMENT INCOME BREAKDOWN ── */}
