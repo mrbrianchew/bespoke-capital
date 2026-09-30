@@ -293,6 +293,22 @@ function CashflowModal({ vehicle, onSave, onClose }: {
   )
 }
 
+// CPF Life pays for the owner's lifetime, in the OWNER's age. Convert start/end
+// to client-age so they compare against the projection's client-age axis.
+// end is exclusive: payouts run for ages [start, end), matching the PV block.
+// Legacy 'joint' CPF Life records are treated as the client's.
+function cpfLifeWindow(
+  p: { owner: 'client' | 'spouse' | 'joint'; cpfPayoutStartAge?: number },
+  clientAge: number, spouseAge: number, lifeExpectancy: number, spouseLifeExpectancy: number,
+): { start: number; end: number } {
+  const isSpouse = p.owner === 'spouse'
+  const offset = isSpouse ? clientAge - spouseAge : 0
+  return {
+    start: (p.cpfPayoutStartAge || 65) + offset,
+    end: (isSpouse ? spouseLifeExpectancy : lifeExpectancy) + offset,
+  }
+}
+
 // ─── VEHICLE MODAL ────────────────────────────────────────────────────────────
 
 function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName, clientAge, retirementAge }: {
@@ -364,11 +380,11 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
 
   const ownerOpts = [
     { value: 'client' as const, label: clientName },
-    ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, ...(vehicleType !== 'srs' ? [{ value: 'joint' as const, label: 'Joint' }] : [])] : []),
+    ...(isCouple ? [{ value: 'spouse' as const, label: spouseName }, ...(vehicleType !== 'srs' && vehicleType !== 'cpf_life' ? [{ value: 'joint' as const, label: 'Joint' }] : [])] : []),
   ]
 
   useEffect(() => {
-    if (vehicleType === 'srs' && owner === 'joint') setOwner('client')
+    if ((vehicleType === 'srs' || vehicleType === 'cpf_life') && owner === 'joint') setOwner('client')
   }, [vehicleType])
 
   function addCashflow() {
@@ -1657,8 +1673,9 @@ export default function CapitalMandatePage() {
 
         let guaranteedAnnual = 0
         filteredPortfolio.forEach(p => {
-          if (p.vehicleType === 'cpf_life' && a >= (p.cpfPayoutStartAge || 65)) {
-            guaranteedAnnual += (p.cpfMonthlyPayout || 0) * 12
+          if (p.vehicleType === 'cpf_life') {
+            const w = cpfLifeWindow(p, clientAge, spouseAge, lifeExpectancy, spouseLifeExpectancy)
+            if (a >= w.start && a < w.end) guaranteedAnnual += (p.cpfMonthlyPayout || 0) * 12
           }
           if (p.vehicleType === 'annuity' && a >= (p.annuityStartAge || 65)) {
             guaranteedAnnual += (p.annuityMonthlyIncome || 0) * 12
@@ -1809,9 +1826,11 @@ export default function CapitalMandatePage() {
     }
     const pvFixedStream = filteredPortfolio.reduce((sum, p) => {
       if (p.vehicleType === 'cpf_life') {
-        // CPF Life: lifetime payout — runs full n years
-        const cpfStartOffset = Math.max(0, (p.cpfPayoutStartAge || 65) - retirementAge)
-        const cpfYears = Math.max(0, n - cpfStartOffset)
+        // CPF Life: pays from the owner's payout age until the owner's life
+        // expectancy (both converted to client-age), not the last survivor's.
+        const w = cpfLifeWindow(p, clientAge, spouseAge, lifeExpectancy, spouseLifeExpectancy)
+        const cpfStartOffset = Math.max(0, w.start - retirementAge)
+        const cpfYears = Math.max(0, w.end - Math.max(w.start, retirementAge))
         const pv = pvFixedAnnuityDue((p.cpfMonthlyPayout || 0) * 12, cpfYears)
         // Discount back if payout starts after retirement
         return sum + pv / Math.pow(1 + rr, cpfStartOffset)
@@ -1835,7 +1854,7 @@ export default function CapitalMandatePage() {
     return { inflatedMonthlyIncome, inflatedAnnualHolidays, annualGapTotal, baseAdjustedCorpus: corpusPV }
   }, [goals, settings.incomeSource, effectiveRetirementIncome, effectiveAnnualHolidays, earliestRetirementAge, clientAge, spouseAge,
       retirementAge, retirementInflation, planMode, lifeExpectancy, spouseLifeExpectancy,
-      postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement])
+      postRetirementReturn, settings.legacyAmount, guaranteedMonthlyRetirement, filteredPortfolio])
 
   // Keep ref in sync so debounced saves always use latest value
   useEffect(() => {
