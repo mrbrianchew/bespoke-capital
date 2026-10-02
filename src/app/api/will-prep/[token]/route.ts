@@ -51,6 +51,17 @@ async function resolveClientName(clientId: string | null | undefined): Promise<s
   return client?.name || 'Client'
 }
 
+// The client's own link follows the live clients.name so an advisor-side
+// rename shows immediately. A spouse link keeps its stored name (the spouse
+// isn't a clients row; WillPrepPanel keeps it synced on the advisor side).
+async function resolveDisplayName(prep: { client_id: string | null; client_name: string | null; person: string | null }): Promise<string> {
+  if (prep.person !== 'spouse') {
+    const live = await resolveClientName(prep.client_id)
+    if (live !== 'Client') return live
+  }
+  return prep.client_name || await resolveClientName(prep.client_id)
+}
+
 function isExpired(expiresAt: string | null): boolean {
   return expiresAt ? new Date(expiresAt) < new Date() : false
 }
@@ -59,7 +70,7 @@ function isExpired(expiresAt: string | null): boolean {
 export async function GET(_req: Request, { params }: { params: { token: string } }) {
   const { data: prep } = await supabaseAdmin
     .from('estate_will_prep')
-    .select('password_hint,expires_at,status,client_id,client_name')
+    .select('password_hint,expires_at,status,client_id,client_name,person')
     .eq('token', params.token)
     .maybeSingle()
   if (!prep) return NextResponse.json({ error: 'not_found' }, { status: 404 })
@@ -69,7 +80,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   // the clients table would always show the client's name, even on a
   // spouse's own will link. Only fall back for legacy rows saved before
   // client_name was populated at creation.
-  const clientName = prep.client_name || await resolveClientName(prep.client_id)
+  const clientName = await resolveDisplayName(prep)
   return NextResponse.json({
     hint: prep.password_hint || '',
     expired: isExpired(prep.expires_at),
@@ -106,7 +117,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
   const firm = await resolveFirmForClient(prep.client_id)
   // Same reasoning as GET above — use this row's own stored name, not the
   // client record's name, so a spouse's link shows the spouse's name.
-  const clientName = prep.client_name || await resolveClientName(prep.client_id)
+  const clientName = await resolveDisplayName(prep)
 
   if (action === 'unlock') {
     return NextResponse.json({

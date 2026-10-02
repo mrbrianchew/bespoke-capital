@@ -14,6 +14,7 @@ interface WillPrepRow {
   id: string
   client_id: string
   person: PrepPerson
+  client_name: string | null
   token: string
   password_hint: string | null
   expires_at: string | null
@@ -86,7 +87,15 @@ export default function WillPrepPanel({ clientId, clientName, person = 'client' 
     const { data: prepRow } = await supabase
       .from('estate_will_prep').select('*').eq('client_id', clientId).eq('person', person)
       .order('created_at', { ascending: false }).limit(1).maybeSingle()
-    setRow((prepRow as WillPrepRow) || null)
+    let current = (prepRow as WillPrepRow) || null
+    // The link header shows the name stored on the row. Keep it in step with
+    // the current name so a rename never leaves the client-facing page stale.
+    if (current && clientName.trim() && current.client_name !== clientName) {
+      const { error: nameErr } = await supabase.from('estate_will_prep')
+        .update({ client_name: clientName }).eq('id', current.id)
+      if (!nameErr) current = { ...current, client_name: clientName }
+    }
+    setRow(current)
     if (prepRow) {
       const { data: logRows } = await supabase
         .from('estate_will_prep_apply_log').select('*')
@@ -96,7 +105,7 @@ export default function WillPrepPanel({ clientId, clientName, person = 'client' 
       setLogs([])
     }
     setLoading(false)
-  }, [clientId, person, supabase])
+  }, [clientId, clientName, person, supabase])
 
   useEffect(() => { load() }, [load])
 
