@@ -1208,7 +1208,7 @@ async function revokeShare(token: string, clear: () => void) {
             <div>
   <div style={{fontSize:9,letterSpacing:'0.13em',textTransform:'uppercase',color:'var(--ink3)',marginBottom:8}}>Share For</div>
   <div style={{display:'flex',gap:8,flexWrap:'wrap' as const}}>
-    {[{key:'client',label:clientName},...(isCouple?[{key:'spouse',label:spouseName}]:[]),...(children.length>0?[{key:'dependents',label:'Dependents'}]:[])].map(p=>(
+    {[{key:'client',label:clientName},...(hasSpouseOnFile?[{key:'spouse',label:spouseName}]:[]),...(children.length>0?[{key:'dependents',label:'Dependents'}]:[])].map(p=>(
       <button key={p.key} onClick={()=>setSharePerson(p.key)}
         style={{padding:'7px 16px',fontSize:12,border:`1px solid ${sharePerson===p.key?'#1C1A17':'var(--line)'}`,
           background:sharePerson===p.key?'#1C1A17':'white',color:sharePerson===p.key?'white':'var(--ink)',cursor:'pointer'}}>
