@@ -82,6 +82,12 @@ interface CMSettings {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
+// A monthly premium counts only once its month has fully elapsed (current month excluded).
+function isCompletedMonth(iter: Date, asOf: Date): boolean {
+  const cur = asOf.getFullYear() + '-' + String(asOf.getMonth() + 1).padStart(2, '0')
+  return iter.toISOString().slice(0, 7) < cur
+}
+
 function fmt(n: number) {
   if (!n || isNaN(n)) return 'S$0'
   if (n >= 1_000_000) return 'S$' + (n / 1_000_000).toFixed(2) + 'M'
@@ -429,7 +435,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       const endContribDateS = endContribEventsS.length ? new Date(endContribEventsS[0].date + '-01') : null
       let activeRateS = monthlyNum; let rateIdxS = 0
       const iterS = new Date(startDate)
-      while (iterS <= now && (!endContribDateS || iterS < endContribDateS)) {
+      while (isCompletedMonth(iterS, now) && (!endContribDateS || iterS < endContribDateS)) {
         const ym = iterS.toISOString().slice(0, 7)
         while (rateIdxS < sortedChangesS.length && sortedChangesS[rateIdxS].date <= ym) { activeRateS = sortedChangesS[rateIdxS].amount; rateIdxS++ }
         if (!holidayMonthsS.has(ym)) savedTotalContributed += activeRateS
@@ -442,7 +448,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
           const xf: { amount: number; date: Date }[] = []
           let xRate = monthlyNum; let xIdx = 0
           const xIter = new Date(startDate)
-          while (xIter <= now && (!endContribDateS || xIter < endContribDateS)) {
+          while (isCompletedMonth(xIter, now) && (!endContribDateS || xIter < endContribDateS)) {
             const ym = xIter.toISOString().slice(0, 7)
             while (xIdx < sortedChangesS.length && sortedChangesS[xIdx].date <= ym) { xRate = sortedChangesS[xIdx].amount; xIdx++ }
             if (xRate > 0 && !holidayMonthsS.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
@@ -775,7 +781,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                 if (mode === 'Regular') {
                   let activeRate = monthlyNum; let rateIdx = 0
                   const iter = new Date(startDate)
-                  while (iter <= now && (!endContribDate || iter < endContribDate)) {
+                  while (isCompletedMonth(iter, now) && (!endContribDate || iter < endContribDate)) {
                     const ym = iter.toISOString().slice(0, 7)
                     while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
                     if (!holidayMonths.has(ym)) totalContributed += activeRate
@@ -793,7 +799,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                       const xf: { amount: number; date: Date }[] = []
                       let xRate = monthlyNum; let xIdx = 0
                       const xIter = new Date(startDate)
-                      while (xIter <= now && (!endContribDate || xIter < endContribDate)) {
+                      while (isCompletedMonth(xIter, now) && (!endContribDate || xIter < endContribDate)) {
                         const ym = xIter.toISOString().slice(0, 7)
                         while (xIdx < changeEvents.length && changeEvents[xIdx].date <= ym) { xRate = changeEvents[xIdx].amount; xIdx++ }
                         if (xRate > 0 && !holidayMonths.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
@@ -1523,7 +1529,7 @@ export default function CapitalMandatePage() {
           })
           let activeRate = p.monthlyContribution; let rateIdx = 0
           const iter = new Date(startDate)
-          while (iter <= now) {
+          while (isCompletedMonth(iter, now)) {
             const ym = iter.toISOString().slice(0, 7)
             while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
             if (activeRate > 0 && !holidayMonths.has(ym)) allFlows.push({ amount: -activeRate, date: new Date(iter) })
