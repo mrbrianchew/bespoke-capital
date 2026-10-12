@@ -2877,16 +2877,25 @@ function PersonPortfolioCharts({ personName, personAge, policies, personKey }: {
           was silently cutting off trailing digits, e.g. "$526,00" for
           "$526,000"). Trades a longer scroll for numbers that are never
           cut off — see chat 2026-08-25 for the before/after mockups. */}
-      <div style={{display:'grid', gridTemplateColumns: narrow ? '1fr' : 'repeat(7,1fr)', gap: 12, marginBottom: 16}}>
-        {[
+      {/* Two groups (coverage / premiums), each on a wrapping grid with a
+          220px column floor, so a card can never get narrower than its
+          number. 7-across at desktop width left ~85px of text space and
+          clipped "$2,050,000" to "$2,050,00". */}
+      {[
+        [
           {label:'Death Benefit', value:totDeath, accent:COL_D},
           {label:'TPD Benefit', value:totTPD, accent:COL_T},
           {label:'Late Stage CI', value:totAdvCI, accent:COL_CI},
           {label:'Early Stage CI', value:totEarCI, accent:COL_CI},
+        ],
+        [
           {label:'Cash/Credit Card', value:protectionSplit.cash, accent:'#A8834A', highlight: true, isPremium: true},
           {label:'Medisave/Non-Cash', value:protectionSplit.medisave, accent:'#5E8A80', highlight: true, isPremium: true},
           {label:'Annual Savings/Investments', value:totSavings, accent:'#2D5A4E', highlight: true, isPremium: true},
-        ].map(kpi=>(
+        ],
+      ].map((group, gi)=>(
+      <div key={gi} style={{display:'grid', gridTemplateColumns: narrow ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: gi===0 ? 12 : 16}}>
+        {group.map((kpi: {label:string; value:number; accent:string; highlight?:boolean; isPremium?:boolean})=>(
           <div key={kpi.label} style={{
             background: COL_CARD_BG,
             border: `1px solid ${COL_BORDER}`,
@@ -2928,6 +2937,7 @@ function PersonPortfolioCharts({ personName, personAge, policies, personKey }: {
           </div>
         ))}
       </div>
+      ))}
 
       {/* ── Charts Row ────────────────────────────────────────────────────── */}
       <div style={{display:'grid', gridTemplateColumns: narrow ? '1fr' : '1fr 360px', gap: 12}}>
