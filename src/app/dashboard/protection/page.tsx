@@ -1859,7 +1859,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
     return (
       <div style={{display:'flex',alignItems:'center',gap:5,marginTop:3,fontSize:10,color:'var(--emerald)'}}>
         <span style={{width:5,height:5,borderRadius:'50%',background:'var(--emerald)',flexShrink:0}} />
-        <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{entry.description} · {dateLabel}</span>
+        <span title={`${entry.description} · ${dateLabel}`} style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{entry.description} · {dateLabel}</span>
       </div>
     )
   }
@@ -1937,8 +1937,8 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
     const hasMedisave = policies.some(p=>(p.premiumMedisave||0)>0)
     // Grid: INSURER (1.2fr) | BRIEF DESC (1.5fr) | MEDISAVE (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
     const cols = '28px ' + (hasMedisave
-      ? '1.2fr 1.5fr 100px 100px 90px 160px 40px'
-      : '1.2fr 1.5fr 100px 90px 160px 40px')
+      ? 'minmax(0,1.2fr) minmax(0,1.5fr) 100px 100px 90px 160px 40px'
+      : 'minmax(0,1.2fr) minmax(0,1.5fr) 100px 90px 160px 40px')
     const headers = hasMedisave
       ? ['', 'INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREM (MEDISAVE)', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
       : ['', 'INSURER · PLAN · PH / LA', 'BRIEF DESCRIPTION', 'PREMIUM', 'FREQ / MODE', 'DATES', '']
@@ -2067,7 +2067,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
     // ── Life layout (Core Protection) ───────────────────────────────────────────
   if (isLife) {
     // Grid: INSURER (1.2fr) | DEATH (90px) | TPD (90px) | ADV CI (90px) | EARLY CI (90px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-    const cols = '28px 1.2fr 90px 90px 90px 90px 100px 90px 160px 40px'
+    const cols = '28px minmax(0,1.2fr) 90px 90px 90px 90px 100px 90px 160px 40px'
     if (narrow) {
       return (
         <div>
@@ -2218,7 +2218,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
 
   // ── Endowment layout (Wealth Accumulation) ──────────────────────────────────
   // Grid: INSURER (1.2fr) | DEATH BENEFIT (100px) | PREMIUM (100px) | FREQ/MODE (90px) | DATES (160px) | ACTIONS (40px)
-  const cols = '28px 1.2fr 100px 100px 90px 160px 40px'
+  const cols = '28px minmax(0,1.2fr) 100px 100px 90px 160px 40px'
   if (narrow) {
     return (
       <div>
