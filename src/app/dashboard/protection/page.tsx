@@ -1,5 +1,6 @@
 'use client'
 import React, { useEffect, useState, useRef, useMemo, useCallback, Suspense } from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
@@ -2525,6 +2526,17 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
   const COL_CARD_BG = '#FFFFFF'
   const COL_BORDER  = 'rgba(0,0,0,0.06)'
   const [editingStatusId, setEditingStatusId] = useState<string|null>(null)
+  // Status picker is portalled to <body> with fixed coordinates so the table
+  // card's overflow clipping can't cut it off. Opens upward when there isn't
+  // room below the trigger. Fixed position detaches on scroll/resize, so close.
+  const [statusMenuPos, setStatusMenuPos] = useState<{ right: number; top?: number; bottom?: number } | null>(null)
+  useEffect(() => {
+    if (!editingStatusId) return
+    const close = () => setEditingStatusId(null)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close) }
+  }, [editingStatusId])
   const [dragId, setDragId] = useState<string|null>(null)
   const [dragOverId, setDragOverId] = useState<string|null>(null)
 
@@ -2728,7 +2740,17 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
                                   {overrideLabel && <span style={{ fontSize: 8, opacity: 0.6, marginLeft: 4 }}>●</span>}
                                 </span>
                                 <button
-                                  onClick={() => setEditingStatusId(isEditingThis ? null : p.id)}
+                                  onClick={(e) => {
+                                    if (isEditingThis) { setEditingStatusId(null); return }
+                                    const r = e.currentTarget.getBoundingClientRect()
+                                    const MENU_H = 270 // 6 options + reset row + padding
+                                    const openUp = window.innerHeight - r.bottom < MENU_H && r.top > window.innerHeight - r.bottom
+                                    setStatusMenuPos({
+                                      right: Math.max(8, window.innerWidth - r.right),
+                                      ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+                                    })
+                                    setEditingStatusId(p.id)
+                                  }}
                                   title="Override status"
                                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: '#AAA', fontSize: 12, lineHeight: 1, flexShrink: 0 }}>
                                   ✎
@@ -2741,9 +2763,9 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
                                 </button>
                               </div>
                               {/* Status picker dropdown */}
-                              {isEditingThis && (
+                              {isEditingThis && statusMenuPos && createPortal(
                                 <div style={{
-                                  position: 'absolute', top: '100%', right: 0, zIndex: 20,
+                                  position: 'fixed', top: statusMenuPos.top, bottom: statusMenuPos.bottom, right: statusMenuPos.right, zIndex: 1000,
                                   background: 'white', border: '1px solid rgba(0,0,0,0.1)',
                                   borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
                                   minWidth: 190, padding: '6px 0',
@@ -2770,7 +2792,8 @@ function RenewalTab({ allPolicies, clientName, spouseName, allPeople, statusOver
                                       Reset to auto
                                     </button>
                                   )}
-                                </div>
+                                </div>,
+                                document.body
                               )}
                             </td>
                           </tr>
