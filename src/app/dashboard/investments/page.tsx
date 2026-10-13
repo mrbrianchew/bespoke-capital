@@ -58,7 +58,8 @@ interface FundingVehicle {
   srsWithdrawalStartAge?: number
   srsWithdrawalDuration?: number
   annualizedReturn?: number | null
-  totalContributed?: number
+  totalContributed?: number   // gross premiums/contributions paid (withdrawals excluded)
+  totalWithdrawn?: number     // sum of withdrawal cashflows, kept separate from totalContributed
   cashflows: CashflowEvent[]
 }
 
@@ -148,6 +149,22 @@ function xirr(cashflows: { amount: number; date: Date }[]): number | null {
     if (r > 10) r = 1
   }
   return null
+}
+
+// Lump Sum XIRR: initial lump sum + dated top-ups/withdrawals + current value.
+// Returns a decimal (0.06 = 6%) or null. Terminal date matches the Regular-mode XIRR (today).
+function lumpSumXIRR(start: Date, lump: number, cfs: CashflowEvent[], currentVal: number): number | null {
+  const xf: { amount: number; date: Date }[] = []
+  if (lump > 0) xf.push({ amount: -lump, date: new Date(start) })
+  cfs.forEach(cf => {
+    const [yr, mo] = cf.date.split('-').map(Number)
+    if (cf.type === 'top_up') xf.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) })
+    if (cf.type === 'withdrawal') xf.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) })
+  })
+  xf.push({ amount: currentVal, date: new Date() })
+  xf.sort((a, b) => a.date.getTime() - b.date.getTime())
+  const xr = xirr(xf)
+  return xr !== null ? xr / 100 : null
 }
 
 function computeXIRR(vehicle: FundingVehicle): number | null {
@@ -409,6 +426,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
     if (!name.trim()) { setNameError(true); return }
     let savedAnnualizedReturn: number | null = null
     let savedTotalContributed = 0
+    let savedTotalWithdrawn = 0
     const currentValNum = parseFloat(curVal) || 0
     const monthlyNum = parseFloat(monthly) || 0
     const startDate = startMonth ? new Date(startMonth + '-01') : null
@@ -418,11 +436,18 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1
       : 0
     if ((vehicleType === 'investment' || vehicleType === 'other') && startDate && monthsHeldSave > 0 && currentValNum > 0) {
+      flows.forEach(cf => { if (cf.type === 'withdrawal') savedTotalWithdrawn += cf.amount })
       if (mode === 'Lump Sum') {
         savedTotalContributed = monthlyNum || currentValNum
-        flows.forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount; if (cf.type === 'withdrawal') savedTotalContributed -= cf.amount })
+        flows.forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount })
         savedTotalContributed = Math.max(0, savedTotalContributed)
-        savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(monthsHeldSave / 12, 0.1)) - 1 : null
+        // Withdrawals/top-ups change timing, so use XIRR when any exist; otherwise plain CAGR
+        const lumpXirrS = flows.some(cf => cf.type === 'top_up' || cf.type === 'withdrawal')
+          ? lumpSumXIRR(startDate, monthlyNum || currentValNum, flows, currentValNum)
+          : null
+        savedAnnualizedReturn = lumpXirrS !== null
+          ? lumpXirrS
+          : (savedTotalContributed > 0 ? Math.pow((currentValNum + savedTotalWithdrawn) / savedTotalContributed, 1 / Math.max(monthsHeldSave / 12, 0.1)) - 1 : null)
       } else {
       const sortedChangesS = [...flows.filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))]
       const holidayMonthsS = new Set<string>()
@@ -441,7 +466,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
         if (!holidayMonthsS.has(ym)) savedTotalContributed += activeRateS
         iterS.setMonth(iterS.getMonth() + 1)
       }
-      flows.forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount; if (cf.type === 'withdrawal') savedTotalContributed -= cf.amount })
+      flows.forEach(cf => { if (cf.type === 'top_up') savedTotalContributed += cf.amount })
       savedTotalContributed = Math.max(0, savedTotalContributed)
       if (mode === 'Regular' && monthsHeldSave > 1) {
         try {
@@ -461,7 +486,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
           savedAnnualizedReturn = xr !== null ? xr / 100 : null
         } catch { savedAnnualizedReturn = null }
       } else {
-        savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(monthsHeldSave / 12, 0.1)) - 1 : null
+        savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow((currentValNum + savedTotalWithdrawn) / savedTotalContributed, 1 / Math.max(monthsHeldSave / 12, 0.1)) - 1 : null
       }
       } // end Regular mode block
     } else if (vehicleType === 'srs') {
@@ -490,6 +515,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       startMonth, endMonth, valueAsOfMonth,
       annualizedReturn: savedAnnualizedReturn,
       totalContributed: savedTotalContributed,
+      totalWithdrawn: savedTotalWithdrawn,
       cpfScheme, cpfMonthlyPayout: parseFloat(cpfPayout) || 0, cpfPayoutStartAge: cpfStartAge,
       endowmentMaturityValue: parseFloat(endMatVal) || 0, endowmentMaturityYear: endMatYear, endowmentPremium: parseFloat(endPremium) || 0,
       annuityMonthlyIncome: parseFloat(annuityIncome) || 0, annuityStartAge, annuityGuaranteeYears: annuityGuarantee,
@@ -768,8 +794,11 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
               const currentValNum = parseFloat(curVal) || 0
               const monthlyNum = parseFloat(monthly) || 0
               let annualizedReturn: number | null = null
+              let returnMethod: 'xirr' | 'simple' = 'simple'
               let totalContributed = 0
+              let totalWithdrawn = 0
               if (yearsHeld > 0 && currentValNum > 0 && startDate) {
+                flows.forEach(cf => { if (cf.type === 'withdrawal') totalWithdrawn += cf.amount })
                 const changeEvents = flows.filter(cf => cf.type === 'contribution_change').sort((a, b) => a.date.localeCompare(b.date))
                 const holidayMonths = new Set<string>()
                 flows.filter(cf => cf.type === 'premium_holiday' || cf.type === 'missed_premium').forEach(cf => {
@@ -787,10 +816,10 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                     if (!holidayMonths.has(ym)) totalContributed += activeRate
                     iter.setMonth(iter.getMonth() + 1)
                   }
-                  flows.forEach(cf => { if (cf.type === 'top_up') totalContributed += cf.amount; if (cf.type === 'withdrawal') totalContributed -= cf.amount })
+                  flows.forEach(cf => { if (cf.type === 'top_up') totalContributed += cf.amount })
                 } else {
                   totalContributed = monthlyNum || currentValNum
-                  flows.forEach(cf => { if (cf.type === 'top_up') totalContributed += cf.amount; if (cf.type === 'withdrawal') totalContributed -= cf.amount })
+                  flows.forEach(cf => { if (cf.type === 'top_up') totalContributed += cf.amount })
                 }
                 totalContributed = Math.max(0, totalContributed)
                 if (totalContributed > 0 && currentValNum > 0) {
@@ -809,10 +838,16 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                       xf.push({ amount: currentValNum, date: new Date() })
                       xf.sort((a, b) => a.date.getTime() - b.date.getTime())
                       const xr = xirr(xf)
-                      annualizedReturn = xr !== null ? xr / 100 : Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
-                    } catch { annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1 }
+                      if (xr !== null) { annualizedReturn = xr / 100; returnMethod = 'xirr' }
+                      else annualizedReturn = Math.pow((currentValNum + totalWithdrawn) / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                    } catch { annualizedReturn = Math.pow((currentValNum + totalWithdrawn) / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1 }
                   } else {
-                    annualizedReturn = Math.pow(currentValNum / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
+                    // Lump Sum with top-ups/withdrawals: timing matters, so use XIRR; otherwise plain CAGR
+                    const lumpXirr = mode === 'Lump Sum' && flows.some(cf => cf.type === 'top_up' || cf.type === 'withdrawal')
+                      ? lumpSumXIRR(startDate, monthlyNum || currentValNum, flows, currentValNum)
+                      : null
+                    if (lumpXirr !== null) { annualizedReturn = lumpXirr; returnMethod = 'xirr' }
+                    else annualizedReturn = Math.pow((currentValNum + totalWithdrawn) / totalContributed, 1 / Math.max(yearsHeld, 0.1)) - 1
                   }
                 }
               }
@@ -872,9 +907,9 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                     <div style={{ background: '#F5F0E8', border: '1px solid rgba(168,131,74,0.2)', borderRadius: 10, padding: '14px 16px' }}>
                       <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#A8834A', marginBottom: 10 }}>Portfolio Performance · {monthsHeld} month{monthsHeld !== 1 ? 's' : ''} · {startMonth}</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}</div></div>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Total Contributed</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{totalContributed >= 1_000_000 ? 'S$' + (totalContributed / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(totalContributed).toLocaleString('en-SG')}</div>{totalWithdrawn > 0 && <div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>Withdrawn S${Math.round(totalWithdrawn).toLocaleString('en-SG')}</div>}</div>
                         <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Current Value</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17 }}>{currentValNum >= 1_000_000 ? 'S$' + (currentValNum / 1_000_000).toFixed(2) + 'M' : 'S$' + Math.round(currentValNum).toLocaleString('en-SG')}</div></div>
-                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>{annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}</div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>{mode === 'Regular' && monthsHeld > 1 ? 'XIRR · time-weighted' : 'Simple annualized'}</div></div>
+                        <div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginBottom: 3 }}>Annualized Return</div><div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 17, color: annualizedReturn !== null ? (annualizedReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>{annualizedReturn !== null ? (annualizedReturn >= 0 ? '+' : '') + (annualizedReturn * 100).toFixed(1) + '%' : '—'}</div><div style={{ fontFamily: 'Inter', fontSize: 9, color: 'var(--ink3)', marginTop: 2 }}>{returnMethod === 'xirr' ? 'XIRR · money-weighted' : 'Simple annualized'}</div></div>
                       </div>
                     </div>
                   )}
@@ -2425,7 +2460,7 @@ export default function CapitalMandatePage() {
               {
                 label: 'Current Portfolio Value',
                 val: fmt(totalCurrentValue),
-                sub: totalCurrentValue > 0 ? `+${fmt(totalCurrentValue - filteredPortfolio.reduce((s, p) => s + (p.totalContributed || p.currentValue || 0), 0))} unrealised gain` : 'No positions yet',
+                sub: totalCurrentValue > 0 ? `+${fmt(totalCurrentValue + filteredPortfolio.reduce((s, p) => s + (p.totalWithdrawn || 0), 0) - filteredPortfolio.reduce((s, p) => s + (p.totalContributed || p.currentValue || 0), 0))} unrealised gain` : 'No positions yet',
                 color: '#80B4C4',
               },
             ]
@@ -2787,6 +2822,9 @@ export default function CapitalMandatePage() {
               // Fall back to currentValue when totalContributed not yet calculated (no start date entered)
               const summaryTotalContributed = perfVehicles.reduce((s, p) => s + (p.totalContributed || p.currentValue || 0), 0)
               const summaryTotalValue = perfVehicles.reduce((s, p) => s + (p.currentValue || 0), 0)
+              // Withdrawals are kept out of contributed; they count toward gain (value + withdrawn − contributed)
+              const summaryTotalWithdrawn = perfVehicles.reduce((s, p) => s + (p.totalWithdrawn || 0), 0)
+              const summaryGain = summaryTotalValue + summaryTotalWithdrawn - summaryTotalContributed
               // Blended annualized return: weighted by current value
               let blendedNumerator = 0; let blendedDenominator = 0
               perfVehicles.forEach(p => {
@@ -2803,14 +2841,14 @@ export default function CapitalMandatePage() {
                   <div>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Total Capital Invested</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: 'var(--ink)' }}>{fmt(summaryTotalContributed)}</div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>across {perfVehicles.length} vehicle{perfVehicles.length !== 1 ? 's' : ''}</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>across {perfVehicles.length} vehicle{perfVehicles.length !== 1 ? 's' : ''}{summaryTotalWithdrawn > 0 ? ` · ${fmt(summaryTotalWithdrawn)} withdrawn` : ''}</div>
                   </div>
                   <div>
                     <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Total Portfolio Value</div>
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: 'var(--ink)' }}>{fmt(summaryTotalValue)}</div>
                     {summaryTotalContributed > 0 && (
-                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: summaryTotalValue >= summaryTotalContributed ? '#4A9E8A' : '#E08080', marginTop: 2 }}>
-                        {summaryTotalValue >= summaryTotalContributed ? '+' : ''}{fmt(summaryTotalValue - summaryTotalContributed)} gain
+                      <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: summaryGain >= 0 ? '#4A9E8A' : '#E08080', marginTop: 2 }}>
+                        {summaryGain >= 0 ? '+' : ''}{fmt(summaryGain)} gain{summaryTotalWithdrawn > 0 ? ' (incl. withdrawals)' : ''}
                       </div>
                     )}
                   </div>
@@ -2819,7 +2857,7 @@ export default function CapitalMandatePage() {
                     <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 22, color: displayReturn !== null ? (displayReturn >= 0 ? '#4A9E8A' : '#E08080') : 'var(--ink3)' }}>
                       {displayReturn !== null ? (displayReturn >= 0 ? '+' : '') + displayReturn.toFixed(1) + '%' : '—'}
                     </div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>time-weighted across all vehicles</div>
+                    <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>money-weighted across all vehicles</div>
                   </div>
                 </div>
               )
