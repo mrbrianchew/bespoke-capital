@@ -9,6 +9,7 @@ import { saveFactFindingSection } from '@/lib/factFindingSave'
 import SnapshotsTab from './SnapshotsTab'
 import AnnualReviewsTab from './AnnualReviewsTab'
 import VersionPicker, { fmtAsAtLabel } from './VersionPicker'
+import { cpfConfigAt, ageForCpfAt, currentMonthStartSG } from '@/lib/cpfHistory'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import { Users } from 'lucide-react'
@@ -191,7 +192,7 @@ interface FactFinding {
 }
 
 interface Client { id: string; name: string; age?: number; citizenship?: string; dob?: string }
-interface FamilyMember { id: string; name: string; relationship: string; age?: number }
+interface FamilyMember { id: string; name: string; relationship: string; age?: number; dob?: string }
 interface CpfTier { max_age: number; employee: number; employer: number; oa: number; sa: number; ma: number }
 interface CpfConfig { ow_ceiling: number; annual_ceiling: number; effective_date: string; sc_rates: CpfTier[] }
 
@@ -1318,11 +1319,18 @@ function FactFindingPage() {
   // Annual Reviews: when a saved version is open, the screens show it READ-ONLY.
   // The live plan stays untouched in ffLive; every write path below is blocked
   // while a version is open (viewingRef) so nothing can overwrite the live plan.
-  const [viewVer, setViewVer] = useState<{ id: string; as_at: string; kind: string; ff: FactFinding } | null>(null)
+  // editable = a past record (kind 'earlier') opened for editing; edits then save to
+  // THAT record only, never to the live plan.
+  const [viewVer, setViewVer] = useState<{ id: string; as_at: string; kind: string; editable: boolean; ff: FactFinding } | null>(null)
   const [verTick, setVerTick] = useState(0)
+  const [editSaveFailed, setEditSaveFailed] = useState(false)
   const ff = viewVer ? viewVer.ff : ffLive
-  const viewingRef = useRef(false)
-  viewingRef.current = viewVer !== null
+  const viewingRef = useRef(false)   // read-only version open: every write is blocked
+  viewingRef.current = viewVer !== null && !viewVer.editable
+  const editingRef = useRef(false)   // past record open for editing: writes go to that record
+  editingRef.current = viewVer !== null && viewVer.editable
+  const editTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const editPending = useRef<{ id: string; ff: FactFinding } | null>(null)
   const [cpfConfig, setCpfConfig] = useState<CpfConfig>(DEFAULT_CPF_CONFIG)
   const [activeSection, setActiveSection] = useClientTabState<string>('financials.activeSection', 'income')
   const [viewMode, setViewMode] = useClientTabState<'combined' | 'client' | 'spouse'>('financials.viewMode', 'combined')
@@ -1442,8 +1450,33 @@ data.annual_surplus = annualSurplus
     }
   }, 800)
 }, [ff, client, supabase])
+// Past-record editing: debounced save of the open record's figures to its own row.
+const flushEdit = useCallback(async () => {
+  if (editTimer.current) { clearTimeout(editTimer.current); editTimer.current = null }
+  const pending = editPending.current
+  if (!pending) return
+  editPending.current = null
+  setSaving(true)
+  const { client_id, ...data } = pending.ff
+  const { error } = await supabase.from('fact_finding_versions').update({ data }).eq('id', pending.id)
+  setSaving(false)
+  if (error) { console.error('Past record save error:', error); setEditSaveFailed(true) }
+  else { setEditSaveFailed(false); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+}, [supabase])
+const editApply = useCallback((fn: (prev: FactFinding) => FactFinding) => {
+  setViewVer(prev => {
+    if (!prev || !prev.editable) return prev
+    const nextFf = fn(prev.ff)
+    editPending.current = { id: prev.id, ff: nextFf }
+    if (editTimer.current) clearTimeout(editTimer.current)
+    editTimer.current = setTimeout(() => { flushEdit() }, 800)
+    return { ...prev, ff: nextFf }
+  })
+  setSaved(false)
+}, [flushEdit])
 const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   if (viewingRef.current) return
+  if (editingRef.current) { editApply(prev => ({ ...prev, [key]: val } as FactFinding)); return }
   setFf(prev => {
     if (!prev) return prev
     const next = { ...prev, [key]: val }
@@ -1466,10 +1499,11 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
     return next
   })
   setSaved(false)
-}, [client, supabase])
+}, [client, supabase, editApply])
 
   const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
   if (viewingRef.current) return
+  if (editingRef.current) { editApply(prev => ({ ...prev, [person]: { ...prev[person], [key]: val } } as FactFinding)); return }
   setFf(prev => {
     if (!prev) return prev
     const next = { ...prev, [person]: { ...prev[person], [key]: val } }
@@ -1492,18 +1526,21 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
     return next
   })
   setSaved(false)
-}, [client, supabase])
+}, [client, supabase, editApply])
 
   const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
 
-  // Open a saved version read-only (id) or return to the live plan (null).
-  async function openVersion(id: string | null) {
+  // Open a saved version read-only (id), open a past record for editing (id + edit),
+  // or return to the live plan (null). Any pending past-record edit is saved first.
+  async function openVersion(id: string | null, edit = false) {
+    await flushEdit()
+    setEditSaveFailed(false)
     if (!id || !client) { setViewVer(null); return }
     const { data, error } = await supabase.from('fact_finding_versions')
       .select('id, as_at, kind, data').eq('id', id).single()
     if (error || !data) return
     const row = data as { id: string; as_at: string; kind: string; data: Record<string, unknown> }
-    setViewVer({ id: row.id, as_at: row.as_at, kind: row.kind, ff: { ...(row.data as object), client_id: client.id } as FactFinding })
+    setViewVer({ id: row.id, as_at: row.as_at, kind: row.kind, editable: edit && row.kind === 'earlier', ff: { ...(row.data as object), client_id: client.id } as FactFinding })
     if (activeSection === 'reviews' || activeSection === 'snapshots') setActiveSection('income')
   }
 
@@ -1516,8 +1553,18 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   const mode = ff.mode || 'single'; const isCouple = mode === 'couple'
   const p1 = ff.person1 || {}; const p2 = ff.person2 || {}
   const age1 = client.age || 35; const age2 = spouse?.age || 35
-  const cpf1 = calcCpf(p1.gross_monthly || 0, p1.gross_bonus || 0, age1, p1.citizenship || 'SC', p1.pr_year || '3+', cpfConfig, p1.employment_type)
-  const cpf2 = isCouple ? calcCpf(p2.gross_monthly || 0, p2.gross_bonus || 0, age2, p2.citizenship || 'SC', p2.pr_year || '3+', cpfConfig, p2.employment_type) : null
+  // A saved version of an earlier month is worked out the way it would have been then:
+  // the person's age in that month and that month's CPF rates and wage ceiling.
+  // (The current month and later use today's live figures, exactly as the live plan.)
+  const asAtPast = viewVer && viewVer.as_at < currentMonthStartSG() ? viewVer.as_at : null
+  const hist = asAtPast ? cpfConfigAt(asAtPast) : null
+  const cfg: CpfConfig = hist ? hist.config : cpfConfig
+  const histAge1 = asAtPast ? ageForCpfAt(client.dob, client.age, asAtPast) : null
+  const histAge2 = asAtPast && isCouple ? ageForCpfAt(spouse?.dob, spouse?.age, asAtPast) : null
+  const cpfAge1 = histAge1 ? histAge1.age : age1
+  const cpfAge2 = histAge2 ? histAge2.age : age2
+  const cpf1 = calcCpf(p1.gross_monthly || 0, p1.gross_bonus || 0, cpfAge1, p1.citizenship || 'SC', p1.pr_year || '3+', cfg, p1.employment_type)
+  const cpf2 = isCouple ? calcCpf(p2.gross_monthly || 0, p2.gross_bonus || 0, cpfAge2, p2.citizenship || 'SC', p2.pr_year || '3+', cfg, p2.employment_type) : null
   const other1 = (p1.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0)
   const other2 = isCouple ? (p2.other_incomes || []).reduce((s, i) => s + (i.amount || 0), 0) : 0
   const mo1 = cpf1.takeHome + other1; const mo2 = cpf2 ? cpf2.takeHome + other2 : 0; const moTotal = mo1 + mo2
@@ -1532,6 +1579,7 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
   // just saves re-typing numbers that already live in the Portfolio tab.
   async function pullFromPortfolio(kind: 'insurance' | 'savings') {
     if (!client) return
+    if (viewVer) { setPullError({ kind, message: 'Not available while a saved record is open. Go back to the current plan first.' }); return }
     setPullingPortfolio(kind)
     setPullError(null)
     try {
@@ -1861,30 +1909,48 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
           ))}
         </div>
         {viewVer && (
-          <div className="flex items-center gap-3 py-2 text-xs" style={{ borderTop: '1px solid rgba(168,131,74,0.35)', color: '#C4A464' }}>
-            <span style={{ fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Viewing {fmtAsAtLabel(viewVer.as_at)}</span>
-            <span style={{ color: 'rgba(255,255,255,0.55)' }}>Read-only record. Your current plan is not changed and nothing here is saved.</span>
-            <button onClick={() => setViewVer(null)} className="ml-auto px-3 py-1" style={{ border: '1px solid rgba(168,131,74,0.8)', color: '#C4A464', background: 'transparent' }}>
-              Back to current plan
-            </button>
+          <div style={{ borderTop: '1px solid rgba(168,131,74,0.35)', color: '#C4A464' }}>
+            <div className="flex items-center gap-3 py-2 text-xs">
+              <span style={{ fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                {viewVer.editable ? 'Editing' : 'Viewing'} {fmtAsAtLabel(viewVer.as_at)}
+              </span>
+              <span style={{ color: 'rgba(255,255,255,0.55)' }}>
+                {viewVer.editable
+                  ? 'Past record. Changes are saved to this record only. Your current plan is not changed.'
+                  : 'Read-only record. Your current plan is not changed and nothing here is saved.'}
+              </span>
+              {editSaveFailed && <span style={{ color: '#E08080' }}>The last change could not be saved. Check your connection and try again.</span>}
+              <button onClick={() => openVersion(null)} className="ml-auto px-3 py-1" style={{ border: '1px solid rgba(168,131,74,0.8)', color: '#C4A464', background: 'transparent' }}>
+                {viewVer.editable ? 'Done' : 'Back to current plan'}
+              </button>
+            </div>
+            {hist && (
+              <div className="pb-2 text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                CPF is worked out at age {cpfAge1}{isCouple ? ` / ${cpfAge2}` : ''}
+                {(histAge1?.estimated || histAge2?.estimated) ? ' (estimated from today\'s age, no date of birth)' : ' (from date of birth)'}
+                {' '}using {fmtAsAtLabel(hist.period + '-01')} CPF rates and a wage ceiling of S${hist.config.ow_ceiling.toLocaleString()}.
+                {hist.approximate ? ' Before 2007 the 2007 rates are used, so this is approximate.' : ''}
+                {(['person1', 'person2'] as const).some(k => (viewVer.ff[k]?.citizenship === 'PR') && ['1', '2'].includes(String(viewVer.ff[k]?.pr_year))) ? ' PR first/second-year rates use today\'s tables.' : ''}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       <div style={{ padding: '32px 48px', flex: 1 }}
-        onBeforeInputCapture={viewVer ? (e => e.preventDefault()) : undefined}>
+        onBeforeInputCapture={viewVer && !viewVer.editable ? (e => e.preventDefault()) : undefined}>
 
         {activeSection === 'income' && (
           isCouple ? (
             <div>
               <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 24, alignItems: 'start' }}>
                 <div className="space-y-4">
-                  <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={age1} config={cpfConfig} label={`${clientName} (Client)`} />
-                  <CpfCard p={p1} age={age1} config={cpfConfig} label={clientName} />
+                  <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={cpfAge1} config={cfg} label={`${clientName} (Client)`} />
+                  <CpfCard p={p1} age={cpfAge1} config={cfg} label={clientName} />
                 </div>
                 <div className="space-y-4">
-                  <PersonIncomePanel p={p2} onChange={(k,v)=>updP('person2',k,v)} age={age2} config={cpfConfig} label={spouseName} />
-                  <CpfCard p={p2} age={age2} config={cpfConfig} label={spouseName} />
+                  <PersonIncomePanel p={p2} onChange={(k,v)=>updP('person2',k,v)} age={cpfAge2} config={cfg} label={spouseName} />
+                  <CpfCard p={p2} age={cpfAge2} config={cfg} label={spouseName} />
                 </div>
               </div>
               <div style={{ background: 'white', border: '2px solid var(--gold)', padding: '20px 24px', marginTop: 24 }}>
@@ -1905,8 +1971,8 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
             </div>
           ) : (
             <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_340px]" style={{ gap: 24, alignItems: 'start' }}>
-              <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={age1} config={cpfConfig} label={clientName} />
-              <CpfCard p={p1} age={age1} config={cpfConfig} />
+              <PersonIncomePanel p={p1} onChange={(k,v)=>updP('person1',k,v)} age={cpfAge1} config={cfg} label={clientName} />
+              <CpfCard p={p1} age={cpfAge1} config={cfg} />
             </div>
           )
         )}
@@ -2705,7 +2771,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
             onOpen={openVersion}
             onChanged={(affectedId?: string) => {
               setVerTick(t => t + 1)
-              if (affectedId && viewVer && viewVer.id === affectedId) setViewVer(null)
+              if (affectedId && viewVer && viewVer.id === affectedId) openVersion(null)
             }}
           />
         )}

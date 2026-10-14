@@ -14,9 +14,11 @@
 // "Replace with current plan" (delete + re-insert under the same month; the
 // saved data itself is never edited in place, the DB trigger forbids it).
 //
-// Deliberately NOT here yet: progress charts, "Add past record". A past record
-// needs its own figures; saving today's figures under an old date would be
-// wrong, so the date is limited to the latest saved month or later.
+// "Add past record" creates a kind 'earlier' record (copied from the closest saved
+// version) and the page opens it for editing. Only 'earlier' records can have their
+// figures edited (the DB trigger allows it for them alone). "Save annual review"
+// still only takes the latest month or later: today's figures must never be saved
+// under an old date.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
@@ -68,7 +70,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
   ff: Record<string, unknown> | null // always the LIVE plan
   userId?: string
   viewingId?: string | null
-  onOpen?: (id: string | null) => void
+  onOpen?: (id: string | null, edit?: boolean) => void
   onChanged?: (affectedId?: string) => void
 }) {
   const supabase = useMemo(() => createClient(), [])
@@ -85,6 +87,11 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
   const [m, setM] = useState(now.m)
   const [y, setY] = useState(now.y)
   const [note, setNote] = useState('')
+
+  // "Add past record"
+  const [pm, setPm] = useState(11)
+  const [py, setPy] = useState(now.y - 1)
+  const [pnote, setPnote] = useState('')
 
   const [editId, setEditId] = useState<string | null>(null)
   const [editM, setEditM] = useState(0)
@@ -165,6 +172,33 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
     flash(`${fmtAsAt(asAt)} annual review saved.`)
     load()
     onChanged?.()
+  }
+
+  // Past record: starts from the closest saved version (the nearest one before that
+  // month, else the earliest one after it), kind 'earlier', then opens it for editing.
+  async function addPastRecord() {
+    setError(''); setNotice('')
+    const asAt = toAsAt(py, pm)
+    if (!latest) { setError('Save the first version of the plan before adding past records.'); return }
+    if (rows.some(r => r.as_at === asAt)) { setError(`There is already a record for ${fmtAsAt(asAt)}. Open it from the list below.`); return }
+    if (asAt >= latest.as_at) { setError(`A past record must be earlier than your latest record (${fmtAsAt(latest.as_at)}). For a later month, use Save annual review.`); return }
+    const source = rows.find(r => r.as_at < asAt) || rows[rows.length - 1]
+    setBusy(true)
+    const { data: src, error: srcErr } = await supabase.from('fact_finding_versions').select('data').eq('id', source.id).single()
+    if (srcErr || !src) { setBusy(false); setError('Could not read the record to start from. Nothing was changed.'); return }
+    const { data: created, error: insErr } = await supabase.from('fact_finding_versions').insert({
+      client_id: clientId, section: 'financials', as_at: asAt, kind: 'earlier', note: pnote.trim() || null,
+      data: JSON.parse(JSON.stringify((src as { data: unknown }).data)), created_by: userId || null,
+    }).select('id').single()
+    setBusy(false)
+    if (insErr || !created) {
+      setError(isDuplicateError(insErr) ? `There is already a record for ${fmtAsAt(asAt)}.` : 'Could not create the record. Nothing was changed.')
+      return
+    }
+    setPnote('')
+    load()
+    onChanged?.()
+    onOpen?.((created as { id: string }).id, true)
   }
 
   function startEdit(row: VersionRow) {
@@ -267,6 +301,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
           <button type="button" style={{ ...btnSm, marginLeft: 12 }} onClick={() => onOpen?.(null)}>Back to current plan</button>
         </div>
       ) : (
+      <>
       <div style={card}>
         <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--ink3)' }}>Save annual review</div>
         <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.6, maxWidth: 640 }}>
@@ -295,6 +330,39 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
           </button>
         </div>
       </div>
+
+      {/* ---------- Add past record ---------- */}
+      {latest && (
+        <div style={card}>
+          <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--ink3)' }}>Add past record</div>
+          <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.6, maxWidth: 640 }}>
+            For an earlier year. The record starts as a copy of the closest saved version, then you correct the figures on the usual tabs.
+            It saves to that record only; your current plan is not changed.
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div>
+              <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>As at</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select value={pm} onChange={e => setPm(Number(e.target.value))} aria-label="Past record month" className="text-sm px-2 py-1.5 outline-none" style={field}>
+                  {MONTHS.map((mm, i) => <option key={mm} value={i}>{mm}</option>)}
+                </select>
+                <select value={py} onChange={e => setPy(Number(e.target.value))} aria-label="Past record year" className="text-sm px-2 py-1.5 outline-none" style={field}>
+                  {years.map(yr => <option key={yr} value={yr}>{yr}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Note (optional)</div>
+              <input value={pnote} onChange={e => setPnote(e.target.value)} maxLength={200} placeholder="e.g. From the 2019 Excel sheet"
+                className="text-sm px-2 py-1.5 outline-none w-full" style={field} />
+            </div>
+            <button type="button" style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={addPastRecord}>
+              {busy ? 'Creating…' : 'Create and edit'}
+            </button>
+          </div>
+        </div>
+      )}
+      </>
       )}
 
       {/* ---------- History ---------- */}
@@ -342,8 +410,13 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
                     <div style={{ flex: 1, minWidth: 160, fontSize: 13, color: 'var(--ink2)' }}>{row.note || ''}</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button type="button" style={btnSm} onClick={() => onOpen?.(viewingId === row.id ? null : row.id)}>{viewingId === row.id ? 'Back to current' : 'View'}</button>
+                      {row.kind === 'earlier' && (
+                        <button type="button" style={btnSm} onClick={() => onOpen?.(row.id, true)}>Edit figures</button>
+                      )}
                       <button type="button" style={btnSm} onClick={() => startEdit(row)}>Correct date / note</button>
-                      <button type="button" style={btnSm} disabled={busy} onClick={() => replaceWithCurrent(row)}>Replace with current plan</button>
+                      {row.kind !== 'earlier' && (
+                        <button type="button" style={btnSm} disabled={busy} onClick={() => replaceWithCurrent(row)}>Replace with current plan</button>
+                      )}
                       <button type="button" style={{ ...btnSm, color: 'var(--rouge)', borderColor: 'var(--rouge)' }} disabled={busy} onClick={() => deleteVersion(row)}>Delete</button>
                     </div>
                   </>
@@ -354,7 +427,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
           })
         )}
         <div style={{ padding: '12px 24px 16px', borderTop: '1px solid var(--line)', fontSize: 11.5, color: 'var(--ink3)', lineHeight: 1.6 }}>
-          Saved figures are locked. View opens a record read-only across the Fact Finding tabs. You can also correct the date and note, replace the figures with the current plan, or delete the record. The first version of each existing client was created automatically from their plan and dated to the month it was last saved, so correct that date if it is not the real as-at month.
+          Saved annual reviews are locked: View opens one read-only across the Fact Finding tabs, and you can correct its date and note, replace its figures with the current plan, or delete it. Past records you add stay editable (Edit figures). The first version of each existing client was created automatically from their plan and dated to the month it was last saved, so correct that date if it is not the real as-at month.
         </div>
       </div>
     </div>
