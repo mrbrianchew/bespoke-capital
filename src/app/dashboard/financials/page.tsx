@@ -7,6 +7,7 @@ import DateInput from '@/components/DateInput'
 import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import SnapshotsTab from './SnapshotsTab'
+import AnnualReviewsTab from './AnnualReviewsTab'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import { Users } from 'lucide-react'
@@ -345,6 +346,7 @@ const SECTIONS = [
   { id: 'health',      label: 'Health',      icon: '⊞' },
   { id: 'notes',       label: 'Notes',       icon: '⊡' },
   { id: 'snapshots',   label: 'Snapshots',   icon: '◈' },
+  { id: 'reviews',     label: 'Annual Reviews', icon: '◷' },
 ]
 
 function Lbl({ children }: { children: React.ReactNode }) {
@@ -2656,6 +2658,14 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
             isCouple={isCouple}
             userId={user?.id}
             onDataChanged={load}
+          />
+        )}
+
+        {activeSection === 'reviews' && (
+          <AnnualReviewsTab
+            clientId={client.id}
+            ff={ff as unknown as Record<string, unknown>}
+            userId={user?.id}
           />
         )}
       </div>
