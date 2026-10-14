@@ -8,10 +8,15 @@
 // migrations/20261014_fact_finding_versions.sql). This tab never writes to
 // `fact_finding`, so it cannot change the live plan.
 //
-// Deliberately NOT in this step: viewing a past version, progress charts,
-// "Add past record". A past record needs its own figures; saving today's
-// figures under an old date would be wrong, so the date is limited to the
-// latest saved month or later.
+// Per version: View (opens that version read-only across the Fact Finding screens,
+// handled by the page via onOpen), Delete (needs the delete
+// policy from migrations/20261015_fact_finding_versions_delete.sql), and
+// "Replace with current plan" (delete + re-insert under the same month; the
+// saved data itself is never edited in place, the DB trigger forbids it).
+//
+// Deliberately NOT here yet: progress charts, "Add past record". A past record
+// needs its own figures; saving today's figures under an old date would be
+// wrong, so the date is limited to the latest saved month or later.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
@@ -58,10 +63,13 @@ const btnPrimary: React.CSSProperties = { background: 'var(--ink)', color: '#fff
 const btnSm: React.CSSProperties = { background: 'transparent', color: 'var(--ink2)', border: '1px solid var(--line2)', padding: '5px 12px', fontSize: 12, cursor: 'pointer' }
 const pill = (bg: string, fg: string): React.CSSProperties => ({ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '3px 8px', background: bg, color: fg })
 
-export default function AnnualReviewsTab({ clientId, ff, userId }: {
+export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOpen, onChanged }: {
   clientId: string
-  ff: Record<string, unknown> | null
+  ff: Record<string, unknown> | null // always the LIVE plan
   userId?: string
+  viewingId?: string | null
+  onOpen?: (id: string | null) => void
+  onChanged?: (affectedId?: string) => void
 }) {
   const supabase = useMemo(() => createClient(), [])
   const confirmAction = useConfirm()
@@ -116,7 +124,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
   const isDuplicateError = (e: { code?: string } | null) => e?.code === '23505'
 
   async function saveReview() {
-    setError('')
+    setError(''); setNotice('')
     const asAt = toAsAt(y, m)
     if (y > now.y || (y === now.y && m > now.m)) { setError('The as-at month cannot be in the future.'); return }
     if (rows.some(r => r.as_at === asAt)) {
@@ -156,6 +164,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
     setNote('')
     flash(`${fmtAsAt(asAt)} annual review saved.`)
     load()
+    onChanged?.()
   }
 
   function startEdit(row: VersionRow) {
@@ -164,7 +173,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
   }
 
   async function saveEdit(row: VersionRow) {
-    setError('')
+    setError(''); setNotice('')
     const asAt = toAsAt(editY, editM)
     if (editY > now.y || (editY === now.y && editM > now.m)) { setError('The as-at month cannot be in the future.'); return }
     if (rows.some(r => r.id !== row.id && r.as_at === asAt)) { setError(`There is already a record for ${fmtAsAt(asAt)}.`); return }
@@ -181,6 +190,65 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
     setEditId(null)
     flash('Record updated.')
     load()
+    onChanged?.(row.id)
+  }
+
+  async function deleteVersion(row: VersionRow) {
+    setError(''); setNotice('')
+    const ok = await confirmAction(
+      `Delete the ${fmtAsAt(row.as_at)} record (v${vNumber(row)})? This removes the saved copy permanently. Your live plan is not affected.`,
+      { confirmLabel: 'Delete record', danger: true },
+    )
+    if (!ok) return
+    setBusy(true)
+    const { data, error: err } = await supabase.from('fact_finding_versions').delete().eq('id', row.id).select('id')
+    setBusy(false)
+    if (err) { setError('Could not delete. Nothing was changed. Please try again.'); return }
+    if (!data || data.length === 0) {
+      setError('Delete is not switched on yet. Run the delete SQL in Supabase once (see the instructions), then try again.')
+      return
+    }
+    flash(`${fmtAsAt(row.as_at)} record deleted.`)
+    load()
+    onChanged?.(row.id)
+  }
+
+  async function replaceWithCurrent(row: VersionRow) {
+    setError(''); setNotice('')
+    if (!ff) { setError('The plan is still loading. Please try again in a moment.'); return }
+    const ok = await confirmAction(
+      `Replace the saved figures of the ${fmtAsAt(row.as_at)} record with the plan as it is now? The old figures of this record are overwritten. Date and note are kept.`,
+      { confirmLabel: 'Replace figures', danger: true },
+    )
+    if (!ok) return
+    setBusy(true)
+    // Keep the old row in hand so a failed re-insert can be put back.
+    const { data: old, error: readErr } = await supabase.from('fact_finding_versions')
+      .select('client_id, section, as_at, kind, note, data, created_by').eq('id', row.id).single()
+    if (readErr || !old) { setBusy(false); setError('Could not read the record. Nothing was changed.'); return }
+    const { data: del, error: delErr } = await supabase.from('fact_finding_versions').delete().eq('id', row.id).select('id')
+    if (delErr || !del || del.length === 0) {
+      setBusy(false)
+      setError(delErr ? 'Could not replace. Nothing was changed.' : 'Delete is not switched on yet. Run the delete SQL in Supabase once, then try again.')
+      return
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { client_id: _omit, ...planData } = ff
+    const { error: insErr } = await supabase.from('fact_finding_versions').insert({
+      client_id: old.client_id, section: old.section, as_at: old.as_at, kind: old.kind, note: old.note,
+      data: JSON.parse(JSON.stringify(planData)), created_by: userId || old.created_by,
+    })
+    if (insErr) {
+      await supabase.from('fact_finding_versions').insert(old) // restore the original
+      setBusy(false)
+      setError('Could not replace. The original record was restored.')
+      load()
+      return
+    }
+    setBusy(false)
+    flash(`${fmtAsAt(row.as_at)} record replaced with the current plan.`)
+    load()
+    onChanged?.(row.id)
   }
 
   return (
@@ -193,6 +261,12 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
       )}
 
       {/* ---------- Save annual review ---------- */}
+      {viewingId ? (
+        <div style={{ ...card, fontSize: 13, color: 'var(--ink2)', lineHeight: 1.6 }}>
+          You are viewing a saved record. Go back to the current plan before saving a new review.
+          <button type="button" style={{ ...btnSm, marginLeft: 12 }} onClick={() => onOpen?.(null)}>Back to current plan</button>
+        </div>
+      ) : (
       <div style={card}>
         <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--ink3)' }}>Save annual review</div>
         <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.6, maxWidth: 640 }}>
@@ -221,6 +295,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
           </button>
         </div>
       </div>
+      )}
 
       {/* ---------- History ---------- */}
       <div style={{ ...card, padding: 0 }}>
@@ -239,7 +314,8 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
           rows.map((row, idx) => {
             const editing = editId === row.id
             return (
-              <div key={row.id} style={{ padding: '14px 24px', borderTop: '1px solid var(--line)', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div key={row.id} style={{ borderTop: '1px solid var(--line)' }}>
+              <div style={{ padding: '14px 24px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ width: 36, fontFamily: 'DM Mono, monospace', fontSize: 12, color: 'var(--ink3)' }}>v{vNumber(row)}</div>
                 {editing ? (
                   <>
@@ -264,15 +340,21 @@ export default function AnnualReviewsTab({ clientId, ff, userId }: {
                     <span style={row.kind === 'review' ? pill('#F5EFE3', '#8A6C3A') : pill('#ECEAE4', '#4A4740')}>{KIND_LABEL[row.kind]}</span>
                     {idx === 0 && <span style={pill('#E8F2ED', '#2A5E46')}>Current</span>}
                     <div style={{ flex: 1, minWidth: 160, fontSize: 13, color: 'var(--ink2)' }}>{row.note || ''}</div>
-                    <button type="button" style={btnSm} onClick={() => startEdit(row)}>Correct date / note</button>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button type="button" style={btnSm} onClick={() => onOpen?.(viewingId === row.id ? null : row.id)}>{viewingId === row.id ? 'Back to current' : 'View'}</button>
+                      <button type="button" style={btnSm} onClick={() => startEdit(row)}>Correct date / note</button>
+                      <button type="button" style={btnSm} disabled={busy} onClick={() => replaceWithCurrent(row)}>Replace with current plan</button>
+                      <button type="button" style={{ ...btnSm, color: 'var(--rouge)', borderColor: 'var(--rouge)' }} disabled={busy} onClick={() => deleteVersion(row)}>Delete</button>
+                    </div>
                   </>
                 )}
+              </div>
               </div>
             )
           })
         )}
         <div style={{ padding: '12px 24px 16px', borderTop: '1px solid var(--line)', fontSize: 11.5, color: 'var(--ink3)', lineHeight: 1.6 }}>
-          Saved versions are locked. Only the date and note can be corrected. The first version of each existing client was created automatically from their plan and dated to the month it was last saved, so correct that date if it is not the real as-at month.
+          Saved figures are locked. View opens a record read-only across the Fact Finding tabs. You can also correct the date and note, replace the figures with the current plan, or delete the record. The first version of each existing client was created automatically from their plan and dated to the month it was last saved, so correct that date if it is not the real as-at month.
         </div>
       </div>
     </div>

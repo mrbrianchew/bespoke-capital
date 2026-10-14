@@ -8,6 +8,7 @@ import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import SnapshotsTab from './SnapshotsTab'
 import AnnualReviewsTab from './AnnualReviewsTab'
+import VersionPicker, { fmtAsAtLabel } from './VersionPicker'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import { Users } from 'lucide-react'
@@ -1313,7 +1314,15 @@ export default function FactFindingPageWrapper() {
 function FactFindingPage() {
   const [client, setClient] = useState<Client | null>(null)
   const [spouse, setSpouse] = useState<FamilyMember | null>(null)
-  const [ff, setFf] = useState<FactFinding | null>(null)
+  const [ffLive, setFf] = useState<FactFinding | null>(null)
+  // Annual Reviews: when a saved version is open, the screens show it READ-ONLY.
+  // The live plan stays untouched in ffLive; every write path below is blocked
+  // while a version is open (viewingRef) so nothing can overwrite the live plan.
+  const [viewVer, setViewVer] = useState<{ id: string; as_at: string; kind: string; ff: FactFinding } | null>(null)
+  const [verTick, setVerTick] = useState(0)
+  const ff = viewVer ? viewVer.ff : ffLive
+  const viewingRef = useRef(false)
+  viewingRef.current = viewVer !== null
   const [cpfConfig, setCpfConfig] = useState<CpfConfig>(DEFAULT_CPF_CONFIG)
   const [activeSection, setActiveSection] = useClientTabState<string>('financials.activeSection', 'income')
   const [viewMode, setViewMode] = useClientTabState<'combined' | 'client' | 'spouse'>('financials.viewMode', 'combined')
@@ -1341,6 +1350,7 @@ function FactFindingPage() {
   async function load() {
     if (!activeClient) return
     const c = activeClient
+    setViewVer(null)
     const { data: cfgRow } = await supabase.from('config').select('value').eq('key', 'cpf_rates').maybeSingle()
     if (cfgRow?.value) setCpfConfig(cfgRow.value as CpfConfig)
     setClient(c as unknown as Client)
@@ -1371,6 +1381,7 @@ setLoading(false)
   }
   // 1. scheduleSave FIRST
   const scheduleSave = useCallback(() => {
+  if (viewingRef.current) return
   if (!ff || !client) return
   
   if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -1432,6 +1443,7 @@ data.annual_surplus = annualSurplus
   }, 800)
 }, [ff, client, supabase])
 const upd = useCallback((key: keyof FactFinding, val: unknown) => {
+  if (viewingRef.current) return
   setFf(prev => {
     if (!prev) return prev
     const next = { ...prev, [key]: val }
@@ -1457,6 +1469,7 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
 }, [client, supabase])
 
   const updP = useCallback((person: 'person1' | 'person2', key: keyof PersonData, val: unknown) => {
+  if (viewingRef.current) return
   setFf(prev => {
     if (!prev) return prev
     const next = { ...prev, [person]: { ...prev[person], [key]: val } }
@@ -1482,6 +1495,17 @@ const upd = useCallback((key: keyof FactFinding, val: unknown) => {
 }, [client, supabase])
 
   const n = (v: string): number => v === '' ? 0 : parseFloat(v) || 0
+
+  // Open a saved version read-only (id) or return to the live plan (null).
+  async function openVersion(id: string | null) {
+    if (!id || !client) { setViewVer(null); return }
+    const { data, error } = await supabase.from('fact_finding_versions')
+      .select('id, as_at, kind, data').eq('id', id).single()
+    if (error || !data) return
+    const row = data as { id: string; as_at: string; kind: string; data: Record<string, unknown> }
+    setViewVer({ id: row.id, as_at: row.as_at, kind: row.kind, ff: { ...(row.data as object), client_id: client.id } as FactFinding })
+    if (activeSection === 'reviews' || activeSection === 'snapshots') setActiveSection('income')
+  }
 
 // Auto-save function (debounced)
 
@@ -1809,6 +1833,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
             ))}
           </div>
           <div className="ml-auto flex items-center">
+            <VersionPicker clientId={client.id} activeId={viewVer ? viewVer.id : null} tick={verTick} onSelect={openVersion} />
             <div className="flex items-stretch" style={{ borderRight: '1px solid rgba(255,255,255,0.08)', marginRight: 16 }}>
               {[
                 { label: isCouple ? 'Combined/mo' : 'Income/mo', val: fmt(moTotal), color: '#C4A464' },
@@ -1835,9 +1860,19 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
             </button>
           ))}
         </div>
+        {viewVer && (
+          <div className="flex items-center gap-3 py-2 text-xs" style={{ borderTop: '1px solid rgba(168,131,74,0.35)', color: '#C4A464' }}>
+            <span style={{ fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Viewing {fmtAsAtLabel(viewVer.as_at)}</span>
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}>Read-only record. Your current plan is not changed and nothing here is saved.</span>
+            <button onClick={() => setViewVer(null)} className="ml-auto px-3 py-1" style={{ border: '1px solid rgba(168,131,74,0.8)', color: '#C4A464', background: 'transparent' }}>
+              Back to current plan
+            </button>
+          </div>
+        )}
       </div>
 
-      <div style={{ padding: '32px 48px', flex: 1 }}>
+      <div style={{ padding: '32px 48px', flex: 1 }}
+        onBeforeInputCapture={viewVer ? (e => e.preventDefault()) : undefined}>
 
         {activeSection === 'income' && (
           isCouple ? (
@@ -2664,8 +2699,14 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
         {activeSection === 'reviews' && (
           <AnnualReviewsTab
             clientId={client.id}
-            ff={ff as unknown as Record<string, unknown>}
+            ff={ffLive as unknown as Record<string, unknown>}
             userId={user?.id}
+            viewingId={viewVer ? viewVer.id : null}
+            onOpen={openVersion}
+            onChanged={(affectedId?: string) => {
+              setVerTick(t => t + 1)
+              if (affectedId && viewVer && viewVer.id === affectedId) setViewVer(null)
+            }}
           />
         )}
       </div>
