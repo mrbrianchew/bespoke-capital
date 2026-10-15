@@ -30,6 +30,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
+import { currentMonthStartSG } from '@/lib/cpfHistory'
+import { buildPrefill, isPrefillEmpty, keyFor, mergeCustomRows, mergeProperties, type Person } from '@/lib/statementPrefill'
 import { useConfirm } from '@/components/ConfirmDialog'
 import {
   StatementData, emptyStatementData,
@@ -38,8 +40,6 @@ import {
   stmtIncomeTotal, stmtExpenseTotal, stmtAssetsTotal, stmtLiabTotal, stmtPropertyEquity,
   fmtStmtMoney,
 } from '@/lib/statementFields'
-
-type Person = 'client' | 'spouse'
 
 interface StatementRow {
   id: string
@@ -51,6 +51,8 @@ interface StatementRow {
   expires_at: string | null
   status: 'draft' | 'submitted'
   data: any
+  kind?: 'first' | 'review' | null
+  baseline?: any
   client_name: string | null
   client_occupation: string | null
   submitted_at: string | null
@@ -80,15 +82,6 @@ const SECTION_LIST: { id: SectionId; label: string }[] = [
 const round0 = (n: number) => Math.round(n || 0)
 const perMonth = (annual: number) => round0((annual || 0) / 12)
 
-// Suffix pattern used throughout the advisor Financials page: Client fields
-// are unsuffixed (l_credit_card), Spouse fields carry a "2" (l2_credit_card).
-function keyFor(baseKey: string, person: Person): string {
-  if (person === 'client') return baseKey
-  // s_x -> s2_x, d_x -> d2_x, a_x -> a2_x, l_x -> l2_x
-  const m = baseKey.match(/^([a-z]+)_(.+)$/)
-  return m ? `${m[1]}2_${m[2]}` : `${baseKey}2`
-}
-
 function normalizeData(raw: any): StatementData {
   const base = emptyStatementData()
   if (!raw || typeof raw !== 'object') return base
@@ -101,7 +94,9 @@ function normalizeData(raw: any): StatementData {
 
 interface ApplyPatch { fields: Record<string, any>; personKey: 'person1' | 'person2' | null; personFields: Record<string, any> }
 
-function buildApplyPatch(section: SectionId, st: StatementData, person: Person): ApplyPatch {
+// live = the plan as it is now; baseline = what a pre-filled form started with (null for a first statement).
+// Custom rows and Properties are MERGED into live, never replaced, so details the form has no boxes for survive.
+function buildApplyPatch(section: SectionId, st: StatementData, person: Person, live: any, baseline: StatementData | null): ApplyPatch {
   const fields: Record<string, any> = {}
   const personFields: Record<string, any> = {}
   const personKey: 'person1' | 'person2' = person === 'client' ? 'person1' : 'person2'
@@ -129,14 +124,10 @@ function buildApplyPatch(section: SectionId, st: StatementData, person: Person):
     } else {
       for (const block of EXP_DETAILED_BLOCKS) {
         for (const f of block.fields) fields[keyFor(f.key, person)] = round0(st.exp_detailed[f.key] || 0)
-        // Custom rows only exist on the Client's key (d_custom_*) — fold
-        // Spouse-entered custom items in there too rather than inventing a
-        // parallel d2_custom_* key that the advisor page doesn't read.
+        // Custom rows are shared rows: Client amount in `amount`, Spouse in `amount2`.
         const customKey = EXP_CUSTOM_KEY[block.id]
-        const items = (st.exp_detailed_custom || [])
-          .filter(i => i.cat === block.id && (i.label || i.amount))
-          .map(i => ({ label: person === 'spouse' ? `${i.label} (Spouse)` : i.label, amount: round0(i.amount) }))
-        fields[customKey] = items
+        fields[customKey] = mergeCustomRows(live?.[customKey], (st.exp_detailed_custom || []).filter(i => i.cat === block.id), person,
+          baseline ? (baseline.exp_detailed_custom || []).filter(i => i.cat === block.id) : null)
       }
     }
   }
@@ -145,9 +136,8 @@ function buildApplyPatch(section: SectionId, st: StatementData, person: Person):
     for (const block of ASSET_BLOCKS) {
       for (const f of block.fields) fields[keyFor(f.key, person)] = round0(st.assets[f.key] || 0)
       const customKey = ASSET_CUSTOM_KEY[block.id]
-      fields[customKey] = (st.assets_custom || [])
-        .filter(i => i.cat === block.id && (i.label || i.amount))
-        .map(i => ({ label: person === 'spouse' ? `${i.label} (Spouse)` : i.label, amount: round0(i.amount) }))
+      fields[customKey] = mergeCustomRows(live?.[customKey], (st.assets_custom || []).filter(i => i.cat === block.id), person,
+        baseline ? (baseline.assets_custom || []).filter(i => i.cat === block.id) : null)
     }
   }
 
@@ -155,29 +145,14 @@ function buildApplyPatch(section: SectionId, st: StatementData, person: Person):
     for (const block of LIAB_BLOCKS) {
       for (const f of block.fields) fields[keyFor(f.key, person)] = round0(st.liabilities[f.key] || 0)
       const customKey = LIAB_CUSTOM_KEY[block.id]
-      fields[customKey] = (st.liabilities_custom || [])
-        .filter(i => i.cat === block.id && (i.label || i.amount))
-        .map(i => ({ label: person === 'spouse' ? `${i.label} (Spouse)` : i.label, amount: round0(i.amount) }))
+      fields[customKey] = mergeCustomRows(live?.[customKey], (st.liabilities_custom || []).filter(i => i.cat === block.id), person,
+        baseline ? (baseline.liabilities_custom || []).filter(i => i.cat === block.id) : null)
     }
   }
 
   if (section === 'properties') {
-    // Shared/joint — whichever statement is Applied replaces the whole list.
-    fields.properties = (st.properties || []).map(p => ({
-      id: p.id,
-      label: p.label || '',
-      propertyType: p.propertyType || 'HDB',
-      isPrimaryResidence: !!p.isPrimaryResidence,
-      ownershipType: p.ownershipType === 'Sole Ownership' ? 'Client Only' : (p.ownershipType || 'Client Only'),
-      purchasePrice: p.purchasePrice || undefined,
-      propertyValue: p.propertyValue || undefined,
-      bank: p.bank || undefined,
-      loanType: (p.loanType as any) || undefined,
-      outstanding: p.outstanding || undefined,
-      remainingTenure: p.remainingTenure || undefined,
-      interestRate: p.interestRate || undefined,
-      monthlyRepayment: p.monthlyRepayment || undefined,
-    }))
+    // Shared/joint — matched by id; see mergeProperties for what is kept.
+    fields.properties = mergeProperties(live?.properties, st.properties || [], baseline ? baseline.properties || [] : null)
   }
 
   return { fields, personKey: Object.keys(personFields).length > 0 ? personKey : null, personFields }
@@ -197,13 +172,14 @@ function extractPrevious(existing: any, patch: ApplyPatch) {
 
 // ---------- Component ----------
 
-export default function SnapshotsTab({ clientId, clientName, spouseName, isCouple, userId, onDataChanged }: {
+export default function SnapshotsTab({ clientId, clientName, spouseName, isCouple, userId, onDataChanged, onVersionSaved }: {
   clientId: string
   clientName: string
   spouseName?: string
   isCouple?: boolean
   userId?: string
   onDataChanged: () => void | Promise<void>
+  onVersionSaved?: () => void
 }) {
   const supabase = useMemo(() => createClient(), [])
   const confirmAction = useConfirm()
@@ -224,6 +200,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState('')
   const [copied, setCopied] = useState('')
+  const [copyBusy, setCopyBusy] = useState(false)
 
   const personLabel = (p: Person) => p === 'client' ? clientName : (spouseName || 'Spouse')
 
@@ -248,6 +225,50 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     setTimeout(() => setNotice(''), 3500)
   }
 
+  // Returns the live plan as a statement, or null when this should be a normal first statement.
+  async function loadPrefill(person: Person): Promise<StatementData | null> {
+    const [{ data: vers }, { data: ffRow }] = await Promise.all([
+      supabase.from('fact_finding_versions').select('id').eq('client_id', clientId).eq('section', 'financials').limit(1),
+      supabase.from('fact_finding').select('data').eq('client_id', clientId).eq('section', 'financials').maybeSingle(),
+    ])
+    if (!vers || vers.length === 0) return null
+    const pre = buildPrefill(ffRow?.data, person)
+    return isPrefillEmpty(pre) ? null : pre
+  }
+
+  // Keeps today's live plan as a dated, locked record (same as Annual Reviews > Save annual review).
+  async function saveCopy() {
+    const asAt = currentMonthStartSG()
+    const monthName = new Date(asAt + 'T00:00:00').toLocaleDateString('en-SG', { month: 'long', year: 'numeric' })
+    setCopyBusy(true)
+    try {
+      const [{ data: vers, error: vErr }, { data: ffRow, error: fErr }] = await Promise.all([
+        supabase.from('fact_finding_versions').select('as_at').eq('client_id', clientId).eq('section', 'financials').order('as_at', { ascending: false }),
+        supabase.from('fact_finding').select('data').eq('client_id', clientId).eq('section', 'financials').maybeSingle(),
+      ])
+      if (vErr || fErr || !ffRow?.data) { flash('Could not read the plan. Nothing was saved.'); return }
+      const list = (vers || []) as { as_at: string }[]
+      if (list.some(v => v.as_at === asAt)) { flash(`A ${monthName} record already exists. Open Annual Reviews to replace it.`); return }
+      if (list.length > 0 && asAt < list[0].as_at) { flash('A newer record already exists. Use Annual Reviews instead.'); return }
+      if (!await confirmAction(
+        `Keep a copy of today's plan as the ${monthName} record? It is locked, so the figures cannot be changed later.`,
+        { title: 'Save a copy?', confirmLabel: 'Save copy' },
+      )) return
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { client_id: _omit, ...planData } = ffRow.data as Record<string, unknown>
+      const { error } = await supabase.from('fact_finding_versions').insert({
+        client_id: clientId, section: 'financials', as_at: asAt,
+        kind: list.length === 0 ? 'initial' : 'review',
+        data: JSON.parse(JSON.stringify(planData)), created_by: userId || null,
+      })
+      if (error) { flash(error.code === '23505' ? `A ${monthName} record already exists.` : 'Could not save the copy. Nothing was changed.'); return }
+      flash(`${monthName} record saved. See it in Annual Reviews.`)
+      onVersionSaved?.()
+    } finally {
+      setCopyBusy(false)
+    }
+  }
+
   async function generateLink() {
     if (!genPassword.trim()) { setGenError('Set a password for the link.'); return }
     setGenBusy(true); setGenError('')
@@ -264,21 +285,33 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
       if (genExpiry === '30d') expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
 
       const existing = rows.find(r => r.year === genYear && r.person === genPerson)
+      const existingEmpty = !!existing && existing.status === 'draft' && (!existing.data || Object.keys(existing.data).length === 0)
+      // Pre-fill only when this is a new (or still-empty draft) link AND the client already
+      // has saved records AND the live plan has figures for this person.
+      let prefill: StatementData | null = null
+      if (!existing || existingEmpty) prefill = await loadPrefill(genPerson)
+
       if (existing) {
         const { error } = await supabase.from('financial_statements')
-          .update({ password_hash: hash, password_hint: genHint || null, expires_at: expiresAt, updated_at: new Date().toISOString() })
+          .update({
+            password_hash: hash, password_hint: genHint || null, expires_at: expiresAt, updated_at: new Date().toISOString(),
+            ...(prefill && existingEmpty ? { data: prefill, baseline: prefill, kind: 'review' } : {}),
+          })
           .eq('id', existing.id)
         if (error) throw error
-        flash(`Link for ${personLabel(genPerson)} (${genYear}) updated — same URL, new password/expiry.`)
+        flash(`Link for ${personLabel(genPerson)} (${genYear}) updated — same URL, new password/expiry.${prefill && existingEmpty ? ' Current figures filled in.' : ''}`)
       } else {
         const token = crypto.randomUUID().replace(/-/g, '')
         const { error } = await supabase.from('financial_statements').insert({
           client_id: clientId, year: genYear, person: genPerson, token,
           password_hash: hash, password_hint: genHint || null, expires_at: expiresAt,
-          status: 'draft', data: {},
+          status: 'draft', data: prefill || {},
+          ...(prefill ? { baseline: prefill, kind: 'review' } : {}),
         })
         if (error) throw error
-        flash(`Link for ${personLabel(genPerson)} (${genYear}) created.`)
+        flash(prefill
+          ? `Link for ${personLabel(genPerson)} (${genYear}) created with their current figures filled in.`
+          : `Link for ${personLabel(genPerson)} (${genYear}) created.`)
       }
       setGenPassword('')
       await load()
@@ -323,13 +356,15 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
 
   async function applySection(row: StatementRow, section: SectionId) {
     const st = normalizeData(row.data)
-    const patch = buildApplyPatch(section, st, row.person)
+    const baseline: StatementData | null = row.kind === 'review' && row.baseline ? normalizeData(row.baseline) : null
     const label = SECTION_LIST.find(s => s.id === section)?.label || section
     const who = personLabel(row.person)
     const extra = section === 'properties'
-      ? `\n\nNote: this REPLACES the entire Properties list on the Financials tab with what ${who} entered. If the other spouse also filled in Properties, make sure you're Applying the right one.`
+      ? (baseline
+        ? ' Properties not changed on the form keep all their details. Ones removed on the form are removed here.'
+        : ` Note: this REPLACES the Properties list on the Financials tab with what ${who} entered. If the other spouse also filled in Properties, make sure you're Applying the right one.`)
       : section === 'income'
-        ? '\n\nOther income figures from the statement are converted to monthly (÷12) to match the Financials tab. Gross Monthly and Bonus are unchanged.'
+        ? ' Other income figures are converted to monthly (÷12) to match the Financials tab.'
         : ''
     const thisYear = new Date().getFullYear()
     const wrongYear = row.year !== thisYear
@@ -347,6 +382,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     try {
       const { data: ffRow } = await supabase.from('fact_finding')
         .select('data').eq('client_id', clientId).eq('section', 'financials').maybeSingle()
+      const patch = buildApplyPatch(section, st, row.person, ffRow?.data, baseline)
       const previous = extractPrevious(ffRow?.data, patch)
 
       const { error: logError } = await supabase.from('financial_statement_apply_log').insert({
@@ -357,11 +393,13 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
       if (logError) throw logError
 
       await saveFactFindingSection(supabase, clientId, 'financials', (existing: any) => {
+        // Rebuilt from the freshest copy so a save that landed in between is merged, not overwritten.
+        const p = buildApplyPatch(section, st, row.person, existing, baseline)
         const next = { ...(existing || {}) }
-        for (const k of Object.keys(patch.fields)) next[k] = patch.fields[k]
-        if (patch.personKey && Object.keys(patch.personFields).length > 0) {
-          next[patch.personKey] = { ...(next[patch.personKey] || {}) }
-          for (const k of Object.keys(patch.personFields)) next[patch.personKey][k] = patch.personFields[k]
+        for (const k of Object.keys(p.fields)) next[k] = p.fields[k]
+        if (p.personKey && Object.keys(p.personFields).length > 0) {
+          next[p.personKey] = { ...(next[p.personKey] || {}) }
+          for (const k of Object.keys(p.personFields)) next[p.personKey][k] = p.personFields[k]
         }
         return next
       })
@@ -514,6 +552,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
             }}>
               {row.status === 'submitted' ? '✓ Submitted' : 'Draft'}
             </span>
+            {row.kind === 'review' && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '3px 8px', background: '#ECEAE4', color: '#4A4740' }}>Pre-filled</span>}
             {expired && <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '3px 8px', background: '#FBEBEB', color: '#B04A4A' }}>Link expired</span>}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -570,7 +609,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
               )
             })}
             <div style={{ fontSize: 10.5, color: 'var(--ink3)', lineHeight: 1.6, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-              Apply notes: other income figures convert annual → monthly (÷12); Gross Monthly and Bonus don&apos;t. Expenses apply as annual figures, unchanged, matching the Financials tab. Applying Properties replaces the whole Properties list — if both {clientName} and {spouseName || 'the spouse'} entered properties, only Apply the one you want to keep. Client-added custom items in Simplified expense mode fold into Lifestyle &amp; Miscellaneous.
+              Apply notes: other income figures convert annual → monthly (÷12); Gross Monthly and Bonus don&apos;t. Expenses apply as annual figures, unchanged, matching the Financials tab. On a first statement, Applying Properties replaces the whole Properties list — if both {clientName} and {spouseName || 'the spouse'} entered properties, only Apply the one you want to keep. On a pre-filled review, properties and custom rows are merged, so other details are kept. Custom items in Simplified expense mode fold into Lifestyle &amp; Miscellaneous.
             </div>
           </div>
         )}
@@ -646,6 +685,15 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
         )}
         {genError && <div style={{ fontSize: 12, color: '#B04A4A', marginTop: 8 }}>{genError}</div>}
       </div>
+
+      {rows.length > 0 && (
+        <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 12, color: 'var(--ink3)', lineHeight: 1.5, maxWidth: 520 }}>
+            Done applying? Keep a dated copy of today&apos;s plan, so next year&apos;s review has something to compare with.
+          </div>
+          <button style={btnGreen} disabled={copyBusy} onClick={saveCopy}>{copyBusy ? 'Saving…' : 'Save a copy of the plan'}</button>
+        </div>
+      )}
 
       {/* ---------- Statement list, grouped by year ---------- */}
       {loading ? (

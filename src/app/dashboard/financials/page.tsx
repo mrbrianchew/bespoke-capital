@@ -2759,6 +2759,7 @@ const getAnnSum = (cat: typeof EXP_CATEGORIES[0]) => getAnn1(cat) + getAnn2(cat)
             isCouple={isCouple}
             userId={user?.id}
             onDataChanged={load}
+            onVersionSaved={() => setVerTick(n => n + 1)}
           />
         )}
 

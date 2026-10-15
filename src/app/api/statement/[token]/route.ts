@@ -109,6 +109,10 @@ export async function POST(req: Request, { params }: { params: { token: string }
       year: stmt.year,
       status: stmt.status,
       data: stmt.data || {},
+      // Pre-filled review links only: what the form started with, so the page can
+      // show "Last time" and mark changed boxes. Read-only; never written from here.
+      kind: stmt.kind === 'review' ? 'review' : 'first',
+      baseline: stmt.kind === 'review' && stmt.baseline && typeof stmt.baseline === 'object' ? stmt.baseline : null,
       clientName: stmt.client_name || '',
       clientOccupation: stmt.client_occupation || '',
       submittedAt: stmt.submitted_at,

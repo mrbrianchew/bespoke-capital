@@ -46,15 +46,15 @@ const calcPMT = (outstanding: number, annualRate: number, tenureYears: number): 
 
 // ---------- Small building blocks (module-level: never define components inside components) ----------
 
-function AmountInput({ value, onChange, placeholder }: {
-  value: number | undefined; onChange: (n: number) => void; placeholder?: string
+function AmountInput({ value, onChange, placeholder, changed }: {
+  value: number | undefined; onChange: (n: number) => void; placeholder?: string; changed?: boolean
 }) {
   return (
     <input
       type="text" inputMode="decimal" placeholder={placeholder || '$ 0'}
       value={value ? String(value) : ''}
       onChange={e => onChange(parseAmt(e.target.value))}
-      className="st-amt"
+      className={changed ? 'st-amt st-chg' : 'st-amt'}
     />
   )
 }
@@ -91,30 +91,35 @@ function DecimalInput({ value, onChange, placeholder, className }: {
   )
 }
 
-function FRow({ label, unit, hint, value, onChange }: {
+// last = the figure the form was pre-filled with (review links only; undefined = no hint).
+const isChanged = (value: number | undefined, last: number | undefined) => last !== undefined && (value || 0) !== (last || 0)
+const lastHint = (last: number | undefined) => (last ? <span className="st-fhint st-last">Last time {fmtStmtMoney(last)}</span> : null)
+
+function FRow({ label, unit, hint, value, onChange, last }: {
   label: string; unit?: string; hint?: string
-  value: number | undefined; onChange: (n: number) => void
+  value: number | undefined; onChange: (n: number) => void; last?: number
 }) {
   return (
     <div className="st-frow">
       <span className="st-flabel">
         {label}{unit && <span className="st-unit">{unit}</span>}
         {hint && <span className="st-fhint">{hint}</span>}
+        {lastHint(last)}
       </span>
-      <AmountInput value={value} onChange={onChange} />
+      <AmountInput value={value} onChange={onChange} changed={isChanged(value, last)} />
     </div>
   )
 }
 
-function CustomRow({ tag, label, value, onLabel, onValue, onRemove }: {
+function CustomRow({ tag, label, value, onLabel, onValue, onRemove, last }: {
   tag?: string; label: string; value: number | undefined
-  onLabel: (s: string) => void; onValue: (n: number) => void; onRemove: () => void
+  onLabel: (s: string) => void; onValue: (n: number) => void; onRemove: () => void; last?: number
 }) {
   return (
     <div className="st-frow st-added">
       {tag && <span className="st-grp-tag">{tag}</span>}
       <input type="text" className="st-txt" placeholder="Item name…" value={label} onChange={e => onLabel(e.target.value)} />
-      <AmountInput value={value} onChange={onValue} />
+      <AmountInput value={value} onChange={onValue} changed={isChanged(value, last)} />
       <button type="button" className="st-rm" title="Remove" onClick={onRemove}>✕</button>
     </div>
   )
@@ -200,6 +205,7 @@ export default function StatementPage() {
   const passwordRef = useRef('')
 
   const [data, setData] = useState<StatementData>(emptyStatementData())
+  const [baseline, setBaseline] = useState<StatementData | null>(null) // review links only
   const [name, setName] = useState('')
   const [occupation, setOccupation] = useState('')
   const [ack, setAck] = useState(false)
@@ -264,6 +270,8 @@ export default function StatementPage() {
       const base = emptyStatementData()
       const incoming = (j.data && typeof j.data === 'object') ? j.data : {}
       setData({ ...base, ...incoming, income: { ...base.income, ...(incoming.income || {}) } })
+      const bl = (j.kind === 'review' && j.baseline && typeof j.baseline === 'object') ? j.baseline : null
+      setBaseline(bl ? { ...base, ...bl, income: { ...base.income, ...(bl.income || {}) } } : null)
       setName(j.clientName || j.personName || '')
       setOccupation(j.clientOccupation || '')
       setPhase('form')
@@ -404,6 +412,26 @@ export default function StatementPage() {
     equity: stmtPropertyEquity(data),
   }), [data])
 
+  // "Last time" lookups (all undefined on a first statement, so nothing changes there).
+  const lastOf = (m: 'exp_simple' | 'exp_detailed' | 'assets' | 'liabilities', key: string) => baseline ? (baseline[m][key] || 0) : undefined
+  type CustomList = 'exp_detailed_custom' | 'assets_custom' | 'liabilities_custom'
+  const lastCustom = (list: CustomList, it: { cat: string; label: string }) => {
+    if (!baseline) return undefined
+    const m = (baseline[list] || []).find(b => b.cat === it.cat && (b.label || '').trim().toLowerCase() === (it.label || '').trim().toLowerCase())
+    return m ? m.amount : 0
+  }
+  const lastIncomeOther = (label: string) => {
+    if (!baseline) return undefined
+    const m = (baseline.income.others || []).find(b => (b.label || '').trim().toLowerCase() === (label || '').trim().toLowerCase())
+    return m ? m.amount : 0
+  }
+  const baseProp = (id: string) => baseline ? (baseline.properties || []).find(b => b.id === id) : undefined
+  // Gold box on a property field that differs from the pre-filled value.
+  const pc = (p: StmtProperty, k: keyof StmtProperty) => {
+    const b = baseProp(p.id)
+    return b && (p[k] || '') !== (b[k] || '') ? 'st-chg' : ''
+  }
+
   function goTo(i: number) {
     setSectionIdx(i)
     setMaxVisited(m => Math.max(m, i))
@@ -432,7 +460,9 @@ export default function StatementPage() {
         <div className="st-hero">
           <div className="eyebrow">Financial Statement</div>
           <h1>{personName ? `${personName}\u2019s ${year} Financial Statement` : `Your ${year} Financial Statement`}</h1>
-          {!locked && <p>Fill in your income, expenses, assets and liabilities below. Save your progress and return anytime — nothing is final until you submit.</p>}
+          {!locked && (baseline
+            ? <p>Your figures on file are filled in. Change only what is different now — boxes you change turn gold. Save your progress and return anytime — nothing is final until you submit.</p>
+            : <p>Fill in your income, expenses, assets and liabilities below. Save your progress and return anytime — nothing is final until you submit.</p>)}
         </div>
 
         {locked ? (
@@ -478,13 +508,13 @@ export default function StatementPage() {
               <p className="st-subhint">Your income sources for the year. Figures are <b>annual (per year)</b> — salary is entered monthly since that&apos;s how it&apos;s usually paid, but the total rolls everything up to a yearly figure.</p>
               <div className="st-block">
                 <div className="st-bt" style={{ background: '#F5EFE3', color: '#8A6C3A' }}>GROSS SALARY</div>
-                <FRow label="Gross Monthly" unit="/mo" hint="Before CPF deductions" value={data.income.gross_monthly} onChange={n => setIncome({ gross_monthly: n })} />
-                <FRow label="Gross Annual Bonus" unit="/yr" hint="Total bonus for the year (AWS + variable)" value={data.income.gross_bonus} onChange={n => setIncome({ gross_bonus: n })} />
+                <FRow label="Gross Monthly" unit="/mo" hint="Before CPF deductions" value={data.income.gross_monthly} onChange={n => setIncome({ gross_monthly: n })} last={baseline ? (baseline.income.gross_monthly || 0) : undefined} />
+                <FRow label="Gross Annual Bonus" unit="/yr" hint="Total bonus for the year (AWS + variable)" value={data.income.gross_bonus} onChange={n => setIncome({ gross_bonus: n })} last={baseline ? (baseline.income.gross_bonus || 0) : undefined} />
               </div>
               <div className="st-block">
                 <div className="st-bt" style={{ background: '#E8F2ED', color: '#2A5E46' }}>OTHER INCOME <span className="bt-side">/yr</span></div>
                 {data.income.others.map((it, i) => (
-                  <CustomRow key={i} label={it.label} value={it.amount}
+                  <CustomRow key={i} label={it.label} value={it.amount} last={lastIncomeOther(it.label)}
                     onLabel={s => setIncome({ others: data.income.others.map((x, j) => j === i ? { ...x, label: s } : x) })}
                     onValue={n => setIncome({ others: data.income.others.map((x, j) => j === i ? { ...x, amount: n } : x) })}
                     onRemove={() => setIncome({ others: data.income.others.filter((_, j) => j !== i) })} />
@@ -533,7 +563,7 @@ export default function StatementPage() {
               {isSimple ? (
                 <div>
                   {EXP_SIMPLE_FIELDS.map(f => (
-                    <FRow key={f.key} label={f.label} hint={f.hint} value={data.exp_simple[f.key]} onChange={n => setExpSimple(f.key, n)} />
+                    <FRow key={f.key} label={f.label} hint={f.hint} value={data.exp_simple[f.key]} onChange={n => setExpSimple(f.key, n)} last={lastOf('exp_simple', f.key)} />
                   ))}
                   {data.exp_simple_custom.map((it, i) => (
                     <CustomRow key={i} label={it.label} value={it.amount}
@@ -552,10 +582,10 @@ export default function StatementPage() {
                         {block.title.toUpperCase()} <span className="bt-side">{fmtStmtMoney(stmtExpDetailedBlockTotal(data, block.id))}</span>
                       </div>
                       {block.fields.map(f => (
-                        <FRow key={f.key} label={f.label} value={data.exp_detailed[f.key]} onChange={n => setExpDetailed(f.key, n)} />
+                        <FRow key={f.key} label={f.label} value={data.exp_detailed[f.key]} onChange={n => setExpDetailed(f.key, n)} last={lastOf('exp_detailed', f.key)} />
                       ))}
                       {data.exp_detailed_custom.map((it, i) => it.cat === block.id ? (
-                        <CustomRow key={i} label={it.label} value={it.amount}
+                        <CustomRow key={i} label={it.label} value={it.amount} last={lastCustom('exp_detailed_custom', it)}
                           onLabel={s => setData(d => ({ ...d, exp_detailed_custom: d.exp_detailed_custom.map((x, j) => j === i ? { ...x, label: s } : x) }))}
                           onValue={n => setData(d => ({ ...d, exp_detailed_custom: d.exp_detailed_custom.map((x, j) => j === i ? { ...x, amount: n } : x) }))}
                           onRemove={() => setData(d => ({ ...d, exp_detailed_custom: d.exp_detailed_custom.filter((_, j) => j !== i) }))} />
@@ -593,10 +623,10 @@ export default function StatementPage() {
                     {block.title.toUpperCase()} <span className="bt-side">{fmtStmtMoney(stmtAssetBlockTotal(data, block.id))}</span>
                   </div>
                   {block.fields.map(f => (
-                    <FRow key={f.key} label={f.label} value={data.assets[f.key]} onChange={n => setAsset(f.key, n)} />
+                    <FRow key={f.key} label={f.label} value={data.assets[f.key]} onChange={n => setAsset(f.key, n)} last={lastOf('assets', f.key)} />
                   ))}
                   {data.assets_custom.map((it, i) => it.cat === block.id ? (
-                    <CustomRow key={i} label={it.label} value={it.amount}
+                    <CustomRow key={i} label={it.label} value={it.amount} last={lastCustom('assets_custom', it)}
                       onLabel={s => setData(d => ({ ...d, assets_custom: d.assets_custom.map((x, j) => j === i ? { ...x, label: s } : x) }))}
                       onValue={n => setData(d => ({ ...d, assets_custom: d.assets_custom.map((x, j) => j === i ? { ...x, amount: n } : x) }))}
                       onRemove={() => setData(d => ({ ...d, assets_custom: d.assets_custom.filter((_, j) => j !== i) }))} />
@@ -640,20 +670,21 @@ export default function StatementPage() {
                     {!locked && <button type="button" className="st-rm" title="Remove property" onClick={() => setData(d => ({ ...d, properties: d.properties.filter(x => x.id !== p.id) }))}>✕</button>}
                   </div>
                   <div className="st-field-row">
-                    <div className="st-field"><label>Property Label / Address</label><input type="text" className="st-txt-l" placeholder="e.g. Main Residence — Bishan Ave 5" value={p.label} onChange={e => updProp(p.id, { label: e.target.value })} /></div>
+                    <div className="st-field"><label>Property Label / Address</label><input type="text" className={`st-txt-l ${pc(p, 'label')}`} placeholder="e.g. Main Residence — Bishan Ave 5" value={p.label} onChange={e => updProp(p.id, { label: e.target.value })} /></div>
                     <div className="st-field"><label>Property Type</label>
-                      <select value={p.propertyType} onChange={e => updProp(p.id, { propertyType: e.target.value })}>
+                      <select className={pc(p, 'propertyType')} value={p.propertyType} onChange={e => updProp(p.id, { propertyType: e.target.value })}>
                         {PROPERTY_TYPES.map(t => <option key={t}>{t}</option>)}
                       </select>
                     </div>
                   </div>
                   <div className="st-field-row">
-                    <div className="st-field"><label>Purchase Price</label><AmountInput value={p.purchasePrice} onChange={n => updProp(p.id, { purchasePrice: n })} /></div>
-                    <div className="st-field"><label>Current Market Value</label><AmountInput value={p.propertyValue} onChange={n => updProp(p.id, { propertyValue: n })} /></div>
+                    <div className="st-field"><label>Purchase Price</label><AmountInput value={p.purchasePrice} changed={!!pc(p, 'purchasePrice')} onChange={n => updProp(p.id, { purchasePrice: n })} /></div>
+                    <div className="st-field"><label>Current Market Value</label><AmountInput value={p.propertyValue} changed={!!pc(p, 'propertyValue')} onChange={n => updProp(p.id, { propertyValue: n })} /></div>
                   </div>
                   <div className="st-field-row">
                     <div className="st-field"><label>Ownership</label>
-                      <select value={p.ownershipType} onChange={e => updProp(p.id, { ownershipType: e.target.value })}>
+                      <select className={pc(p, 'ownershipType')} value={p.ownershipType} onChange={e => updProp(p.id, { ownershipType: e.target.value })}>
+                        {!OWNERSHIP_TYPES.includes(p.ownershipType) && <option>{p.ownershipType}</option>}
                         {OWNERSHIP_TYPES.map(t => <option key={t}>{t}</option>)}
                       </select>
                     </div>
@@ -665,23 +696,23 @@ export default function StatementPage() {
                     </div>
                   </div>
                   <div className="st-field-row">
-                    <div className="st-field"><label>Bank</label><input type="text" className="st-txt-l" placeholder="e.g. DBS" value={p.bank || ''} onChange={e => updProp(p.id, { bank: e.target.value })} /></div>
+                    <div className="st-field"><label>Bank</label><input type="text" className={`st-txt-l ${pc(p, 'bank')}`} placeholder="e.g. DBS" value={p.bank || ''} onChange={e => updProp(p.id, { bank: e.target.value })} /></div>
                     <div className="st-field"><label>Loan Type</label>
-                      <select value={p.loanType || 'Fixed'} onChange={e => updProp(p.id, { loanType: e.target.value })}>
+                      <select className={pc(p, 'loanType')} value={p.loanType || 'Fixed'} onChange={e => updProp(p.id, { loanType: e.target.value })}>
                         {LOAN_TYPES.map(t => <option key={t}>{t}</option>)}
                       </select>
                     </div>
                   </div>
                   <div className="st-field-row">
-                    <div className="st-field"><label>Current Outstanding Loan</label><AmountInput value={p.outstanding} onChange={n => updProp(p.id, { outstanding: n })} /></div>
-                    <div className="st-field"><label>Remaining Loan Tenure (yrs)</label><AmountInput value={p.remainingTenure} onChange={n => updProp(p.id, { remainingTenure: n })} placeholder="0" /></div>
+                    <div className="st-field"><label>Current Outstanding Loan</label><AmountInput value={p.outstanding} changed={!!pc(p, 'outstanding')} onChange={n => updProp(p.id, { outstanding: n })} /></div>
+                    <div className="st-field"><label>Remaining Loan Tenure (yrs)</label><AmountInput value={p.remainingTenure} changed={!!pc(p, 'remainingTenure')} onChange={n => updProp(p.id, { remainingTenure: n })} placeholder="0" /></div>
                   </div>
                   <div className="st-field-row">
                     <div className="st-field"><label>Interest Rate (%)</label>
-                      <DecimalInput value={p.interestRate} onChange={n => updProp(p.id, { interestRate: n })} placeholder="0.00" />
+                      <DecimalInput value={p.interestRate} onChange={n => updProp(p.id, { interestRate: n })} placeholder="0.00" className={`st-amt ${pc(p, 'interestRate')}`} />
                     </div>
                     <div className="st-field"><label>Monthly Repayment</label>
-                      <AmountInput value={p.monthlyRepayment || pmtCalc || undefined} onChange={n => updProp(p.id, { monthlyRepayment: n })} placeholder={pmtCalc ? String(pmtCalc) : '$ 0'} />
+                      <AmountInput value={p.monthlyRepayment || pmtCalc || undefined} changed={!!pc(p, 'monthlyRepayment')} onChange={n => updProp(p.id, { monthlyRepayment: n })} placeholder={pmtCalc ? String(pmtCalc) : '$ 0'} />
                       {pmtCalc > 0 && (
                         <span className="st-fhint" style={{ color: '#2A5E46' }}>
                           Auto-calculated: ${pmtCalc.toLocaleString()}/mo
@@ -710,10 +741,10 @@ export default function StatementPage() {
                     {block.title.toUpperCase()} <span className="bt-side">{fmtStmtMoney(stmtLiabBlockTotal(data, block.id))}</span>
                   </div>
                   {block.fields.map(f => (
-                    <FRow key={f.key} label={f.label} value={data.liabilities[f.key]} onChange={n => setLiab(f.key, n)} />
+                    <FRow key={f.key} label={f.label} value={data.liabilities[f.key]} onChange={n => setLiab(f.key, n)} last={lastOf('liabilities', f.key)} />
                   ))}
                   {data.liabilities_custom.map((it, i) => it.cat === block.id ? (
-                    <CustomRow key={i} label={it.label} value={it.amount}
+                    <CustomRow key={i} label={it.label} value={it.amount} last={lastCustom('liabilities_custom', it)}
                       onLabel={s => setData(d => ({ ...d, liabilities_custom: d.liabilities_custom.map((x, j) => j === i ? { ...x, label: s } : x) }))}
                       onValue={n => setData(d => ({ ...d, liabilities_custom: d.liabilities_custom.map((x, j) => j === i ? { ...x, amount: n } : x) }))}
                       onRemove={() => setData(d => ({ ...d, liabilities_custom: d.liabilities_custom.filter((_, j) => j !== i) }))} />
@@ -822,6 +853,8 @@ const STATEMENT_CSS = `
 .st-flabel{font-size:12.5px;color:#3B372F;line-height:1.35;}
 .st-unit{font-size:9.5px;color:#A39E96;margin-left:5px;font-weight:600;}
 .st-fhint{display:block;font-size:10px;color:#A39E96;margin-top:1px;}
+.st-last{color:#8A6C3A;}
+.st-chg{border-color:#A8834A !important;background:#F5EFE3 !important;}
 .st-amt,.st-frow select{border:1px solid #E4E1DA;background:#F5F3EE;border-radius:6px;padding:9px 11px;font-size:13.5px;font-family:'DM Mono',monospace;color:#1C1A17;width:100%;text-align:right;box-sizing:border-box;}
 .st-amt:focus{outline:none;border-color:#A8834A;}
 .st-txt{border:1px solid #E4E1DA;background:#fff;border-radius:6px;padding:9px 11px;font-size:13px;font-family:Inter,sans-serif;color:#1C1A17;width:100%;box-sizing:border-box;}
