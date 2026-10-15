@@ -473,55 +473,95 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     return fmtStmtMoney(stmtPropertyEquity(st)) + ' equity'
   }
 
-  function renderSectionDetail(st: StatementData, id: SectionId) {
-    const rowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--line)', fontSize: 11.5 }
-    const items: { label: string; value: string }[] = []
-
+  // One line per figure in a section, with a stable key so a pre-filled statement can be compared to what it started with.
+  type DetailItem = { key: string; label: string; value: string }
+  function collectItems(st: StatementData, id: SectionId): DetailItem[] {
+    const items: DetailItem[] = []
+    const ck = (cat: string, label: string) => `${cat}|${(label || '').trim().toLowerCase()}`
     if (id === 'income') {
-      if (st.income.gross_monthly) items.push({ label: 'Gross Monthly Salary', value: fmtStmtMoney(st.income.gross_monthly) + ' /mo' })
-      if (st.income.gross_bonus) items.push({ label: 'Gross Annual Bonus', value: fmtStmtMoney(st.income.gross_bonus) + ' /yr' })
-      for (const i of st.income.others || []) if (i.label || i.amount) items.push({ label: i.label || '(unnamed)', value: fmtStmtMoney(i.amount) + ' /yr' })
+      if (st.income.gross_monthly) items.push({ key: 'gm', label: 'Gross Monthly Salary', value: fmtStmtMoney(st.income.gross_monthly) + ' /mo' })
+      if (st.income.gross_bonus) items.push({ key: 'gb', label: 'Gross Annual Bonus', value: fmtStmtMoney(st.income.gross_bonus) + ' /yr' })
+      for (const i of st.income.others || []) if (i.label || i.amount) items.push({ key: 'o|' + (i.label || '').trim().toLowerCase(), label: i.label || '(unnamed)', value: fmtStmtMoney(i.amount) + ' /yr' })
     }
     if (id === 'expenses') {
       if (st.expense_mode === 'simple') {
-        for (const f of EXP_SIMPLE_FIELDS) if (st.exp_simple[f.key]) items.push({ label: f.label, value: fmtStmtMoney(st.exp_simple[f.key]) + ' /yr' })
-        for (const i of st.exp_simple_custom || []) if (i.label || i.amount) items.push({ label: i.label || '(unnamed)', value: fmtStmtMoney(i.amount) + ' /yr' })
+        for (const f of EXP_SIMPLE_FIELDS) if (st.exp_simple[f.key]) items.push({ key: f.key, label: f.label, value: fmtStmtMoney(st.exp_simple[f.key]) + ' /yr' })
+        for (const i of st.exp_simple_custom || []) if (i.label || i.amount) items.push({ key: 'sc|' + (i.label || '').trim().toLowerCase(), label: i.label || '(unnamed)', value: fmtStmtMoney(i.amount) + ' /yr' })
       } else {
         for (const b of EXP_DETAILED_BLOCKS) {
-          for (const f of b.fields) if (st.exp_detailed[f.key]) items.push({ label: `${b.title} · ${f.label}`, value: fmtStmtMoney(st.exp_detailed[f.key]) + ' /yr' })
-          for (const i of st.exp_detailed_custom || []) if (i.cat === b.id && (i.label || i.amount)) items.push({ label: `${b.title} · ${i.label || '(unnamed)'}`, value: fmtStmtMoney(i.amount) + ' /yr' })
+          for (const f of b.fields) if (st.exp_detailed[f.key]) items.push({ key: f.key, label: `${b.title} · ${f.label}`, value: fmtStmtMoney(st.exp_detailed[f.key]) + ' /yr' })
+          for (const i of st.exp_detailed_custom || []) if (i.cat === b.id && (i.label || i.amount)) items.push({ key: 'dc|' + ck(i.cat, i.label), label: `${b.title} · ${i.label || '(unnamed)'}`, value: fmtStmtMoney(i.amount) + ' /yr' })
         }
       }
     }
     if (id === 'assets') {
       for (const b of ASSET_BLOCKS) {
-        for (const f of b.fields) if (st.assets[f.key]) items.push({ label: f.label, value: fmtStmtMoney(st.assets[f.key]) })
-        for (const i of st.assets_custom || []) if (i.cat === b.id && (i.label || i.amount)) items.push({ label: `${b.title} · ${i.label || '(unnamed)'}`, value: fmtStmtMoney(i.amount) })
+        for (const f of b.fields) if (st.assets[f.key]) items.push({ key: f.key, label: f.label, value: fmtStmtMoney(st.assets[f.key]) })
+        for (const i of st.assets_custom || []) if (i.cat === b.id && (i.label || i.amount)) items.push({ key: 'ac|' + ck(i.cat, i.label), label: `${b.title} · ${i.label || '(unnamed)'}`, value: fmtStmtMoney(i.amount) })
       }
     }
     if (id === 'liabilities') {
       for (const b of LIAB_BLOCKS) {
-        for (const f of b.fields) if (st.liabilities[f.key]) items.push({ label: `${b.title} · ${f.label}`, value: fmtStmtMoney(st.liabilities[f.key]) })
-        for (const i of st.liabilities_custom || []) if (i.cat === b.id && (i.label || i.amount)) items.push({ label: `${b.title} · ${i.label || '(unnamed)'}`, value: fmtStmtMoney(i.amount) })
+        for (const f of b.fields) if (st.liabilities[f.key]) items.push({ key: f.key, label: `${b.title} · ${f.label}`, value: fmtStmtMoney(st.liabilities[f.key]) })
+        for (const i of st.liabilities_custom || []) if (i.cat === b.id && (i.label || i.amount)) items.push({ key: 'lc|' + ck(i.cat, i.label), label: `${b.title} · ${i.label || '(unnamed)'}`, value: fmtStmtMoney(i.amount) })
       }
     }
     if (id === 'properties') {
       for (const p of st.properties || []) {
         const mv = p.propertyValue || p.purchasePrice || 0
         items.push({
+          key: 'p|' + p.id,
           label: `${p.label || '(unnamed property)'} · ${p.propertyType}${p.isPrimaryResidence ? ' · Primary' : ''}`,
           value: `${fmtStmtMoney(mv)} MV · ${fmtStmtMoney(p.outstanding || 0)} loan`,
         })
       }
     }
+    return items
+  }
 
-    if (items.length === 0) return <div style={{ fontSize: 11, color: 'var(--ink3)', padding: '6px 0' }}>Nothing entered for this section.</div>
+  // What the client changed versus the pre-filled figures. Empty for a first statement.
+  function diffItems(st: StatementData, base: StatementData | null, id: SectionId) {
+    const cur = collectItems(st, id)
+    if (!base) return { cur, changed: new Map<string, string>(), removed: [] as DetailItem[] }
+    const old = collectItems(base, id)
+    const oldByKey = new Map(old.map(o => [o.key, o]))
+    const changed = new Map<string, string>() // key -> "NEW" or the old value
+    for (const c of cur) {
+      const o = oldByKey.get(c.key)
+      if (!o) changed.set(c.key, 'NEW')
+      else if (o.value !== c.value) changed.set(c.key, o.value)
+    }
+    const curKeys = new Set(cur.map(c => c.key))
+    return { cur, changed, removed: old.filter(o => !curKeys.has(o.key)) }
+  }
+
+  function renderSectionDetail(st: StatementData, id: SectionId, base: StatementData | null) {
+    const { cur, changed, removed } = diffItems(st, base, id)
+    const rowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 6px', borderBottom: '1px solid var(--line)', fontSize: 11.5 }
+    const mono: React.CSSProperties = { fontFamily: 'DM Mono,monospace', color: 'var(--ink)', textAlign: 'right' }
+
+    if (cur.length === 0 && removed.length === 0) return <div style={{ fontSize: 11, color: 'var(--ink3)', padding: '6px 0' }}>Nothing entered for this section.</div>
     return (
       <div>
-        {items.map((it, i) => (
-          <div key={i} style={rowStyle}>
-            <span style={{ color: 'var(--ink2)' }}>{it.label}</span>
-            <span style={{ fontFamily: 'DM Mono,monospace', color: 'var(--ink)' }}>{it.value}</span>
+        {cur.map(it => {
+          const was = changed.get(it.key)
+          return (
+            <div key={it.key} style={was ? { ...rowStyle, background: '#FBF3E3', borderLeft: '3px solid var(--gold)', fontWeight: 600 } : rowStyle}>
+              <span style={{ color: 'var(--ink2)' }}>
+                {it.label}
+                {was && <span style={{ marginLeft: 8, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 6px', background: 'var(--gold)', color: 'white' }}>{was === 'NEW' ? 'NEW' : 'CHANGED'}</span>}
+              </span>
+              <span style={mono}>
+                {it.value}
+                {was && was !== 'NEW' && <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink3)' }}>was {was}</div>}
+              </span>
+            </div>
+          )
+        })}
+        {removed.map(it => (
+          <div key={'rm' + it.key} style={{ ...rowStyle, background: '#FBEBEB', borderLeft: '3px solid #B04A4A' }}>
+            <span style={{ color: '#B04A4A', textDecoration: 'line-through' }}>{it.label}</span>
+            <span style={{ ...mono, color: '#B04A4A' }}>removed <span style={{ fontSize: 10 }}>(was {it.value})</span></span>
           </div>
         ))}
       </div>
@@ -530,6 +570,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
 
   function renderStatementCard(row: StatementRow) {
     const st = normalizeData(row.data)
+    const baseline: StatementData | null = row.kind === 'review' && row.baseline ? normalizeData(row.baseline) : null
     const expired = row.expires_at ? new Date(row.expires_at) < new Date() : false
     const open = openId === row.id
     const who = personLabel(row.person)
@@ -577,6 +618,11 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
                 Still a <b>draft</b> — {who} hasn&apos;t submitted yet. You can still Apply sections, but figures may be incomplete.
               </div>
             )}
+            {baseline && (
+              <div style={{ background: '#F5EFE3', border: '1px solid #E4DBC8', color: '#5E4A24', fontSize: 11.5, padding: '9px 12px', marginBottom: 14, lineHeight: 1.5 }}>
+                Pre-filled review. <b>Gold rows</b> are what {who} changed or added. <b style={{ color: '#B04A4A' }}>Red rows</b> were removed. Everything else is unchanged from the plan when the link was made.
+              </div>
+            )}
             {SECTION_LIST.map(sec => {
               const applied = latestLog(row.id, sec.id)
               const applying = busy === `apply:${row.id}:${sec.id}`
@@ -587,6 +633,13 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink2)' }}>{sec.label}</span>
                       <span style={{ fontFamily: 'DM Mono,monospace', fontSize: 11, color: 'var(--ink3)' }}>{sectionTotal(st, sec.id)}</span>
+                      {baseline && (() => {
+                        const d = diffItems(st, baseline, sec.id)
+                        const n = d.changed.size + d.removed.length
+                        return n > 0
+                          ? <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', padding: '2px 8px', background: 'var(--gold)', color: 'white' }}>{n} CHANGED</span>
+                          : <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink3)' }}>no changes</span>
+                      })()}
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       {applied && (
@@ -604,7 +657,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
                       Applied {new Date(applied.created_at).toLocaleString('en-SG')} — one-step revert available.
                     </div>
                   )}
-                  {renderSectionDetail(st, sec.id)}
+                  {renderSectionDetail(st, sec.id, baseline)}
                 </div>
               )
             })}
