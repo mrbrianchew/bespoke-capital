@@ -431,7 +431,7 @@ export default function StatementPage() {
       <div className="st-wrap">
         <div className="st-hero">
           <div className="eyebrow">Financial Statement</div>
-          <h1>{personName ? `${personName}\u2019s ${year} Financial Snapshot` : `Your ${year} Financial Snapshot`}</h1>
+          <h1>{personName ? `${personName}\u2019s ${year} Financial Statement` : `Your ${year} Financial Statement`}</h1>
           {!locked && <p>Fill in your income, expenses, assets and liabilities below. Save your progress and return anytime — nothing is final until you submit.</p>}
         </div>
 

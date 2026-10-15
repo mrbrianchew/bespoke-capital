@@ -331,7 +331,17 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
       : section === 'income'
         ? '\n\nOther income figures from the statement are converted to monthly (÷12) to match the Financials tab. Gross Monthly and Bonus are unchanged.'
         : ''
-    if (!await confirmAction(`Apply ${who}'s ${row.year} ${label} into this client's Financials data? The current values are logged so you can revert this once.${extra}`, { confirmLabel: 'Apply' })) return
+    const thisYear = new Date().getFullYear()
+    const wrongYear = row.year !== thisYear
+    const wrongYearNote = wrongYear
+      ? `This statement is for ${row.year}, not ${thisYear}. Applying it replaces today's live plan with ${row.year} figures. To keep an older year as a record, use Annual Reviews, then Add past record. `
+      : ''
+    if (!await confirmAction(
+      `${wrongYearNote}Apply ${who}'s ${row.year} ${label} into this client's Financials data? The current values are logged so you can revert this once.${extra}`,
+      wrongYear
+        ? { title: 'Check the year', confirmLabel: 'Apply anyway', danger: true }
+        : { confirmLabel: 'Apply' },
+    )) return
 
     setBusy(`apply:${row.id}:${section}`)
     try {

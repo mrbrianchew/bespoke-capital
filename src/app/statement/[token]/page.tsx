@@ -16,21 +16,22 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function resolveFirmForToken(token: string): Promise<string | null> {
+async function resolveFirmForToken(token: string): Promise<{ firm: string | null; year: number | null }> {
   const { data: stmt } = await supabaseAdmin
-    .from('financial_statements').select('client_id').eq('token', token).maybeSingle()
-  if (!stmt?.client_id) return null
+    .from('financial_statements').select('client_id, year').eq('token', token).maybeSingle()
+  const year: number | null = stmt?.year ?? null
+  if (!stmt?.client_id) return { firm: null, year }
   const { data: client } = await supabaseAdmin
     .from('clients').select('advisor_id').eq('id', stmt.client_id).maybeSingle()
-  if (!client?.advisor_id) return null
+  if (!client?.advisor_id) return { firm: null, year }
   const { data: advisor } = await supabaseAdmin
     .from('advisors').select('firm').eq('id', client.advisor_id).maybeSingle()
-  return advisor?.firm || null
+  return { firm: advisor?.firm || null, year }
 }
 
 export async function generateMetadata({ params }: { params: { token: string } }): Promise<Metadata> {
-  const firm = await resolveFirmForToken(params.token)
-  const title = `${firm || 'Bespoke Capital'} — Financial Statement`
+  const { firm, year } = await resolveFirmForToken(params.token)
+  const title = `${firm || 'Bespoke Capital'} — Financial Statement${year ? ` ${year}` : ''}`
   return { title }
 }
 
