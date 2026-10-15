@@ -23,6 +23,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useConfirm } from '@/components/ConfirmDialog'
+import GrowthPanel from './GrowthPanel'
 
 type Kind = 'initial' | 'review' | 'earlier'
 
@@ -293,6 +294,9 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
       {error && (
         <div style={{ background: '#F2EAEA', border: '1px solid #E3CACA', color: '#7A2323', fontSize: 12, padding: '10px 14px', marginBottom: 16 }}>{error}</div>
       )}
+
+      {/* ---------- Growth (real figures from saved records) ---------- */}
+      {!loading && rows.length > 0 && <GrowthPanel clientId={clientId} refreshKey={rows.map(r => `${r.id}:${r.as_at}`).join('|')} />}
 
       {/* ---------- Save annual review ---------- */}
       {viewingId ? (
