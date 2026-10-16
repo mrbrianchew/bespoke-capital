@@ -83,6 +83,9 @@ const SECTION_LIST: { id: SectionId; label: string }[] = [
 
 // Captures the pre-Apply value of every key the patch is about to touch.
 // null = "key did not exist before" so Revert can delete it again.
+// Default password hint shown on the client's unlock screen. Editable per link.
+const DEFAULT_STATEMENT_HINT = 'For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.'
+
 function extractPrevious(existing: any, patch: ApplyPatch) {
   const prevFields: Record<string, any> = {}
   const prevPerson: Record<string, any> = {}
@@ -119,7 +122,8 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
   const [genYear, setGenYear] = useState(new Date().getFullYear())
   const [genPerson, setGenPerson] = useState<Person>('client')
   const [genPassword, setGenPassword] = useState('')
-  const [genHint, setGenHint] = useState('For security purposes, this document is password-protected. Use the last 4 characters of your NRIC followed by your year of birth (e.g., 567A1980) to access it.')
+  const [genHint, setGenHint] = useState(DEFAULT_STATEMENT_HINT)
+  const [showExpiry, setShowExpiry] = useState(false)
   const [genExpiry, setGenExpiry] = useState<'7d' | '30d' | 'never'>('30d')
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState('')
@@ -685,59 +689,77 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
       )}
 
       {/* ---------- Generate / update link ---------- */}
-      <div style={card}>
-        <div className="text-xs tracking-widest uppercase mb-1" style={{ color: 'var(--ink3)' }}>Client Statement Link</div>
-        <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 14, lineHeight: 1.5 }}>
-          {isCouple
-            ? `Each of ${clientName} and ${spouseName || 'the spouse'} fills in their own statement individually — no need to coordinate a joint session. Entries stay here until you explicitly Apply a section; nothing touches the live Financials data on its own.`
-            : `Generates a password-protected link where ${clientName} fills in their own income, expenses, assets, properties and liabilities for a chosen year.`}
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 18, padding: '22px 24px', marginBottom: 20, boxShadow: '0 1px 2px rgba(26,24,22,0.04), 0 8px 28px rgba(26,24,22,0.05)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 6 }}>
           <div>
-            <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Year</div>
-            <input type="number" value={genYear} onChange={e => setGenYear(parseInt(e.target.value) || new Date().getFullYear())}
-              className="text-sm px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', width: 90, background: 'var(--cream)', color: 'var(--ink)' }} />
+            <div className="text-xs tracking-widest uppercase" style={{ color: 'var(--ink3)', marginBottom: 2 }}>Client Statement Link</div>
+            <div style={{ fontFamily: 'var(--font-cormorant), Georgia, serif', fontSize: 24, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.2 }}>Create a link</div>
           </div>
           {isCouple && (
-            <div>
-              <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>For</div>
-              <div style={{ display: 'flex', gap: 4, background: 'var(--cream)', border: '1px solid var(--line)', padding: 3 }}>
-                <button type="button" onClick={() => setGenPerson('client')}
-                  style={{ fontSize: 11.5, fontWeight: 600, padding: '6px 12px', border: 'none', cursor: 'pointer', background: genPerson === 'client' ? 'var(--gold)' : 'transparent', color: genPerson === 'client' ? 'white' : 'var(--ink3)' }}>
-                  {clientName}
+            <div style={{ display: 'inline-flex', background: 'var(--cream2)', borderRadius: 999, padding: 3 }}>
+              {([['client', clientName], ['spouse', spouseName || 'Spouse']] as [Person, string][]).map(([p, label]) => (
+                <button key={p} type="button" onClick={() => setGenPerson(p)}
+                  style={{ fontSize: 13, fontWeight: genPerson === p ? 600 : 500, padding: '8px 18px', border: 'none', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+                    background: genPerson === p ? 'white' : 'transparent', color: genPerson === p ? 'var(--ink)' : 'var(--ink2)',
+                    boxShadow: genPerson === p ? '0 1px 3px rgba(26,24,22,0.14), 0 0 0 0.5px rgba(26,24,22,0.06)' : 'none' }}>
+                  {label}
                 </button>
-                <button type="button" onClick={() => setGenPerson('spouse')}
-                  style={{ fontSize: 11.5, fontWeight: 600, padding: '6px 12px', border: 'none', cursor: 'pointer', background: genPerson === 'spouse' ? '#4A7C9E' : 'transparent', color: genPerson === 'spouse' ? 'white' : 'var(--ink3)' }}>
-                  {spouseName || 'Spouse'}
-                </button>
-              </div>
+              ))}
             </div>
           )}
-          <div>
-            <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Password</div>
-            <input type="text" value={genPassword} onChange={e => setGenPassword(e.target.value)} placeholder="Link password"
-              className="text-sm px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', width: 160, background: 'var(--cream)', color: 'var(--ink)' }} />
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.5 }}>
+          {isCouple
+            ? `Each of ${clientName} and ${spouseName || 'the spouse'} fills in their own statement individually. Entries stay here until you explicitly Apply a section; nothing touches the live Financials data on its own.`
+            : `Generates a password-protected link where ${clientName} fills in their own income, expenses, assets, properties and liabilities for a chosen year.`}
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--cream2)', borderRadius: 999, padding: 3 }}>
+            <button type="button" aria-label="Previous year" onClick={() => setGenYear(y => y - 1)}
+              style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'white', cursor: 'pointer', boxShadow: '0 1px 2px rgba(26,24,22,0.12)', fontSize: 14, color: 'var(--ink2)' }}>−</button>
+            <span style={{ fontFamily: 'var(--font-dm-mono), monospace', fontSize: 14, fontWeight: 500, padding: '0 12px', color: 'var(--ink)' }}>{genYear}</span>
+            <button type="button" aria-label="Next year" onClick={() => setGenYear(y => y + 1)}
+              style={{ width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'white', cursor: 'pointer', boxShadow: '0 1px 2px rgba(26,24,22,0.12)', fontSize: 14, color: 'var(--ink2)' }}>+</button>
           </div>
-          <div>
-            <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Hint (optional)</div>
-            <input type="text" value={genHint} onChange={e => setGenHint(e.target.value)} placeholder="Shown on unlock screen"
-              className="text-sm px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', width: 180, background: 'var(--cream)', color: 'var(--ink)' }} />
+          <input type="text" value={genPassword} onChange={e => setGenPassword(e.target.value)} placeholder="Link password"
+            className="text-sm outline-none" style={{ flex: 1, minWidth: 200, height: 42, padding: '0 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'white', color: 'var(--ink)' }} />
+          <button style={{ border: 'none', borderRadius: 12, background: 'var(--gold)', color: 'white', fontSize: 14, fontWeight: 600, padding: '13px 22px', cursor: genBusy ? 'default' : 'pointer', opacity: genBusy ? 0.7 : 1 }} disabled={genBusy} onClick={generateLink}>
+            {genBusy ? 'Working…' : rows.some(r => r.year === genYear && r.person === genPerson) ? `Update ${personLabel(genPerson)}'s ${genYear} Link` : `Create ${personLabel(genPerson)}'s ${genYear} Link`}
+          </button>
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink3)' }}>Password hint · shown to the client on the password screen</label>
+            {genHint !== DEFAULT_STATEMENT_HINT && (
+              <button type="button" onClick={() => setGenHint(DEFAULT_STATEMENT_HINT)}
+                style={{ border: 'none', background: 'none', color: 'var(--gold-tag)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>Reset to default</button>
+            )}
           </div>
-          <div>
-            <div className="text-xs mb-1" style={{ color: 'var(--ink3)' }}>Expiry</div>
-            <select value={genExpiry} onChange={e => setGenExpiry(e.target.value as any)}
-              className="text-sm px-2 py-1.5 outline-none" style={{ border: '1px solid var(--line)', background: 'var(--cream)', color: 'var(--ink)' }}>
+          <textarea value={genHint} onChange={e => setGenHint(e.target.value)} rows={2} placeholder="Shown on the unlock screen"
+            className="text-sm outline-none" style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'white', color: 'var(--ink)', lineHeight: 1.5, resize: 'vertical' }} />
+        </div>
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: 'var(--ink3)' }}>
+            {genExpiry === 'never' ? 'This link never expires.' : `This link expires in ${genExpiry === '7d' ? '7' : '30'} days.`}
+          </span>
+          <button type="button" onClick={() => setShowExpiry(s => !s)}
+            style={{ border: 'none', background: 'none', color: 'var(--gold-tag)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+            {showExpiry ? 'Hide expiry ‹' : 'Change expiry ›'}
+          </button>
+        </div>
+        {showExpiry && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--line)', maxWidth: 260 }}>
+            <label style={{ display: 'block', fontSize: 11.5, fontWeight: 500, color: 'var(--ink3)', marginBottom: 6 }}>Link expires</label>
+            <select value={genExpiry} onChange={e => setGenExpiry(e.target.value as '7d' | '30d' | 'never')}
+              className="text-sm outline-none" style={{ width: '100%', height: 42, padding: '0 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'white', color: 'var(--ink)' }}>
               <option value="7d">7 days</option>
               <option value="30d">30 days</option>
               <option value="never">No expiry</option>
             </select>
           </div>
-          <button style={btnGold} disabled={genBusy} onClick={generateLink}>
-            {genBusy ? 'Working…' : rows.some(r => r.year === genYear && r.person === genPerson) ? `Update ${personLabel(genPerson)}'s ${genYear} Link` : `Create ${personLabel(genPerson)}'s ${genYear} Link`}
-          </button>
-        </div>
+        )}
         {rows.some(r => r.year === genYear && r.person === genPerson) && (
-          <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10 }}>
             A {genYear} statement for {personLabel(genPerson)} already exists — this updates its password/expiry on the same URL. Their entered data is kept.
           </div>
         )}
