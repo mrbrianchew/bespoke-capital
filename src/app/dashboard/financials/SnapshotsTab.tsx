@@ -31,6 +31,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { currentMonthStartSG } from '@/lib/cpfHistory'
+import { replaceVersionWithPlan } from '@/lib/replaceVersion'
 import { buildPrefill, isPrefillEmpty, keyFor, mergeCustomRows, mergeProperties, type Person } from '@/lib/statementPrefill'
 import { useConfirm } from '@/components/ConfirmDialog'
 import {
@@ -186,6 +187,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
 
   const [rows, setRows] = useState<StatementRow[]>([])
   const [logs, setLogs] = useState<ApplyLogRow[]>([])
+  const [versions, setVersions] = useState<{ id: string; as_at: string; created_at: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [openId, setOpenId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string>('') // '<action>:<id>:<section>'
@@ -206,13 +208,16 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: stmts }, { data: logRows }] = await Promise.all([
+    const [{ data: stmts }, { data: logRows }, { data: verRows }] = await Promise.all([
       supabase.from('financial_statements').select('*').eq('client_id', clientId).order('year', { ascending: false }),
       supabase.from('financial_statement_apply_log').select('id,statement_id,section,previous_value,reverted_at,created_at')
         .eq('client_id', clientId).order('created_at', { ascending: false }),
+      supabase.from('fact_finding_versions').select('id,as_at,created_at')
+        .eq('client_id', clientId).eq('section', 'financials').order('as_at', { ascending: false }),
     ])
     setRows((stmts as StatementRow[]) || [])
     setLogs((logRows as ApplyLogRow[]) || [])
+    setVersions((verRows as { id: string; as_at: string; created_at: string }[]) || [])
     setLoading(false)
   }, [clientId, supabase])
 
@@ -350,6 +355,55 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     if (error) { console.error(error); flash('Failed to expire the link.') } else { flash('Link expired.'); await load() }
   }
 
+  // Advisor-only: unlock a submitted statement so the client can edit and submit again.
+  // Keeps everything they entered. Sections already applied keep the OLD figures until re-applied.
+  async function reopenStatement(row: StatementRow) {
+    const expired = row.expires_at ? new Date(row.expires_at) < new Date() : false
+    const anyApplied = SECTION_LIST.some(s => latestLog(row.id, s.id))
+    if (!await confirmAction(
+      `Reopen ${personLabel(row.person)}'s ${row.year} statement? They can edit and submit it again on the same link. What they entered is kept.`
+      + (anyApplied ? ' Sections you already applied keep the old figures. Apply them again after they resubmit.' : '')
+      + (expired ? ' This link has expired, so use Update Link to give it a new expiry, or they cannot open it.' : ''),
+      { title: 'Reopen for changes?', confirmLabel: 'Reopen' },
+    )) return
+    setBusy(`reopen:${row.id}`)
+    const { data, error } = await supabase.from('financial_statements')
+      .update({ status: 'draft', submitted_at: null, acknowledged_at: null, updated_at: new Date().toISOString() })
+      .eq('id', row.id).eq('status', 'submitted').select('id')
+    setBusy('')
+    if (error || !data || data.length === 0) { console.error(error); flash('Could not reopen. Nothing was changed.'); return }
+    flash(`${personLabel(row.person)}'s ${row.year} statement reopened. Send them the same link.`)
+    await load()
+  }
+
+  const monthNow = currentMonthStartSG()
+  const monthLabel = (asAt: string) => new Date(asAt + 'T00:00:00').toLocaleDateString('en-SG', { month: 'long', year: 'numeric' })
+  const latestVer = versions[0]
+  // The saved record is out of date when the plan was changed (Apply or Revert) after it was saved.
+  const lastPlanChange = logs.reduce((m, l) => Math.max(m, +new Date(l.created_at), l.reverted_at ? +new Date(l.reverted_at) : 0), 0)
+  const needsRecord = lastPlanChange > 0 && (!latestVer || +new Date(latestVer.created_at) < lastPlanChange)
+  const canSaveNew = !latestVer || latestVer.as_at < monthNow
+
+  async function replaceLatest() {
+    if (!latestVer) return
+    const name = monthLabel(latestVer.as_at)
+    if (!await confirmAction(
+      `Replace the saved figures of the ${name} record with the plan as it is now? The old figures of that record are overwritten. Its date and note are kept.`
+      + (latestVer.as_at < monthNow ? ` That record is from an earlier month, so only do this to correct ${name}. To keep ${name} as it was, save a new ${monthLabel(monthNow)} record instead.` : ''),
+      { title: 'Replace the record?', confirmLabel: 'Replace figures', danger: true },
+    )) return
+    setCopyBusy(true)
+    try {
+      const res = await replaceVersionWithPlan(supabase, clientId, latestVer.id, userId)
+      if (!res.ok) { flash(res.message); return }
+      flash(`${name} record updated with the current plan.`)
+      onVersionSaved?.()
+      await load()
+    } finally {
+      setCopyBusy(false)
+    }
+  }
+
   function latestLog(statementId: string, section: SectionId): ApplyLogRow | undefined {
     return logs.find(l => l.statement_id === statementId && l.section === section && !l.reverted_at)
   }
@@ -404,7 +458,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
         return next
       })
 
-      flash(`${label} applied for ${who}. You can revert this once if needed.`)
+      flash(`${label} applied for ${who}. When you finish applying, update the saved record (see the gold box near the top).`)
       await load()
       await onDataChanged()
     } catch (e) {
@@ -599,6 +653,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button style={btnSm} onClick={() => copyLink(row)}>{copied === row.id ? '✓ Copied' : 'Copy Link'}</button>
             <button style={btnSm} onClick={() => whatsappShare(row)}>WhatsApp</button>
+            {row.status === 'submitted' && <button style={btnSm} disabled={busy === `reopen:${row.id}`} onClick={() => reopenStatement(row)}>{busy === `reopen:${row.id}` ? 'Reopening…' : 'Reopen for changes'}</button>}
             {!expired && <button style={btnSm} disabled={busy === `expire:${row.id}`} onClick={() => expireNow(row)}>Expire Now</button>}
             <button style={btnSm} onClick={() => setOpenId(open ? null : row.id)}>{open ? 'Hide Details' : 'View Details'}</button>
           </div>
@@ -653,9 +708,15 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
                     </div>
                   </div>
                   {applied && (
-                    <div style={{ fontSize: 10.5, color: '#2A5E46', marginBottom: 6 }}>
-                      Applied {new Date(applied.created_at).toLocaleString('en-SG')} — one-step revert available.
-                    </div>
+                    row.submitted_at && +new Date(applied.created_at) < +new Date(row.submitted_at) ? (
+                      <div style={{ fontSize: 10.5, color: '#8A6C3A', fontWeight: 600, marginBottom: 6 }}>
+                        Applied {new Date(applied.created_at).toLocaleString('en-SG')}, before the latest submission. Apply again to use the new figures.
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 10.5, color: '#2A5E46', marginBottom: 6 }}>
+                        Applied {new Date(applied.created_at).toLocaleString('en-SG')} — one-step revert available.
+                      </div>
+                    )
                   )}
                   {renderSectionDetail(st, sec.id, baseline)}
                 </div>
@@ -739,14 +800,25 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
         {genError && <div style={{ fontSize: 12, color: '#B04A4A', marginTop: 8 }}>{genError}</div>}
       </div>
 
-      {rows.length > 0 && (
+      {rows.length > 0 && (needsRecord ? (
+        <div style={{ ...card, background: '#FBF3E3', borderColor: '#EDD9AE', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 12.5, color: '#6E5619', lineHeight: 1.55, maxWidth: 520 }}>
+            <b>The plan has changed since the last saved record.</b> The Growth chart only shows saved records, so update one once you finish applying.
+            {latestVer && ` Latest record: ${monthLabel(latestVer.as_at)}.`}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {latestVer && <button style={btnSm} disabled={copyBusy} onClick={replaceLatest}>{copyBusy ? 'Working…' : `Update ${monthLabel(latestVer.as_at)} record`}</button>}
+            {canSaveNew && <button style={btnGreen} disabled={copyBusy} onClick={saveCopy}>{copyBusy ? 'Working…' : `Save as new ${monthLabel(monthNow)} record`}</button>}
+          </div>
+        </div>
+      ) : (
         <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 12, color: 'var(--ink3)', lineHeight: 1.5, maxWidth: 520 }}>
             Done applying? Keep a dated copy of today&apos;s plan, so next year&apos;s review has something to compare with.
           </div>
           <button style={btnGreen} disabled={copyBusy} onClick={saveCopy}>{copyBusy ? 'Saving…' : 'Save a copy of the plan'}</button>
         </div>
-      )}
+      ))}
 
       {/* ---------- Statement list, grouped by year ---------- */}
       {loading ? (
