@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySharePassword } from '@/lib/sharePassword'
+import { loadGrowthPoints } from '@/lib/growthLoad'
 
 // Client-facing route — must never be cached by Vercel's fetch cache.
 // Without this, a client could be served a stale statement after the
@@ -89,7 +90,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'bad_request' }, { status: 400 }) }
   const action: string = body?.action
   const password: string = body?.password || ''
-  if (!['unlock', 'save', 'submit'].includes(action)) {
+  if (!['unlock', 'save', 'submit', 'growth'].includes(action)) {
     return NextResponse.json({ error: 'bad_request' }, { status: 400 })
   }
 
@@ -103,6 +104,17 @@ export async function POST(req: Request, { params }: { params: { token: string }
 
   const firm = await resolveFirmForClient(stmt.client_id)
   const personName = await resolvePersonName(stmt.client_id, stmt.person)
+
+  // Growth summary for the client's own page. Only after the statement is submitted,
+  // and only finished numbers (net worth, income, expenses, savings per saved record).
+  if (action === 'growth') {
+    if (stmt.status !== 'submitted') return NextResponse.json({ points: [] })
+    try {
+      return NextResponse.json({ points: await loadGrowthPoints(supabaseAdmin, stmt.client_id) })
+    } catch {
+      return NextResponse.json({ error: 'growth_failed' }, { status: 500 })
+    }
+  }
 
   if (action === 'unlock') {
     return NextResponse.json({

@@ -26,6 +26,8 @@ import {
 } from '@/lib/statementFields'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
+import GrowthClientView from './GrowthClientView'
+import type { GrowthPoint } from '@/lib/growth'
 
 const SECTIONS = ['Income', 'Expenses', 'Assets', 'Properties', 'Liabilities']
 
@@ -203,6 +205,7 @@ export default function StatementPage() {
   const [pwError, setPwError] = useState('')
   const [unlocking, setUnlocking] = useState(false)
   const passwordRef = useRef('')
+  const [growth, setGrowth] = useState<GrowthPoint[]>([]) // after Submit only; saved records, finished numbers
 
   const [data, setData] = useState<StatementData>(emptyStatementData())
   const [baseline, setBaseline] = useState<StatementData | null>(null) // review links only
@@ -281,6 +284,20 @@ export default function StatementPage() {
       setUnlocking(false)
     }
   }
+
+  // Growth card: only once the statement is submitted. Failure just hides the card.
+  useEffect(() => {
+    if (phase !== 'form' || status !== 'submitted' || !passwordRef.current) return
+    let off = false
+    fetch(`/api/statement/${token}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'growth', password: passwordRef.current }),
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (!off && j && Array.isArray(j.points)) setGrowth(j.points as GrowthPoint[]) })
+      .catch(() => {})
+    return () => { off = true }
+  }, [phase, status, token])
 
   function validateIdentity(): boolean {
     const nOk = !!name.trim(); const oOk = !!occupation.trim()
@@ -470,6 +487,8 @@ export default function StatementPage() {
         ) : (
           <div className="st-banner">💾 &nbsp;<span><b>Draft</b>{lastSaved ? ` — last saved at ${lastSaved}.` : ' — not yet saved.'} Nothing is final until you click <b>Submit Statement</b>.</span></div>
         )}
+
+        {locked && <GrowthClientView points={growth} submittedAt={submittedAt} />}
 
         <div className={`st-id-block ${locked ? 'st-locked' : ''}`} ref={idBlockRef}>
           <div className="st-id-title">YOUR DETAILS <span className="st-req-tag">Required</span></div>
