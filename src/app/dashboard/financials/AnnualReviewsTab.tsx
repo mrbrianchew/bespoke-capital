@@ -24,6 +24,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useConfirm } from '@/components/ConfirmDialog'
 import GrowthPanel from './GrowthPanel'
+import { replaceVersionWithPlan } from '@/lib/replaceVersion'
 
 type Kind = 'initial' | 'review' | 'earlier'
 
@@ -175,6 +176,42 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
     onChanged?.()
   }
 
+  // From the Growth chart: save the live plan as this month's record. If this month
+  // already has a record, its figures are replaced (date, kind and note stay).
+  async function saveNow() {
+    setError(''); setNotice('')
+    if (!ff) { setError('The plan is still loading. Please try again in a moment.'); return }
+    const asAt = toAsAt(now.y, now.m)
+    const existing = rows.find(r => r.as_at === asAt)
+    if (latest && asAt < latest.as_at) { setError('A record later than this month already exists.'); return }
+    const ok = await confirmAction(
+      existing
+        ? `Update the ${fmtAsAt(asAt)} record with the plan as it is now? Its old figures are overwritten. Date and note are kept.`
+        : `Save the plan as it is now as the ${fmtAsAt(asAt)} review record? Its figures cannot be changed afterwards (only its date and note).`,
+      { confirmLabel: existing ? 'Update record' : 'Save record', danger: !!existing },
+    )
+    if (!ok) return
+    setBusy(true)
+    if (existing) {
+      const res = await replaceVersionWithPlan(supabase, clientId, existing.id, userId)
+      setBusy(false)
+      if (!res.ok) { setError(res.message); return }
+      flash(`${fmtAsAt(asAt)} record updated.`)
+      load(); onChanged?.(existing.id)
+      return
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { client_id: _omit, ...planData } = ff
+    const { error: err } = await supabase.from('fact_finding_versions').insert({
+      client_id: clientId, section: 'financials', as_at: asAt, kind: rows.length === 0 ? 'initial' : 'review',
+      note: null, data: JSON.parse(JSON.stringify(planData)), created_by: userId || null,
+    })
+    setBusy(false)
+    if (err) { setError(isDuplicateError(err) ? `There is already a record for ${fmtAsAt(asAt)}.` : 'Could not save. Nothing was changed. Please try again.'); return }
+    flash(`${fmtAsAt(asAt)} review record saved.`)
+    load(); onChanged?.()
+  }
+
   // Past record: starts from the closest saved version (the nearest one before that
   // month, else the earliest one after it), kind 'earlier', then opens it for editing.
   async function addPastRecord() {
@@ -296,7 +333,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
       )}
 
       {/* ---------- Growth (real figures from saved records) ---------- */}
-      {!loading && rows.length > 0 && <GrowthPanel clientId={clientId} refreshKey={rows.map(r => `${r.id}:${r.as_at}`).join('|')} />}
+      {!loading && rows.length > 0 && <GrowthPanel clientId={clientId} refreshKey={rows.map(r => `${r.id}:${r.as_at}`).join('|')} live={ff} onSaveNow={saveNow} busy={busy} />}
 
       {/* ---------- Save annual review ---------- */}
       {viewingId ? (
