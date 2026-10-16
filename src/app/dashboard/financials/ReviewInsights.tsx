@@ -27,6 +27,8 @@ interface Row { id: string; as_at: string; created_at: string; data: Record<stri
 interface Pt { m: number; v: number }
 interface Series { pts: Pt[]; color: string; dash?: string; width?: number }
 
+const CW = 960, CH = 340, PL = 56, PR = 190, PT = 24, PB = 56
+
 function Chart({ series, m0, m1, ticks, children, xLabels }: {
   series: Series[]; m0: number; m1: number; ticks: number[]
   children?: (x: (m: number) => number, y: (v: number) => number) => React.ReactNode
@@ -35,23 +37,25 @@ function Chart({ series, m0, m1, ticks, children, xLabels }: {
   const all = series.flatMap(s => s.pts.map(p => p.v))
   const lo = Math.min(...all, ...ticks), hi = Math.max(...all, ...ticks)
   const span = hi - lo || 1
-  const x = (m: number) => 40 + (m1 === m0 ? 0.5 : (m - m0) / (m1 - m0)) * 370
-  const y = (v: number) => 190 - ((v - lo) / span) * 150
+  const x = (m: number) => PL + (m1 === m0 ? 0.5 : (m - m0) / (m1 - m0)) * (CW - PL - PR)
+  const y = (v: number) => CH - PB - ((v - lo) / span) * (CH - PB - PT)
   return (
-    <svg viewBox="0 0 520 225" width="100%" role="img" style={{ display: 'block' }}>
+    <svg viewBox={`0 0 ${CW} ${CH}`} width="100%" role="img" aria-label="Bank cash, expected against actual" style={{ display: 'block' }}>
       {ticks.map(t => (
-        <g key={t}><line x1={40} y1={y(t)} x2={500} y2={y(t)} stroke="#ECEAE4" />
-          <text x={34} y={y(t) + 3} fontSize={10} fill="#8B867E" textAnchor="end">{kay(t)}</text></g>
+        <g key={t}><line x1={PL} y1={y(t)} x2={CW - 16} y2={y(t)} stroke="#ECEAE4" />
+          <text x={PL - 8} y={y(t) + 4} fontSize={12} fill="#8B867E" textAnchor="end">{kay(t)}</text></g>
       ))}
-      <line x1={40} y1={190} x2={500} y2={190} stroke="#D0CDC5" />
+      <line x1={PL} y1={CH - PB} x2={CW - 16} y2={CH - PB} stroke="#D0CDC5" />
       {series.map((s, i) => (
         <g key={i}>
-          <polyline points={s.pts.map(p => `${x(p.m).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')} fill="none" stroke={s.color} strokeWidth={s.width ?? 2.6} strokeDasharray={s.dash} strokeLinejoin="round" />
-          {s.pts.map((p, j) => <circle key={j} cx={x(p.m)} cy={y(p.v)} r={4} fill="#fff" stroke={s.color} strokeWidth={2} />)}
+          <polyline points={s.pts.map(p => `${x(p.m).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')} fill="none" stroke={s.color} strokeWidth={s.width ?? 3} strokeDasharray={s.dash} strokeLinejoin="round" strokeLinecap="round" />
+          {s.pts.map((p, j) => <circle key={j} cx={x(p.m)} cy={y(p.v)} r={5} fill="#fff" stroke={s.color} strokeWidth={2.4} />)}
         </g>
       ))}
       {children?.(x, y)}
-      {xLabels.map((l, i) => <text key={i} x={x(l.m)} y={212} fontSize={11} fill="#4A4740" textAnchor="middle">{l.text}</text>)}
+      {xLabels.map((l, i) => (
+        <text key={i} x={x(l.m)} y={CH - PB + 24} fontSize={12} fill="#4A4740" textAnchor={i === 0 ? 'start' : i === xLabels.length - 1 ? 'end' : 'middle'}>{l.text}</text>
+      ))}
     </svg>
   )
 }
@@ -120,7 +124,6 @@ export default function ReviewInsights({ clientId, refreshKey, live }: { clientI
   const thin = xl.length > 4 ? xl.filter((_, i) => i === 0 || i >= xl.length - 2) : xl
 
   const cashTicks = (() => { const hi = Math.max(ins.expectedCash, cur.cash, ...snaps.map(s => s.cash)); const st = niceStep(hi / 3); return [st, st * 2, st * 3] })()
-  const incTicks = (() => { const all = [...snaps.flatMap(s => [s.income, s.spending]), cur.income, cur.spending]; const hi = Math.max(...all), lo = Math.min(...all); const st = niceStep((hi - lo) / 3 || hi / 3); const first = Math.floor(lo / st) * st; return [first, first + st, first + 2 * st, first + 3 * st].filter(v => v >= 0) })()
 
   const cashAhead = ins.shortfall < 0
   const gapPct = ins.expectedCash > 0 ? Math.round((ins.shortfall / ins.expectedCash) * 100) : 0
@@ -140,7 +143,15 @@ export default function ReviewInsights({ clientId, refreshKey, live }: { clientI
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 14 }}>
         {tile('Savings rate', pc(cur.savingsRate),
-          <>was {pc(prev.savingsRate)}.{cur.simple || prev.simple ? ' Simple expense mode: regular savings are not separated.' : <> In bank {pc(cur.bankShare)} (was {pc(prev.bankShare)}) + products {pc(cur.productsShare)} (was {pc(prev.productsShare)})</>}</>)}
+          <>
+            <div>Was {pc(prev.savingsRate)} at last review</div>
+            {cur.simple || prev.simple
+              ? <div>Simple expense mode, so regular savings are not separated.</div>
+              : <div style={{ marginTop: 4 }}>
+                  Share of income now: <b>{pc(cur.bankShare)}</b> left in the bank + <b>{pc(cur.productsShare)}</b> put into savings plans and investments.
+                  Last time: {pc(prev.bankShare)} + {pc(prev.productsShare)}.
+                </div>}
+          </>)}
         {tile(cashAhead ? 'Cash ahead' : 'Cash gap', <span style={{ color: cashAhead ? EMERALD : ROUGE }}>{signedMoney(-ins.shortfall)}</span>,
           <>expected {money(ins.expectedCash)}, actual {money(cur.cash)}{ins.expectedCash > 0 ? ` (${-gapPct > 0 ? '+' : ''}${-gapPct}%)` : ''}</>)}
         {tile('Months of cash', ins.monthsOfCash.toFixed(1),
@@ -150,55 +161,63 @@ export default function ReviewInsights({ clientId, refreshKey, live }: { clientI
 
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
-          <h2 style={{ ...h2, margin: 0 }}>Cash, income and spending over time</h2>
+          <h2 style={{ ...h2, margin: 0 }}>Bank cash and yearly cashflow</h2>
           <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
             Per year since last review: income <b style={{ color: EMERALD }}>{sgn(ins.incomeGrowthPa)}</b> · spending <b style={{ color: ROUGE }}>{sgn(ins.spendGrowthPa)}</b>
             {faster !== null && faster > 1.2 ? ` · spending is growing ${faster.toFixed(1)}× as fast` : ''}
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
-          <div>
+        <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ ...lbl, marginBottom: 2 }}>Bank cash: expected vs actual</div>
             <Chart m0={0} m1={origin} ticks={cashTicks} xLabels={thin}
               series={[
-                { pts: [{ m: mOf(prev.asAt), v: prev.cash }, { m: origin, v: ins.expectedCash }], color: GOLD, dash: '4 5', width: 2 },
+                { pts: [{ m: mOf(prev.asAt), v: prev.cash }, { m: origin, v: ins.expectedCash }], color: GOLD, dash: '5 6', width: 2.4 },
                 { pts: pts(s => s.cash), color: EMERALD },
               ]}>
-              {(x, y) => (
-                <>
-                  <circle cx={x(origin)} cy={y(ins.expectedCash)} r={4} fill="#fff" stroke={GOLD} strokeWidth={2} />
-                  <line x1={x(origin) + 12} y1={y(ins.expectedCash)} x2={x(origin) + 12} y2={y(cur.cash)} stroke={cashAhead ? EMERALD : ROUGE} strokeWidth={1.5} />
-                  <text x={x(origin) - 8} y={y(ins.expectedCash) + (cashAhead ? 16 : -8)} fontSize={11} fill="#8A6C3A" textAnchor="end">Expected {k1(ins.expectedCash)}</text>
-                  <text x={x(origin) + 18} y={(y(ins.expectedCash) + y(cur.cash)) / 2 + 4} fontSize={11} fontWeight={600} fill={cashAhead ? EMERALD : ROUGE}>{cashAhead ? '+' : '-'}{k1(Math.abs(ins.shortfall))}</text>
-                  <text x={x(origin) + 10} y={y(cur.cash) + 20} fontSize={11} fill={EMERALD}>Actual {k1(cur.cash)}</text>
-                </>
-              )}
+              {(x, y) => {
+                const hiV = Math.max(ins.expectedCash, cur.cash), loV = Math.min(ins.expectedCash, cur.cash)
+                const lab = (v: number) => (v === ins.expectedCash && ins.expectedCash !== cur.cash ? { t: `Expected ${k1(ins.expectedCash)}`, c: '#8A6C3A' } : { t: `Actual ${k1(cur.cash)}`, c: EMERALD })
+                const hiL = lab(hiV), loL = hiV === loV ? { t: '', c: EMERALD } : lab(loV)
+                const gapRoom = y(loV) - y(hiV) > 40
+                return (
+                  <>
+                    <circle cx={x(origin)} cy={y(ins.expectedCash)} r={5} fill="#fff" stroke={GOLD} strokeWidth={2.4} />
+                    <line x1={x(origin) + 14} y1={y(hiV)} x2={x(origin) + 14} y2={y(loV)} stroke={cashAhead ? EMERALD : ROUGE} strokeWidth={2} />
+                    <text x={x(origin) + 24} y={y(hiV) + 4} fontSize={13} fontWeight={600} fill={hiL.c}>{hiL.t}</text>
+                    {loL.t && <text x={x(origin) + 24} y={y(loV) + 4} fontSize={13} fontWeight={600} fill={loL.c}>{loL.t}</text>}
+                    {gapRoom && <text x={x(origin) + 24} y={(y(hiV) + y(loV)) / 2 + 4} fontSize={13} fontWeight={600} fill={cashAhead ? EMERALD : ROUGE}>{cashAhead ? '+' : '-'}{k1(Math.abs(ins.shortfall))}</text>}
+                  </>
+                )
+              }}
             </Chart>
           </div>
-          <div>
-            <div style={{ ...lbl, marginBottom: 2 }}>Income and spending per year</div>
-            <Chart m0={0} m1={origin} ticks={incTicks} xLabels={thin}
-              series={[{ pts: pts(s => s.income), color: EMERALD }, { pts: pts(s => s.spending), color: ROUGE }]}>
-              {(x, y) => (
-                <>
-                  {[{ v: cur.income, c: EMERALD, g: ins.incomeGrowthPa }, { v: cur.spending, c: ROUGE, g: ins.spendGrowthPa }].map(e => {
-                    const upper = e.v >= Math.min(cur.income, cur.spending) && (cur.income === cur.spending ? e.c === EMERALD : e.v === Math.max(cur.income, cur.spending))
-                    const dy = upper ? -16 : 14
-                    return (
-                      <g key={e.c}>
-                        <text x={x(origin) + 10} y={y(e.v) + dy} fontSize={11} fill={e.c}>{k1(e.v)}</text>
-                        <text x={x(origin) + 10} y={y(e.v) + dy + 12} fontSize={10.5} fill={e.c}>{sgn(e.g)}/yr</text>
-                      </g>
-                    )
-                  })}
-                  <text x={x(mOf(prev.asAt)) + 4} y={y(prev.income) - 9} fontSize={10.5} fill={EMERALD}>Income</text>
-                  <text x={x(mOf(prev.asAt)) + 4} y={y(prev.spending) + 18} fontSize={10.5} fill={ROUGE}>Spending</text>
-                </>
-              )}
-            </Chart>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+              {([
+                { name: 'Income per year', now: cur.income, was: prev.income, pa: ins.incomeGrowthPa, tot: ins.incomeTotalPct, goodUp: true },
+                { name: 'Spending per year', now: cur.spending, was: prev.spending, pa: ins.spendGrowthPa, tot: ins.spendTotalPct, goodUp: false },
+                { name: 'Left over per year', now: cur.freeCash, was: prev.freeCash, pa: null, tot: prev.freeCash > 0 ? ((cur.freeCash - prev.freeCash) / prev.freeCash) * 100 : null, goodUp: true },
+              ] as { name: string; now: number; was: number; pa: number | null; tot: number | null; goodUp: boolean }[]).map(t => {
+                const up = t.now >= t.was
+                const col = up === t.goodUp ? EMERALD : ROUGE
+                return (
+                  <div key={t.name} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: '12px 14px', background: '#FBFAF7' }}>
+                    <div style={lbl}>{t.name}</div>
+                    <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, lineHeight: 1.15, margin: '4px 0 6px' }}>{money(t.now)}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>Was <b style={mono}>{money(t.was)}</b> in {label(prev.asAt)}</div>
+                    <div style={{ fontSize: 12.5, color: col, marginTop: 2 }}>
+                      {t.pa !== null ? <>{sgn(t.pa)} a year</> : <>{signedMoney(t.now - t.was)}</>}
+                      {t.tot !== null && <span style={{ color: 'var(--ink3)' }}> · {sgn(t.tot)} in all</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink3)', lineHeight: 1.55, paddingTop: 8 }}>Spending is the whole expenses table. Left over is income less spending, the part that should reach the bank.</div>
           </div>
         </div>
-        <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 6 }}>Spending is the whole expenses table. Dated points are saved records. &quot;Now&quot; is the live plan.</div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 6 }}>Dated points are saved records. &quot;Now&quot; is the live plan.</div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
