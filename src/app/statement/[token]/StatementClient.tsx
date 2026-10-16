@@ -102,7 +102,7 @@ const perUnit = (annual: number, unit: StmtUnit) => {
   return unit === 'mo' && !Number.isInteger(v) ? Math.round(v * 100) / 100 : Math.round(v)
 }
 const fmtUnit = (annual: number, unit: StmtUnit) => '$ ' + perUnit(annual, unit).toLocaleString('en-US', { maximumFractionDigits: 2 }) + (unit === 'mo' ? '/mo' : '/yr')
-const lastHint = (last: number | undefined, unit?: StmtUnit) => (last ? <span className="st-fhint st-last">Last time {unit ? fmtUnit(last, unit) : fmtStmtMoney(last)}</span> : null)
+const lastHint = (last: number | undefined, unit?: StmtUnit) => (last ? <span className="st-fhint st-last">On file {unit ? fmtUnit(last, unit) : fmtStmtMoney(last)}</span> : null)
 
 // mo | yr switch. Flipping only changes how the line is shown; the annual figure is untouched.
 function UnitSwitch({ unit, onChange }: { unit: StmtUnit; onChange: (u: StmtUnit) => void }) {
