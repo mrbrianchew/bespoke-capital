@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySharePassword } from '@/lib/sharePassword'
 import { loadGrowthPoints } from '@/lib/growthLoad'
+import { loadStatementInsights } from '@/lib/statementInsights'
 
 // Client-facing route — must never be cached by Vercel's fetch cache.
 // Without this, a client could be served a stale statement after the
@@ -90,7 +91,7 @@ export async function POST(req: Request, { params }: { params: { token: string }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'bad_request' }, { status: 400 }) }
   const action: string = body?.action
   const password: string = body?.password || ''
-  if (!['unlock', 'save', 'submit', 'growth'].includes(action)) {
+  if (!['unlock', 'save', 'submit', 'growth', 'insights'].includes(action)) {
     return NextResponse.json({ error: 'bad_request' }, { status: 400 })
   }
 
@@ -113,6 +114,22 @@ export async function POST(req: Request, { params }: { params: { token: string }
       return NextResponse.json({ points: await loadGrowthPoints(supabaseAdmin, stmt.client_id) })
     } catch {
       return NextResponse.json({ error: 'growth_failed' }, { status: 500 })
+    }
+  }
+
+  // "Before you submit" check: the form as it stands now against the last saved review.
+  // Review links only, never after submit, and nothing is written. Finished numbers only.
+  if (action === 'insights') {
+    if (stmt.kind !== 'review' || stmt.status === 'submitted') return NextResponse.json({ insights: null })
+    const form = body?.data
+    if (!form || typeof form !== 'object' || Array.isArray(form) || JSON.stringify(form).length > 200_000) {
+      return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+    }
+    try {
+      const person = stmt.person === 'spouse' ? 'spouse' : 'client'
+      return NextResponse.json({ insights: await loadStatementInsights(supabaseAdmin, stmt.client_id, person, form, stmt.baseline) })
+    } catch {
+      return NextResponse.json({ error: 'insights_failed' }, { status: 500 })
     }
   }
 

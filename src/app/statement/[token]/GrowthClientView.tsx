@@ -17,7 +17,7 @@ const money = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(Math.round(n)).toLo
 const monthIndex = (asAt: string) => { const [y, m] = asAt.split('-').map(Number); return y * 12 + (m - 1) }
 
 const EMERALD = '#2A5E46', GOLD_TXT = '#8A6C3A', INK = '#1C1A17', LINE = '#E0DDD6'
-const W = 390, H = 250, X0 = 34, X1 = 356, Y_TOP = 76, Y_BOT = 196, Y_BASE = 206
+const W = 390, H = 140, X0 = 34, X1 = 356, Y_TOP = 18, Y_BOT = 92, Y_BASE = 102
 
 export default function GrowthClientView({ points, submittedAt }: { points: GrowthPoint[]; submittedAt: string | null }) {
   const [sel, setSel] = useState<number | null>(null)
@@ -43,8 +43,7 @@ export default function GrowthClientView({ points, submittedAt }: { points: Grow
     line += ` C${mx.toFixed(1)},${ys[i - 1].toFixed(1)} ${mx.toFixed(1)},${ys[i].toFixed(1)} ${xs[i].toFixed(1)},${ys[i].toFixed(1)}`
   }
   const area = `${line} L${xs[xs.length - 1].toFixed(1)},${Y_BASE} L${xs[0].toFixed(1)},${Y_BASE} Z`
-  const bx = Math.min(Math.max(xs[idx], 66), W - 66)
-  const short = points.length > 5
+    const short = points.length > 5
   const every = points.length > 10 ? 2 : 1
   const up = prev ? cur.netWorth >= prev.netWorth : true
   const select = (i: number) => setSel(i)
@@ -52,7 +51,7 @@ export default function GrowthClientView({ points, submittedAt }: { points: Grow
   const anySimple = points.some(p => p.savingsIncludedInExpenses)
 
   const row = (name: string, v: number, p: number | null, goodWhenUp: boolean) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, padding: '14px 0', borderTop: `1px solid ${LINE}` }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, padding: '10px 0', borderTop: `1px solid ${LINE}` }}>
       <span style={{ fontSize: 15, color: '#4A4740' }}>{name}</span>
       <span style={{ fontSize: 15, fontWeight: 600 }}>
         {money(v)}
@@ -66,14 +65,14 @@ export default function GrowthClientView({ points, submittedAt }: { points: Grow
   )
 
   return (
-    <section aria-label="Your growth" style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, padding: '22px 20px 18px', marginBottom: 24 }}>
+    <section aria-label="Your growth" style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, padding: '18px 18px 14px', marginBottom: 24 }}>
       <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: GOLD_TXT, fontWeight: 600 }}>Your growth</div>
-      <div style={{ fontSize: 13.5, color: '#6B665E', marginTop: 10 }}>Net worth · {label(cur.asAt)}</div>
-      <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 54, fontWeight: 500, lineHeight: 1.05, color: INK }}>{money(cur.netWorth)}</div>
+      <div style={{ fontSize: 13, color: '#6B665E', marginTop: 8 }}>Net worth · {label(cur.asAt)}</div>
+      <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 34, fontWeight: 500, lineHeight: 1.05, color: INK }}>{money(cur.netWorth)}</div>
       <div style={{ marginTop: 8 }}>
         {prev ? (
           <span style={{ display: 'inline-block', fontSize: 13, fontWeight: 500, borderRadius: 6, padding: '5px 10px', background: up ? '#E8F2ED' : '#F5EFE3', color: up ? EMERALD : GOLD_TXT }}>
-            {up ? 'Up' : 'Down'} {money(Math.abs(cur.netWorth - prev.netWorth))} since {label(prev.asAt)}
+            {up ? `Up ${money(cur.netWorth - prev.netWorth)} since ${label(prev.asAt)}` : `${money(prev.netWorth - cur.netWorth)} lower than ${label(prev.asAt)}`}
           </span>
         ) : (
           <span style={{ display: 'inline-block', fontSize: 13, fontWeight: 500, borderRadius: 6, padding: '5px 10px', background: '#F5EFE3', color: GOLD_TXT }}>Your starting point</span>
@@ -81,20 +80,17 @@ export default function GrowthClientView({ points, submittedAt }: { points: Grow
       </div>
       {only && <p style={{ fontSize: 14, lineHeight: 1.55, color: '#4A4740', margin: '12px 0 0' }}>Thank you for your first update. From your next one, you will see how far you have come.</p>}
 
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="group" aria-label="Net worth over time. Select a point to see that update." style={{ display: 'block', height: 'auto', marginTop: 8 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="group" aria-label="Net worth over time. Select a point to see that update." style={{ display: 'block', height: 'auto', marginTop: 4 }}>
         <defs><linearGradient id="gClientGrowth" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={EMERALD} stopOpacity=".22" /><stop offset="1" stopColor={EMERALD} stopOpacity="0" /></linearGradient></defs>
-        {[Y_BASE, 166, 126].map(y => <line key={y} x1={20} y1={y} x2={W - 20} y2={y} stroke={y === Y_BASE ? '#D0CDC5' : '#E8E5DE'} />)}
+        {[Y_BASE, 70, 38].map(y => <line key={y} x1={20} y1={y} x2={W - 20} y2={y} stroke={y === Y_BASE ? '#D0CDC5' : '#E8E5DE'} />)}
         {!only && <path d={area} fill="url(#gClientGrowth)" />}
-        {!only && <path d={line} fill="none" stroke={EMERALD} strokeWidth={3.5} strokeLinecap="round" />}
-        <line x1={xs[idx]} y1={Y_TOP - 12} x2={xs[idx]} y2={Y_BASE} stroke="#C9C5BC" strokeWidth={1.5} />
-        {points.map((p, i) => i === idx ? null : <circle key={p.asAt} cx={xs[i]} cy={ys[i]} r={5} fill="#fff" stroke={EMERALD} strokeWidth={2.5} />)}
-        <circle cx={xs[idx]} cy={ys[idx]} r={15} fill={EMERALD} fillOpacity={0.16} />
-        <circle cx={xs[idx]} cy={ys[idx]} r={8} fill="#fff" stroke={EMERALD} strokeWidth={4} />
-        <rect x={bx - 64} y={6} width={128} height={50} rx={8} fill={INK} />
-        <text x={bx} y={26} textAnchor="middle" fontSize={11.5} fill="#A8A39A" fontFamily="Inter, sans-serif">{label(cur.asAt)}</text>
-        <text x={bx} y={46} textAnchor="middle" fontSize={16} fontWeight={700} fill="#fff" fontFamily="DM Mono, monospace">{money(cur.netWorth)}</text>
+        {!only && <path d={line} fill="none" stroke={EMERALD} strokeWidth={1.8} strokeLinecap="round" />}
+        <line x1={xs[idx]} y1={Y_TOP - 6} x2={xs[idx]} y2={Y_BASE} stroke="#C9C5BC" strokeWidth={1} />
+        {points.map((p, i) => i === idx ? null : <circle key={p.asAt} cx={xs[i]} cy={ys[i]} r={3.5} fill="#fff" stroke={EMERALD} strokeWidth={1.8} />)}
+        <circle cx={xs[idx]} cy={ys[idx]} r={10} fill={EMERALD} fillOpacity={0.14} />
+        <circle cx={xs[idx]} cy={ys[idx]} r={5.5} fill="#fff" stroke={EMERALD} strokeWidth={2.4} />
         {points.map((p, i) => (i % every === 0 || i === points.length - 1) ? (
-          <text key={`l${p.asAt}`} x={xs[i]} y={228} textAnchor="middle" fontSize={12} fill="#4A4740" fontFamily="Inter, sans-serif">{label(p.asAt, short)}</text>
+          <text key={`l${p.asAt}`} x={xs[i]} y={124} textAnchor="middle" fontSize={11.5} fill="#4A4740" fontFamily="Inter, sans-serif">{label(p.asAt, short)}</text>
         ) : null)}
         {points.map((p, i) => (
           <circle key={`h${p.asAt}`} cx={xs[i]} cy={ys[i]} r={24} fill="transparent" tabIndex={0} role="button" style={{ cursor: 'pointer', outline: 'none' }}

@@ -27,6 +27,7 @@ import {
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
 import GrowthClientView from './GrowthClientView'
+import InsightsClientView from './InsightsClientView'
 import type { GrowthPoint } from '@/lib/growth'
 
 const SECTIONS = ['Income', 'Expenses', 'Assets', 'Properties', 'Liabilities']
@@ -794,6 +795,8 @@ export default function StatementPage() {
           <button disabled={sectionIdx === 0} onClick={() => goTo(sectionIdx - 1)}>← Back</button>
           <button disabled={sectionIdx === SECTIONS.length - 1} onClick={() => goTo(sectionIdx + 1)}>{sectionIdx === SECTIONS.length - 1 ? 'Review →' : 'Next →'}</button>
         </div>
+
+        {!locked && baseline && sectionIdx === SECTIONS.length - 1 && <InsightsClientView token={token} passwordRef={passwordRef} data={data} />}
 
         <div className="st-disclaimer">
           The information in this statement is self-reported by the client and has not been independently verified. It is provided for financial planning and record-keeping purposes only and does not constitute financial, tax, legal, or investment advice. {firm} and your advisor rely on the accuracy of the figures submitted and are not responsible for decisions made on the basis of incomplete or inaccurate information provided by the client. Please review your figures carefully before submitting.
