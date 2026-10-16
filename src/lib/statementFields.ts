@@ -3,14 +3,37 @@
 // Snapshots tab, so the two can never drift apart.
 //
 // UNITS CONVENTION (important):
-// - The client statement collects ANNUAL figures for income (except gross
-//   monthly salary) and expenses. fact_finding stores these MONTHLY
-//   (other_incomes, s_*, d_* are all monthly on the advisor side), so the
-//   Apply step divides by 12. Assets / liabilities / properties are balances
-//   and transfer 1:1.
+// - The client statement STORES annual figures for income (except gross
+//   monthly salary) and expenses. That annual figure is always the real number.
+// - On the advisor side (fact_finding): other_incomes are MONTHLY, so Apply
+//   divides them by 12. Expenses (s_*, d_*) are ANNUAL and pass through as-is.
+//   Assets / liabilities / properties are balances and transfer 1:1.
+// - The mo / yr switch on a line (see StmtUnit, `units`, `unit`) only changes how
+//   that line is SHOWN and typed on the client page. It never changes what is
+//   stored or applied: the annual figure stays the source of truth.
 
-export interface StmtLineItem { label: string; amount: number }
-export interface StmtCatLineItem { cat: string; label: string; amount: number }
+// Display unit for a line on the client page. Annual is always what is stored.
+export type StmtUnit = 'mo' | 'yr'
+
+export interface StmtLineItem { label: string; amount: number; unit?: StmtUnit }
+export interface StmtCatLineItem { cat: string; label: string; amount: number; unit?: StmtUnit }
+
+// Lines people usually think of per MONTH. Everything not listed starts as per YEAR
+// (which is how the form always worked), so an unsure line never changes behaviour.
+export const DEFAULT_MONTHLY_KEYS: ReadonlySet<string> = new Set([
+  // simple mode
+  's_cpf_oa', 's_mortgage', 's_household', 's_personal',
+  // detailed mode
+  'd_mortgage_cpf', 'd_mortgage_cash', 'd_vehicle_repay', 'd_personal_loan_repay', 'd_rental_expense',
+  'd_regular_savings', 'd_utilities', 'd_family_food', 'd_maid',
+  'd_personal_food', 'd_transport', 'd_car_petrol',
+  'd_childcare', 'd_allowance_children', 'd_allowance_parents',
+])
+// Other-income types usually received monthly (matched by label for the preset pool).
+export const DEFAULT_MONTHLY_INCOME_LABELS: ReadonlySet<string> = new Set(['Rental Income', 'Allowance Received'])
+
+export const defaultUnitForKey = (key: string): StmtUnit => (DEFAULT_MONTHLY_KEYS.has(key) ? 'mo' : 'yr')
+export const defaultUnitForIncomeLabel = (label: string): StmtUnit => (DEFAULT_MONTHLY_INCOME_LABELS.has((label || '').trim()) ? 'mo' : 'yr')
 
 export interface StmtProperty {
   id: string
@@ -44,6 +67,7 @@ export interface StatementData {
   liabilities: Record<string, number>         // l_* keys, balances
   liabilities_custom: StmtCatLineItem[]       // cat: st|lt
   properties: StmtProperty[]
+  units?: Record<string, StmtUnit>            // display unit per fixed line (s_* / d_* key); absent = default
 }
 
 export function emptyStatementData(): StatementData {

@@ -16,7 +16,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import {
-  StatementData, StmtProperty, emptyStatementData,
+  StatementData, StmtProperty, StmtUnit, emptyStatementData, defaultUnitForKey, defaultUnitForIncomeLabel,
   INCOME_POOL, EXP_SIMPLE_FIELDS, EXP_DETAILED_BLOCKS,
   ASSET_BLOCKS, LIAB_BLOCKS,
   PROPERTY_TYPES, OWNERSHIP_TYPES, LOAN_TYPES,
@@ -95,35 +95,100 @@ function DecimalInput({ value, onChange, placeholder, className }: {
 }
 
 // last = the figure the form was pre-filled with (review links only; undefined = no hint).
-const isChanged = (value: number | undefined, last: number | undefined) => last !== undefined && (value || 0) !== (last || 0)
-const lastHint = (last: number | undefined) => (last ? <span className="st-fhint st-last">Last time {fmtStmtMoney(last)}</span> : null)
+const isChanged = (value: number | undefined, last: number | undefined) => last !== undefined && Math.abs((value || 0) - (last || 0)) > 0.5
+// Shows an annual figure in the line's own unit (monthly = annual / 12, up to 2 decimals).
+const perUnit = (annual: number, unit: StmtUnit) => {
+  const v = unit === 'mo' ? annual / 12 : annual
+  return unit === 'mo' && !Number.isInteger(v) ? Math.round(v * 100) / 100 : Math.round(v)
+}
+const fmtUnit = (annual: number, unit: StmtUnit) => '$ ' + perUnit(annual, unit).toLocaleString('en-US', { maximumFractionDigits: 2 }) + (unit === 'mo' ? '/mo' : '/yr')
+const lastHint = (last: number | undefined, unit?: StmtUnit) => (last ? <span className="st-fhint st-last">Last time {unit ? fmtUnit(last, unit) : fmtStmtMoney(last)}</span> : null)
 
-function FRow({ label, unit, hint, value, onChange, last }: {
-  label: string; unit?: string; hint?: string
-  value: number | undefined; onChange: (n: number) => void; last?: number
-}) {
+// mo | yr switch. Flipping only changes how the line is shown; the annual figure is untouched.
+function UnitSwitch({ unit, onChange }: { unit: StmtUnit; onChange: (u: StmtUnit) => void }) {
   return (
-    <div className="st-frow">
-      <span className="st-flabel">
-        {label}{unit && <span className="st-unit">{unit}</span>}
-        {hint && <span className="st-fhint">{hint}</span>}
-        {lastHint(last)}
-      </span>
-      <AmountInput value={value} onChange={onChange} changed={isChanged(value, last)} />
+    <div className={`st-unit-sw ${unit}`} role="group" aria-label="Enter this line per month or per year">
+      <i />
+      <button type="button" className={unit === 'mo' ? 'on' : ''} aria-pressed={unit === 'mo'} onClick={() => onChange('mo')}>mo</button>
+      <button type="button" className={unit === 'yr' ? 'on' : ''} aria-pressed={unit === 'yr'} onClick={() => onChange('yr')}>yr</button>
     </div>
   )
 }
 
-function CustomRow({ tag, label, value, onLabel, onValue, onRemove, last }: {
+// Amount box for a line that has a mo / yr switch. `annual` is the stored figure.
+// Typing per month stores annual = whole dollars of (typed x 12). Keeps a text buffer so "3." isn't clobbered.
+function LineAmount({ annual, unit, onAnnual, changed }: {
+  annual: number | undefined; unit: StmtUnit; onAnnual: (n: number) => void; changed?: boolean
+}) {
+  const shown = annual ? perUnit(annual, unit) : 0
+  const toStr = (n: number) => (n ? String(n) : '')
+  const [raw, setRaw] = useState(toStr(shown))
+  useEffect(() => {
+    if (parseAmt(raw) !== shown) setRaw(toStr(shown))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown])
+  return (
+    <div className="st-ua">
+      <input
+        type="text" inputMode="decimal" placeholder="$ 0" value={raw}
+        onChange={e => {
+          const v = e.target.value
+          if (!/^\d*\.?\d{0,2}$/.test(v)) return
+          setRaw(v)
+          const n = parseAmt(v)
+          onAnnual(unit === 'mo' ? Math.round(n * 12) : n)
+        }}
+        className={changed ? 'st-amt st-chg' : 'st-amt'}
+      />
+      {unit === 'mo' && !!annual && <div className="st-eq">= {fmtStmtMoney(annual)} / year</div>}
+    </div>
+  )
+}
+
+function FRow({ label, unit, hint, value, onChange, last, per, onPer }: {
+  label: string; unit?: string; hint?: string
+  value: number | undefined; onChange: (n: number) => void; last?: number
+  per?: StmtUnit; onPer?: (u: StmtUnit) => void   // set both to show the mo / yr switch
+}) {
+  const hasSwitch = !!per && !!onPer
+  return (
+    <div className={hasSwitch ? 'st-frow st-u' : 'st-frow'}>
+      <span className="st-flabel st-a-l">
+        {label}{unit && <span className="st-unit">{unit}</span>}
+        {hint && <span className="st-fhint">{hint}</span>}
+        {lastHint(last, hasSwitch ? per : undefined)}
+      </span>
+      {hasSwitch ? (
+        <>
+          <span className="st-a-u"><UnitSwitch unit={per!} onChange={onPer!} /></span>
+          <span className="st-a-a"><LineAmount annual={value} unit={per!} onAnnual={onChange} changed={isChanged(value, last)} /></span>
+        </>
+      ) : (
+        <AmountInput value={value} onChange={onChange} changed={isChanged(value, last)} />
+      )}
+    </div>
+  )
+}
+
+function CustomRow({ tag, label, value, onLabel, onValue, onRemove, last, per, onPer }: {
   tag?: string; label: string; value: number | undefined
   onLabel: (s: string) => void; onValue: (n: number) => void; onRemove: () => void; last?: number
+  per?: StmtUnit; onPer?: (u: StmtUnit) => void   // set both to show the mo / yr switch
 }) {
+  const hasSwitch = !!per && !!onPer
   return (
-    <div className="st-frow st-added">
+    <div className={hasSwitch ? 'st-frow st-added st-u' : 'st-frow st-added'}>
       {tag && <span className="st-grp-tag">{tag}</span>}
-      <input type="text" className="st-txt" placeholder="Item name…" value={label} onChange={e => onLabel(e.target.value)} />
-      <AmountInput value={value} onChange={onValue} changed={isChanged(value, last)} />
-      <button type="button" className="st-rm" title="Remove" onClick={onRemove}>✕</button>
+      <input type="text" className="st-txt st-a-l" placeholder="Item name…" value={label} onChange={e => onLabel(e.target.value)} />
+      {hasSwitch ? (
+        <>
+          <span className="st-a-u"><UnitSwitch unit={per!} onChange={onPer!} /></span>
+          <span className="st-a-a"><LineAmount annual={value} unit={per!} onAnnual={onValue} changed={isChanged(value, last)} /></span>
+        </>
+      ) : (
+        <AmountInput value={value} onChange={onValue} changed={isChanged(value, last)} />
+      )}
+      <button type="button" className="st-rm st-a-x" title="Remove" onClick={onRemove}>✕</button>
     </div>
   )
 }
@@ -405,6 +470,10 @@ export default function StatementPage() {
     setData(d => ({ ...d, assets: { ...d.assets, [key]: n } }))
   const setLiab = (key: string, n: number) =>
     setData(d => ({ ...d, liabilities: { ...d.liabilities, [key]: n } }))
+  // mo / yr display unit per line (display only: the stored figure is always annual).
+  const unitOfKey = (key: string): StmtUnit => data.units?.[key] ?? defaultUnitForKey(key)
+  const setUnitKey = (key: string, u: StmtUnit) =>
+    setData(d => ({ ...d, units: { ...(d.units || {}), [key]: u } }))
   const updProp = (id: string, patch: Partial<StmtProperty>) =>
     setData(d => ({ ...d, properties: d.properties.map(p => p.id === id ? { ...p, ...patch } : p) }))
 
@@ -525,16 +594,18 @@ export default function StatementPage() {
           {sectionIdx === 0 && (
             <div className="st-card">
               <h2>Income</h2>
-              <p className="st-subhint">Your income sources for the year. Figures are <b>annual (per year)</b> — salary is entered monthly since that&apos;s how it&apos;s usually paid, but the total rolls everything up to a yearly figure.</p>
+              <p className="st-subhint">Salary is entered per month and the bonus per year. For other income, enter each line <b>per month</b> or <b>per year</b> — tap <b>mo / yr</b> to switch. The total is always per year.</p>
               <div className="st-block">
                 <div className="st-bt" style={{ background: '#F5EFE3', color: '#8A6C3A' }}>GROSS SALARY</div>
                 <FRow label="Gross Monthly" unit="/mo" hint="Before CPF deductions" value={data.income.gross_monthly} onChange={n => setIncome({ gross_monthly: n })} last={baseline ? (baseline.income.gross_monthly || 0) : undefined} />
                 <FRow label="Gross Annual Bonus" unit="/yr" hint="Total bonus for the year (AWS + variable)" value={data.income.gross_bonus} onChange={n => setIncome({ gross_bonus: n })} last={baseline ? (baseline.income.gross_bonus || 0) : undefined} />
               </div>
               <div className="st-block">
-                <div className="st-bt" style={{ background: '#E8F2ED', color: '#2A5E46' }}>OTHER INCOME <span className="bt-side">/yr</span></div>
+                <div className="st-bt" style={{ background: '#E8F2ED', color: '#2A5E46' }}>OTHER INCOME <span className="bt-side">mo / yr</span></div>
                 {data.income.others.map((it, i) => (
                   <CustomRow key={i} label={it.label} value={it.amount} last={lastIncomeOther(it.label)}
+                    per={it.unit ?? defaultUnitForIncomeLabel(it.label)}
+                    onPer={u => setIncome({ others: data.income.others.map((x, j) => j === i ? { ...x, unit: u } : x) })}
                     onLabel={s => setIncome({ others: data.income.others.map((x, j) => j === i ? { ...x, label: s } : x) })}
                     onValue={n => setIncome({ others: data.income.others.map((x, j) => j === i ? { ...x, amount: n } : x) })}
                     onRemove={() => setIncome({ others: data.income.others.filter((_, j) => j !== i) })} />
@@ -545,7 +616,7 @@ export default function StatementPage() {
                       const v = e.target.value
                       if (v) {
                         const preset = INCOME_POOL.find(p => p.id === v)
-                        setIncome({ others: [...data.income.others, { label: v === '__other__' ? '' : (preset?.label || ''), amount: 0 }] })
+                        { const lbl = v === '__other__' ? '' : (preset?.label || ''); setIncome({ others: [...data.income.others, { label: lbl, amount: 0, unit: defaultUnitForIncomeLabel(lbl) }] }) }
                       }
                       setIncomePicking(false)
                     }}
@@ -568,7 +639,7 @@ export default function StatementPage() {
               <div className="st-head-row">
                 <div>
                   <h2>Expenses</h2>
-                  <p className="st-subhint" style={{ marginBottom: 6 }}>Your spending for the year. Figures are <b>annual (per year)</b>.</p>
+                  <p className="st-subhint" style={{ marginBottom: 6 }}>Enter each line the way you usually think of it — <b>per month</b> or <b>per year</b>. Tap <b>mo / yr</b> to switch. The total is always per year.</p>
                 </div>
                 <div className="st-mode">
                   <button className={isSimple ? 'active' : ''} disabled={locked} onClick={() => setData(d => ({ ...d, expense_mode: 'simple' }))}>⚡ Simplified</button>
@@ -583,10 +654,12 @@ export default function StatementPage() {
               {isSimple ? (
                 <div>
                   {EXP_SIMPLE_FIELDS.map(f => (
-                    <FRow key={f.key} label={f.label} hint={f.hint} value={data.exp_simple[f.key]} onChange={n => setExpSimple(f.key, n)} last={lastOf('exp_simple', f.key)} />
+                    <FRow key={f.key} label={f.label} hint={f.hint} value={data.exp_simple[f.key]} onChange={n => setExpSimple(f.key, n)} last={lastOf('exp_simple', f.key)}
+                      per={unitOfKey(f.key)} onPer={u => setUnitKey(f.key, u)} />
                   ))}
                   {data.exp_simple_custom.map((it, i) => (
                     <CustomRow key={i} label={it.label} value={it.amount}
+                      per={it.unit ?? 'yr'} onPer={u => setData(d => ({ ...d, exp_simple_custom: d.exp_simple_custom.map((x, j) => j === i ? { ...x, unit: u } : x) }))}
                       onLabel={s => setData(d => ({ ...d, exp_simple_custom: d.exp_simple_custom.map((x, j) => j === i ? { ...x, label: s } : x) }))}
                       onValue={n => setData(d => ({ ...d, exp_simple_custom: d.exp_simple_custom.map((x, j) => j === i ? { ...x, amount: n } : x) }))}
                       onRemove={() => setData(d => ({ ...d, exp_simple_custom: d.exp_simple_custom.filter((_, j) => j !== i) }))} />
@@ -602,10 +675,12 @@ export default function StatementPage() {
                         {block.title.toUpperCase()} <span className="bt-side">{fmtStmtMoney(stmtExpDetailedBlockTotal(data, block.id))}</span>
                       </div>
                       {block.fields.map(f => (
-                        <FRow key={f.key} label={f.label} value={data.exp_detailed[f.key]} onChange={n => setExpDetailed(f.key, n)} last={lastOf('exp_detailed', f.key)} />
+                        <FRow key={f.key} label={f.label} value={data.exp_detailed[f.key]} onChange={n => setExpDetailed(f.key, n)} last={lastOf('exp_detailed', f.key)}
+                          per={unitOfKey(f.key)} onPer={u => setUnitKey(f.key, u)} />
                       ))}
                       {data.exp_detailed_custom.map((it, i) => it.cat === block.id ? (
                         <CustomRow key={i} label={it.label} value={it.amount} last={lastCustom('exp_detailed_custom', it)}
+                          per={it.unit ?? 'yr'} onPer={u => setData(d => ({ ...d, exp_detailed_custom: d.exp_detailed_custom.map((x, j) => j === i ? { ...x, unit: u } : x) }))}
                           onLabel={s => setData(d => ({ ...d, exp_detailed_custom: d.exp_detailed_custom.map((x, j) => j === i ? { ...x, label: s } : x) }))}
                           onValue={n => setData(d => ({ ...d, exp_detailed_custom: d.exp_detailed_custom.map((x, j) => j === i ? { ...x, amount: n } : x) }))}
                           onRemove={() => setData(d => ({ ...d, exp_detailed_custom: d.exp_detailed_custom.filter((_, j) => j !== i) }))} />
@@ -874,6 +949,15 @@ const STATEMENT_CSS = `
 .st-frow.st-added .st-grp-tag{display:none;}
 .st-flabel{font-size:12.5px;color:#3B372F;line-height:1.35;}
 .st-unit{font-size:9.5px;color:#A39E96;margin-left:5px;font-weight:600;}
+.st-frow.st-u{grid-template-columns:1fr auto 150px;}
+.st-frow.st-added.st-u{grid-template-columns:1fr auto 150px 26px;}
+.st-unit-sw{display:inline-flex;background:#ECEAE4;border-radius:999px;padding:2px;position:relative;isolation:isolate;}
+.st-unit-sw i{position:absolute;top:2px;bottom:2px;left:2px;width:34px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(26,24,22,.15);transition:transform .2s cubic-bezier(.3,.7,.2,1);z-index:-1;}
+.st-unit-sw.yr i{transform:translateX(34px);}
+.st-unit-sw button{width:34px;border:none;background:none;font:600 10.5px Inter,sans-serif;color:#8B867E;padding:5px 0;border-radius:999px;cursor:pointer;}
+.st-unit-sw button.on{color:#1C1A17;}
+.st-eq{font-size:10px;color:#8B867E;margin-top:2px;text-align:right;font-family:'DM Mono',monospace;}
+.st-locked .st-unit-sw{pointer-events:none;opacity:0.75;}
 .st-fhint{display:block;font-size:10px;color:#A39E96;margin-top:1px;}
 .st-last{color:#8A6C3A;}
 .st-chg{border-color:#A8834A !important;background:#F5EFE3 !important;}
@@ -931,6 +1015,12 @@ const STATEMENT_CSS = `
   .st-card{padding:18px 14px;}
   .st-frow{grid-template-columns:1fr 110px;}
   .st-frow.st-added{grid-template-columns:1fr 110px 24px;}
+  .st-frow.st-u{grid-template-columns:auto 1fr;grid-template-areas:"l l" "u a";row-gap:8px;}
+  .st-frow.st-added.st-u{grid-template-columns:auto 1fr 24px;grid-template-areas:"l l x" "u a a";}
+  .st-frow.st-u .st-a-l{grid-area:l;}
+  .st-frow.st-u .st-a-u{grid-area:u;}
+  .st-frow.st-u .st-a-a{grid-area:a;}
+  .st-frow.st-u .st-a-x{grid-area:x;}
   .st-field-row{grid-template-columns:1fr;}
   .st-footer{padding:12px 14px;}
   .st-footer button{padding:10px 12px;font-size:11.5px;white-space:normal;flex:1;}
