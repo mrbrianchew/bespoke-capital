@@ -49,6 +49,7 @@ interface StatementRow {
   year: number
   person: Person
   token: string
+  couple_id?: string | null   // same value on a client's and spouse's row = they share one couple link
   password_hint: string | null
   expires_at: string | null
   status: 'draft' | 'submitted'
@@ -121,6 +122,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
   // Generate-link form
   const [genYear, setGenYear] = useState(new Date().getFullYear())
   const [genPerson, setGenPerson] = useState<Person>('client')
+  const [genBoth, setGenBoth] = useState(true)   // couples: one link for both people (default)
   const [genPassword, setGenPassword] = useState('')
   const [genHint, setGenHint] = useState(DEFAULT_STATEMENT_HINT)
   const [showExpiry, setShowExpiry] = useState(false)
@@ -131,6 +133,23 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
   const [copyBusy, setCopyBusy] = useState(false)
 
   const personLabel = (p: Person) => p === 'client' ? clientName : (spouseName || 'Spouse')
+  const both = isCouple && genBoth
+  // One couple link has one password, so the default hint names whose NRIC / birth year it is.
+  const coupleHint = `For security purposes, this document is password-protected. Use the last 4 characters of ${clientName}\u2019s NRIC followed by their year of birth (e.g., 567A1980) to access it.`
+  // Couples open on "Both", so start with the couple wording unless the advisor has already edited the hint.
+  useEffect(() => {
+    if (isCouple && genBoth && genHint === DEFAULT_STATEMENT_HINT) setGenHint(coupleHint)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCouple, clientName])
+  function pickTarget(target: 'both' | Person) {
+    if (target === 'both') {
+      setGenBoth(true)
+      if (genHint === DEFAULT_STATEMENT_HINT) setGenHint(coupleHint)
+    } else {
+      setGenBoth(false); setGenPerson(target)
+      if (genHint === coupleHint) setGenHint(DEFAULT_STATEMENT_HINT)
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -215,35 +234,54 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
       if (genExpiry === '7d') expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
       if (genExpiry === '30d') expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
 
-      const existing = rows.find(r => r.year === genYear && r.person === genPerson)
-      const existingEmpty = !!existing && existing.status === 'draft' && (!existing.data || Object.keys(existing.data).length === 0)
-      // Pre-fill only when this is a new (or still-empty draft) link AND the client already
-      // has saved records AND the live plan has figures for this person.
-      let prefill: StatementData | null = null
-      if (!existing || existingEmpty) prefill = await loadPrefill(genPerson)
-
-      if (existing) {
-        const { error } = await supabase.from('financial_statements')
-          .update({
-            password_hash: hash, password_hint: genHint || null, expires_at: expiresAt, updated_at: new Date().toISOString(),
-            ...(prefill && existingEmpty ? { data: prefill, baseline: prefill, kind: 'review' } : {}),
+      const creds = { password_hash: hash, password_hint: genHint || null, expires_at: expiresAt }
+      const persons: Person[] = both ? ['client', 'spouse'] : [genPerson]
+      // Couple link: both people's rows carry the same couple_id. Reuse one that already exists.
+      const coupleId: string | null = both
+        ? (rows.find(r => r.year === genYear && r.couple_id)?.couple_id || crypto.randomUUID())
+        : null
+      let filled = false
+      for (const person of persons) {
+        const existing = rows.find(r => r.year === genYear && r.person === person)
+        const existingEmpty = !!existing && existing.status === 'draft' && (!existing.data || Object.keys(existing.data).length === 0)
+        // Pre-fill only when this is a new (or still-empty draft) link AND the client already
+        // has saved records AND the live plan has figures for this person.
+        let prefill: StatementData | null = null
+        if (!existing || existingEmpty) prefill = await loadPrefill(person)
+        if (prefill) filled = true
+        if (existing) {
+          const { error } = await supabase.from('financial_statements')
+            .update({
+              ...creds, updated_at: new Date().toISOString(),
+              ...(both ? { couple_id: coupleId } : {}),
+              ...(prefill && existingEmpty ? { data: prefill, baseline: prefill, kind: 'review' } : {}),
+            })
+            .eq('id', existing.id)
+          if (error) throw error
+        } else {
+          const token = crypto.randomUUID().replace(/-/g, '')
+          const { error } = await supabase.from('financial_statements').insert({
+            client_id: clientId, year: genYear, person, token, ...creds,
+            status: 'draft', data: prefill || {},
+            ...(both ? { couple_id: coupleId } : {}),
+            ...(prefill ? { baseline: prefill, kind: 'review' } : {}),
           })
-          .eq('id', existing.id)
-        if (error) throw error
-        flash(`Link for ${personLabel(genPerson)} (${genYear}) updated — same URL, new password/expiry.${prefill && existingEmpty ? ' Current figures filled in.' : ''}`)
-      } else {
-        const token = crypto.randomUUID().replace(/-/g, '')
-        const { error } = await supabase.from('financial_statements').insert({
-          client_id: clientId, year: genYear, person: genPerson, token,
-          password_hash: hash, password_hint: genHint || null, expires_at: expiresAt,
-          status: 'draft', data: prefill || {},
-          ...(prefill ? { baseline: prefill, kind: 'review' } : {}),
-        })
-        if (error) throw error
-        flash(prefill
-          ? `Link for ${personLabel(genPerson)} (${genYear}) created with their current figures filled in.`
-          : `Link for ${personLabel(genPerson)} (${genYear}) created.`)
+          if (error) throw error
+        }
       }
+      // Updating one person whose link is part of a couple link: keep both people on the same password/expiry.
+      const single = !both ? rows.find(r => r.year === genYear && r.person === genPerson) : undefined
+      if (single?.couple_id) {
+        const { error } = await supabase.from('financial_statements')
+          .update({ ...creds, updated_at: new Date().toISOString() }).eq('couple_id', single.couple_id)
+        if (error) throw error
+      }
+      const anyExisting = persons.some(pp => rows.some(r => r.year === genYear && r.person === pp))
+      flash(both
+        ? `Couple link for ${genYear} ${anyExisting ? 'updated — same URLs, new password/expiry' : 'created'}.${filled ? ' Current figures filled in.' : ''}`
+        : anyExisting
+          ? `Link for ${personLabel(genPerson)} (${genYear}) updated — same URL, new password/expiry${single?.couple_id ? ' (for both people, as they share a couple link)' : ''}.${filled ? ' Current figures filled in.' : ''}`
+          : `Link for ${personLabel(genPerson)} (${genYear}) created${filled ? ' with their current figures filled in' : ''}.`)
       setGenPassword('')
       await load()
     } catch (e) {
@@ -252,6 +290,21 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     } finally {
       setGenBusy(false)
     }
+  }
+
+  function coupleUrl(cid: string) {
+    return `${typeof window !== 'undefined' ? window.location.origin : ''}/statement/couple/${cid}`
+  }
+  async function copyCouple(cid: string) {
+    try {
+      await navigator.clipboard.writeText(coupleUrl(cid))
+      setCopied(`couple:${cid}`)
+      setTimeout(() => setCopied(''), 2000)
+    } catch { /* clipboard unavailable */ }
+  }
+  function whatsappCouple(cid: string, year: number) {
+    const text = `Your ${year} Financial Statement — ${clientName} & ${spouseName || 'Spouse'}\n\n${coupleUrl(cid)}`
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }
 
   function statementUrl(token: string) {
@@ -569,6 +622,27 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     )
   }
 
+  // One bar above the two people's cards when they share a couple link.
+  function renderCoupleStrip(cid: string, year: number) {
+    const mates = rows.filter(r => r.couple_id === cid)
+    const expired = mates.length > 0 && mates.every(r => r.expires_at && new Date(r.expires_at) < new Date())
+    return (
+      <div style={{ ...card, background: 'var(--cream2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 20px', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold-tag)' }}>Couple link</div>
+          <div style={{ fontSize: 12, color: 'var(--ink3)', marginTop: 3 }}>
+            One link and one password for {clientName} and {spouseName || 'the spouse'}. Each person is saved and submitted separately.
+            {expired && <b style={{ color: '#B04A4A' }}> The link has expired.</b>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button style={btnGold} onClick={() => copyCouple(cid)}>{copied === `couple:${cid}` ? '✓ Copied' : 'Copy Couple Link'}</button>
+          <button style={btnSm} onClick={() => whatsappCouple(cid, year)}>WhatsApp</button>
+        </div>
+      </div>
+    )
+  }
+
   function renderStatementCard(row: StatementRow) {
     const st = normalizeData(row.data)
     const baseline: StatementData | null = row.kind === 'review' && row.baseline ? normalizeData(row.baseline) : null
@@ -598,8 +672,8 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
             {expired && <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '3px 8px', background: '#FBEBEB', color: '#B04A4A' }}>Link expired</span>}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button style={btnSm} onClick={() => copyLink(row)}>{copied === row.id ? '✓ Copied' : 'Copy Link'}</button>
-            <button style={btnSm} onClick={() => whatsappShare(row)}>WhatsApp</button>
+            {!row.couple_id && <button style={btnSm} onClick={() => copyLink(row)}>{copied === row.id ? '✓ Copied' : 'Copy Link'}</button>}
+            {!row.couple_id && <button style={btnSm} onClick={() => whatsappShare(row)}>WhatsApp</button>}
             {row.status === 'submitted' && <button style={btnSm} disabled={busy === `reopen:${row.id}`} onClick={() => reopenStatement(row)}>{busy === `reopen:${row.id}` ? 'Reopening…' : 'Reopen for changes'}</button>}
             {!expired && <button style={btnSm} disabled={busy === `expire:${row.id}`} onClick={() => expireNow(row)}>Expire Now</button>}
             <button style={btnSm} onClick={() => setOpenId(open ? null : row.id)}>{open ? 'Hide Details' : 'View Details'}</button>
@@ -696,21 +770,26 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
             <div style={{ fontFamily: 'var(--font-cormorant), Georgia, serif', fontSize: 24, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.2 }}>Create a link</div>
           </div>
           {isCouple && (
-            <div style={{ display: 'inline-flex', background: 'var(--cream2)', borderRadius: 999, padding: 3 }}>
-              {([['client', clientName], ['spouse', spouseName || 'Spouse']] as [Person, string][]).map(([p, label]) => (
-                <button key={p} type="button" onClick={() => setGenPerson(p)}
-                  style={{ fontSize: 13, fontWeight: genPerson === p ? 600 : 500, padding: '8px 18px', border: 'none', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
-                    background: genPerson === p ? 'white' : 'transparent', color: genPerson === p ? 'var(--ink)' : 'var(--ink2)',
-                    boxShadow: genPerson === p ? '0 1px 3px rgba(26,24,22,0.14), 0 0 0 0.5px rgba(26,24,22,0.06)' : 'none' }}>
-                  {label}
-                </button>
-              ))}
+            <div style={{ display: 'inline-flex', background: 'var(--cream2)', borderRadius: 999, padding: 3, flexWrap: 'wrap' }}>
+              {([['both', 'Both (one link)'], ['client', clientName], ['spouse', spouseName || 'Spouse']] as ['both' | Person, string][]).map(([t, label]) => {
+                const on = t === 'both' ? genBoth : (!genBoth && genPerson === t)
+                return (
+                  <button key={t} type="button" onClick={() => pickTarget(t)}
+                    style={{ fontSize: 13, fontWeight: on ? 600 : 500, padding: '8px 18px', border: 'none', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
+                      background: on ? 'white' : 'transparent', color: on ? 'var(--ink)' : 'var(--ink2)',
+                      boxShadow: on ? '0 1px 3px rgba(26,24,22,0.14), 0 0 0 0.5px rgba(26,24,22,0.06)' : 'none' }}>
+                    {label}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
         <div style={{ fontSize: 12, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.5 }}>
           {isCouple
-            ? `Each of ${clientName} and ${spouseName || 'the spouse'} fills in their own statement individually. Entries stay here until you explicitly Apply a section; nothing touches the live Financials data on its own.`
+            ? (both
+                ? `One link and one password for ${clientName} and ${spouseName || 'the spouse'}. Either of them can fill in both statements, and each person is saved and submitted separately. Entries stay here until you explicitly Apply a section; nothing touches the live Financials data on its own.`
+                : `Each of ${clientName} and ${spouseName || 'the spouse'} fills in their own statement individually. Entries stay here until you explicitly Apply a section; nothing touches the live Financials data on its own.`)
             : `Generates a password-protected link where ${clientName} fills in their own income, expenses, assets, properties and liabilities for a chosen year.`}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -724,14 +803,16 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
           <input type="text" value={genPassword} onChange={e => setGenPassword(e.target.value)} placeholder="Link password"
             className="text-sm outline-none" style={{ flex: 1, minWidth: 200, height: 42, padding: '0 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'white', color: 'var(--ink)' }} />
           <button style={{ border: 'none', borderRadius: 12, background: 'var(--gold)', color: 'white', fontSize: 14, fontWeight: 600, padding: '13px 22px', cursor: genBusy ? 'default' : 'pointer', opacity: genBusy ? 0.7 : 1 }} disabled={genBusy} onClick={generateLink}>
-            {genBusy ? 'Working…' : rows.some(r => r.year === genYear && r.person === genPerson) ? `Update ${personLabel(genPerson)}'s ${genYear} Link` : `Create ${personLabel(genPerson)}'s ${genYear} Link`}
+            {genBusy ? 'Working…'
+              : both ? `${rows.some(r => r.year === genYear) ? 'Update' : 'Create'} ${genYear} Couple Link`
+              : rows.some(r => r.year === genYear && r.person === genPerson) ? `Update ${personLabel(genPerson)}'s ${genYear} Link` : `Create ${personLabel(genPerson)}'s ${genYear} Link`}
           </button>
         </div>
         <div style={{ marginTop: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink3)' }}>Password hint · shown to the client on the password screen</label>
-            {genHint !== DEFAULT_STATEMENT_HINT && (
-              <button type="button" onClick={() => setGenHint(DEFAULT_STATEMENT_HINT)}
+            {genHint !== (both ? coupleHint : DEFAULT_STATEMENT_HINT) && (
+              <button type="button" onClick={() => setGenHint(both ? coupleHint : DEFAULT_STATEMENT_HINT)}
                 style={{ border: 'none', background: 'none', color: 'var(--gold-tag)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>Reset to default</button>
             )}
           </div>
@@ -758,9 +839,15 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
             </select>
           </div>
         )}
-        {rows.some(r => r.year === genYear && r.person === genPerson) && (
+        {both && rows.some(r => r.year === genYear) && (
+          <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10 }}>
+            A {genYear} statement already exists — this updates the password/expiry on the same URLs and puts both people under one couple link. Their entered data is kept.
+          </div>
+        )}
+        {!both && rows.some(r => r.year === genYear && r.person === genPerson) && (
           <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 10 }}>
             A {genYear} statement for {personLabel(genPerson)} already exists — this updates its password/expiry on the same URL. Their entered data is kept.
+            {rows.find(r => r.year === genYear && r.person === genPerson)?.couple_id && ' It is part of a couple link, so the password and expiry change for both people.'}
           </div>
         )}
         {genError && <div style={{ fontSize: 12, color: '#B04A4A', marginTop: 8 }}>{genError}</div>}
@@ -796,7 +883,13 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
       ) : years.map(year => (
         <div key={year} style={{ marginBottom: 8 }}>
           <div className="font-serif" style={{ fontSize: 22, color: 'var(--ink)', margin: '4px 0 10px' }}>{year}</div>
-          {rows.filter(r => r.year === year).sort((a, b) => a.person === 'client' ? -1 : 1).map(renderStatementCard)}
+          {(() => {
+            const seenCouples = new Set<string>()
+            return rows.filter(r => r.year === year).sort((a, b) => a.person === 'client' ? -1 : 1).map(r => {
+              const strip = r.couple_id && !seenCouples.has(r.couple_id) ? (seenCouples.add(r.couple_id), renderCoupleStrip(r.couple_id, year)) : null
+              return <React.Fragment key={r.id}>{strip}{renderStatementCard(r)}</React.Fragment>
+            })
+          })()}
         </div>
       ))}
     </div>

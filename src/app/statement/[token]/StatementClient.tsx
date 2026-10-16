@@ -199,7 +199,7 @@ function SubtotalStrip({ label, value }: { label: string; value: number }) {
   )
 }
 
-function PasswordGate({ hint, firm, year, personName, onUnlock, error, busy }: {
+export function PasswordGate({ hint, firm, year, personName, onUnlock, error, busy }: {
   hint: string; firm: string; year: number | null; personName: string
   onUnlock: (pw: string) => void; error: string; busy: boolean
 }) {
@@ -239,7 +239,7 @@ function PasswordGate({ hint, firm, year, personName, onUnlock, error, busy }: {
   )
 }
 
-function CenteredNotice({ title, body, firm }: { title: string; body: string; firm: string }) {
+export function CenteredNotice({ title, body, firm }: { title: string; body: string; firm: string }) {
   return (
     <div style={{ minHeight: '100vh', background: '#1C1A17', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Inter,sans-serif' }}>
       <div style={{ textAlign: 'center', maxWidth: 420 }}>
@@ -255,9 +255,19 @@ function CenteredNotice({ title, body, firm }: { title: string; body: string; fi
 
 type Phase = 'loading' | 'gate' | 'form' | 'expired' | 'notfound'
 
-export default function StatementPage() {
+// Optional props are used only when this form sits inside the couple link page
+// (/statement/couple/[cid]). On its own (/statement/[token]) it is called with none and behaves as before.
+export interface StatementPageProps {
+  tokenProp?: string                                   // use this person's token instead of the URL's
+  presetPassword?: string                              // password already checked by the couple page: unlock automatically
+  embedded?: boolean                                   // no top bar, compact notices
+  topSlot?: React.ReactNode                            // shown above the heading (the couple page's person switcher)
+  onInfo?: (info: { status: 'draft' | 'submitted'; started: boolean }) => void
+}
+
+export default function StatementPage({ tokenProp, presetPassword, embedded, topSlot, onInfo }: StatementPageProps = {}) {
   const params = useParams<{ token: string }>()
-  const token = params?.token || ''
+  const token = tokenProp || params?.token || ''
   const toast = useToast()
   const confirmAction = useConfirm()
 
@@ -351,6 +361,23 @@ export default function StatementPage() {
     }
   }
 
+  // Couple link: the couple page already checked the password, so open this person's form straight away.
+  const autoTried = useRef(false)
+  useEffect(() => {
+    if (phase === 'gate' && presetPassword && !autoTried.current) { autoTried.current = true; unlock(presetPassword) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, presetPassword])
+
+  // Tell the couple page how this person is getting on (for the chips on the person switcher).
+  const infoStarted = useMemo(() => {
+    if (status === 'submitted' || lastSaved) return true
+    return JSON.stringify(data) !== JSON.stringify(baseline || emptyStatementData())
+  }, [data, baseline, status, lastSaved])
+  useEffect(() => {
+    if (phase === 'form') onInfo?.({ status, started: infoStarted })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, status, infoStarted])
+
   // Growth card: only once the statement is submitted. Failure just hides the card.
   useEffect(() => {
     if (phase !== 'form' || status !== 'submitted' || !passwordRef.current) return
@@ -385,7 +412,7 @@ export default function StatementPage() {
         return
       }
       setAckErr(false)
-      if (!await confirmAction(`Submit your ${year} financial statement? Once submitted, it becomes final and can no longer be edited.`, { confirmLabel: 'Submit' })) return
+      if (!await confirmAction(`Submit ${embedded && personName ? personName + '\u2019s' : 'your'} ${year} financial statement? Once submitted, it becomes final and can no longer be edited.`, { confirmLabel: 'Submit' })) return
     }
     setSaving(true); setSaveErr('')
     try {
@@ -526,6 +553,14 @@ export default function StatementPage() {
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  if (embedded) {
+    // Inside the couple page: small inline messages instead of full-screen ones.
+    const note = (t: string) => <div style={{ padding: '40px 20px', textAlign: 'center', fontSize: 13, color: '#6B665E', fontFamily: 'Inter,sans-serif' }}>{topSlot}{t}</div>
+    if (phase === 'loading') return note('Preparing the statement…')
+    if (phase === 'notfound') return note('This statement could not be found. Please check with your advisor.')
+    if (phase === 'expired') return note('This person\u2019s link has expired. Please contact your advisor to request a new one.')
+    if (phase === 'gate') return note(unlocking || !pwError ? 'Opening the statement…' : 'We could not open this statement with that password. Please ask your advisor.')
+  }
   if (phase === 'loading') return <CenteredNotice firm={firm} title="Loading…" body="Preparing your financial statement." />
   if (phase === 'notfound') return <CenteredNotice firm={firm} title="Link Not Found" body="This link is invalid or has been removed. Please check with your advisor for a new link." />
   if (phase === 'expired') return <CenteredNotice firm={firm} title="Link Expired" body="This link has expired. Please contact your advisor to request a new one." />
@@ -538,12 +573,15 @@ export default function StatementPage() {
     <div className="st-body">
       <style>{STATEMENT_CSS}</style>
 
-      <div className="st-topbar">
-        <div className="brand">BESPOKE <span>CAPITAL</span></div>
-        <div className="tb-right">{firm}</div>
-      </div>
+      {!embedded && (
+        <div className="st-topbar">
+          <div className="brand">BESPOKE <span>CAPITAL</span></div>
+          <div className="tb-right">{firm}</div>
+        </div>
+      )}
 
       <div className="st-wrap">
+        {topSlot}
         <div className="st-hero">
           <div className="eyebrow">Financial Statement</div>
           <h1>{personName ? `${personName}\u2019s ${year} Financial Statement` : `Your ${year} Financial Statement`}</h1>
@@ -561,7 +599,7 @@ export default function StatementPage() {
         {locked && <GrowthClientView points={growth} submittedAt={submittedAt} />}
 
         <div className={`st-id-block ${locked ? 'st-locked' : ''}`} ref={idBlockRef}>
-          <div className="st-id-title">YOUR DETAILS <span className="st-req-tag">Required</span></div>
+          <div className="st-id-title">{embedded && personName ? `${personName.toUpperCase()}\u2019S DETAILS` : 'YOUR DETAILS'} <span className="st-req-tag">Required</span></div>
           <div className="st-field-row">
             <div className="st-field">
               <label>Name <span className="st-star">*</span></label>
@@ -894,7 +932,7 @@ export default function StatementPage() {
         {!locked && (
           <div className="btns">
             <button className="b-save" disabled={saving} onClick={() => persist('save')}>{saving ? 'Saving…' : 'Save & Continue Later'}</button>
-            <button className="b-submit" disabled={saving} onClick={() => persist('submit')}>Submit Statement →</button>
+            <button className="b-submit" disabled={saving} onClick={() => persist('submit')}>{embedded && personName ? `Submit ${personName}\u2019s Statement →` : 'Submit Statement →'}</button>
           </div>
         )}
       </div>
