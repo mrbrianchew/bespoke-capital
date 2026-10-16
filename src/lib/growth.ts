@@ -93,7 +93,7 @@ function annualTakeHome(p: Rec, age: number, cfg: HistConfig): number {
 
 // ── Property loan balance as at the record's month ─────────────────────────────
 
-function outstandingAt(prop: Rec, asAt: string): number {
+export function outstandingAt(prop: Rec, asAt: string): number {
   if (num(prop.outstanding) > 0) return num(prop.outstanding)
   const loan = num(prop.initialLoanAmount)
   const rate = num(prop.interestRate)

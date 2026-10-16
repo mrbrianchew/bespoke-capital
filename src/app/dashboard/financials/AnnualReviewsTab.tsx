@@ -24,6 +24,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useConfirm } from '@/components/ConfirmDialog'
 import GrowthPanel from './GrowthPanel'
+import ReviewInsights from './ReviewInsights'
 import { replaceVersionWithPlan } from '@/lib/replaceVersion'
 
 type Kind = 'initial' | 'review' | 'earlier'
@@ -333,6 +334,7 @@ export default function AnnualReviewsTab({ clientId, ff, userId, viewingId, onOp
       )}
 
       {/* ---------- Growth (real figures from saved records) ---------- */}
+      {!loading && rows.length > 0 && <ReviewInsights clientId={clientId} refreshKey={rows.map(r => `${r.id}:${r.as_at}`).join('|')} live={ff} />}
       {!loading && rows.length > 0 && <GrowthPanel clientId={clientId} refreshKey={rows.map(r => `${r.id}:${r.as_at}`).join('|')} live={ff} onSaveNow={saveNow} busy={busy} />}
 
       {/* ---------- Save annual review ---------- */}
