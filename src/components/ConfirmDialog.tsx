@@ -26,6 +26,8 @@ type ConfirmOptions = {
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
+  /** When set, the confirm button stays disabled until this word is typed (case-insensitive). */
+  requireText?: string
 }
 
 type ConfirmFn = (message: string, options?: ConfirmOptions) => Promise<boolean>
@@ -40,9 +42,11 @@ type PendingState = {
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [pending, setPending] = useState<PendingState | null>(null)
+  const [typed, setTyped] = useState('')
 
   const confirmAction: ConfirmFn = useCallback((message, options = {}) => {
     return new Promise<boolean>(resolve => {
+      setTyped('')
       setPending({ message, options, resolve })
     })
   }, [])
@@ -51,6 +55,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     if (pending) pending.resolve(value)
     setPending(null)
   }
+  const need = pending?.options.requireText
+  const blocked = !!need && typed.trim().toUpperCase() !== need.toUpperCase()
 
   return (
     <ConfirmContext.Provider value={confirmAction}>
@@ -94,6 +100,17 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             <div style={{ fontSize: 14, color: 'var(--ink2)', lineHeight: 1.5, marginBottom: 20 }}>
               {pending.message}
             </div>
+            {need && (
+              <input
+                autoFocus
+                value={typed}
+                onChange={e => setTyped(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !blocked) close(true) }}
+                placeholder={`Type ${need}`}
+                aria-label={`Type ${need} to confirm`}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: 16, border: '1px solid var(--line2)', borderRadius: 8, background: '#fff', color: 'var(--ink)', fontSize: 14 }}
+              />
+            )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => close(false)}
@@ -110,6 +127,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 {pending.options.cancelLabel || 'Cancel'}
               </button>
               <button
+                disabled={blocked}
                 onClick={() => close(true)}
                 style={{
                   padding: '8px 16px',
@@ -118,7 +136,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                   background: pending.options.danger ? 'var(--rouge)' : 'var(--emerald)',
                   color: '#fff',
                   fontSize: 13,
-                  cursor: 'pointer',
+                  cursor: blocked ? 'not-allowed' : 'pointer',
+                  opacity: blocked ? 0.45 : 1,
                 }}
               >
                 {pending.options.confirmLabel || 'Confirm'}

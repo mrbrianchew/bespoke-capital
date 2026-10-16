@@ -376,6 +376,27 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
     await load()
   }
 
+  // Removes the statement row. Its Apply history goes with it (database cascade), so Revert is lost.
+  // Plan and saved records are never touched. A submitted statement needs DELETE typed.
+  async function deleteStatement(row: StatementRow) {
+    const submitted = row.status === 'submitted'
+    const applied = SECTION_LIST.filter(s => latestLog(row.id, s.id)).map(s => s.label)
+    if (!await confirmAction(
+      `Delete ${personLabel(row.person)}'s ${row.year} statement? The link stops working and what was entered is removed for good. The plan and saved records are not changed.`
+      + (applied.length ? ` You already applied ${applied.join(', ')} from it. Those figures stay in the plan, but you can no longer revert them.` : '')
+      + (submitted ? ' The client submitted this one, so type DELETE to confirm.' : ''),
+      { title: 'Delete statement?', confirmLabel: 'Delete', danger: true, ...(submitted ? { requireText: 'DELETE' } : {}) },
+    )) return
+    setBusy(`delete:${row.id}`)
+    // Matching the status I showed means a draft the client has just submitted is not deleted by surprise.
+    const { data, error } = await supabase.from('financial_statements').delete().eq('id', row.id).eq('status', row.status).select('id')
+    setBusy('')
+    if (error || !data || data.length === 0) { console.error(error); flash('Could not delete. Nothing was changed. If the client just submitted, refresh and try again.'); await load(); return }
+    if (openId === row.id) setOpenId(null)
+    flash(`${personLabel(row.person)}'s ${row.year} statement deleted.`)
+    await load()
+  }
+
   const monthNow = currentMonthStartSG()
   const monthLabel = (asAt: string) => new Date(asAt + 'T00:00:00').toLocaleDateString('en-SG', { month: 'long', year: 'numeric' })
   const latestVer = versions[0]
@@ -656,6 +677,7 @@ export default function SnapshotsTab({ clientId, clientName, spouseName, isCoupl
             {row.status === 'submitted' && <button style={btnSm} disabled={busy === `reopen:${row.id}`} onClick={() => reopenStatement(row)}>{busy === `reopen:${row.id}` ? 'Reopening…' : 'Reopen for changes'}</button>}
             {!expired && <button style={btnSm} disabled={busy === `expire:${row.id}`} onClick={() => expireNow(row)}>Expire Now</button>}
             <button style={btnSm} onClick={() => setOpenId(open ? null : row.id)}>{open ? 'Hide Details' : 'View Details'}</button>
+            <button style={{ ...btnSm, color: '#B04A4A', borderColor: '#E3CACA' }} disabled={busy === `delete:${row.id}`} onClick={() => deleteStatement(row)}>{busy === `delete:${row.id}` ? 'Deleting…' : 'Delete'}</button>
           </div>
         </div>
         <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 6 }}>
