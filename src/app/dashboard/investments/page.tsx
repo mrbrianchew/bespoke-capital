@@ -9,6 +9,8 @@ import { buildPayoutMarkers, createPayoutMarkerPlugin, ownerToClientAge, payoutP
 import { Chart, registerables } from 'chart.js'
 import MonthInput from '@/components/MonthInput'
 import { useConfirm } from '@/components/ConfirmDialog'
+import { ENDOWMENT_FREQS, calcEndowment, endowmentPaidFlows, endowmentPremiumsInYear, endowmentTermsError, termsFromVehicle } from '@/lib/endowment'
+import type { EndowmentFreq } from '@/lib/endowment'
 Chart.register(...registerables)
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -45,7 +47,14 @@ interface FundingVehicle {
   cpfPayoutStartAge?: number
   endowmentMaturityValue?: number
   endowmentMaturityYear?: number
-  endowmentPremium?: number
+  endowmentPremium?: number            // monthly equivalent. Older code reads this, so it is always kept up to date
+  endowmentStartMonth?: string         // YYYY-MM
+  endowmentMaturityMonth?: string      // YYYY-MM
+  endowmentPremiumEndMonth?: string    // YYYY-MM, first month with no premium. Blank = maturity month
+  endowmentFreq?: EndowmentFreq
+  endowmentPremiumPerPayment?: number
+  endowmentGuaranteedValue?: number
+  endowmentNonGuaranteedValue?: number
   annuityMonthlyIncome?: number
   annuityStartAge?: number
   annuityGuaranteeYears?: number
@@ -355,9 +364,14 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [cpfScheme, setCpfScheme] = useState<'BRS' | 'FRS' | 'ERS'>(item?.cpfScheme ?? 'FRS')
   const [cpfPayout, setCpfPayout] = useState(String(item?.cpfMonthlyPayout ?? ''))
   const [cpfStartAge, setCpfStartAge] = useState(item?.cpfPayoutStartAge ?? 65)
-  const [endMatVal, setEndMatVal] = useState(String(item?.endowmentMaturityValue ?? ''))
-  const [endMatYear, setEndMatYear] = useState(item?.endowmentMaturityYear ?? new Date().getFullYear() + 10)
-  const [endPremium, setEndPremium] = useState(String(item?.endowmentPremium ?? ''))
+  const [endStartMonth, setEndStartMonth] = useState(item?.endowmentStartMonth ?? '')
+  const [endMatMonth, setEndMatMonth] = useState(item?.endowmentMaturityMonth ?? '')
+  const [endPremEndMonth, setEndPremEndMonth] = useState(item?.endowmentPremiumEndMonth ?? '')
+  const [endFreq, setEndFreq] = useState<EndowmentFreq>(item?.endowmentFreq ?? 'monthly')
+  // Older records only have a monthly premium, so that is what the box starts with
+  const [endPremium, setEndPremium] = useState(String(item?.endowmentPremiumPerPayment ?? item?.endowmentPremium ?? ''))
+  const [endGuar, setEndGuar] = useState(String(item?.endowmentGuaranteedValue ?? ''))
+  const [endNonGuar, setEndNonGuar] = useState(String(item?.endowmentNonGuaranteedValue ?? ''))
   const [annuityIncome, setAnnuityIncome] = useState(String(item?.annuityMonthlyIncome ?? ''))
   const [annuityStartAge, setAnnuityStartAge] = useState(item?.annuityStartAge ?? 65)
   const [annuityGuarantee, setAnnuityGuarantee] = useState(item?.annuityGuaranteeYears ?? 10)
@@ -410,6 +424,21 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   useEffect(() => {
     if ((vehicleType === 'srs' || vehicleType === 'cpf_life') && owner === 'joint') setOwner('client')
   }, [vehicleType])
+
+  // Endowment: live numbers for the form, reused by save()
+  const endPerPay = parseFloat(endPremium) || 0
+  const endMonthlyEq = (endPerPay * (ENDOWMENT_FREQS.find(f => f.value === endFreq)?.perYear ?? 12)) / 12
+  const endTermsErr = vehicleType === 'endowment'
+    ? endowmentTermsError({ startMonth: endStartMonth, maturityMonth: endMatMonth, premiumEndMonth: endPremEndMonth })
+    : null
+  const endCalc = vehicleType === 'endowment' && !endTermsErr
+    ? calcEndowment({
+        startMonth: endStartMonth, maturityMonth: endMatMonth, premiumEndMonth: endPremEndMonth || undefined,
+        freq: endFreq, premium: endPerPay,
+        guaranteed: parseFloat(endGuar) || 0, nonGuaranteed: parseFloat(endNonGuar) || 0,
+        surrenderValue: parseFloat(curVal) || 0, asOfMonth: valueAsOfMonth || undefined,
+      })
+    : null
 
   function addCashflow() {
     if (!cfDate) return
@@ -498,26 +527,55 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
         if (savedTotalContributed > 0) savedAnnualizedReturn = Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(yearsHeldS, 0.1)) - 1
       }
     } else if (vehicleType === 'endowment') {
-      const endPrem = parseFloat(endPremium) || 0
-      const startYearEnd = item?.startYear || new Date().getFullYear()
-      const yearsHeldE = new Date().getFullYear() - startYearEnd
-      if (yearsHeldE > 0 && currentValNum > 0 && endPrem > 0) {
-        savedTotalContributed = endPrem * yearsHeldE * 12
-        savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(yearsHeldE, 0.1)) - 1 : null
+      if (endCalc) {
+        // New way: real premium dates, XIRR-style. "Current IRR" is the headline return.
+        savedAnnualizedReturn = endCalc.currentIrr
+        savedTotalContributed = endCalc.premiumsPaid
+      } else {
+        // Dates not filled in yet (older record): keep the old estimate exactly as before
+        const startYearEnd = item?.startYear || new Date().getFullYear()
+        const yearsHeldE = new Date().getFullYear() - startYearEnd
+        if (yearsHeldE > 0 && currentValNum > 0 && endMonthlyEq > 0) {
+          savedTotalContributed = endMonthlyEq * yearsHeldE * 12
+          savedAnnualizedReturn = savedTotalContributed > 0 ? Math.pow(currentValNum / savedTotalContributed, 1 / Math.max(yearsHeldE, 0.1)) - 1 : null
+        }
       }
     }
+    // Endowment fields. Other vehicle types keep whatever they already had.
+    const guarNum = parseFloat(endGuar) || 0
+    const nonGuarNum = parseFloat(endNonGuar) || 0
+    const endFields: Partial<FundingVehicle> = vehicleType === 'endowment'
+      ? {
+          // Older projected value is kept until guaranteed / non-guaranteed are filled in
+          endowmentMaturityValue: guarNum > 0 || nonGuarNum > 0 ? guarNum + nonGuarNum : (item?.endowmentMaturityValue ?? 0),
+          endowmentMaturityYear: endMatMonth ? parseInt(endMatMonth.slice(0, 4), 10) : (item?.endowmentMaturityYear ?? new Date().getFullYear() + 10),
+          endowmentPremium: endMonthlyEq,
+          endowmentStartMonth: endStartMonth,
+          endowmentMaturityMonth: endMatMonth,
+          endowmentPremiumEndMonth: endPremEndMonth,
+          endowmentFreq: endFreq,
+          endowmentPremiumPerPayment: endPerPay,
+          endowmentGuaranteedValue: guarNum,
+          endowmentNonGuaranteedValue: nonGuarNum,
+        }
+      : {
+          endowmentMaturityValue: item?.endowmentMaturityValue ?? 0,
+          endowmentMaturityYear: item?.endowmentMaturityYear ?? new Date().getFullYear() + 10,
+          endowmentPremium: item?.endowmentPremium ?? 0,
+        }
     onSave({
       id: item?.id ?? newId(),
       name: name.trim(), vehicleType, owner, mode,
       currentValue: parseFloat(curVal) || 0,
       monthlyContribution: parseFloat(monthly) || 0,
-      expectedReturn: ret, startYear,
+      expectedReturn: ret,
+      startYear: vehicleType === 'endowment' && endStartMonth ? parseInt(endStartMonth.slice(0, 4), 10) : startYear,
       startMonth, endMonth, valueAsOfMonth,
       annualizedReturn: savedAnnualizedReturn,
       totalContributed: savedTotalContributed,
       totalWithdrawn: savedTotalWithdrawn,
       cpfScheme, cpfMonthlyPayout: parseFloat(cpfPayout) || 0, cpfPayoutStartAge: cpfStartAge,
-      endowmentMaturityValue: parseFloat(endMatVal) || 0, endowmentMaturityYear: endMatYear, endowmentPremium: parseFloat(endPremium) || 0,
+      ...endFields,
       annuityMonthlyIncome: parseFloat(annuityIncome) || 0, annuityStartAge, annuityGuaranteeYears: annuityGuarantee,
       rentalMonthlyNet: parseFloat(rentalNet) || 0, rentalStopAge: rentalStop,
       srsAnnualContribution: parseFloat(srsAnnual) || 0, srsIsRegular,
@@ -606,30 +664,112 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
               </>
             )}
 
-            {vehicleType === 'endowment' && (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Monthly Premium (S$)</div>
-                    <input type="number" style={inp} value={endPremium} onChange={e => setEndPremium(e.target.value)} placeholder="0" />
+            {vehicleType === 'endowment' && (() => {
+              const lbl: React.CSSProperties = { fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }
+              const hint: React.CSSProperties = { fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 4 }
+              const now0 = new Date()
+              const thisMonth = now0.getFullYear() + '-' + String(now0.getMonth() + 1).padStart(2, '0')
+              const guarNum = parseFloat(endGuar) || 0
+              const nonGuarNum = parseFloat(endNonGuar) || 0
+              const legacyTotal = item?.endowmentMaturityValue || 0
+              const pct = (r: number | null | undefined) => (r == null ? '—' : (r * 100).toFixed(2) + '%')
+              const tiles: { label: string; value: string; sub: string }[] = [
+                { label: 'Current IRR', value: pct(endCalc?.currentIrr), sub: endCalc && endCalc.paymentsMade > 0
+                  ? (endCalc.monthsHeld < 12 ? 'Held under a year, not meaningful yet' : `If surrendered now · ${endCalc.paymentsMade} of ${endCalc.paymentsTotal} premiums paid`)
+                  : 'Needs a surrender value and a started policy' },
+                { label: 'Guaranteed IRR', value: pct(endCalc?.guaranteedIrr), sub: guarNum > 0 ? `Per year, guaranteed only (${fmt(guarNum)})` : 'Enter the guaranteed maturity value' },
+                { label: 'Total IRR', value: pct(endCalc?.totalIrr), sub: guarNum + nonGuarNum > 0 ? `Per year, with projected bonus (${fmt(guarNum + nonGuarNum)})` : 'Enter the maturity values' },
+              ]
+              return (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={lbl}>Policy Start (mm/yyyy)</div>
+                      <MonthInput value={endStartMonth} onChange={setEndStartMonth} max={thisMonth} style={inp} />
+                    </div>
+                    <div>
+                      <div style={lbl}>Policy Maturity (mm/yyyy)</div>
+                      <MonthInput value={endMatMonth} onChange={setEndMatMonth} min={endStartMonth || undefined} style={inp} />
+                    </div>
                   </div>
+
                   <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Current Surrender Value (S$)</div>
-                    <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                    <div style={lbl}>Premium Frequency</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {ENDOWMENT_FREQS.map(f => (
+                        <button key={f.value} type="button" onClick={() => setEndFreq(f.value)} style={{ padding: '8px 14px', border: '1px solid var(--line)', borderRadius: 8, cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, fontWeight: 500, background: endFreq === f.value ? 'var(--ink)' : 'white', color: endFreq === f.value ? 'white' : 'var(--ink3)', transition: 'all 0.15s' }}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Projected Maturity Value (S$)</div>
-                    <input type="number" style={inp} value={endMatVal} onChange={e => setEndMatVal(e.target.value)} placeholder="0" />
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={lbl}>Premium Per Payment (S$)</div>
+                      <input type="number" style={inp} value={endPremium} onChange={e => setEndPremium(e.target.value)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div style={lbl}>Premiums End (mm/yyyy)</div>
+                      <MonthInput value={endPremEndMonth} onChange={setEndPremEndMonth} min={endStartMonth || undefined} max={endMatMonth || undefined} placeholder="Same as maturity" style={inp} />
+                      <div style={hint}>Leave blank if premiums run until maturity. For a 5-pay, 10-year plan, enter the month after the last premium.</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>Maturity Year</div>
-                    <input type="number" style={inp} value={endMatYear} onChange={e => setEndMatYear(parseInt(e.target.value) || new Date().getFullYear() + 10)} />
+
+                  {endTermsErr && <div style={{ fontFamily: 'Inter', fontSize: 11, color: '#E08080' }}>{endTermsErr}</div>}
+                  {endCalc && (
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
+                      {endCalc.paymentsTotal} payment{endCalc.paymentsTotal !== 1 ? 's' : ''} · {fmt(endCalc.totalPremiums)} total premiums · {fmt(endCalc.premiumsPaid)} paid so far
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={lbl}>Current Surrender Value (S$)</div>
+                      <input type="number" style={inp} value={curVal} onChange={e => setCurVal(e.target.value)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div style={lbl}>Surrender Value As At</div>
+                      <MonthInput value={valueAsOfMonth} onChange={setValueAsOfMonth} max={thisMonth} placeholder="Today" style={inp} />
+                      <div style={hint}>Blank means today.</div>
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <div style={lbl}>Guaranteed Maturity Value (S$)</div>
+                      <input type="number" style={inp} value={endGuar} onChange={e => setEndGuar(e.target.value)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div style={lbl}>Non-Guaranteed Maturity (S$)</div>
+                      <input type="number" style={inp} value={endNonGuar} onChange={e => setEndNonGuar(e.target.value)} placeholder="0" />
+                      <div style={hint}>Projected bonus part only. Not promised by the insurer.</div>
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
+                    Total at maturity: {fmt(guarNum + nonGuarNum)}
+                  </div>
+                  {guarNum === 0 && nonGuarNum === 0 && legacyTotal > 0 && (
+                    <div style={{ background: '#F8F1E4', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#7A5F2E' }}>
+                      The earlier projected maturity value of {fmt(legacyTotal)} is still used in the retirement projection until you fill in the two boxes above.
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                    {tiles.map(t => (
+                      <div key={t.label} style={{ background: 'white', border: '1px solid var(--line)', borderRadius: 10, padding: '12px 14px' }}>
+                        <div style={{ fontFamily: 'Inter', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink3)', marginBottom: 6 }}>{t.label}</div>
+                        <div style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 24, color: 'var(--ink)' }}>{t.value}</div>
+                        <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 4, lineHeight: 1.4 }}>{t.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', lineHeight: 1.5 }}>
+                    IRR uses the exact premium dates, not a simple average. Current IRR is low or negative in the early years because surrender values lag premiums. That is normal.
+                  </div>
+                </>
+              )
+            })()}
 
             {vehicleType === 'annuity' && (
               <>
@@ -1589,8 +1729,12 @@ export default function CapitalMandatePage() {
           }
         }
       } else if (p.vehicleType === 'endowment') {
+        const paidFlows = endowmentPaidFlows(p)
         const premium = p.endowmentPremium || 0
-        if (premium > 0) {
+        if (paidFlows) {
+          // New-style record: real premium dates (frequency, start, premium end)
+          paidFlows.forEach(f => allFlows.push(f))
+        } else if (premium > 0) {
           const startDate = new Date(p.startYear || new Date().getFullYear(), 0, 1)
           const iter = new Date(startDate)
           while (iter <= now) {
@@ -1669,7 +1813,8 @@ export default function CapitalMandatePage() {
               annualGrowth += p.srsAnnualContribution || 0
             }
           } else if (p.vehicleType === 'endowment') {
-            annualGrowth += (p.endowmentPremium || 0) * 12
+            // New-style records stop paying at the premium end month; older ones keep the old monthly x 12
+            annualGrowth += endowmentPremiumsInYear(p, currentYear + (a - clientAge)) ?? (p.endowmentPremium || 0) * 12
           } else if (p.vehicleType === 'annuity') {
             annualGrowth += (p.monthlyContribution || 0) * 12
           } else if (p.vehicleType === 'investment' || p.vehicleType === 'other') {
@@ -2886,7 +3031,13 @@ export default function CapitalMandatePage() {
                         </div>
                         <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
                           {p.vehicleType === 'cpf_life' && `${p.cpfScheme} · S$${(p.cpfMonthlyPayout || 0).toLocaleString('en-SG')}/mo from age ${p.cpfPayoutStartAge}`}
-                          {p.vehicleType === 'endowment' && `Premium S$${(p.endowmentPremium || 0).toLocaleString('en-SG')}/mo · Maturity ${p.endowmentMaturityYear}: ${fmt(p.endowmentMaturityValue || 0)}`}
+                          {p.vehicleType === 'endowment' && (() => {
+                            const t = termsFromVehicle(p)
+                            if (!t) return `Premium S$${(p.endowmentPremium || 0).toLocaleString('en-SG')}/mo · Maturity ${p.endowmentMaturityYear}: ${fmt(p.endowmentMaturityValue || 0)}`
+                            const f = ENDOWMENT_FREQS.find(x => x.value === t.freq)
+                            const [my, mm] = t.maturityMonth.split('-')
+                            return `S$${t.premium.toLocaleString('en-SG')} ${(f?.label ?? 'monthly').toLowerCase()} · Maturity ${mm}/${my}: ${fmt(t.guaranteed + t.nonGuaranteed || p.endowmentMaturityValue || 0)}`
+                          })()}
                           {p.vehicleType === 'annuity' && `S$${(p.annuityMonthlyIncome || 0).toLocaleString('en-SG')}/mo from age ${p.annuityStartAge} · ${p.annuityGuaranteeYears}yr guarantee`}
                           {p.vehicleType === 'rental' && `Net S$${(p.rentalMonthlyNet || 0).toLocaleString('en-SG')}/mo until age ${p.rentalStopAge}`}
                          {p.vehicleType === 'srs' && (() => {
@@ -2907,6 +3058,13 @@ export default function CapitalMandatePage() {
                             return `${displayMonthly > 0 ? fmtMo(displayMonthly) : '—'} · ${fmt(p.currentValue)} · ${p.expectedReturn}% p.a.`
                           })()}
                         </div>
+                        {p.vehicleType === 'endowment' && (() => {
+                          const t = termsFromVehicle(p)
+                          const r = t ? calcEndowment(t) : null
+                          if (!r || (r.guaranteedIrr == null && r.totalIrr == null)) return null
+                          const pc = (x: number | null) => (x == null ? '—' : (x * 100).toFixed(2) + '%')
+                          return <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: 'var(--ink3)', marginTop: 3 }}>IRR at maturity · guaranteed {pc(r.guaranteedIrr)} · incl. non-guaranteed {pc(r.totalIrr)}</div>
+                        })()}
                         {(p.cashflows?.length || 0) > 0 && (
                           <div style={{ fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 3 }}>{p.cashflows.length} cashflow event{p.cashflows.length !== 1 ? 's' : ''} recorded</div>
                         )}
