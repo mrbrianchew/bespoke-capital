@@ -372,6 +372,14 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const [endPremium, setEndPremium] = useState(String(item?.endowmentPremiumPerPayment ?? item?.endowmentPremium ?? ''))
   const [endGuar, setEndGuar] = useState(String(item?.endowmentGuaranteedValue ?? ''))
   const [endNonGuar, setEndNonGuar] = useState(String(item?.endowmentNonGuaranteedValue ?? ''))
+  // Display-only switch: type the non-guaranteed part, or type the total from the illustration.
+  // What gets saved is always guaranteed + non-guaranteed, so nothing stored changes.
+  const [endTotalMode, setEndTotalMode] = useState(true)
+  const [endTotal, setEndTotal] = useState(
+    (item?.endowmentGuaranteedValue || item?.endowmentNonGuaranteedValue)
+      ? String(Math.round(((item?.endowmentGuaranteedValue ?? 0) + (item?.endowmentNonGuaranteedValue ?? 0)) * 100) / 100)
+      : ''
+  )
   const [annuityIncome, setAnnuityIncome] = useState(String(item?.annuityMonthlyIncome ?? ''))
   const [annuityStartAge, setAnnuityStartAge] = useState(item?.annuityStartAge ?? 65)
   const [annuityGuarantee, setAnnuityGuarantee] = useState(item?.annuityGuaranteeYears ?? 10)
@@ -431,11 +439,14 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
   const endTermsErr = vehicleType === 'endowment'
     ? endowmentTermsError({ startMonth: endStartMonth, maturityMonth: endMatMonth, premiumEndMonth: endPremEndMonth })
     : null
+  const endGuarNum = parseFloat(endGuar) || 0
+  const endTotalNum = parseFloat(endTotal) || 0
+  const endNonGuarNum = endTotalMode ? Math.max(0, endTotalNum - endGuarNum) : (parseFloat(endNonGuar) || 0)
   const endCalc = vehicleType === 'endowment' && !endTermsErr
     ? calcEndowment({
         startMonth: endStartMonth, maturityMonth: endMatMonth, premiumEndMonth: endPremEndMonth || undefined,
         freq: endFreq, premium: endPerPay,
-        guaranteed: parseFloat(endGuar) || 0, nonGuaranteed: parseFloat(endNonGuar) || 0,
+        guaranteed: endGuarNum, nonGuaranteed: endNonGuarNum,
         surrenderValue: parseFloat(curVal) || 0, asOfMonth: valueAsOfMonth || undefined,
       })
     : null
@@ -542,8 +553,8 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       }
     }
     // Endowment fields. Other vehicle types keep whatever they already had.
-    const guarNum = parseFloat(endGuar) || 0
-    const nonGuarNum = parseFloat(endNonGuar) || 0
+    const guarNum = endGuarNum
+    const nonGuarNum = endNonGuarNum
     const endFields: Partial<FundingVehicle> = vehicleType === 'endowment'
       ? {
           // Older projected value is kept until guaranteed / non-guaranteed are filled in
@@ -669,8 +680,10 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
               const hint: React.CSSProperties = { fontFamily: 'Inter', fontSize: 10, color: 'var(--ink3)', marginTop: 4 }
               const now0 = new Date()
               const thisMonth = now0.getFullYear() + '-' + String(now0.getMonth() + 1).padStart(2, '0')
-              const guarNum = parseFloat(endGuar) || 0
-              const nonGuarNum = parseFloat(endNonGuar) || 0
+              const guarNum = endGuarNum
+              const nonGuarNum = endNonGuarNum
+              const totalTooLow = endTotalMode && endTotalNum > 0 && endGuarNum > endTotalNum
+              const round2 = (n: number) => String(Math.round(n * 100) / 100)
               const legacyTotal = item?.endowmentMaturityValue || 0
               const pct = (r: number | null | undefined) => (r == null ? '—' : (r * 100).toFixed(2) + '%')
               const tiles: { label: string; value: string; sub: string }[] = [
@@ -741,14 +754,26 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                       <input type="number" style={inp} value={endGuar} onChange={e => setEndGuar(e.target.value)} placeholder="0" />
                     </div>
                     <div>
-                      <div style={lbl}>Non-Guaranteed Maturity (S$)</div>
-                      <input type="number" style={inp} value={endNonGuar} onChange={e => setEndNonGuar(e.target.value)} placeholder="0" />
-                      <div style={hint}>Projected bonus part only. Not promised by the insurer.</div>
+                      <div style={lbl}>{endTotalMode ? 'Total Projected Maturity (S$)' : 'Non-Guaranteed Maturity (S$)'}</div>
+                      {endTotalMode
+                        ? <input type="number" style={inp} value={endTotal} onChange={e => setEndTotal(e.target.value)} placeholder="0" />
+                        : <input type="number" style={inp} value={endNonGuar} onChange={e => setEndNonGuar(e.target.value)} placeholder="0" />}
+                      <div style={hint}>{endTotalMode ? 'Guaranteed plus projected bonus, as printed in the illustration.' : 'Projected bonus part only. Not promised by the insurer.'}</div>
                     </div>
                   </div>
-                  <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
-                    Total at maturity: {fmt(guarNum + nonGuarNum)}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: 'var(--ink3)' }}>
+                      {endTotalMode ? `Non-guaranteed part: ${fmt(nonGuarNum)}` : `Total at maturity: ${fmt(guarNum + nonGuarNum)}`}
+                    </div>
+                    <button type="button" onClick={() => {
+                      if (endTotalMode) setEndNonGuar(nonGuarNum > 0 ? round2(nonGuarNum) : '')
+                      else setEndTotal(guarNum + nonGuarNum > 0 ? round2(guarNum + nonGuarNum) : '')
+                      setEndTotalMode(m => !m)
+                    }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11, color: 'var(--gold)', textDecoration: 'underline', padding: 0 }}>
+                      {endTotalMode ? 'I only have the non-guaranteed part' : 'I have the total instead'}
+                    </button>
                   </div>
+                  {totalTooLow && <div style={{ fontFamily: 'Inter', fontSize: 11, color: '#E08080' }}>The total cannot be lower than the guaranteed value. Check both figures.</div>}
                   {guarNum === 0 && nonGuarNum === 0 && legacyTotal > 0 && (
                     <div style={{ background: '#F8F1E4', borderRadius: 8, padding: '10px 14px', fontFamily: 'Inter', fontSize: 11, color: '#7A5F2E' }}>
                       The earlier projected maturity value of {fmt(legacyTotal)} is still used in the retirement projection until you fill in the two boxes above.
