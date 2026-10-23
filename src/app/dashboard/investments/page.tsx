@@ -93,9 +93,20 @@ interface CMSettings {
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 // A monthly premium counts only once its month has fully elapsed (current month excluded).
-function isCompletedMonth(iter: Date, asOf: Date): boolean {
+// When the user sets "Value as of month", that month's premium is counted too (inclusive).
+function isCompletedMonth(iter: Date, asOf: Date, inclusive = false): boolean {
   const cur = asOf.getFullYear() + '-' + String(asOf.getMonth() + 1).padStart(2, '0')
-  return iter.toISOString().slice(0, 7) < cur
+  const ym = iter.toISOString().slice(0, 7)
+  return inclusive ? ym <= cur : ym < cur
+}
+
+// Date the current value is "as of": last day of the chosen month (capped at today), else today.
+function valueDateFor(valueAsOfMonth: string): Date {
+  const today = new Date()
+  if (!valueAsOfMonth) return today
+  const [y, m] = valueAsOfMonth.split('-').map(Number)
+  const eom = new Date(y, m, 0)
+  return eom < today ? eom : today
 }
 
 function fmt(n: number) {
@@ -500,7 +511,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
       const endContribDateS = endContribEventsS.length ? new Date(endContribEventsS[0].date + '-01') : null
       let activeRateS = monthlyNum; let rateIdxS = 0
       const iterS = new Date(startDate)
-      while (isCompletedMonth(iterS, now) && (!endContribDateS || iterS < endContribDateS)) {
+      while (isCompletedMonth(iterS, now, !!valueAsOfMonth) && (!endContribDateS || iterS < endContribDateS)) {
         const ym = iterS.toISOString().slice(0, 7)
         while (rateIdxS < sortedChangesS.length && sortedChangesS[rateIdxS].date <= ym) { activeRateS = sortedChangesS[rateIdxS].amount; rateIdxS++ }
         if (!holidayMonthsS.has(ym)) savedTotalContributed += activeRateS
@@ -513,14 +524,14 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
           const xf: { amount: number; date: Date }[] = []
           let xRate = monthlyNum; let xIdx = 0
           const xIter = new Date(startDate)
-          while (isCompletedMonth(xIter, now) && (!endContribDateS || xIter < endContribDateS)) {
+          while (isCompletedMonth(xIter, now, !!valueAsOfMonth) && (!endContribDateS || xIter < endContribDateS)) {
             const ym = xIter.toISOString().slice(0, 7)
             while (xIdx < sortedChangesS.length && sortedChangesS[xIdx].date <= ym) { xRate = sortedChangesS[xIdx].amount; xIdx++ }
             if (xRate > 0 && !holidayMonthsS.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
             xIter.setMonth(xIter.getMonth() + 1)
           }
           flows.forEach(cf => { const [yr, mo] = cf.date.split('-').map(Number); if (cf.type === 'top_up') xf.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) }); if (cf.type === 'withdrawal') xf.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) }) })
-          xf.push({ amount: currentValNum, date: new Date() })
+          xf.push({ amount: currentValNum, date: valueDateFor(valueAsOfMonth) })
           xf.sort((a, b) => a.date.getTime() - b.date.getTime())
           const xr = xirr(xf)
           savedAnnualizedReturn = xr !== null ? xr / 100 : null
@@ -953,7 +964,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
             {(vehicleType === 'investment' || vehicleType === 'other') && (() => {
               const currentYearMonth = new Date().toISOString().slice(0, 7)
               const startDate = startMonth ? new Date(startMonth + '-01') : null
-              const now = new Date()
+              const now = valueAsOfMonth ? new Date(valueAsOfMonth + '-01') : new Date()
               const monthsHeld = startDate ? (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth()) + 1 : 0
               const yearsHeld = monthsHeld / 12
               const currentValNum = parseFloat(curVal) || 0
@@ -975,7 +986,7 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                 if (mode === 'Regular') {
                   let activeRate = monthlyNum; let rateIdx = 0
                   const iter = new Date(startDate)
-                  while (isCompletedMonth(iter, now) && (!endContribDate || iter < endContribDate)) {
+                  while (isCompletedMonth(iter, now, !!valueAsOfMonth) && (!endContribDate || iter < endContribDate)) {
                     const ym = iter.toISOString().slice(0, 7)
                     while (rateIdx < changeEvents.length && changeEvents[rateIdx].date <= ym) { activeRate = changeEvents[rateIdx].amount; rateIdx++ }
                     if (!holidayMonths.has(ym)) totalContributed += activeRate
@@ -993,14 +1004,14 @@ function VehicleModal({ item, onSave, onClose, isCouple, clientName, spouseName,
                       const xf: { amount: number; date: Date }[] = []
                       let xRate = monthlyNum; let xIdx = 0
                       const xIter = new Date(startDate)
-                      while (isCompletedMonth(xIter, now) && (!endContribDate || xIter < endContribDate)) {
+                      while (isCompletedMonth(xIter, now, !!valueAsOfMonth) && (!endContribDate || xIter < endContribDate)) {
                         const ym = xIter.toISOString().slice(0, 7)
                         while (xIdx < changeEvents.length && changeEvents[xIdx].date <= ym) { xRate = changeEvents[xIdx].amount; xIdx++ }
                         if (xRate > 0 && !holidayMonths.has(ym)) xf.push({ amount: -xRate, date: new Date(xIter) })
                         xIter.setMonth(xIter.getMonth() + 1)
                       }
                       flows.forEach(cf => { const [yr, mo] = cf.date.split('-').map(Number); if (cf.type === 'top_up') xf.push({ amount: -cf.amount, date: new Date(yr, mo - 1, 1) }); if (cf.type === 'withdrawal') xf.push({ amount: cf.amount, date: new Date(yr, mo - 1, 1) }) })
-                      xf.push({ amount: currentValNum, date: new Date() })
+                      xf.push({ amount: currentValNum, date: valueDateFor(valueAsOfMonth) })
                       xf.sort((a, b) => a.date.getTime() - b.date.getTime())
                       const xr = xirr(xf)
                       if (xr !== null) { annualizedReturn = xr / 100; returnMethod = 'xirr' }
