@@ -236,24 +236,33 @@ export default function PremiumAlertsPage() {
 
   const editingRow = editingId ? rows.find(r => r.id === editingId) || null : null
 
+  // Load policies for every client that has an alert, so cards can show the
+  // policy line without the popup being opened first.
+  const alertClientKey = useMemo(
+    () => Array.from(new Set(rows.map(r => r.client_id).filter(Boolean))).sort().join(','),
+    [rows]
+  )
   useEffect(() => {
-    if (!editingRow) return
-    const clientId = editingRow.client_id
-    if (policiesByClient[clientId]) return
+    const missing = alertClientKey.split(',').filter(id => id && !policiesByClient[id])
+    if (missing.length === 0) return
     let cancelled = false
-    supabase.from('fact_finding').select('data').eq('client_id', clientId).eq('section', 'protection_portfolio').maybeSingle()
+    supabase.from('fact_finding').select('client_id, data').in('client_id', missing).eq('section', 'protection_portfolio')
       .then(({ data }: any) => {
         if (cancelled) return
-        const list: PolicyLite[] = (data?.data?.risk_management?.policies || []).map((p: any) => ({
-          id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
-          policyholder: p.policyholder || '',
-          premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0, premiumMode: p.premiumMode || '', inceptionDate: p.inceptionDate || '',
-        }))
-        setPoliciesByClient(prev => ({ ...prev, [clientId]: list }))
+        const next: Record<string, PolicyLite[]> = {}
+        missing.forEach(id => { next[id] = [] })
+        ;(data || []).forEach((row: any) => {
+          next[row.client_id] = (row.data?.risk_management?.policies || []).map((p: any) => ({
+            id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
+            policyholder: p.policyholder || '',
+            premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0, premiumMode: p.premiumMode || '', inceptionDate: p.inceptionDate || '',
+          }))
+        })
+        setPoliciesByClient(prev => ({ ...prev, ...next }))
       })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingRow?.client_id])
+  }, [alertClientKey])
 
   useEffect(() => {
     if (!editingRow) return
@@ -286,6 +295,16 @@ export default function PremiumAlertsPage() {
     }
     if (row.policy_label) return { label: row.policy_label, policyNo: '' }
     return null
+  }
+
+  // Name shown on the card / popup title. A reminder for the spouse stores
+  // life_assured_override = 'spouse' on the row; show the spouse, not the client.
+  function displayNameFor(row: ServiceRequestRow): { name: string; sub: string | null } {
+    const clientName = clientsById[row.client_id] || 'Unknown client'
+    if (row.field_values?.life_assured_override === 'spouse' && spouseNames[row.client_id]) {
+      return { name: spouseNames[row.client_id], sub: `Spouse of ${clientName}` }
+    }
+    return { name: clientName, sub: null }
   }
 
   async function patchRow(id: string, patch: Partial<ServiceRequestRow>) {
@@ -587,7 +606,10 @@ export default function PremiumAlertsPage() {
       }}>
         <div onClick={() => setEditingId(row.id)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-            <div className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text }}>{clientsById[row.client_id] || 'Unknown client'}</div>
+            <div>
+              <div className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text }}>{displayNameFor(row).name}</div>
+              {displayNameFor(row).sub && <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 1 }}>{displayNameFor(row).sub}</div>}
+            </div>
             <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: done ? T.emeraldSoft : T.roseSoft, color: done ? T.emerald : T.rose, whiteSpace: 'nowrap', flexShrink: 0 }}>
               {row.request_type === 'Investment Premium Reminder' ? 'Investment' : 'Insurance'}
             </span>
@@ -720,8 +742,9 @@ export default function PremiumAlertsPage() {
             <div style={{ padding: '22px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div className="font-serif" style={{ fontSize: 22, fontWeight: 600, color: T.text }}>
-                  {clientsById[editingRow.client_id] || 'Unknown client'}
+                  {displayNameFor(editingRow).name}
                 </div>
+                {displayNameFor(editingRow).sub && <div style={{ fontSize: 11.5, color: T.textFaint, marginTop: 2 }}>{displayNameFor(editingRow).sub}</div>}
                 <div style={{ fontSize: 12, color: T.textFaint, marginTop: 3 }}>
                   {editingRow.request_type === 'Investment Premium Reminder' ? 'Investment' : 'Insurance'} Premium Reminder
                   {resolvedPolicy(editingRow) ? ` · ${resolvedPolicy(editingRow)!.label}` : ''}
