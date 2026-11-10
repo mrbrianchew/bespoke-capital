@@ -935,10 +935,16 @@ if (activeClient) {
         .eq('section', 'protection_needs')
         .maybeSingle()
       const existingData = existing?.data || {}
+      // Calculated need figures (p1_/p2_ dtpd/ci) are owned by saveNeedsToDatabase.
+      // `updated` carries the stale copies loaded when the page opened, so writing
+      // them back here would overwrite fresher calculated values. Settings only.
+      const settingsOnly = Object.fromEntries(
+        Object.entries(updated).filter(([k]) => !/^p[12]_(dtpd|ci)_/.test(k))
+      )
       await supabase
         .from('fact_finding')
         .upsert(
-          { client_id: clientId, section: 'protection_needs', data: { ...existingData, protection: { ...existingData.protection, ...updated } }, updated_at: new Date().toISOString() },
+          { client_id: clientId, section: 'protection_needs', data: { ...existingData, protection: { ...existingData.protection, ...settingsOnly } }, updated_at: new Date().toISOString() },
           { onConflict: 'client_id,section' }
         )
       setSaving(false)
