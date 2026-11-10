@@ -492,11 +492,11 @@ function NeedsCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
         Protection objectives (needs)
       </div>
       <NeedsHaveRow icon={Coins} label="Their day-to-day life — keeping the household running" value={dtpd.familyDependency} />
-      {dtpd.incomeTaxOneOff > 0 && (
-        <NeedsHaveRow icon={Receipt} label="Income tax settled at death — paid once" value={dtpd.incomeTaxOneOff} />
-      )}
       {dtpd.mortgageDebtClearance > 0 && (
         <NeedsHaveRow icon={Home} label="The roof over their heads — mortgage and debts cleared" value={dtpd.mortgageDebtClearance} />
+      )}
+      {dtpd.incomeTaxOneOff > 0 && (
+        <NeedsHaveRow icon={Receipt} label="Income tax settled at death — paid once" value={dtpd.incomeTaxOneOff} />
       )}
       {dtpd.tertiaryFunding > 0 && (
         <NeedsHaveRow icon={GraduationCap} label="Their children's future — university funded" value={dtpd.tertiaryFunding} />
@@ -912,6 +912,9 @@ function CINeedsCard({ ci }: { ci: PersonCIBreakdown }) {
       <NeedsHaveRow icon={HeartPulse} label="Income during recovery — replacing earnings while unable to work" value={ci.familyDependency} />
       {ci.mortgageDebtClearance > 0 && (
         <NeedsHaveRow icon={Key} label="Mortgage and debts cleared through the recovery period" value={ci.mortgageDebtClearance} />
+      )}
+      {ci.incomeTaxOneOff > 0 && (
+        <NeedsHaveRow icon={Receipt} label="Income tax due once on income already earned" value={ci.incomeTaxOneOff} />
       )}
       {ci.tertiaryFunding > 0 && (
         <NeedsHaveRow icon={GraduationCap} label="Children's education — protected even if income stops" value={ci.tertiaryFunding} />

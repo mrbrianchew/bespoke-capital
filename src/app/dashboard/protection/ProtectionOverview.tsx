@@ -1232,6 +1232,7 @@ function CoverageChart({
   // brand gold for any unrecognized label.
   const CATEGORY_COLORS: Record<string, { swatch: string; gradient: string }> = {
     'Family living':   { swatch: '#c8a96e', gradient: 'linear-gradient(180deg, #ddbb80 0%, #c8a96e 55%, #a3813f 100%)' },
+    'Mortgage / Debts & tax': { swatch: '#5B92BE', gradient: 'linear-gradient(180deg, #8fb8dc 0%, #5B92BE 55%, #3f6a8f 100%)' },
     'Mortgage / Debts': { swatch: '#5B92BE', gradient: 'linear-gradient(180deg, #8fb8dc 0%, #5B92BE 55%, #3f6a8f 100%)' },
     'Education':       { swatch: '#8B78B0', gradient: 'linear-gradient(180deg, #b3a3d1 0%, #8B78B0 55%, #665783 100%)' },
     'Medical buffer':  { swatch: '#C97B5D', gradient: 'linear-gradient(180deg, #e3a487 0%, #C97B5D 55%, #9a5940 100%)' },
@@ -1242,15 +1243,41 @@ function CoverageChart({
   // Category row with its own proportional bar (scaled against the largest
   // row in the group, so the three bars read as a relative comparison) and
   // duration caption underneath, matching the reference screenshot.
-  function ScenarioBreakdownRow({ label, value, maxValue, durationYears }: { label: string; value: number; maxValue: number; durationYears?: number | null }) {
+  function ScenarioBreakdownRow({ label, value, maxValue, durationYears, tip }: { label: string; value: number; maxValue: number; durationYears?: number | null; tip?: string }) {
     const barPct = maxValue > 0 ? Math.max(2, Math.round((value / maxValue) * 100)) : 0
     const { swatch } = CATEGORY_COLORS[label] || DEFAULT_CATEGORY_COLOR
+    const [tipOpen, setTipOpen] = useState(false)
+    const tipId = `need-tip-${label.replace(/\W+/g, '-')}`
     return (
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-          <span style={{ fontSize: 13, color: '#55524b', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ fontSize: 13, color: '#55524b', display: 'flex', alignItems: 'center', gap: 7, position: 'relative' }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: swatch, flexShrink: 0, display: 'inline-block' }} />
             {label}
+            {tip && (
+              <>
+                <button
+                  type="button"
+                  aria-label={`What is ${label}?`}
+                  aria-describedby={tipOpen ? tipId : undefined}
+                  onMouseEnter={() => setTipOpen(true)}
+                  onMouseLeave={() => setTipOpen(false)}
+                  onFocus={() => setTipOpen(true)}
+                  onBlur={() => setTipOpen(false)}
+                  onClick={() => setTipOpen(o => !o)}
+                  style={{ width: 15, height: 15, borderRadius: '50%', border: '1px solid #cfc8b8', background: 'transparent', color: '#a39d90', fontSize: 9, lineHeight: '13px', padding: 0, cursor: 'help', fontFamily: 'Georgia, serif', fontStyle: 'italic' }}
+                >i</button>
+                {tipOpen && (
+                  <span
+                    id={tipId}
+                    role="tooltip"
+                    style={{ position: 'absolute', left: 0, top: '100%', marginTop: 6, zIndex: 20, width: 260, padding: '10px 12px', borderRadius: 10, background: '#1C1A17', color: '#EFE9DC', fontSize: 11.5, lineHeight: 1.5, boxShadow: '0 10px 28px rgba(0,0,0,0.22)', fontFamily: 'Inter, sans-serif' }}
+                  >
+                    {tip}
+                  </span>
+                )}
+              </>
+            )}
           </span>
           <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1A1816', whiteSpace: 'nowrap', marginLeft: 10 }}>{fmt(value)}</span>
         </div>
@@ -1288,7 +1315,7 @@ function CoverageChart({
     age: number
     income: number
     breakdown: DialBreakdown
-    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; useCoverageTerm?: boolean }[]
+    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; useCoverageTerm?: boolean; hideDuration?: boolean; tip?: string }[]
     timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
     recoveryWindowYears?: number
@@ -1403,7 +1430,8 @@ function CoverageChart({
               label={r.label}
               value={r.value}
               maxValue={maxRowValue}
-              durationYears={r.useCoverageTerm ? (timeline.coverageTerm ?? null) : r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+              durationYears={r.hideDuration ? null : r.useCoverageTerm ? (timeline.coverageTerm ?? null) : r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+              tip={r.tip}
             />
           ))}
         </div>
@@ -1547,10 +1575,13 @@ function CoverageChart({
             income={activeIncome}
             breakdown={activeProfile.dtpd}
             rows={[
-              // One-off income tax is folded into Family living here (not its own row), so the rows still add up to Total need.
-              { label: 'Family living', value: activeProfile.dtpd.familyDependency + activeProfile.dtpd.incomeTaxOneOff, useCoverageTerm: true },
-              { label: 'Mortgage / Debts', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
-              { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
+              { label: 'Family living', value: activeProfile.dtpd.familyDependency, useCoverageTerm: true,
+                tip: 'Everyday household spending you chose to protect, grown with inflation until your youngest child finishes university. Income tax is not included here.' },
+              // One-off income tax sits with the debts: a bill settled once, not recurring living cost.
+              { label: 'Mortgage / Debts & tax', value: activeProfile.dtpd.mortgageDebtClearance + activeProfile.dtpd.incomeTaxOneOff, hideDuration: true,
+                tip: 'Outstanding mortgage and other debts cleared in full, plus the income tax bill on income already earned, which the estate settles once.' },
+              { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education',
+                tip: 'University fees and living costs for each child, inflated to the year they start, for the share you chose to cover.' },
             ]}
             timeline={activeProfile.dtpdTimeline}
             type="dtpd"
@@ -1622,11 +1653,16 @@ function CoverageChart({
             income={activeIncome}
             breakdown={activeProfile.ci}
             rows={[
-              { label: 'Family living', value: activeProfile.ci.familyDependency },
-              { label: 'Mortgage / Debts', value: activeProfile.ci.mortgageDebtClearance, milestoneType: 'mortgage' },
-              { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education' },
-              { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer },
-              { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer },
+              { label: 'Family living', value: activeProfile.ci.familyDependency,
+                tip: 'Everyday household spending during the recovery window, grown with inflation, while income is paused. Income tax is not included here.' },
+              { label: 'Mortgage / Debts & tax', value: activeProfile.ci.mortgageDebtClearance + activeProfile.ci.incomeTaxOneOff, hideDuration: true,
+                tip: 'Mortgage and debt instalments that fall due during the recovery window (not the whole loan), plus the one-time income tax bill on income already earned.' },
+              { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education',
+                tip: 'University fees and living costs for each child, inflated to the year they start, for the share you chose to cover.' },
+              { label: 'Medical buffer', value: activeProfile.ci.medicalBuffer,
+                tip: 'Cash set aside for out-of-pocket and alternative treatment costs.' },
+              { label: 'Recovery buffer', value: activeProfile.ci.recoveryBuffer,
+                tip: 'An extra cushion for the wider cost of recovery, such as rehabilitation and a slower return to work.' },
             ]}
             timeline={activeProfile.ciTimeline}
             type="ci"

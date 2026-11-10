@@ -1383,7 +1383,8 @@ const coverageTerm = (() => {
           ? (p.ciExpenseCoverPctClient ?? defaultClientPct) / 100
           : (p.ciExpenseCoverPctSpouse ?? defaultSpousePct) / 100)
     // Income tax is one-time on CI (income stops): removed from the recurring
-    // stream for both people, the CI person's own tax added once into fd.
+    // stream for both people; the CI person's own tax is added once as `tax`
+    // (a separate liability, shown with Mortgage / Debts, not Family living).
     const subItems = p.expenseSubItems ?? {}
     const clientTax = isDetailed ? getIncomeTaxOneOff(ff, 'client', subItems) : 0
     const spouseTax = isDetailed ? getIncomeTaxOneOff(ff, 'spouse', subItems) : 0
@@ -1391,16 +1392,17 @@ const coverageTerm = (() => {
     const fdBase = fdMode === 'own'
       ? (who === 'client' ? annExpClient - clientTax : annExpSpouse - spouseTax)
       : (annExpTotal - clientTax - spouseTax) * coverPct
-    const fd = p.ciIncludeLivingExpenses === false ? 0 : fv(inflation, ciYrs, fdBase) + ownTax
+    const fd = p.ciIncludeLivingExpenses === false ? 0 : fv(inflation, ciYrs, fdBase)
+    const ciTax = p.ciIncludeLivingExpenses === false ? 0 : ownTax
     const mort = p.ciIncludeMortgageCI === false ? 0 : calcCIMortgage(who)
     const edu = p.ciIncludeEducationCI !== false ? calcEducationForPersonCI(who) : 0
     const medicalBuffer = p.ciIncludeMedicalBuffer
       ? (who === 'client' ? (p.ciMedicalBufferClient ?? 50000) : (p.ciMedicalBufferSpouse ?? 50000)) : 0
     const recoveryBuffer = p.ciIncludeRecoveryBuffer
       ? (who === 'client' ? (p.ciRecoveryBufferClient ?? 30000) : (p.ciRecoveryBufferSpouse ?? 30000)) : 0
-    const gross = fd + mort + edu + medicalBuffer + recoveryBuffer
+    const gross = fd + ciTax + mort + edu + medicalBuffer + recoveryBuffer
     const assets = getAssetOffset(ff, who, 'ci', p)
-    return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu, incomeReplacement: 0, medicalBuffer, recoveryBuffer }
+    return { gross, assets, net: Math.max(0, gross - assets), fd, mort, edu, tax: ciTax, incomeReplacement: 0, medicalBuffer, recoveryBuffer }
   }
 
   const dtpdClient = calcDTPDNeed('client')
@@ -1425,6 +1427,7 @@ async function saveNeedsToDatabase() {
     p1_ci_gross: ciClient.gross,
     p1_ci_assets: ciClient.assets,
     p1_ci_fd: ciClient.fd,
+    p1_ci_tax: ciClient.tax ?? 0,
     p1_ci_mort: ciClient.mort,
     p1_ci_edu: ciClient.edu,
     p1_ci_medical_buffer: ciClient.medicalBuffer ?? 0,
@@ -1446,6 +1449,7 @@ async function saveNeedsToDatabase() {
     needs.p2_ci_gross = ciSpouse.gross
     needs.p2_ci_assets = ciSpouse.assets
     needs.p2_ci_fd = ciSpouse.fd
+    needs.p2_ci_tax = ciSpouse.tax ?? 0
     needs.p2_ci_mort = ciSpouse.mort
     needs.p2_ci_edu = ciSpouse.edu
     needs.p2_ci_medical_buffer = ciSpouse.medicalBuffer ?? 0
@@ -3651,8 +3655,8 @@ function CriticalIllnessTab({ ff, p, updateP, isCouple, clientName, spouseName, 
             label="CI Cover Needed"
             ciMode={ciMode}
             breakdown={{
-              client: { fd: ciClient.fd, mort: ciClient.mort, edu: ciClient.edu, incomeReplacement: ciClient.incomeReplacement, medicalBuffer: ciClient.medicalBuffer, recoveryBuffer: ciClient.recoveryBuffer },
-              spouse: { fd: ciSpouse.fd, mort: ciSpouse.mort, edu: ciSpouse.edu, incomeReplacement: ciSpouse.incomeReplacement, medicalBuffer: ciSpouse.medicalBuffer, recoveryBuffer: ciSpouse.recoveryBuffer },
+              client: { fd: ciClient.fd, mort: ciClient.mort + (ciClient.tax ?? 0), edu: ciClient.edu, incomeReplacement: ciClient.incomeReplacement, medicalBuffer: ciClient.medicalBuffer, recoveryBuffer: ciClient.recoveryBuffer },
+              spouse: { fd: ciSpouse.fd, mort: ciSpouse.mort + (ciSpouse.tax ?? 0), edu: ciSpouse.edu, incomeReplacement: ciSpouse.incomeReplacement, medicalBuffer: ciSpouse.medicalBuffer, recoveryBuffer: ciSpouse.recoveryBuffer },
             }}
           />
         )}
@@ -4859,7 +4863,7 @@ function NeedTable({ isCouple, clientName, spouseName, clientData, spouseData, l
 
   const allRows = breakdown ? [
     { key: primaryKey, label: primaryLabel },
-    { key: 'mort', label: 'Mortgage' },
+    { key: 'mort', label: 'Mortgage & tax' },
     { key: 'edu', label: 'Education' },
     { key: 'medicalBuffer', label: 'Medical' },
     { key: 'recoveryBuffer', label: 'Recovery' },

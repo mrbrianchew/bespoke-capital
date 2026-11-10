@@ -451,13 +451,14 @@ function ProtectionBreakdownPage({ type, name, profile, pageLabel }: {
   const needsRows: { icon: JSX.Element; label: string; value: number }[] = isDtpd
     ? [
         { icon: <><circle cx="12" cy="12" r="9" /><path d="M9 12h6M12 9v6" /></>, label: 'Their day-to-day life — keeping the household running', value: dtpd.familyDependency },
-        ...(dtpd.incomeTaxOneOff > 0 ? [{ icon: <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 8h6M9 12h6" />, label: 'Income tax settled at death — paid once', value: dtpd.incomeTaxOneOff }] : []),
         ...(dtpd.mortgageDebtClearance > 0 ? [{ icon: <path d="M4 11l8-6 8 6M6 10v9h12v-9" />, label: 'The roof over their heads — mortgage and debts cleared', value: dtpd.mortgageDebtClearance }] : []),
+        ...(dtpd.incomeTaxOneOff > 0 ? [{ icon: <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 8h6M9 12h6" />, label: 'Income tax settled at death — paid once', value: dtpd.incomeTaxOneOff }] : []),
         ...(dtpd.tertiaryFunding > 0 ? [{ icon: <path d="M2 9l10-4 10 4-10 4-10-4zM6 11v4c0 1.5 3 3 6 3s6-1.5 6-3v-4" />, label: 'Their children’s future — university funded', value: dtpd.tertiaryFunding }] : []),
       ]
     : [
         { icon: <><circle cx="12" cy="12" r="9" /><path d="M9 12h6M12 9v6" /></>, label: `Income replacement — ${ci.ciYears * 12} months while you recover`, value: ci.familyDependency },
         ...(ci.mortgageDebtClearance > 0 ? [{ icon: <path d="M4 11l8-6 8 6M6 10v9h12v-9" />, label: 'Mortgage covered through the recovery period', value: ci.mortgageDebtClearance }] : []),
+        ...(ci.incomeTaxOneOff > 0 ? [{ icon: <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 8h6M9 12h6" />, label: 'Income tax due once on income already earned', value: ci.incomeTaxOneOff }] : []),
         ...(ci.tertiaryFunding > 0 ? [{ icon: <path d="M2 9l10-4 10 4-10 4-10-4zM6 11v4c0 1.5 3 3 6 3s6-1.5 6-3v-4" />, label: 'Children’s education stays funded regardless', value: ci.tertiaryFunding }] : []),
         ...(ci.medicalBuffer > 0 ? [{ icon: <path d="M12 3v18M3 12h18" />, label: 'Medical and alternative treatment costs', value: ci.medicalBuffer }] : []),
         ...(ci.recoveryBuffer > 0 ? [{ icon: <path d="M4 4h16v16H4zM8 4v16M16 4v16" />, label: 'A cushion for the wider cost of recovery', value: ci.recoveryBuffer }] : []),

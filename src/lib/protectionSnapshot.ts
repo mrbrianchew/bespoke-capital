@@ -24,6 +24,9 @@ export interface PersonProtectionBreakdown {
 export interface PersonCIBreakdown {
   familyDependency: number
   mortgageDebtClearance: number
+  // One-time income tax on income already earned (detailed mode) — already
+  // inside maxCapitalRequired; shown together with mortgageDebtClearance.
+  incomeTaxOneOff: number
   tertiaryFunding: number
   medicalBuffer: number
   recoveryBuffer: number
@@ -866,6 +869,7 @@ export function buildProtectionSnapshot(input: {
 
     const familyDependency = Math.max(0, Math.round(p[`${prefix}_ci_fd`] || 0))
     const mortgageDebtClearance = Math.max(0, Math.round(p[`${prefix}_ci_mort`] || 0))
+    const incomeTaxOneOff = Math.max(0, Math.round(p[`${prefix}_ci_tax`] || 0))
     const tertiaryFunding = Math.max(0, Math.round(p[`${prefix}_ci_edu`] || 0))
     const medicalBuffer = Math.max(0, Math.round(p[`${prefix}_ci_medical_buffer`] || 0))
     const recoveryBuffer = Math.max(0, Math.round(p[`${prefix}_ci_recovery_buffer`] || 0))
@@ -882,6 +886,7 @@ export function buildProtectionSnapshot(input: {
     return {
       familyDependency,
       mortgageDebtClearance,
+      incomeTaxOneOff,
       tertiaryFunding,
       medicalBuffer,
       recoveryBuffer,
