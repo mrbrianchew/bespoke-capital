@@ -116,6 +116,10 @@ export interface CoverageMilestone {
 export interface CoverageTimeline {
   points: CoveragePoint[]
   milestones: CoverageMilestone[]
+  // Years the Family Dependency need runs for (same term the chart and the saved
+  // Family living figure use). Lets the Need composition card label it truthfully
+  // instead of showing years-to-retirement.
+  coverageTerm?: number
 }
 
 export interface PersonProtectionProfile {
@@ -631,7 +635,7 @@ export function buildProtectionSnapshot(input: {
       milestones.push({ age: retireAge, label: 'Retirement', type: 'retirement' })
     }
 
-    return { points, milestones }
+    return { points, milestones, coverageTerm }
   }
 
   // CI sibling of buildDTPDTimeline() above — same porting approach, mirroring
@@ -707,7 +711,7 @@ export function buildProtectionSnapshot(input: {
       milestones.push({ age: retireAge, label: 'Retirement', type: 'retirement' })
     }
 
-    return { points, milestones }
+    return { points, milestones, coverageTerm }
   }
 
   // DTPD breakdown reuses the components already computed and saved on the

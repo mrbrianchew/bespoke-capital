@@ -1288,7 +1288,7 @@ function CoverageChart({
     age: number
     income: number
     breakdown: DialBreakdown
-    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType }[]
+    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; useCoverageTerm?: boolean }[]
     timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
     recoveryWindowYears?: number
@@ -1403,7 +1403,7 @@ function CoverageChart({
               label={r.label}
               value={r.value}
               maxValue={maxRowValue}
-              durationYears={r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+              durationYears={r.useCoverageTerm ? (timeline.coverageTerm ?? null) : r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
             />
           ))}
         </div>
@@ -1547,7 +1547,7 @@ function CoverageChart({
             income={activeIncome}
             breakdown={activeProfile.dtpd}
             rows={[
-              { label: 'Family living', value: activeProfile.dtpd.familyDependency, milestoneType: 'retirement' },
+              { label: 'Family living', value: activeProfile.dtpd.familyDependency, useCoverageTerm: true },
               { label: 'Mortgage / Debts', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
               { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
             ]}
