@@ -155,17 +155,6 @@ const DETAILED_EXPENSE_CUSTOM_KEY: Record<string, string> = {
   lifestyle: 'd_custom_lifestyle',
 }
 
-// Household bills that are one real-world shared cost, not two independent
-// per-person figures — conservancy, utilities, family food & groceries, maid,
-// other household. Split 50/50 between client and spouse regardless of which
-// column an advisor happened to enter the figure into, instead of crediting
-// the whole bill to one person and zero to the other. (Originally family_food
-// was left out of this list on the assumption that two different non-zero
-// values meant it was deliberately independent — but the Financials UI groups
-// it under "Household & Living" with the identical per-person entry pattern
-// as the other four, so it belongs here too.)
-const SHARED_HOUSEHOLD_KEYS = ['d_conservancy', 'd_utilities', 'd_family_food', 'd_maid', 'd_other_household']
-
 export function getDetailedCategoryTotal(ff: Record<string, any>, category: string, prefix: 'client' | 'spouse', subItems: Record<string, boolean>): number {
   const sp = prefix === 'spouse' ? 'd2_' : 'd_'
   const perPersonKey = prefix === 'spouse' ? '_s' : '_c'
@@ -176,11 +165,6 @@ export function getDetailedCategoryTotal(ff: Record<string, any>, category: stri
       if (subItems[personKey] === false) return sum
     } else {
       if (subItems[k] === false) return sum
-    }
-    if (SHARED_HOUSEHOLD_KEYS.includes(k)) {
-      const clientVal = (ff[k] as number) ?? 0
-      const spouseVal = (ff[k.replace('d_', 'd2_')] as number) ?? 0
-      return sum + (clientVal + spouseVal) / 2
     }
     return sum + ((ff[k.replace('d_', sp)] as number) ?? 0)
   }, 0)
