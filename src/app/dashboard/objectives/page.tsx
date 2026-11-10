@@ -1202,17 +1202,6 @@ const coverageTerm = (() => {
       const initialLoan = prop.initialLoanAmount ?? prop.outstanding ?? 0
       const outstanding = prop.outstanding ?? calcAmortizedBalance(initialLoan, interestRate, initialTenure, startDate)
       
-      let monthlyRepayment = prop.monthlyRepayment
-      if (!monthlyRepayment && initialLoan > 0 && initialTenure > 0) {
-        if (interestRate === 0) {
-          monthlyRepayment = initialLoan / (initialTenure * 12)
-        } else {
-          const r = interestRate / 100 / 12
-          const n = initialTenure * 12
-          monthlyRepayment = initialLoan * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
-        }
-      }
-      
       let remainingTenure = prop.remainingTenure ?? initialTenure
       if (!prop.remainingTenure && startDate) {
         const [mm, yyyy] = startDate.split('/')
@@ -1223,7 +1212,26 @@ const coverageTerm = (() => {
           remainingTenure = Math.max(0, Math.round(initialTenure - elapsedYears))
         }
       }
-      
+
+      // Entered repayment wins. Otherwise: with a real original loan, the original
+      // PMT; with only an outstanding balance, amortise it over the REMAINING tenure
+      // (not the 25-yr default), else the instalment is overstated.
+      let monthlyRepayment = prop.monthlyRepayment
+      if (!monthlyRepayment) {
+        const hasOriginal = !!prop.initialLoanAmount
+        const principal = hasOriginal ? initialLoan : outstanding
+        const years = hasOriginal ? initialTenure : (remainingTenure > 0 ? remainingTenure : initialTenure)
+        if (principal > 0 && years > 0) {
+          if (interestRate === 0) {
+            monthlyRepayment = principal / (years * 12)
+          } else {
+            const r = interestRate / 100 / 12
+            const n = years * 12
+            monthlyRepayment = principal * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)
+          }
+        }
+      }
+
       return {
         id: prop.id,
         label: prop.label || 'Property',
