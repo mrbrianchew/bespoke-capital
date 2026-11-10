@@ -357,6 +357,7 @@ function ProtectionOverviewPage({ name, profile, pageLabel }: { name: string; pr
       <div className="runway-desc">What {name}&rsquo;s family would need to maintain their current lifestyle, clear debts, and fund education — against what&rsquo;s targeted and what&rsquo;s currently in place.</div>
       <div className="runway-legend">
         <span><span className="sw dep" />Family dependency</span>
+        {runway.fullNeedTax > 0 && <span><span className="sw tax" />Income tax (one-off)</span>}
         <span><span className="sw mort" />Mortgage &amp; debt</span>
         <span><span className="sw edu" />Education</span>
       </div>
@@ -364,13 +365,13 @@ function ProtectionOverviewPage({ name, profile, pageLabel }: { name: string; pr
       <RunwayRow
         label="Family's full need (100%)"
         amount={runway.fullNeed}
-        segments={[{ value: runway.fullNeedFD, cls: 'dep' }, { value: runway.fullNeedMort, cls: 'mort' }, { value: runway.fullNeedEdu, cls: 'edu' }]}
+        segments={[{ value: runway.fullNeedFD, cls: 'dep' }, { value: runway.fullNeedTax, cls: 'tax' }, { value: runway.fullNeedMort, cls: 'mort' }, { value: runway.fullNeedEdu, cls: 'edu' }]}
         axisMax={axisMax}
       />
       <RunwayRow
         label="Chosen coverage target"
         amount={runway.targetNeed}
-        segments={[{ value: runway.targetFD, cls: 'dep' }, { value: runway.targetMort, cls: 'mort' }, { value: runway.targetEdu, cls: 'edu' }]}
+        segments={[{ value: runway.targetFD, cls: 'dep' }, { value: runway.targetTax, cls: 'tax' }, { value: runway.targetMort, cls: 'mort' }, { value: runway.targetEdu, cls: 'edu' }]}
         axisMax={axisMax}
       />
       <RunwayRow
@@ -450,6 +451,7 @@ function ProtectionBreakdownPage({ type, name, profile, pageLabel }: {
   const needsRows: { icon: JSX.Element; label: string; value: number }[] = isDtpd
     ? [
         { icon: <><circle cx="12" cy="12" r="9" /><path d="M9 12h6M12 9v6" /></>, label: 'Their day-to-day life — keeping the household running', value: dtpd.familyDependency },
+        ...(dtpd.incomeTaxOneOff > 0 ? [{ icon: <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3zM9 8h6M9 12h6" />, label: 'Income tax settled at death — paid once', value: dtpd.incomeTaxOneOff }] : []),
         ...(dtpd.mortgageDebtClearance > 0 ? [{ icon: <path d="M4 11l8-6 8 6M6 10v9h12v-9" />, label: 'The roof over their heads — mortgage and debts cleared', value: dtpd.mortgageDebtClearance }] : []),
         ...(dtpd.tertiaryFunding > 0 ? [{ icon: <path d="M2 9l10-4 10 4-10 4-10-4zM6 11v4c0 1.5 3 3 6 3s6-1.5 6-3v-4" />, label: 'Their children’s future — university funded', value: dtpd.tertiaryFunding }] : []),
       ]
@@ -1678,6 +1680,7 @@ const PRINT_CSS = `
   .runway-legend span{display:flex; align-items:center; gap:1.5mm;}
   .runway-legend .sw{width:8px; height:8px; border-radius:2px; display:inline-block;}
   .runway-legend .sw.dep{background:var(--dep);}
+  .runway-legend .sw.tax{background:#9A3B3B;}
   .runway-legend .sw.mort{background:var(--gold);}
   .runway-legend .sw.edu{background:#3F6B57;}
   .runway-legend .sw.ins{background:var(--ink);}
@@ -1689,6 +1692,7 @@ const PRINT_CSS = `
   .runway-row .rh .v.accent-v{color:var(--accent);}
   .runway-bar{display:flex; height:6mm; border-radius:2px; overflow:hidden; background:var(--line);}
   .runway-bar .seg.dep{background:var(--dep);}
+  .runway-bar .seg.tax{background:#9A3B3B; min-width:0.5mm;}
   .runway-bar .seg.mort{background:var(--gold);}
   .runway-bar .seg.edu{background:#3F6B57;}
   .runway-bar .seg.ins{background:var(--ink);}

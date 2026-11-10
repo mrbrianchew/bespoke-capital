@@ -1,6 +1,6 @@
 'use client'
 import { useState, ReactNode, MouseEvent } from 'react'
-import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Building2, Palmtree, LucideIcon } from 'lucide-react'
+import { Stethoscope, HeartPulse, Shield, Bandage, Home, Key, GraduationCap, Wallet, ShieldCheck, ArrowRight, Coins, Building2, Palmtree, Receipt, LucideIcon } from 'lucide-react'
 import { ProtectionSnapshot, PersonProtectionProfile, PersonProtectionBreakdown, PersonCIBreakdown, LifePolicyLineItem, FamilyRunway, FrameworkRowKey, FrameworkRowStatus, CoverageTimeline, CoverageMilestone } from '@/lib/protectionSnapshot'
 
 type Page = 'overview' | 'dtpd' | 'ci'
@@ -313,8 +313,8 @@ function LegendItem({ color, label }: { color: string; label: string }) {
 
 function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunway }) {
   const {
-    fullNeed, fullNeedFD, fullNeedMort, fullNeedEdu,
-    targetNeed, targetFD, targetMort, targetEdu,
+    fullNeed, fullNeedFD, fullNeedMort, fullNeedEdu, fullNeedTax,
+    targetNeed, targetFD, targetMort, targetEdu, targetTax,
     currentProvision, currentInsurance, currentAssets,
     assetOffsetEnabled,
   } = runway
@@ -357,6 +357,7 @@ function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunwa
 
   const needSegments = [
     { value: fullNeedFD, color: 'var(--slate)', label: 'Family dependency' },
+    { value: fullNeedTax, color: 'var(--rouge)', label: 'Income tax (one-off)' },
     { value: fullNeedMort, color: 'var(--gold)', label: 'Mortgage & debt' },
     { value: fullNeedEdu, color: 'var(--emerald)', label: 'Education' },
   ]
@@ -391,6 +392,7 @@ function FamilyRunwayChart({ name, runway }: { name: string; runway: FamilyRunwa
         amountColor="var(--ink)"
         segments={[
           { value: targetFD, color: 'var(--slate)' },
+          { value: targetTax, color: 'var(--rouge)' },
           { value: targetMort, color: 'var(--gold)' },
           { value: targetEdu, color: 'var(--emerald)' },
         ]}
@@ -490,6 +492,9 @@ function NeedsCard({ dtpd }: { dtpd: PersonProtectionBreakdown }) {
         Protection objectives (needs)
       </div>
       <NeedsHaveRow icon={Coins} label="Their day-to-day life — keeping the household running" value={dtpd.familyDependency} />
+      {dtpd.incomeTaxOneOff > 0 && (
+        <NeedsHaveRow icon={Receipt} label="Income tax settled at death — paid once" value={dtpd.incomeTaxOneOff} />
+      )}
       {dtpd.mortgageDebtClearance > 0 && (
         <NeedsHaveRow icon={Home} label="The roof over their heads — mortgage and debts cleared" value={dtpd.mortgageDebtClearance} />
       )}

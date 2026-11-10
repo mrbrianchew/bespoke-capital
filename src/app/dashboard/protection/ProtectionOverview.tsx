@@ -1232,6 +1232,7 @@ function CoverageChart({
   // brand gold for any unrecognized label.
   const CATEGORY_COLORS: Record<string, { swatch: string; gradient: string }> = {
     'Family living':   { swatch: '#c8a96e', gradient: 'linear-gradient(180deg, #ddbb80 0%, #c8a96e 55%, #a3813f 100%)' },
+    'Income tax (one-off)': { swatch: '#9A3B3B', gradient: 'linear-gradient(180deg, #c27474 0%, #9A3B3B 55%, #6f2828 100%)' },
     'Mortgage / Debts': { swatch: '#5B92BE', gradient: 'linear-gradient(180deg, #8fb8dc 0%, #5B92BE 55%, #3f6a8f 100%)' },
     'Education':       { swatch: '#8B78B0', gradient: 'linear-gradient(180deg, #b3a3d1 0%, #8B78B0 55%, #665783 100%)' },
     'Medical buffer':  { swatch: '#C97B5D', gradient: 'linear-gradient(180deg, #e3a487 0%, #C97B5D 55%, #9a5940 100%)' },
@@ -1242,7 +1243,7 @@ function CoverageChart({
   // Category row with its own proportional bar (scaled against the largest
   // row in the group, so the three bars read as a relative comparison) and
   // duration caption underneath, matching the reference screenshot.
-  function ScenarioBreakdownRow({ label, value, maxValue, durationYears }: { label: string; value: number; maxValue: number; durationYears?: number | null }) {
+  function ScenarioBreakdownRow({ label, value, maxValue, durationYears, note }: { label: string; value: number; maxValue: number; durationYears?: number | null; note?: string }) {
     const barPct = maxValue > 0 ? Math.max(2, Math.round((value / maxValue) * 100)) : 0
     const { swatch } = CATEGORY_COLORS[label] || DEFAULT_CATEGORY_COLOR
     return (
@@ -1257,7 +1258,9 @@ function CoverageChart({
         <div style={{ height: 3, background: '#EFEAE0', borderRadius: 99 }}>
           <div style={{ width: `${barPct}%`, height: '100%', background: swatch, borderRadius: 99 }} />
         </div>
-        {durationYears != null && durationYears > 0 && (
+        {note ? (
+          <div style={{ fontSize: 10.5, color: '#b0aba1', marginTop: 5 }}>{note}</div>
+        ) : durationYears != null && durationYears > 0 && (
           <div style={{ fontSize: 10.5, color: '#b0aba1', marginTop: 5 }}>{durationYears} yrs</div>
         )}
       </div>
@@ -1288,7 +1291,7 @@ function CoverageChart({
     age: number
     income: number
     breakdown: DialBreakdown
-    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; useCoverageTerm?: boolean }[]
+    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; useCoverageTerm?: boolean; note?: string }[]
     timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
     recoveryWindowYears?: number
@@ -1403,6 +1406,7 @@ function CoverageChart({
               label={r.label}
               value={r.value}
               maxValue={maxRowValue}
+              note={r.note}
               durationYears={r.useCoverageTerm ? (timeline.coverageTerm ?? null) : r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
             />
           ))}
@@ -1548,6 +1552,7 @@ function CoverageChart({
             breakdown={activeProfile.dtpd}
             rows={[
               { label: 'Family living', value: activeProfile.dtpd.familyDependency, useCoverageTerm: true },
+              { label: 'Income tax (one-off)', value: activeProfile.dtpd.incomeTaxOneOff, note: 'Paid once' },
               { label: 'Mortgage / Debts', value: activeProfile.dtpd.mortgageDebtClearance, milestoneType: 'mortgage' },
               { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education' },
             ]}

@@ -1267,7 +1267,7 @@ const coverageTerm = (() => {
   }
 
   // Full needs
-  function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; assetsCash: number; assetsProperty: number; net: number; fd: number; mort: number; edu: number } {
+  function calcDTPDNeed(who: 'client' | 'spouse'): { gross: number; assets: number; assetsCash: number; assetsProperty: number; net: number; fd: number; mort: number; edu: number; tax: number } {
     const fdMode = who === 'client' ? (p.fdModeClient ?? 'combined') : (p.fdModeSpouse ?? 'combined')
     const coverPct = who === 'client' ? clientCoverPct : spouseCoverPct
     const subItems = p.expenseSubItems ?? {}
@@ -1299,7 +1299,7 @@ const coverageTerm = (() => {
     const gross = fd + mort + edu + incomeTaxOneOff
     const assets = getAssetOffset(ff, who, 'dtpd', p)
     const assetBreakdown = getAssetOffsetBreakdown(ff, who, p)
-    return { gross, assets, assetsCash: assetBreakdown.cash, assetsProperty: assetBreakdown.property, net: Math.max(0, gross - assets), fd, mort, edu }
+    return { gross, assets, assetsCash: assetBreakdown.cash, assetsProperty: assetBreakdown.property, net: Math.max(0, gross - assets), fd, mort, edu, tax: incomeTaxOneOff }
   }
 
   function calcCINeed(who: 'client' | 'spouse'): CalcResult {
@@ -1392,6 +1392,7 @@ async function saveNeedsToDatabase() {
     p1_dtpd_fd: dtpdClient.fd,
     p1_dtpd_mort: dtpdClient.mort,
     p1_dtpd_edu: dtpdClient.edu,
+    p1_dtpd_tax: dtpdClient.tax ?? 0,
     p1_ci_need: ciClient.net,
     p1_ci_gross: ciClient.gross,
     p1_ci_assets: ciClient.assets,
@@ -1412,6 +1413,7 @@ async function saveNeedsToDatabase() {
     needs.p2_dtpd_fd = dtpdSpouse.fd
     needs.p2_dtpd_mort = dtpdSpouse.mort
     needs.p2_dtpd_edu = dtpdSpouse.edu
+    needs.p2_dtpd_tax = dtpdSpouse.tax ?? 0
     needs.p2_ci_need = ciSpouse.net
     needs.p2_ci_gross = ciSpouse.gross
     needs.p2_ci_assets = ciSpouse.assets
@@ -1852,7 +1854,7 @@ interface WPProps {
 }
 
 // Type helper for return shape
-type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number; incomeReplacement?: number; medicalBuffer?: number; recoveryBuffer?: number }
+type CalcResult = { gross: number; assets: number; net: number; fd: number; mort: number; edu: number; tax?: number; incomeReplacement?: number; medicalBuffer?: number; recoveryBuffer?: number }
 
 
 function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientName, spouseName, clientAge, spouseAge, annExpClient, annExpSpouse, coverageTerm, youngestAge, dtpdClient, dtpdSpouse, ciClient, ciSpouse, editModal, setEditModal, WP_TABS, inflation, defaultClientPct, defaultSpousePct, clientId, allFamilyMembers, insCompanies, insProducts, insCategories, addToPortfolio }: WPProps) {
@@ -2004,6 +2006,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             cats={cats} editModal={editModal} setEditModal={setEditModal}
             inflation={inflation} defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
             fdClient={dtpdClient.fd} fdSpouse={dtpdSpouse.fd}
+            taxClient={dtpdClient.tax ?? 0} taxSpouse={dtpdSpouse.tax ?? 0}
           />
         )}
         {wpTab === 2 && (
@@ -2059,7 +2062,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
 
 // ─── FAMILY DEPENDENCY TAB ───────────────────────────────────────────────────
 
-function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, children, isDetailed, cats, editModal, setEditModal, inflation, defaultClientPct, defaultSpousePct, fdClient, fdSpouse }: {
+function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, children, isDetailed, cats, editModal, setEditModal, inflation, defaultClientPct, defaultSpousePct, fdClient, fdSpouse, taxClient, taxSpouse }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
   annExpClient: number; annExpSpouse: number
@@ -2072,6 +2075,8 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
   // Family-living need from calcDTPDNeed (single source of truth — same figure that is
   // saved and shown on the Wealth Protection overview, incl. income-tax-as-one-off).
   fdClient: number; fdSpouse: number
+  // One-off income tax per person (added once, not capitalised over the term).
+  taxClient: number; taxSpouse: number
 }) {
   const annExpTotal = annExpClient + annExpSpouse
 
@@ -2296,12 +2301,19 @@ const uniGrad = Math.max(0, gradAge - age)
 
       {/* Family Dependency Summary */}
       <SectionBlock title="Family Dependency Need" color="#2D5A4E">
-        <NeedTable
-          isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-          clientData={fdClient}
-          spouseData={fdSpouse}
-          label="D/TPD Family Dependency"
-        />
+        {(taxClient > 0 || (isCouple && taxSpouse > 0)) ? (
+          <FamilyDependencyNeedTable
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            fdClient={fdClient} fdSpouse={fdSpouse} taxClient={taxClient} taxSpouse={taxSpouse}
+          />
+        ) : (
+          <NeedTable
+            isCouple={isCouple} clientName={clientName} spouseName={spouseName}
+            clientData={fdClient}
+            spouseData={fdSpouse}
+            label="D/TPD Family Dependency"
+          />
+        )}
       </SectionBlock>
 
       {/* Advisor Notes */}
@@ -2318,6 +2330,53 @@ const uniGrad = Math.max(0, gradAge - age)
           }}
         />
       </SectionBlock>
+    </div>
+  )
+}
+
+// Family dependency need with the one-off income tax shown on its own line:
+// living expenses (capitalised over the coverage term) + tax settled once at death.
+function FamilyDependencyNeedTable({ isCouple, clientName, spouseName, fdClient, fdSpouse, taxClient, taxSpouse }: {
+  isCouple: boolean; clientName: string; spouseName: string
+  fdClient: number; fdSpouse: number; taxClient: number; taxSpouse: number
+}) {
+  const cols = isCouple ? '1fr 120px 120px' : '1fr 120px'
+  const th: React.CSSProperties = { fontSize: 9, color: '#aaa', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'right' }
+  const num: React.CSSProperties = { fontFamily: 'DM Mono, monospace', fontSize: 13, color: '#1C1A17', textAlign: 'right' }
+  const rows = [
+    { label: 'Living expenses', sub: 'Recurring, capitalised over the coverage term', c: fdClient, s: fdSpouse },
+    { label: 'Income tax, paid once', sub: 'Settled from the estate at death', c: taxClient, s: taxSpouse },
+  ]
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 8, padding: '0 12px 8px', borderBottom: '1px solid #E8E4DC' }}>
+        <div style={{ ...th, textAlign: 'left' }}>D/TPD Family Dependency</div>
+        <div style={th}>{clientName}</div>
+        {isCouple && <div style={th}>{spouseName}</div>}
+      </div>
+      {rows.map(r => (
+        <div key={r.label} style={{ display: 'grid', gridTemplateColumns: cols, gap: 8, padding: '10px 12px', borderBottom: '1px solid #F0EDE8', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 13, fontFamily: 'Inter', color: '#1C1A17' }}>{r.label}</div>
+            <div style={{ fontSize: 10, fontFamily: 'Inter', color: '#999', marginTop: 2 }}>{r.sub}</div>
+          </div>
+          <div style={num}>{fmt(r.c)}</div>
+          {isCouple && <div style={num}>{fmt(r.s)}</div>}
+        </div>
+      ))}
+      <div style={{ display: 'flex', padding: '12px 16px', background: '#1C1A17', borderRadius: 6, alignItems: 'center', marginTop: 10 }}>
+        <span style={{ flex: 1, fontSize: 12, color: '#c8a96e', fontFamily: 'Inter', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Family Dependency Need</span>
+        <div style={{ textAlign: 'right', minWidth: 120 }}>
+          {isCouple && <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{clientName}</div>}
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(fdClient + taxClient)}</div>
+        </div>
+        {isCouple && (
+          <div style={{ textAlign: 'right', minWidth: 120 }}>
+            <div style={{ fontSize: 10, color: '#888', fontFamily: 'Inter' }}>{spouseName}</div>
+            <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 16, color: '#F5F0E8' }}>{fmt(fdSpouse + taxSpouse)}</div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

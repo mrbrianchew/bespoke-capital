@@ -4,6 +4,9 @@ export interface PersonProtectionBreakdown {
   familyDependency: number
   mortgageDebtClearance: number
   tertiaryFunding: number
+  // Outstanding income tax settled once at death (detailed mode only) — already
+  // included in maxCapitalRequired, shown as its own line so the rows add up.
+  incomeTaxOneOff: number
   maxCapitalRequired: number
   assetMitigation: number
   // Cash (savings+CPF) vs property split of assetMitigation — raw saved
@@ -78,6 +81,7 @@ export interface FamilyRunway {
   fullNeedFD: number
   fullNeedMort: number
   fullNeedEdu: number
+  fullNeedTax: number
   // Capital required for what THIS person has actually chosen to cover
   // (fdMode + coverage %, mortgageCoverPcts, per-child coverPct) — same
   // figures as dtpd.familyDependency / .mortgageDebtClearance / .tertiaryFunding.
@@ -85,6 +89,7 @@ export interface FamilyRunway {
   targetFD: number
   targetMort: number
   targetEdu: number
+  targetTax: number
   // What's currently in place to fund it: existing life (death) cover plus
   // the asset offset already used against the D/TPD need.
   currentProvision: number
@@ -732,6 +737,14 @@ export function buildProtectionSnapshot(input: {
     const mortgageDebtClearance = Math.max(0, Math.round(p[`${prefix}_dtpd_mort`] || 0))
     const tertiaryFunding = Math.max(0, Math.round(p[`${prefix}_dtpd_edu`] || 0))
     const maxCapitalRequired = Math.max(0, Math.round(p[`${prefix}_dtpd_gross`] || 0))
+    // Saved explicitly by Strategic Objectives (p1/p2_dtpd_tax). Clients saved before
+    // that field existed: derive it as the part of the gross need the three visible
+    // components don't explain (gross = fd + mort + edu + one-off tax); ≤ $2 is rounding.
+    const taxSaved = p[`${prefix}_dtpd_tax`]
+    const taxDerived = maxCapitalRequired - familyDependency - mortgageDebtClearance - tertiaryFunding
+    const incomeTaxOneOff = taxSaved != null
+      ? Math.max(0, Math.round(taxSaved || 0))
+      : (taxDerived > 2 ? taxDerived : 0)
     const assetMitigation = Math.max(0, Math.round(p[`${prefix}_dtpd_assets`] || 0))
     const assetMitigationCash = Math.max(0, Math.round(p[`${prefix}_dtpd_assets_cash`] || 0))
     const assetMitigationProperty = Math.max(0, Math.round(p[`${prefix}_dtpd_assets_property`] || 0))
@@ -743,6 +756,7 @@ export function buildProtectionSnapshot(input: {
       familyDependency,
       mortgageDebtClearance,
       tertiaryFunding,
+      incomeTaxOneOff,
       maxCapitalRequired,
       assetMitigation,
       assetMitigationCash,
@@ -794,16 +808,34 @@ export function buildProtectionSnapshot(input: {
   // than trust the frozen saved figure, gate on the live assetOffsetEnabled
   // flag here too, the same convention used elsewhere (masterEnabled on
   // Strategic Objectives' Asset Offset tab).
+  // One-off income tax for a person — mirrors getIncomeTaxOneOff on Strategic
+  // Objectives (detailed mode only, respects the per-person tick on that line).
+  function incomeTaxOneOffFor(who: 'client' | 'spouse'): number {
+    if (!isDetailed) return 0
+    const key = who === 'spouse' ? 'd2_income_tax' : 'd_income_tax'
+    const personKey = who === 'spouse' ? 'd_income_tax_s' : 'd_income_tax_c'
+    const included = personKey in subItems
+      ? subItems[personKey] !== false
+      : (who === 'client' ? subItems['d_income_tax'] !== false : true)
+    return included ? (Number(ff[key]) || 0) : 0
+  }
+
   function buildRunway(who: 'client' | 'spouse', dtpd: PersonProtectionBreakdown): FamilyRunway {
-    const fullNeedFD = Math.max(0, Math.round(fv(inflation, coverageTerm, annExpTotal)))
+    // Same method as Strategic Objectives' calcDTPDNeed: income tax is a one-time
+    // settlement at death, so it is taken out of the recurring stream (both people's)
+    // and this person's own tax is added back once.
+    const fullNeedTax = Math.round(incomeTaxOneOffFor(who))
+    const recurring = annExpTotal - incomeTaxOneOffFor('client') - incomeTaxOneOffFor('spouse')
+    const fullNeedFD = Math.max(0, Math.round(fv(inflation, coverageTerm, recurring)))
     const fullNeedMort = Math.max(0, Math.round(fullNeedMortTotal))
     const fullNeedEdu = Math.max(0, Math.round(fullNeedEduTotal))
-    const fullNeed = fullNeedFD + fullNeedMort + fullNeedEdu
+    const fullNeed = fullNeedFD + fullNeedTax + fullNeedMort + fullNeedEdu
 
     const targetFD = dtpd.familyDependency
     const targetMort = dtpd.mortgageDebtClearance
     const targetEdu = dtpd.tertiaryFunding
-    const targetNeed = targetFD + targetMort + targetEdu
+    const targetTax = dtpd.incomeTaxOneOff
+    const targetNeed = targetFD + targetTax + targetMort + targetEdu
 
     const assetOffsetEnabled = p.assetOffsetEnabled !== false
     const currentInsurance = dtpd.existingCoverage
@@ -811,8 +843,8 @@ export function buildProtectionSnapshot(input: {
     const currentProvision = currentInsurance + currentAssets
 
     return {
-      fullNeed, fullNeedFD, fullNeedMort, fullNeedEdu,
-      targetNeed, targetFD, targetMort, targetEdu,
+      fullNeed, fullNeedFD, fullNeedMort, fullNeedEdu, fullNeedTax,
+      targetNeed, targetFD, targetMort, targetEdu, targetTax,
       currentProvision, currentInsurance, currentAssets,
       assetOffsetEnabled,
     }
