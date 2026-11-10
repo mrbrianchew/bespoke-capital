@@ -1,6 +1,7 @@
 'use client'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType, getDetailedTotal, getSimpleCategoryTotal, getCIFloor } from '@/lib/protectionSnapshot'
+import { ciWindowEndYear, ciWindowFactorFrom } from '@/lib/ciFamilyWindow'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Policy {
@@ -560,9 +561,18 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
 
   const ciWindow = Number(ff.protection?.ciYears) || 5
   const yLeft = Math.max(0, (currentAge + coverTerm) - age)
-  // Family dependency — CI uses a rolling ciWindow-year annuity of expenses (same as Strategic Objectives)
-  const fdYears = Math.min(ciWindow, yLeft)
-  const ageFD = fvAnnuity(annExp, inflation, fdYears)
+  // Family dependency — the ciWindow-year recovery window ends at the youngest child's
+  // graduation (or retirement), same year Strategic Objectives saved (p1/p2_ci_end).
+  // Falls back to the same rule when that year hasn't been saved yet.
+  const savedWindowEnd = Number(ff.protection?.[person === 'client' ? 'p1_ci_end' : 'p2_ci_end'])
+  const windowEnd = savedWindowEnd > 0 ? savedWindowEnd : ciWindowEndYear({
+    ciYears: ciWindow,
+    hasDependentChildren: children.length > 0,
+    coverageTerm: coverTerm,
+    currentAge,
+    retireAge: person === 'client' ? p1RetireAge : p2RetireAge,
+  })
+  const ageFD = annExp * ciWindowFactorFrom(inflation, ciWindow, windowEnd, Math.max(0, age - currentAge))
 
     const incomeComponent = ageFD
 
@@ -656,6 +666,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
     p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
+    p1RetireAge, p2RetireAge, ff.protection?.ciYears, ff.protection?.p1_ci_end, ff.protection?.p2_ci_end,
     clientDTPD, spouseDTPD, clientCI, spouseCI, protectionSnapshot])
   
   // ── Current values ──────────────────────────────────────────────────────────
@@ -1666,7 +1677,7 @@ function CoverageChart({
             breakdown={activeProfile.ci}
             rows={[
               { label: 'Family living', value: activeProfile.ci.familyDependency, durationText: `${activeProfile.ci.ciYears} yrs`,
-                tip: 'Everyday household spending during the recovery window, grown with inflation, while income is paused. Income tax is not included here.' },
+                tip: 'Everyday household spending for the recovery window, priced at the end of your planning period (when the youngest child graduates, or at retirement) so the cover still works if a diagnosis comes later. Income tax is not included here.' },
               { label: 'Mortgage / Debts & tax', value: activeProfile.ci.mortgageDebtClearance + activeProfile.ci.incomeTaxOneOff,
                 // CI funds only instalments inside the recovery window, capped by the remaining loan tenure.
                 durationText: `up to ${longestLoanTenure > 0 ? Math.min(activeProfile.ci.ciYears, longestLoanTenure) : activeProfile.ci.ciYears} yrs`,

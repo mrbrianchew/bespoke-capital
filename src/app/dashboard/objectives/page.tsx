@@ -7,6 +7,7 @@ import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { useUniCosts, UNI_COST_DEFAULTS as UNI_COST_FALLBACK } from '@/hooks/useUniCosts'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { getDetailedCategoryTotal, getDetailedTotal, getCIFloor } from '@/lib/protectionSnapshot'
+import { ciWindowEndYear, ciWindowFactor } from '@/lib/ciFamilyWindow'
 import { useClientTabState } from '@/hooks/useClientTabState'
 import WealthAccumulationSection, { AccumulationData, WealthGoal } from './WealthAccumulation'
 import RetirementSection, { RetirementData, DEFAULT_RETIREMENT_DATA } from './RetirementSection'
@@ -1324,6 +1325,20 @@ const coverageTerm = (() => {
     return { gross, assets, assetsCash: assetBreakdown.cash, assetsProperty: assetBreakdown.property, net: Math.max(0, gross - assets), fd, mort, edu, tax: incomeTaxOneOff }
   }
 
+  // Year (from today) in which the CI recovery window ends — see lib/ciFamilyWindow.ts.
+  // Also saved as p1/p2_ci_end so the Risk Management chart and the report use the same year.
+  function getCIWindowEnd(who: 'client' | 'spouse'): number {
+    const isClient = who === 'client'
+    const dob = isClient ? clientDOB : spouseDOB
+    return ciWindowEndYear({
+      ciYears: p.ciYears ?? 5,
+      hasDependentChildren: children.length > 0,
+      coverageTerm,
+      currentAge: dob ? getAge(dob) : 35,
+      retireAge: Number(isClient ? ret.client?.retirementAge : ret.spouse?.retirementAge) || (isClient ? 65 : 62),
+    })
+  }
+
   function calcCINeed(who: 'client' | 'spouse'): CalcResult {
     const ciMode = p.ciCalcMode ?? 'expenses'
     const ciYrs = p.ciYears ?? 5
@@ -1392,7 +1407,9 @@ const coverageTerm = (() => {
     const fdBase = fdMode === 'own'
       ? (who === 'client' ? annExpClient - clientTax : annExpSpouse - spouseTax)
       : (annExpTotal - clientTax - spouseTax) * coverPct
-    const fd = p.ciIncludeLivingExpenses === false ? 0 : fv(inflation, ciYrs, fdBase)
+    // Window ends at the youngest child's graduation (or retirement), not today + ciYrs,
+    // so a later diagnosis is still covered.
+    const fd = p.ciIncludeLivingExpenses === false ? 0 : fdBase * ciWindowFactor(inflation, ciYrs, getCIWindowEnd(who))
     const ciTax = p.ciIncludeLivingExpenses === false ? 0 : ownTax
     const mort = p.ciIncludeMortgageCI === false ? 0 : calcCIMortgage(who)
     const edu = p.ciIncludeEducationCI !== false ? calcEducationForPersonCI(who) : 0
@@ -1427,6 +1444,7 @@ async function saveNeedsToDatabase() {
     p1_ci_gross: ciClient.gross,
     p1_ci_assets: ciClient.assets,
     p1_ci_fd: ciClient.fd,
+    p1_ci_end: getCIWindowEnd('client'),
     p1_ci_tax: ciClient.tax ?? 0,
     p1_ci_mort: ciClient.mort,
     p1_ci_edu: ciClient.edu,
@@ -1449,6 +1467,7 @@ async function saveNeedsToDatabase() {
     needs.p2_ci_gross = ciSpouse.gross
     needs.p2_ci_assets = ciSpouse.assets
     needs.p2_ci_fd = ciSpouse.fd
+    needs.p2_ci_end = getCIWindowEnd('spouse')
     needs.p2_ci_tax = ciSpouse.tax ?? 0
     needs.p2_ci_mort = ciSpouse.mort
     needs.p2_ci_edu = ciSpouse.edu

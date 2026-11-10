@@ -1,4 +1,5 @@
 import { ageYearOnly, fv } from './calc'
+import { ciWindowEndYear, ciWindowFactorFrom } from './ciFamilyWindow'
 
 export interface PersonProtectionBreakdown {
   familyDependency: number
@@ -674,10 +675,19 @@ export function buildProtectionSnapshot(input: {
     const ciWindow = Number(p.ciYears) || 5
     const uniMeta = uniMilestonesForAge(currentAge)
 
+    // Recovery window ends at the youngest child's graduation (or retirement) — the
+    // year Strategic Objectives saved as p1/p2_ci_end, with the same rule as fallback.
+    const savedWindowEnd = Number(p[`${who === 'client' ? 'p1' : 'p2'}_ci_end`])
+    const windowEnd = savedWindowEnd > 0 ? savedWindowEnd : ciWindowEndYear({
+      ciYears: ciWindow,
+      hasDependentChildren: children.length > 0,
+      coverageTerm,
+      currentAge,
+      retireAge: Math.round(Number(who === 'client' ? ff.client?.retirementAge : ff.spouse?.retirementAge) || (who === 'client' ? 65 : 62)),
+    })
+
     function rawNeedAtAge(age: number): number {
-      const yLeft = Math.max(0, (currentAge + coverageTerm) - age)
-      const fdYears = Math.min(ciWindow, yLeft)
-      const ageFD = fvAnnuity(annExp, inflation, fdYears)
+      const ageFD = annExp * ciWindowFactorFrom(inflation, ciWindow, windowEnd, Math.max(0, age - currentAge))
       // Windowed to the recovery period only — see mortInstalmentsAtAge.
       const ageMort = mortInstalmentsAtAge(age, currentAge, ff.properties || [], ciWindow)
       let eduRemaining = 0
