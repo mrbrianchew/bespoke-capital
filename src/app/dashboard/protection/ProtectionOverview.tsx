@@ -330,6 +330,13 @@ export default function ProtectionOverview({
   const [activePerson, setActivePerson] = useState<'client' | 'spouse'>('client')
  const ff = ffData || {}
 const properties: any[] = ff.properties || []
+// Longest remaining loan tenure (mortgages + other debts) — drives the
+// "up to N yrs" caption on the Mortgage / Debts & tax row.
+const longestLoanTenure: number = Math.max(
+  0,
+  ...properties.map(resolveMortgageFields).filter((m): m is { outstanding: number; rate: number; tenure: number } => !!m && m.outstanding > 0).map(m => m.tenure),
+  ...((ff.protection?.nonMortgageDebts ?? []) as any[]).map(d => Number(d.tenureLeft) || 0),
+)
 const savedPlanType = ff.protection?.planType ?? ff.planType ?? null
 // Mirrors the isIndividualMode check in protection/page.tsx: an explicit
 // 'individual' planType forces individual mode, but the default/unset value
@@ -1243,7 +1250,7 @@ function CoverageChart({
   // Category row with its own proportional bar (scaled against the largest
   // row in the group, so the three bars read as a relative comparison) and
   // duration caption underneath, matching the reference screenshot.
-  function ScenarioBreakdownRow({ label, value, maxValue, durationYears, tip }: { label: string; value: number; maxValue: number; durationYears?: number | null; tip?: string }) {
+  function ScenarioBreakdownRow({ label, value, maxValue, durationYears, durationText, tip }: { label: string; value: number; maxValue: number; durationYears?: number | null; durationText?: string; tip?: string }) {
     const barPct = maxValue > 0 ? Math.max(2, Math.round((value / maxValue) * 100)) : 0
     const { swatch } = CATEGORY_COLORS[label] || DEFAULT_CATEGORY_COLOR
     const [tipOpen, setTipOpen] = useState(false)
@@ -1284,7 +1291,9 @@ function CoverageChart({
         <div style={{ height: 3, background: '#EFEAE0', borderRadius: 99 }}>
           <div style={{ width: `${barPct}%`, height: '100%', background: swatch, borderRadius: 99 }} />
         </div>
-        {durationYears != null && durationYears > 0 && (
+        {durationText ? (
+          <div style={{ fontSize: 10.5, color: '#b0aba1', marginTop: 5 }}>{durationText}</div>
+        ) : durationYears != null && durationYears > 0 && (
           <div style={{ fontSize: 10.5, color: '#b0aba1', marginTop: 5 }}>{durationYears} yrs</div>
         )}
       </div>
@@ -1315,7 +1324,7 @@ function CoverageChart({
     age: number
     income: number
     breakdown: DialBreakdown
-    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; useCoverageTerm?: boolean; hideDuration?: boolean; tip?: string }[]
+    rows: { label: string; value: number; milestoneType?: CoverageMilestoneType; useCoverageTerm?: boolean; hideDuration?: boolean; durationText?: string; tip?: string }[]
     timeline: CoverageTimeline
     type: 'dtpd' | 'ci'
     recoveryWindowYears?: number
@@ -1431,6 +1440,7 @@ function CoverageChart({
               value={r.value}
               maxValue={maxRowValue}
               durationYears={r.hideDuration ? null : r.useCoverageTerm ? (timeline.coverageTerm ?? null) : r.milestoneType ? getScenarioDuration(timeline, r.milestoneType) : null}
+              durationText={r.durationText}
               tip={r.tip}
             />
           ))}
@@ -1578,7 +1588,9 @@ function CoverageChart({
               { label: 'Family living', value: activeProfile.dtpd.familyDependency, useCoverageTerm: true,
                 tip: 'Everyday household spending you chose to protect, grown with inflation until your youngest child finishes university. Income tax is not included here.' },
               // One-off income tax sits with the debts: a bill settled once, not recurring living cost.
-              { label: 'Mortgage / Debts & tax', value: activeProfile.dtpd.mortgageDebtClearance + activeProfile.dtpd.incomeTaxOneOff, hideDuration: true,
+              { label: 'Mortgage / Debts & tax', value: activeProfile.dtpd.mortgageDebtClearance + activeProfile.dtpd.incomeTaxOneOff,
+                // Horizon = the longer of the longest remaining loan tenure and the Family living term.
+                durationText: (() => { const n = Math.max(longestLoanTenure, activeProfile.dtpdTimeline.coverageTerm ?? 0); return n > 0 ? `up to ${n} yrs` : undefined })(),
                 tip: 'Outstanding mortgage and other debts cleared in full, plus the income tax bill on income already earned, which the estate settles once.' },
               { label: 'Education', value: activeProfile.dtpd.tertiaryFunding, milestoneType: 'education',
                 tip: 'University fees and living costs for each child, inflated to the year they start, for the share you chose to cover.' },
@@ -1653,9 +1665,11 @@ function CoverageChart({
             income={activeIncome}
             breakdown={activeProfile.ci}
             rows={[
-              { label: 'Family living', value: activeProfile.ci.familyDependency,
+              { label: 'Family living', value: activeProfile.ci.familyDependency, durationText: `${activeProfile.ci.ciYears} yrs`,
                 tip: 'Everyday household spending during the recovery window, grown with inflation, while income is paused. Income tax is not included here.' },
-              { label: 'Mortgage / Debts & tax', value: activeProfile.ci.mortgageDebtClearance + activeProfile.ci.incomeTaxOneOff, hideDuration: true,
+              { label: 'Mortgage / Debts & tax', value: activeProfile.ci.mortgageDebtClearance + activeProfile.ci.incomeTaxOneOff,
+                // CI funds only instalments inside the recovery window, capped by the remaining loan tenure.
+                durationText: `up to ${longestLoanTenure > 0 ? Math.min(activeProfile.ci.ciYears, longestLoanTenure) : activeProfile.ci.ciYears} yrs`,
                 tip: 'Mortgage and debt instalments that fall due during the recovery window (not the whole loan), plus the one-time income tax bill on income already earned.' },
               { label: 'Education', value: activeProfile.ci.tertiaryFunding, milestoneType: 'education',
                 tip: 'University fees and living costs for each child, inflated to the year they start, for the share you chose to cover.' },
