@@ -1360,10 +1360,16 @@ const coverageTerm = (() => {
       : (who === 'client'
           ? (p.ciExpenseCoverPctClient ?? defaultClientPct) / 100
           : (p.ciExpenseCoverPctSpouse ?? defaultSpousePct) / 100)
+    // Income tax is one-time on CI (income stops): removed from the recurring
+    // stream for both people, the CI person's own tax added once into fd.
+    const subItems = p.expenseSubItems ?? {}
+    const clientTax = isDetailed ? getIncomeTaxOneOff(ff, 'client', subItems) : 0
+    const spouseTax = isDetailed ? getIncomeTaxOneOff(ff, 'spouse', subItems) : 0
+    const ownTax = who === 'client' ? clientTax : spouseTax
     const fdBase = fdMode === 'own'
-      ? (who === 'client' ? annExpClient : annExpSpouse)
-      : annExpTotal * coverPct
-    const fd = p.ciIncludeLivingExpenses === false ? 0 : fv(inflation, ciYrs, fdBase)
+      ? (who === 'client' ? annExpClient - clientTax : annExpSpouse - spouseTax)
+      : (annExpTotal - clientTax - spouseTax) * coverPct
+    const fd = p.ciIncludeLivingExpenses === false ? 0 : fv(inflation, ciYrs, fdBase) + ownTax
     const mort = p.ciIncludeMortgageCI === false ? 0 : calcCIMortgage(who)
     const edu = p.ciIncludeEducationCI !== false ? calcEducationForPersonCI(who) : 0
     const medicalBuffer = p.ciIncludeMedicalBuffer
