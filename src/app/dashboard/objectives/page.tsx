@@ -2003,6 +2003,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
             children={children} isDetailed={isDetailed}
             cats={cats} editModal={editModal} setEditModal={setEditModal}
             inflation={inflation} defaultClientPct={defaultClientPct} defaultSpousePct={defaultSpousePct}
+            fdClient={dtpdClient.fd} fdSpouse={dtpdSpouse.fd}
           />
         )}
         {wpTab === 2 && (
@@ -2058,7 +2059,7 @@ function WealthProtectionSection({ ff, p, updateP, children, isCouple, clientNam
 
 // ─── FAMILY DEPENDENCY TAB ───────────────────────────────────────────────────
 
-function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, children, isDetailed, cats, editModal, setEditModal, inflation, defaultClientPct, defaultSpousePct }: {
+function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName, annExpClient, annExpSpouse, coverageTerm, youngestAge, children, isDetailed, cats, editModal, setEditModal, inflation, defaultClientPct, defaultSpousePct, fdClient, fdSpouse }: {
   ff: FactFinding; p: ProtectionData; updateP: (c: Partial<ProtectionData>) => void
   isCouple: boolean; clientName: string; spouseName: string
   annExpClient: number; annExpSpouse: number
@@ -2068,6 +2069,9 @@ function FamilyDependencyTab({ ff, p, updateP, isCouple, clientName, spouseName,
   editModal: { open: boolean; category: string }
   setEditModal: (v: { open: boolean; category: string }) => void
   inflation: number; defaultClientPct: number; defaultSpousePct: number
+  // Family-living need from calcDTPDNeed (single source of truth — same figure that is
+  // saved and shown on the Wealth Protection overview, incl. income-tax-as-one-off).
+  fdClient: number; fdSpouse: number
 }) {
   const annExpTotal = annExpClient + annExpSpouse
 
@@ -2294,8 +2298,8 @@ const uniGrad = Math.max(0, gradAge - age)
       <SectionBlock title="Family Dependency Need" color="#2D5A4E">
         <NeedTable
           isCouple={isCouple} clientName={clientName} spouseName={spouseName}
-          clientData={dtpdFDOnly(annExpClient, p.expenseCoverPctClient ?? defaultClientPct, p.inflationRate ?? 3, coverageTerm, p.fdModeClient ?? 'combined', annExpTotal)}
-          spouseData={dtpdFDOnly(annExpSpouse, p.expenseCoverPctSpouse ?? defaultSpousePct, p.inflationRate ?? 3, coverageTerm, p.fdModeSpouse ?? 'combined', annExpTotal)}
+          clientData={fdClient}
+          spouseData={fdSpouse}
           label="D/TPD Family Dependency"
         />
       </SectionBlock>
@@ -2316,13 +2320,6 @@ const uniGrad = Math.max(0, gradAge - age)
       </SectionBlock>
     </div>
   )
-}
-
-function dtpdFDOnly(annExp: number, coverPctRaw: number, inflationRaw: number, term: number, fdMode: 'own' | 'combined', annExpTotal: number): number {
-  const rate = inflationRaw / 100
-  const pct = coverPctRaw / 100
-  const fdBase = fdMode === 'own' ? annExp : annExpTotal * pct
-  return fv(rate, term, fdBase)
 }
 
 // ─── MORTGAGE & DEBT TAB ─────────────────────────────────────────────────────
