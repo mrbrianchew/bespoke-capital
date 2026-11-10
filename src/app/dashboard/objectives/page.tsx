@@ -1246,11 +1246,19 @@ const coverageTerm = (() => {
       }
     })
     const ciYrs = p.ciYears ?? 5
-    const mortgageCI = mortgages.reduce((sum, m, i) => {
-      const pcts = who === 'client' ? (p.mortgageCoverPctsClient ?? []) : (p.mortgageCoverPctsSpouse ?? [])
-      const pct = !isCouple ? 1 : (pcts[i] ?? 100) / 100
-      return sum + m.monthlyRepayment * 12 * ciYrs * pct
-    }, 0)
+    // CI has its own coverage % (the slider on the CI tab), isolated from the
+    // D/TPD per-property elections — same pattern as the CI education fund.
+    const ciMortPct = ((who === 'client' ? p.ciMortgagePctClient : p.ciMortgagePctSpouse) ?? 100) / 100
+    let mortgageCI = mortgages.reduce((sum, m) => sum + m.monthlyRepayment * 12 * ciYrs * ciMortPct, 0)
+    // No property loan details entered → fall back to the mortgage instalments in
+    // Expenses (household total: cash + CPF OA, both people; flat, instalments
+    // don't inflate). Never added on top of property-based figures (no double count).
+    if (mortgages.length === 0) {
+      const annualInstalments = isDetailed
+        ? (Number(ff.d_mortgage_cash) || 0) + (Number(ff.d_mortgage_cpf) || 0) + (isCouple ? (Number(ff.d2_mortgage_cash) || 0) + (Number(ff.d2_mortgage_cpf) || 0) : 0)
+        : (Number((ff as any).s_mortgage) || 0) + (isCouple ? (Number((ff as any).s2_mortgage) || 0) : 0)
+      mortgageCI = annualInstalments * ciYrs * ciMortPct
+    }
     const debtCI = (p.nonMortgageDebts ?? []).reduce((sum, d) => {
       const owner = (d as any).owner ?? 'client'
       let applies = false
