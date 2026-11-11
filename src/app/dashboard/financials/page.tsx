@@ -8,6 +8,7 @@ import { calcSepMedisave, isSepEmploymentType } from '@/lib/calc'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import SnapshotsTab from './SnapshotsTab'
 import AnnualReviewsTab from './AnnualReviewsTab'
+import LoanSchedule from './LoanSchedule'
 import VersionPicker, { fmtAsAtLabel } from './VersionPicker'
 import { cpfConfigAt, ageForCpfAt, currentMonthStartSG } from '@/lib/cpfHistory'
 import { useDashboard } from '@/contexts/DashboardContext'
@@ -1088,6 +1089,17 @@ const addProperty = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Loan schedule — hidden until opened */}
+                <LoanSchedule
+                  outstanding={effectiveOutstanding}
+                  ratePct={prop.interestRate || 0}
+                  remainingYears={effectiveRemainingTenure}
+                  clientAge={clientAge}
+                  spouseAge={spouseAge}
+                  isCouple={isCouple}
+                  enteredMonthly={prop.monthlyRepayment}
+                />
 
                 {/* Advisor Notes */}
                 <div>
