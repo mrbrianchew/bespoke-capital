@@ -1,5 +1,6 @@
 import { ageYearOnly, fv } from './calc'
 import { ciWindowEndYear, ciWindowFactorFrom } from './ciFamilyWindow'
+import { makeNeedAtAge, NeedParts } from './coverageNeedCurve'
 
 export interface PersonProtectionBreakdown {
   familyDependency: number
@@ -444,20 +445,23 @@ export function buildProtectionSnapshot(input: {
     return { outstanding, rate, tenure: Number(remainingTenure) || 0 }
   }
 
-  function mortBalanceAtAge(atAge: number, currentAge: number, properties: any[]): number {
+  // coverPcts (couples only): the person's chosen cover % per loan, in the same
+  // order Strategic Objectives lists them. Omitted = 100% of every loan.
+  function mortBalanceAtAge(atAge: number, currentAge: number, properties: any[], coverPcts?: number[]): number {
     const resolved = (properties || []).map(resolveMortgageFields).filter((m): m is { outstanding: number; rate: number; tenure: number } => m !== null)
-    return resolved.reduce((total: number, m) => {
+    return resolved.reduce((total: number, m, i) => {
       const { outstanding, rate, tenure } = m
       if (outstanding <= 0 || tenure <= 0) return total
+      const share = coverPcts ? (coverPcts[i] ?? 100) / 100 : 1
       const yearsElapsed = atAge - currentAge
       const yearsLeft = Math.max(0, tenure - yearsElapsed)
       if (yearsLeft <= 0) return total
-      if (rate === 0) return total + outstanding * (yearsLeft / tenure)
+      if (rate === 0) return total + share * outstanding * (yearsLeft / tenure)
       const monthlyRate = rate / 12
       const totalMonths = tenure * 12
       const monthlyPmt = outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
       const monthsLeft = yearsLeft * 12
-      return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
+      return total + share * monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
     }, 0)
   }
 
@@ -591,21 +595,25 @@ export function buildProtectionSnapshot(input: {
     return maxTenure > 0 ? Math.round(currentAge + maxTenure) : null
   }
 
-  // Builds the full age-46-to-100-style array (actually currentAge-to-100) for
-  // one person, scaled so it anchors exactly to the net-of-assets figure
-  // buildDTPD() already computed — same approach the live chart uses to stay
-  // consistent with the saved Strategic Objectives value.
-  function buildDTPDTimeline(who: 'client' | 'spouse', currentAgeOrNull: number | null, netOfAssetsAtCurrent: number): CoverageTimeline {
+  // Builds the full currentAge-to-100 array for one person. The by-age shape comes
+  // from the components below, anchored to the figures saved on Strategic
+  // Objectives and combined by makeNeedAtAge() (coverageNeedCurve.ts), which is
+  // also what the live Risk Management chart uses.
+  function buildDTPDTimeline(who: 'client' | 'spouse', currentAgeOrNull: number | null, saved: PersonProtectionBreakdown): CoverageTimeline {
     if (currentAgeOrNull === null) return { points: [], milestones: [] }
     const currentAge: number = currentAgeOrNull
 
     const annExp = who === 'client' ? annExpClient : annExpSpouse
     const uniMeta = uniMilestonesForAge(currentAge)
 
-    function rawNeedAtAge(age: number): number {
+    const coverPcts = isCouple
+      ? ((who === 'client' ? p.mortgageCoverPctsClient : p.mortgageCoverPctsSpouse) ?? [])
+      : undefined
+
+    function partsAtAge(age: number): NeedParts {
       const yLeft = Math.max(0, (currentAge + coverageTerm) - age)
       const ageFD = fvAnnuity(annExp, inflation, yLeft)
-      const ageMort = mortBalanceAtAge(age, currentAge, ff.properties || [])
+      const ageMort = mortBalanceAtAge(age, currentAge, ff.properties || [], coverPcts)
       let eduRemaining = 0
       if (children.length > 0) {
         eduRemaining = children.reduce((s: number, c) => {
@@ -615,16 +623,23 @@ export function buildProtectionSnapshot(input: {
           return s
         }, 0)
       }
-      return ageFD + ageMort + eduRemaining
+      return { fd: ageFD, mort: ageMort, edu: eduRemaining }
     }
 
+    // Assets come off in full at every age; later years sit at floor + loan
+    // still owing — see coverageNeedCurve.ts (shared with the live chart).
     const floor = getFloor(who, currentAge)
-    const rawAtCurrent = rawNeedAtAge(currentAge)
-    const scale = rawAtCurrent > 0 ? netOfAssetsAtCurrent / rawAtCurrent : 1
+    const needAt = makeNeedAtAge({
+      startAge: currentAge,
+      partsAtAge,
+      saved: { fd: saved.familyDependency, mort: saved.mortgageDebtClearance, edu: saved.tertiaryFunding, gross: saved.maxCapitalRequired },
+      assets: saved.assetMitigation,
+      floor,
+    })
 
     const points: CoveragePoint[] = []
     for (let age = currentAge; age <= 100; age++) {
-      const need = Math.max(floor, rawNeedAtAge(age) * scale)
+      const need = needAt(age)
       const have = getDTPDHaveAtAge(age, who, currentAge)
       points.push({ age, need: Math.round(need), have: Math.round(have) })
     }
@@ -655,19 +670,8 @@ export function buildProtectionSnapshot(input: {
   // full-coverage-term annuity — same difference the live chart's
   // getCINeedAtAge() has from getDTPDNeedAtAge().
   //
-  // Deliberately NOT mirroring the live page's `rawCI <= personFloor ? personFloor
-  // : Math.max(personFloor, rawCI * ciScale)` here. That compares the *unscaled*
-  // raw value against the *absolute* floor before the scale factor is applied —
-  // dimensionally inconsistent, and confirmed (via a standalone test harness
-  // run against Au Chi Hoi's real children/mortgage/life-expectancy figures) to
-  // cause the curve to collapse straight to the floor the moment the first
-  // child's education milestone hits, silently swallowing every milestone
-  // after it whenever the scale factor drifts from 1 — which is most of the
-  // time, since the scale factor exists specifically to reconcile this formula
-  // with whatever was actually saved on Strategic Objectives. Using D/TPD's
-  // simpler, scale-first `Math.max(floor, raw * scale)` produces the correct
-  // multi-step curve instead.
-  function buildCITimeline(who: 'client' | 'spouse', currentAgeOrNull: number | null, netOfAssetsAtCurrent: number): CoverageTimeline {
+  // Combined by the same makeNeedAtAge() rule as the D/TPD timeline above.
+  function buildCITimeline(who: 'client' | 'spouse', currentAgeOrNull: number | null, saved: PersonCIBreakdown): CoverageTimeline {
     if (currentAgeOrNull === null) return { points: [], milestones: [] }
     const currentAge: number = currentAgeOrNull
 
@@ -686,7 +690,7 @@ export function buildProtectionSnapshot(input: {
       retireAge: Math.round(Number(who === 'client' ? ff.client?.retirementAge : ff.spouse?.retirementAge) || (who === 'client' ? 65 : 62)),
     })
 
-    function rawNeedAtAge(age: number): number {
+    function partsAtAge(age: number): NeedParts {
       const ageFD = annExp * ciWindowFactorFrom(inflation, ciWindow, windowEnd, Math.max(0, age - currentAge))
       // Windowed to the recovery period only — see mortInstalmentsAtAge.
       const ageMort = mortInstalmentsAtAge(age, currentAge, ff.properties || [], ciWindow)
@@ -699,17 +703,21 @@ export function buildProtectionSnapshot(input: {
           return s
         }, 0)
       }
-      return ageFD + ageMort + eduRemaining
+      return { fd: ageFD, mort: ageMort, edu: eduRemaining }
     }
 
     const floor = getFloor(who, currentAge)
-    const rawAtCurrent = rawNeedAtAge(currentAge)
-    const scale = rawAtCurrent > 0 ? netOfAssetsAtCurrent / rawAtCurrent : 1
+    const needAt = makeNeedAtAge({
+      startAge: currentAge,
+      partsAtAge,
+      saved: { fd: saved.familyDependency, mort: saved.mortgageDebtClearance, edu: saved.tertiaryFunding, gross: saved.maxCapitalRequired },
+      assets: saved.assetMitigation,
+      floor,
+    })
 
     const points: CoveragePoint[] = []
     for (let age = currentAge; age <= 100; age++) {
-      const raw = rawNeedAtAge(age)
-      const need = Math.max(floor, raw * scale)
+      const need = needAt(age)
       const have = getCIHaveAtAge(age, who, currentAge)
       points.push({ age, need: Math.round(need), have: Math.round(have) })
     }
@@ -921,16 +929,14 @@ export function buildProtectionSnapshot(input: {
     const dtpd = buildDTPD(who)
     const ci = buildCI(who)
     const currentAge = who === 'client' ? clientAge : spouseAge
-    const netOfAssetsDTPD = Math.max(0, dtpd.maxCapitalRequired - dtpd.assetMitigation)
-    const netOfAssetsCI = Math.max(0, ci.maxCapitalRequired - ci.assetMitigation)
     return {
       dtpd,
       ci,
       framework: buildFramework(who),
       lifePolicies: buildLifePolicies(policies, who),
       runway: buildRunway(who, dtpd),
-      dtpdTimeline: buildDTPDTimeline(who, currentAge, netOfAssetsDTPD),
-      ciTimeline: buildCITimeline(who, currentAge, netOfAssetsCI),
+      dtpdTimeline: buildDTPDTimeline(who, currentAge, dtpd),
+      ciTimeline: buildCITimeline(who, currentAge, ci),
     }
   }
 

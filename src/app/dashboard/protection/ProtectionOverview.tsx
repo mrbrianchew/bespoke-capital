@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { ProtectionSnapshot, PersonProtectionBreakdown, PersonCIBreakdown, CoverageTimeline, CoverageMilestoneType, getDetailedTotal, getSimpleCategoryTotal, getCIFloor } from '@/lib/protectionSnapshot'
 import { ciWindowEndYear, ciWindowFactorFrom } from '@/lib/ciFamilyWindow'
+import { makeNeedAtAge, NeedParts } from '@/lib/coverageNeedCurve'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Policy {
@@ -185,27 +186,34 @@ function resolveMortgageFields(pr: any): { outstanding: number; rate: number; te
 }
 
 // Mortgage balance remaining at a future age
+//
+// coverPcts (couples only): the person's chosen cover % per loan, in the same
+// order Strategic Objectives lists them (loans only, property order). Omitted =
+// 100% of every loan. Without it the curve counted both loans in full while the
+// saved need counted only the person's share, distorting the curve's shape.
 function mortBalanceAtAge(
   atAge: number,
   currentAge: number,
-  properties: any[]
+  properties: any[],
+  coverPcts?: number[]
 ): number {
   const resolved = (properties || [])
     .map(resolveMortgageFields)
     .filter((m): m is { outstanding: number; rate: number; tenure: number } => m !== null)
-  return resolved.reduce((total: number, m) => {
+  return resolved.reduce((total: number, m, i) => {
     const { outstanding, rate, tenure } = m
     if (outstanding <= 0 || tenure <= 0) return total
+    const share = coverPcts ? (coverPcts[i] ?? 100) / 100 : 1
     const yearsElapsed = atAge - currentAge
     const yearsLeft = Math.max(0, tenure - yearsElapsed)
     if (yearsLeft <= 0) return total
-    if (rate === 0) return total + outstanding * (yearsLeft / tenure)
+    if (rate === 0) return total + share * outstanding * (yearsLeft / tenure)
     const monthlyRate = rate / 12
     const totalMonths = tenure * 12
     const monthlyPmt =
       outstanding * monthlyRate / (1 - Math.pow(1 + monthlyRate, -totalMonths))
     const monthsLeft = yearsLeft * 12
-    return total + monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
+    return total + share * monthlyPmt * (1 - Math.pow(1 + monthlyRate, -monthsLeft)) / monthlyRate
   }, 0)
 }
 
@@ -519,14 +527,17 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
   // already-floored figure and floored again — which made the plotted line
   // go flat far earlier than the true (need − assets) curve would, hiding
   // any milestone step-downs (uni entry, etc.) that fall after that point.
-  function getDTPDNeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
+  function getDTPDPartsAtAge(age: number, person: 'client' | 'spouse', props: any[]): NeedParts {
     const currentAge = person === 'client' ? clientAge : spouseAge
     const annExp = person === 'client' ? p1AnnExp : p2AnnExp
     const yLeft = Math.max(0, (currentAge + coverTerm) - age)
 
     const ageFD = fvAnnuity(annExp, inflation, yLeft)
 
-    const ageMort = mortBalanceAtAge(age, currentAge, props)
+    const coverPcts = effectiveIsCouple
+      ? ((person === 'client' ? ff.protection?.mortgageCoverPctsClient : ff.protection?.mortgageCoverPctsSpouse) ?? [])
+      : undefined
+    const ageMort = mortBalanceAtAge(age, currentAge, props, coverPcts)
 
     let eduRemaining = 0
     if (children.length > 0) {
@@ -549,11 +560,11 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     // made the whole curve decline far too steeply and hit the floor+assets
     // threshold years earlier than it should — masking milestone step-downs
     // that occur after that point.
-    return ageFD + ageMort + eduRemaining
+    return { fd: ageFD, mort: ageMort, edu: eduRemaining }
   }
   // ── CI need at age ──────────────────────────────────────────────────────────
   // Also returns the RAW need — see note above getDTPDNeedAtAge.
-  function getCINeedAtAge(age: number, person: 'client' | 'spouse', props: any[]): number {
+  function getCIPartsAtAge(age: number, person: 'client' | 'spouse', props: any[]): NeedParts {
   const currentAge = person === 'client' ? clientAge : spouseAge
   const annExp = person === 'client' ? p1AnnExp : p2AnnExp
   const monthlyInc = person === 'client' ? p1MonthlyInc : p2MonthlyInc
@@ -598,7 +609,7 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     eduComponent = yLeft > 0 ? edu : 0
   }
 
-    return incomeComponent + mortComponent + eduComponent
+    return { fd: incomeComponent, mort: mortComponent, edu: eduComponent }
   }
 
 // ── Build chart data (age arrays) ───────────────────────────────────────────
@@ -622,47 +633,49 @@ const p2RetireAge = Number(ff.retirement_age_spouse || ff.person2?.retirement_ag
     ? profile.ci.maxCapitalRequired
     : (activePerson === 'client' ? clientCI : spouseCI)
 
-  // Anchor the scale to the NET-of-assets figure, not gross — mirrors
-  // protectionSnapshot.ts's buildDTPDTimeline/buildCITimeline exactly (the
-  // Financial Report's Coverage Timeline chart, which doesn't have this
-  // page's flattening bug). Netting assets downstream, after scaling to a
-  // GROSS anchor, was the root cause: it made the scale factor larger than
-  // it should be, over-steepening the curve's decline and hitting the floor
-  // years before it should. Anchoring to net-of-assets from the start and
-  // flooring exactly once — same as the Financial Report — avoids that.
-  const dtpdAssetMitigation = profile?.dtpd.assetMitigation || 0
-  const ciAssetMitigation = profile?.ci.assetMitigation || 0
-  const netDTPDAtCurrent = Math.max(0, savedDTPD - dtpdAssetMitigation)
-  const netCIAtCurrent = Math.max(0, savedCI - ciAssetMitigation)
-
-  // Compute raw need at current age as scaling baseline
-  const rawDTPDAtCurrent = getDTPDNeedAtAge(currentAge, personKey, properties)
-  const rawCIAtCurrent = getCINeedAtAge(currentAge, personKey, properties)
+  // Need by age — see src/lib/coverageNeedCurve.ts (shared with the Financial
+  // Report). Assets come off in full at every age; once the need falls below
+  // the floor the line sits at floor + any loan still owing. Each component is
+  // anchored to the saved Strategic Objectives figure at today's age, so the
+  // first point matches the dial card exactly. The old method multiplied the
+  // whole curve by (net ÷ gross) at today's age, which deducted only a fixed
+  // percentage of the need at every age — so the asset credit faded to nothing
+  // as the need shrank — and the floor then hid the loans still owing.
+  const dtpdAssets = profile?.dtpd.assetMitigation || 0
+  const ciAssets = profile?.ci.assetMitigation || 0
+  const personFloor = activePerson === 'client' ? clientFloor : spouseFloor
+  const dtpdSaved = profile
+    ? { fd: profile.dtpd.familyDependency, mort: profile.dtpd.mortgageDebtClearance, edu: profile.dtpd.tertiaryFunding, gross: profile.dtpd.maxCapitalRequired }
+    : { fd: 0, mort: 0, edu: 0, gross: savedDTPD }
+  const ciSaved = profile
+    ? { fd: profile.ci.familyDependency, mort: profile.ci.mortgageDebtClearance, edu: profile.ci.tertiaryFunding, gross: profile.ci.maxCapitalRequired }
+    : { fd: 0, mort: 0, edu: 0, gross: savedCI }
+  const dtpdNeedAt = makeNeedAtAge({
+    startAge: currentAge,
+    partsAtAge: (a) => getDTPDPartsAtAge(a, personKey, properties),
+    saved: dtpdSaved,
+    assets: dtpdAssets,
+    floor: personFloor,
+  })
+  const ciNeedAt = makeNeedAtAge({
+    startAge: currentAge,
+    partsAtAge: (a) => getCIPartsAtAge(a, personKey, properties),
+    saved: ciSaved,
+    assets: ciAssets,
+    floor: personFloor,
+  })
 
   const result = []
   for (let age = currentAge; age <= 100; age++) {
-    const dtpdHave = getDTPDHaveAtAge(age, personKey, currentAge, activePolicies)
-    const ciHave = getCIHaveAtAge(age, personKey, currentAge, activePolicies)
-
-    // Scale chart curve so it anchors to the saved net-of-assets value at current age
-    const rawDTPD = getDTPDNeedAtAge(age, personKey, properties)
-    const rawCI = getCINeedAtAge(age, personKey, properties)
-
-    const dtpdScale = rawDTPDAtCurrent > 0 ? netDTPDAtCurrent / rawDTPDAtCurrent : 1
-    const ciScale = rawCIAtCurrent > 0 ? netCIAtCurrent / rawCIAtCurrent : 1
-
-    const personFloor = activePerson === 'client' ? clientFloor : spouseFloor
-    // Floored exactly once, directly on the scaled (already net-of-assets)
-    // raw value — matches the Financial Report's Math.max(floor, raw*scale).
     result.push({
       age,
-      dtpdNeed: Math.max(personFloor, rawDTPD * dtpdScale),
-      dtpdHave,
-      ciNeed: Math.max(personFloor, rawCI * ciScale),
-      ciHave,
+      dtpdNeed: dtpdNeedAt(age),
+      dtpdHave: getDTPDHaveAtAge(age, personKey, currentAge, activePolicies),
+      ciNeed: ciNeedAt(age),
+      ciHave: getCIHaveAtAge(age, personKey, currentAge, activePolicies),
     })
   }
-  
+
   return result
 }, [activePerson, clientAge, spouseAge, activePolicies, clientFloor, spouseFloor,
     p1AnnExp, p2AnnExp, inflation, properties, children, edu, coverTerm, childUniEntryAges,
