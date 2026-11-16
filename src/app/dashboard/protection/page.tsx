@@ -2228,7 +2228,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
           const coOwner = jointCoOwnerLabel(p)
           const front = [
             {label:'Death benefit', value:p.isUSD && mainBen ? `USD ${Math.round(mainBen).toLocaleString()}` : fmt(mainBen)},
-            {label:coOwner?`Premium (${Math.round(frac*100)}% share)`:'Premium', value:p.premiumMedisave>0 ? `${fmtPremium(p.premiumCash*frac)} +${fmtPremium(p.premiumMedisave*frac)} MS` : fmtPremium(p.premiumCash*frac)},
+            {label:coOwner?`Premium (${Math.round(frac*100)}% share)`:'Premium', value:(p.premiumMedisave>0 ? `${fmtPremium(toSGDValue(p.premiumCash,p)*frac)} +${fmtPremium(p.premiumMedisave*frac)} MS` : fmtPremium(toSGDValue(p.premiumCash,p)*frac)) + (p.isUSD && p.premiumCash>0 ? ` (USD ${Math.round(p.premiumCash*frac).toLocaleString()})` : '')},
           ]
           const hidden = [
             {label:'Freq / Mode', value:`${p.frequency||'—'} · ${p.premiumMode||'—'}`},
@@ -2291,9 +2291,10 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
             </div>
             {/* Premium */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>
-              {fmtPremium(p.premiumCash*frac)}
+              {fmtPremium(toSGDValue(p.premiumCash,p)*frac)}
+              {p.isUSD && p.premiumCash>0 && <div style={{fontSize:10,color:'var(--ink3)'}}>USD {Math.round(p.premiumCash*frac).toLocaleString()}</div>}
               {p.premiumMedisave>0&&<div style={{fontSize:10,color:'var(--ink3)'}}>+{fmtPremium(p.premiumMedisave*frac)} MS</div>}
-              {coOwner&&<div style={{fontSize:9,color:'var(--ink3)',marginTop:1}}>of {fmtPremium(p.premiumCash+p.premiumMedisave)} full</div>}
+              {coOwner&&<div style={{fontSize:9,color:'var(--ink3)',marginTop:1}}>of {fmtPremium(toSGDValue(p.premiumCash,p)+p.premiumMedisave)} full</div>}
             </div>
             {/* Frequency + Mode */}
             <div style={{fontSize:10,color:'var(--ink3)'}}>

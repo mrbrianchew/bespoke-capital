@@ -216,6 +216,8 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
   const isEndow    = form.categoryCode==='endowment'
   const isGeneral  = form.categoryCode==='general'
   const isRider    = form.policyTypeCode?.toLowerCase() === 'rider'
+  // USD applies to Life and Endowment/Annuity/Investment/ILP policies
+  const usdOn      = !!form.isUSD && (isLife || isEndow)
 
   // Product Name "Other (type manually)" — mirrors the isOtherRiderDesc pattern
   // below: a separate flag decouples the <select> from the free-text value so
@@ -410,8 +412,8 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
               <input type="text" value={form.productName} onChange={e=>f('productName',e.target.value)} placeholder="Enter product name" style={{...inp,marginTop:6}}/>
             )}
           </div>
-                    {/* ── USD Policy Toggle (Life only) ── */}
-          {isLife && (
+                    {/* ── USD Policy Toggle (Life + Endowment) ── */}
+          {(isLife || isEndow) && (
             <div style={{background: form.isUSD ? '#FDF6EC' : '#FAFAF8', border: `1px solid ${form.isUSD ? '#c8a96e' : 'var(--line)'}`, borderRadius: 4, padding: '12px 16px'}}>
               <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
                 <div style={{display:'flex', alignItems:'center', gap:10}}>
@@ -422,7 +424,7 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
                   </div>
                   <div>
                     <div style={{fontSize:12,fontWeight:600,color: form.isUSD ? '#A8834A' : 'var(--ink3)'}}>USD Policy</div>
-                    <div style={{fontSize:10,color:'var(--ink3)',marginTop:1}}>Values entered in USD — converted to SGD for gap analysis</div>
+                    <div style={{fontSize:10,color:'var(--ink3)',marginTop:1}}>{isEndow ? 'Values entered in USD — converted to SGD for totals' : 'Values entered in USD — converted to SGD for gap analysis'}</div>
                   </div>
                 </div>
                 {/* FX rate field — only shown when USD is on */}
@@ -584,8 +586,11 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
             <>
               {/* Current Cash Value first — needed to compute % benefits below */}
               <div>
-                <label style={lbl}>Current Cash Value ($)</label>
+                <label style={lbl}>Current Cash Value ({usdOn ? 'USD' : '$'})</label>
                 <input type="number" value={form.currentCashValue||''} onChange={e=>f('currentCashValue',+e.target.value)} style={inp}/>
+                {usdOn && (form.currentCashValue||0)>0 && (
+                  <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt((form.currentCashValue||0)*fx)} SGD</div>
+                )}
               </div>
               {/* Death / TPD with $/% toggle — % mode stores computed $ amount */}
               {([
@@ -600,7 +605,7 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
                 const displayPct   = mode==='%' && cashVal>0 ? Math.round((storedDollar/cashVal)*10000)/100 : 0
                 return (
                   <div key={valKey}>
-                    <label style={lbl}>{label}</label>
+                    <label style={lbl}>{label}{usdOn ? ' (USD)' : ''}</label>
                     <div style={{display:'flex',gap:0}}>
                       <div style={{display:'flex',border:'1px solid var(--line)',borderRight:'none',borderRadius:'3px 0 0 3px',overflow:'hidden',flexShrink:0}}>
                         {(['$','%'] as const).map(m=>(
@@ -628,8 +633,11 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
                     </div>
                     {mode==='%' && cashVal>0 && storedDollar>0 && (
                       <div style={{fontSize:11,color:'var(--ink3)',marginTop:4,fontFamily:'DM Mono,monospace'}}>
-                        = {fmt(storedDollar)} <span style={{fontFamily:'Inter,sans-serif',fontSize:10}}>({displayPct}% of {fmt(cashVal)})</span>
+                        = {usdOn ? fmtUSD(storedDollar) : fmt(storedDollar)} <span style={{fontFamily:'Inter,sans-serif',fontSize:10}}>({displayPct}% of {usdOn ? fmtUSD(cashVal) : fmt(cashVal)})</span>
                       </div>
+                    )}
+                    {usdOn && storedDollar>0 && (
+                      <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmt(storedDollar*fx)} SGD</div>
                     )}
                     {mode==='%' && cashVal===0 && (
                       <div style={{fontSize:11,color:'#854F0B',marginTop:4}}>Enter Current Cash Value above to compute amount</div>
@@ -739,9 +747,9 @@ export default function PolicyModal({policy,personLabel,allPeople,categories,pol
           {/* ── Premiums ── */}
           <div style={((isMedical && !isRider) || isLTC) ? g3 : g2}>
             <div>
-              <label style={lbl}>Premium — Cash ({form.isUSD && isLife ? 'USD' : 'SGD'})</label>
+              <label style={lbl}>Premium — Cash ({usdOn ? 'USD' : 'SGD'})</label>
               <input type="number" value={form.premiumCash||''} onChange={e=>f('premiumCash',+e.target.value)} style={inp}/>
-              {form.isUSD && isLife && (form.premiumCash||0)>0 && (
+              {usdOn && (form.premiumCash||0)>0 && (
                 <div style={{fontSize:10,color:'var(--ink3)',marginTop:3,fontFamily:'DM Mono,monospace'}}>≈ {fmtPremium((form.premiumCash||0)*fx)} SGD</div>
               )}
             </div>
