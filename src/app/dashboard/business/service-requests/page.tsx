@@ -566,6 +566,50 @@ export default function BusinessServiceRequestsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingRow?.client_id])
 
+  // Card names need each request's family (and, for older requests with no
+  // saved owner, its policy) BEFORE a request is opened — otherwise cards
+  // for a spouse's request can't turn "spouse" into a real name. One batched
+  // fetch for every client currently on the board; cached like the two
+  // lazy loaders above (every client gets an entry, even with no family).
+  const boardClientKey = Array.from(new Set(rows.map(r => r.client_id))).sort().join(',')
+  useEffect(() => {
+    if (!boardClientKey) return
+    const ids = boardClientKey.split(',')
+    const needFamily = ids.filter(id => !familyByClient[id])
+    const needPolicies = Array.from(new Set(
+      rows.filter(r => r.policy_id && !r.field_values?.life_assured_override && !policiesByClient[r.client_id]).map(r => r.client_id)
+    ))
+    let cancelled = false
+    if (needFamily.length > 0) {
+      supabase.from('family_members').select('id, client_id, name, relationship, phone').in('client_id', needFamily)
+        .then(({ data }: any) => {
+          if (cancelled) return
+          const grouped: Record<string, FamilyMemberLite[]> = {}
+          needFamily.forEach(id => { grouped[id] = [] })
+          ;((data || []) as FamilyMemberLite[]).forEach(f => { (grouped[(f as any).client_id] = grouped[(f as any).client_id] || []).push(f) })
+          setFamilyByClient(prev => ({ ...grouped, ...prev }))
+        })
+    }
+    if (needPolicies.length > 0) {
+      supabase.from('fact_finding').select('client_id, data').in('client_id', needPolicies).eq('section', 'protection_portfolio')
+        .then(({ data }: any) => {
+          if (cancelled) return
+          const grouped: Record<string, PolicyLite[]> = {}
+          needPolicies.forEach(id => { grouped[id] = [] })
+          ;((data || []) as any[]).forEach(row => {
+            grouped[row.client_id] = (row.data?.risk_management?.policies || []).map((p: any) => ({
+              id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
+              policyholder: p.policyholder || '',
+              premiumCash: p.premiumCash || 0, premiumMedisave: p.premiumMedisave || 0, premiumMode: p.premiumMode || '', inceptionDate: p.inceptionDate || '',
+            }))
+          })
+          setPoliciesByClient(prev => ({ ...grouped, ...prev }))
+        })
+    }
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardClientKey])
+
   // Manual payment method picklist — firm-wide, loaded once.
   useEffect(() => {
     if (!advisor) return
@@ -905,7 +949,10 @@ export default function BusinessServiceRequestsPage() {
       if (pol?.person && !pol.person.startsWith('child_')) key = pol.person
     }
     if (!key || key === 'client') return { name: clientName, tag: null }
-    return { name: personLabelForKey(row.client_id, key), tag: `${clientName}'s household` }
+    // Family not loaded yet (or key unresolvable): show the client rather than a raw key like "spouse".
+    const label = familyByClient[row.client_id] ? personLabelForKey(row.client_id, key) : ''
+    if (!label || label === key) return { name: clientName, tag: null }
+    return { name: label, tag: `${clientName}'s household` }
   }
 
   // Everyone this reminder could plausibly be addressed to, each with a
