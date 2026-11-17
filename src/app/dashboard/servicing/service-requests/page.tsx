@@ -31,6 +31,7 @@ type FieldKind = 'text' | 'number' | 'date'
 interface FieldDef { key: string; label: string; kind: FieldKind }
 interface TypeRow { id: string; label: string; fields: FieldDef[]; created_at: string }
 interface PolicyLite { id: string; policyNo: string; companyName: string; productName: string; person: string }
+interface FamilyLite { id: string; name: string; relationship: string | null }
 
 interface ServiceRequestRow {
   id: string
@@ -72,7 +73,7 @@ function dueLabel(dueDate: string | null): { text: string; kind: 'overdue' | 'to
 const ADD_NEW_SENTINEL = '__add_new__'
 
 export default function ServiceRequestsServicingPage() {
-  const { activeClient, advisor, authLoading, clients } = useDashboard()
+  const { activeClient, advisor, authLoading, clients, spouseNames } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
   const drive = useDriveUpload()
@@ -86,6 +87,7 @@ export default function ServiceRequestsServicingPage() {
   const [openTodos, setOpenTodos] = useState<TodoRow[]>([]) // this client's open to-dos only — enough to drive the same needsFollowupRequests check the Board uses, no firm-wide fetch needed here
   const [typeDefs, setTypeDefs] = useState<TypeRow[]>([])
   const [policies, setPolicies] = useState<PolicyLite[]>([])
+  const [family, setFamily] = useState<FamilyLite[]>([])
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [modalTodos, setModalTodos] = useState<TodoRow[]>([])
@@ -95,6 +97,8 @@ export default function ServiceRequestsServicingPage() {
   const [showNew, setShowNew] = useState(false)
   const [newType, setNewType] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [newOwner, setNewOwner] = useState('client')
+  const [newPolicyId, setNewPolicyId] = useState('')
   const [savingNew, setSavingNew] = useState(false)
 
   // Same clients.service_requests_drive_folder_link ServiceRequestExtras
@@ -112,11 +116,12 @@ export default function ServiceRequestsServicingPage() {
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [reqRes, typesRes, ffRes, clientRes] = await Promise.all([
+      const [reqRes, typesRes, ffRes, clientRes, famRes] = await Promise.all([
         supabase.from('service_requests').select('*').eq('client_id', activeClient!.id).order('created_at', { ascending: false }),
         supabase.from('service_request_types').select('*').order('created_at', { ascending: true }),
         supabase.from('fact_finding').select('data').eq('client_id', activeClient!.id).eq('section', 'protection_portfolio').maybeSingle(),
         supabase.from('clients').select('service_requests_drive_folder_link').eq('id', activeClient!.id).maybeSingle(),
+        supabase.from('family_members').select('id, name, relationship').eq('client_id', activeClient!.id),
       ])
       if (cancelled) return
       const rowsData = ((reqRes.data || []) as any[]).map(r => ({ ...r, field_values: r.field_values || {} })) as ServiceRequestRow[]
@@ -133,6 +138,7 @@ export default function ServiceRequestsServicingPage() {
         id: p.id, policyNo: p.policyNo || '', companyName: p.companyName || '', productName: p.productName || '', person: p.person || '',
       }))
       setPolicies(list)
+      setFamily(((famRes.data || []) as any[]).map(f => ({ id: f.id, name: f.name || '', relationship: f.relationship || null })))
       const rawFolder = (clientRes.data as any)?.service_requests_drive_folder_link as string | undefined
       if (rawFolder) { try { const parsed = JSON.parse(rawFolder); setDriveFolder(parsed?.id && parsed?.name ? parsed : null) } catch { setDriveFolder(null) } }
       else setDriveFolder(null)
@@ -150,9 +156,40 @@ export default function ServiceRequestsServicingPage() {
     if (folder) setDriveFolder(folder)
   }
 
+  // ── Policy owner ── same convention + filter rule as the Business Board:
+  // 'client' | 'spouse' | 'child_<family_member_id>', saved in
+  // field_values.life_assured_override. A person's list also shows the
+  // children's policies, since either parent may be the one asking.
+  const personKeyFor = (f: FamilyLite) => (f.relationship || '').toLowerCase() === 'spouse' ? 'spouse' : `child_${f.id}`
+  const personOptions = useMemo(() => [
+    { key: 'client', label: activeClient?.name || 'Client', rel: 'client' },
+    ...family.map(f => ({ key: personKeyFor(f), label: f.name, rel: (f.relationship || 'dependent').toLowerCase() })),
+  ], [family, activeClient?.name])
+  function personLabel(key: string): string {
+    if (!key || key === 'client') return activeClient?.name || 'Client'
+    return personOptions.find(o => o.key === key)?.label || family.find(f => f.id === key)?.name || activeClient?.name || 'Client'
+  }
+  function personMatches(policyPerson: string, key: string): boolean {
+    if (!key || key === 'client') return policyPerson === 'client' || policyPerson.startsWith('child_')
+    if (key === 'spouse') return policyPerson === 'spouse' || policyPerson.startsWith('child_')
+    if (key.startsWith('child_')) return policyPerson === key
+    return true
+  }
+  function ownerKeyOf(r: ServiceRequestRow): string {
+    const saved = r.field_values?.life_assured_override
+    if (saved) return saved
+    const pol = r.policy_id ? policies.find(pp => pp.id === r.policy_id) : null
+    if (pol?.person && !pol.person.startsWith('child_')) return pol.person
+    return 'client'
+  }
+  const ownerTag = (key: string) => key === 'client' ? null : `${activeClient?.name || 'Client'}'s household`
+  const policyOptionLabel = (p: PolicyLite) => `${p.companyName} — ${p.productName}${p.policyNo ? ` (${p.policyNo})` : ''}`
+
   const staleIds = useMemo(() => new Set(needsFollowupRequests(rows, openTodos).map(r => r.id)), [rows, openTodos])
   const typeOptions = useMemo(() => typeDefs.map(t => t.label), [typeDefs])
   const editingRow = editingId ? rows.find(r => r.id === editingId) || null : null
+  const editingOwner = editingRow ? ownerKeyOf(editingRow) : 'client'
+  const editingPolicyChoices = policies.filter(p => personMatches(p.person, editingOwner) || p.id === editingRow?.policy_id)
   const editingFields = editingRow ? (typeDefs.find(t => t.label === editingRow.request_type)?.fields || []) : []
   const editingPolicy = useMemo(() => {
     if (!editingRow) return null
@@ -192,6 +229,12 @@ export default function ServiceRequestsServicingPage() {
 
   function setFieldValue(row: ServiceRequestRow, key: string, value: string) {
     patchRow(row.id, { field_values: { ...row.field_values, [key]: value } })
+  }
+
+  function changeOwner(row: ServiceRequestRow, key: string) {
+    const cur = row.policy_id ? policies.find(pp => pp.id === row.policy_id) : null
+    const clear = !!cur && !personMatches(cur.person, key)
+    patchRow(row.id, { field_values: { ...row.field_values, life_assured_override: key }, ...(clear ? { policy_id: null } : {}) })
   }
 
   async function moveTo(id: string, status: Status) {
@@ -245,11 +288,12 @@ export default function ServiceRequestsServicingPage() {
     setSavingNew(true)
     const { data, error } = await supabase.from('service_requests').insert({
       client_id: activeClient.id, request_type: newType, description: newDesc.trim(),
-      status: 'requested', field_values: {},
+      status: 'requested', field_values: { life_assured_override: newOwner },
+      policy_id: newPolicyId || null,
     }).select().maybeSingle()
     setSavingNew(false)
     if (error) { toast('Could not create request: ' + error.message, 'error'); return }
-    if (data) { setRows(prev => [{ ...(data as any), field_values: {} }, ...prev]); setNewDesc(''); setShowNew(false); setEditingId((data as any).id) }
+    if (data) { setRows(prev => [{ ...(data as any), field_values: (data as any).field_values || {} }, ...prev]); setNewDesc(''); setNewOwner('client'); setNewPolicyId(''); setShowNew(false); setEditingId((data as any).id) }
   }
 
   async function deleteRequest(id: string) {
@@ -272,7 +316,7 @@ export default function ServiceRequestsServicingPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
           <div className="font-serif" style={{ fontSize: 24, fontWeight: 600, color: T.text }}>Service requests</div>
-          <div style={{ fontSize: 12.5, color: T.textFaint, marginTop: 2 }}>{activeClient.name}</div>
+          <div style={{ fontSize: 12.5, color: T.textFaint, marginTop: 2 }}>{activeClient.name}{spouseNames[activeClient.id] ? ` · household with ${spouseNames[activeClient.id]}` : ''}</div>
         </div>
         <button onClick={() => setShowNew(true)}
           style={{ padding: '8px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--charcoal)', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
@@ -299,6 +343,25 @@ export default function ServiceRequestsServicingPage() {
             {typeOptions.length === 0 && <option value="">No types yet — add one from the Business Dashboard board</option>}
             {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: T.textFaint, marginTop: 2 }}>Policy owner</div>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            {personOptions.map(o => {
+              const on = newOwner === o.key
+              return (
+                <button key={o.key} onClick={() => { setNewOwner(o.key); const cur = policies.find(pp => pp.id === newPolicyId); if (cur && !personMatches(cur.person, o.key)) setNewPolicyId('') }}
+                  style={{ padding: '7px 13px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--charcoal)' : T.line}`, background: on ? 'var(--charcoal)' : 'white', color: on ? 'white' : T.textDim }}>
+                  {o.label}<span style={{ fontWeight: 500, opacity: 0.7, marginLeft: 4, fontSize: 11 }}>{o.rel}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: T.textFaint, marginTop: 2 }}>Policy (optional)</div>
+          <select value={newPolicyId} onChange={e => setNewPolicyId(e.target.value)}
+            style={{ padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5 }}>
+            <option value="">No policy / not on file</option>
+            {policies.filter(p => personMatches(p.person, newOwner)).map(p => <option key={p.id} value={p.id}>{policyOptionLabel(p)}</option>)}
+          </select>
+          <div style={{ fontSize: 11, color: T.textFaint }}>Showing {personLabel(newOwner)}&apos;s policies (and the children&apos;s).</div>
           <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} rows={2} placeholder="What's the request?"
             style={{ padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'white', color: T.text, fontSize: 12.5, resize: 'vertical', fontFamily: 'inherit' }} />
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -319,6 +382,10 @@ export default function ServiceRequestsServicingPage() {
             <button key={r.id} onClick={() => setEditingId(r.id)}
               style={{ textAlign: 'left', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'white', border: `1px solid ${T.line}`, borderRadius: 10, cursor: 'pointer' }}>
               <div>
+                <div className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text, lineHeight: 1.15, marginBottom: 3 }}>
+                  {personLabel(ownerKeyOf(r))}
+                  {ownerTag(ownerKeyOf(r)) && <span style={{ fontFamily: 'var(--font-inter), system-ui, sans-serif', fontSize: 10.5, fontWeight: 600, color: T.goldText, background: 'var(--gold-l)', padding: '2px 8px', borderRadius: 5, marginLeft: 8, verticalAlign: 'middle' }}>{ownerTag(ownerKeyOf(r))}</span>}
+                </div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: T.text }}>{r.request_type}</div>
                 <div style={{ fontSize: 12, color: T.textDim, marginTop: 2 }}>{r.description}</div>
                 <div style={{ fontSize: 11, color: T.textFaint, marginTop: 4 }}>
@@ -353,7 +420,10 @@ export default function ServiceRequestsServicingPage() {
             style={{ width: '100%', maxWidth: 520, maxHeight: '88vh', overflowY: 'auto', background: 'white', borderRadius: 14 }}>
             <div style={{ padding: '22px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div className="font-serif" style={{ fontSize: 22, fontWeight: 600, color: T.text }}>{activeClient.name}</div>
+                <div className="font-serif" style={{ fontSize: 22, fontWeight: 600, color: T.text }}>
+                  {personLabel(editingOwner)}
+                  {ownerTag(editingOwner) && <span style={{ fontFamily: 'var(--font-inter), system-ui, sans-serif', fontSize: 10.5, fontWeight: 600, color: T.goldText, background: 'var(--gold-l)', padding: '2px 8px', borderRadius: 5, marginLeft: 8, verticalAlign: 'middle' }}>{ownerTag(editingOwner)}</span>}
+                </div>
                 <div style={{ fontSize: 12, color: T.textFaint, marginTop: 3 }}>
                   {editingRow.request_type}{editingPolicy ? ` · ${editingPolicy.label}` : ''} · opened {new Date(editingRow.created_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
                 </div>
@@ -410,6 +480,19 @@ export default function ServiceRequestsServicingPage() {
                 </div>
               </div>
 
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: T.textFaint, margin: '18px 0 9px' }}>Policy owner</div>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {personOptions.map(o => {
+              const on = editingOwner === o.key
+              return (
+                <button key={o.key} onClick={() => changeOwner(editingRow, o.key)}
+                  style={{ padding: '7px 13px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--charcoal)' : T.line}`, background: on ? 'var(--charcoal)' : 'white', color: on ? 'white' : T.textDim }}>
+                  {o.label}<span style={{ fontWeight: 500, opacity: 0.7, marginLeft: 4, fontSize: 11 }}>{o.rel}</span>
+                </button>
+              )
+            })}
+              </div>
+
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: T.textFaint, margin: '18px 0 9px' }}>Policy</div>
               <div style={{ display: 'flex', gap: 7, marginBottom: 8 }}>
                 <button onClick={() => patchRow(editingRow.id, { policy_label: null })}
@@ -425,12 +508,12 @@ export default function ServiceRequestsServicingPage() {
                 <select value={editingRow.policy_id || ''} onChange={e => patchRow(editingRow.id, { policy_id: e.target.value || null })}
                   style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
                   <option value="">Select a policy…</option>
-                  {policies.map(p => <option key={p.id} value={p.id}>{p.companyName} — {p.productName}{p.policyNo ? ` (${p.policyNo})` : ''}</option>)}
+                  {editingPolicyChoices.map(p => <option key={p.id} value={p.id}>{policyOptionLabel(p)}</option>)}
                 </select>
               ) : editingRow.policy_id ? (
                 <select value={editingRow.policy_id} onChange={e => patchRow(editingRow.id, { policy_id: e.target.value || null })}
                   style={{ width: '100%', padding: '9px 11px', border: `1px solid ${T.line}`, borderRadius: 8, background: 'var(--cream)', color: T.text, fontSize: 12.5 }}>
-                  {policies.map(p => <option key={p.id} value={p.id}>{p.companyName} — {p.productName}{p.policyNo ? ` (${p.policyNo})` : ''}</option>)}
+                  {editingPolicyChoices.map(p => <option key={p.id} value={p.id}>{policyOptionLabel(p)}</option>)}
                 </select>
               ) : (
                 <input defaultValue={editingRow.policy_label || ''} onBlur={e => patchRow(editingRow.id, { policy_label: e.target.value.trim() || '' })}
