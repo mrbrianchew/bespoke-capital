@@ -892,6 +892,22 @@ export default function BusinessServiceRequestsPage() {
     return true
   }
 
+  // Who a request is actually FOR — the saved owner (same field the Person
+  // selector writes), else the attached policy's owner, else the client.
+  // Cards and titles show this name instead of always the client's; anyone
+  // other than the client gets a small "<client>'s household" tag so the
+  // file they sit under stays visible.
+  function ownerInfo(row: ServiceRequestRow): { name: string; tag: string | null } {
+    const clientName = clientsById[row.client_id] || 'Unknown client'
+    let key: string = row.field_values?.life_assured_override || ''
+    if (!key && row.policy_id) {
+      const pol = (policiesByClient[row.client_id] || []).find(p => p.id === row.policy_id)
+      if (pol?.person && !pol.person.startsWith('child_')) key = pol.person
+    }
+    if (!key || key === 'client') return { name: clientName, tag: null }
+    return { name: personLabelForKey(row.client_id, key), tag: `${clientName}'s household` }
+  }
+
   // Everyone this reminder could plausibly be addressed to, each with a
   // phone number if one's on file. "Myself" only appears if the advisor has
   // set a phone; otherwise Custom Number is the only way to text yourself/a
@@ -1097,7 +1113,7 @@ export default function BusinessServiceRequestsPage() {
                     style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
-                      {clientsById[row.client_id] || 'Unknown client'} · {row.request_type}
+                      {ownerInfo(row).name}{ownerInfo(row).tag ? ` (${ownerInfo(row).tag})` : ''} · {row.request_type}
                     </div>
                     <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>{todo.text}</div>
                   </div>
@@ -1141,7 +1157,7 @@ export default function BusinessServiceRequestsPage() {
                           }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
-                                {clientsById[row.client_id] || 'Unknown client'} · {row.request_type}
+                                {ownerInfo(row).name}{ownerInfo(row).tag ? ` (${ownerInfo(row).tag})` : ''} · {row.request_type}
                               </div>
                               <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2, fontStyle: 'italic' }}>No follow-up set</div>
                             </div>
@@ -1272,7 +1288,7 @@ export default function BusinessServiceRequestsPage() {
                   {columns[col.id].length === 0 ? (
                     <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '4px 2px' }}>Nothing here</div>
                   ) : columns[col.id].map(row => (
-                    <RequestCard key={row.id} row={row} clientName={clientsById[row.client_id] || 'Unknown client'}
+                    <RequestCard key={row.id} row={row} clientName={ownerInfo(row).name} clientTag={ownerInfo(row).tag}
                       policyLabel={resolvedPolicy(row)?.label || null}
                       dragging={false} onClick={() => setEditingId(row.id)} />
                   ))}
@@ -1298,7 +1314,7 @@ export default function BusinessServiceRequestsPage() {
                         <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '10px 4px' }}>Nothing here</div>
                       )}
                       {columns[col.id].map(row => (
-                        <RequestCard key={row.id} row={row} clientName={clientsById[row.client_id] || 'Unknown client'}
+                        <RequestCard key={row.id} row={row} clientName={ownerInfo(row).name} clientTag={ownerInfo(row).tag}
                           policyLabel={resolvedPolicy(row)?.label || null}
                           dragging={draggingId === row.id} onClick={() => setEditingId(row.id)} />
                       ))}
@@ -1322,7 +1338,8 @@ export default function BusinessServiceRequestsPage() {
             <div style={{ padding: '22px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div className="font-serif" style={{ fontSize: 22, fontWeight: 600, color: T.text }}>
-                  {clientsById[editingRow.client_id] || 'Unknown client'}
+                  {ownerInfo(editingRow).name}
+                  {ownerInfo(editingRow).tag && <span style={{ fontFamily: 'var(--font-inter), system-ui, sans-serif', fontSize: 10.5, fontWeight: 600, color: T.goldText, background: 'var(--gold-l)', padding: '2px 8px', borderRadius: 5, marginLeft: 8, verticalAlign: 'middle' }}>{ownerInfo(editingRow).tag}</span>}
                 </div>
                 <div style={{ fontSize: 12, color: T.textFaint, marginTop: 3 }}>
                   {editingRow.request_type}{editingPolicy ? ` · ${editingPolicy.label}` : ''} · opened {new Date(editingRow.created_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
@@ -1803,8 +1820,8 @@ function DropZone({ id, children }: { id: ZoneId; children: React.ReactNode }) {
   )
 }
 
-function RequestCard({ row, clientName, policyLabel, dragging, onClick }: {
-  row: ServiceRequestRow; clientName: string; policyLabel: string | null; dragging: boolean; onClick: () => void
+function RequestCard({ row, clientName, clientTag, policyLabel, dragging, onClick }: {
+  row: ServiceRequestRow; clientName: string; clientTag?: string | null; policyLabel: string | null; dragging: boolean; onClick: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: row.id })
   const days = daysSince(row.created_at)
@@ -1820,7 +1837,10 @@ function RequestCard({ row, clientName, policyLabel, dragging, onClick }: {
       zIndex: isDragging ? 10 : undefined, position: isDragging ? 'relative' : undefined,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-        <span className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text, lineHeight: 1.15 }}>{clientName}</span>
+        <span className="font-serif" style={{ fontSize: 16.5, fontWeight: 600, color: T.text, lineHeight: 1.15 }}>
+          {clientName}
+          {clientTag && <span style={{ display: 'block', fontFamily: 'var(--font-inter), system-ui, sans-serif', fontSize: 10, fontWeight: 600, color: T.goldText, marginTop: 3 }}>{clientTag}</span>}
+        </span>
         <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2.5px 8px', borderRadius: 5, background: color.bg, color: color.fg, whiteSpace: 'nowrap' }}>
           {row.request_type}
         </span>
