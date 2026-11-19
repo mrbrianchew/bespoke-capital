@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useDashboard } from '@/contexts/DashboardContext'
 import DateInput from '@/components/DateInput'
 import GmailClaimSearch from '@/components/GmailClaimSearch'
+import LifeClaimsPanel from '@/components/LifeClaimsPanel'
 import { daysSinceLastActivity } from '@/lib/claimsAttention'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
@@ -245,11 +246,47 @@ function newLineItem(claimId: string, section: 'pre' | 'in' | 'post'): Omit<Line
 
 // ─── PAGE ───────────────────────────────────────────────────────────────────
 
-export default function MedicalClaimsPageWrapper() {
+export default function ClaimsPageWrapper() {
   return (
     <Suspense fallback={null}>
-      <MedicalClaimsPage />
+      <ClaimsHub />
     </Suspense>
+  )
+}
+
+// "Claims" hub: Medical (the existing page, untouched) | Death / TPD / CI.
+// Deep links: ?tab=life, ?lifeClaimId=<uuid> and ?new=1 land on the Life & CI side.
+function ClaimsHub() {
+  const searchParams = useSearchParams()
+  const { activeClient, advisor, authLoading } = useDashboard()
+  const lifeClaimId = searchParams.get('lifeClaimId')
+  const startNew = searchParams.get('new') === '1'
+  const [tab, setTab] = useState<'medical' | 'life'>(
+    searchParams.get('tab') === 'life' || lifeClaimId || startNew ? 'life' : 'medical'
+  )
+  const hasAccess = advisor?.id === CREATOR_ID || (Array.isArray(advisor?.beta_features) && advisor.beta_features.includes('servicing'))
+
+  return (
+    <div>
+      <div style={{ background: T.void1, borderRadius: '16px 16px 0 0', padding: '24px 24px 0' }}>
+        <div style={{ display: 'flex', gap: 4, background: 'var(--cream2)', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3, maxWidth: 320 }}>
+          {([['medical', 'Medical'], ['life', 'Death / TPD / CI']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              flex: 1, fontSize: 12, fontWeight: 600, padding: '7px 0', border: 'none', borderRadius: 5, cursor: 'pointer',
+              color: tab === k ? T.text : T.textFaint, background: tab === k ? '#fff' : 'none', boxShadow: tab === k ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {tab === 'medical' ? <MedicalClaimsPage /> : (
+        <div style={{ ...pageWrap, borderRadius: '0 0 16px 16px', paddingTop: 16 }}>
+          {authLoading ? <div style={{ color: T.textFaint, padding: 40, textAlign: 'center' }}>Loading…</div>
+            : !hasAccess ? null
+            : !activeClient ? <div style={{ color: T.textFaint, padding: 40, textAlign: 'center' }}>Select a client to view Death / TPD / CI claims.</div>
+            : <LifeClaimsPanel key={activeClient.id} clientId={activeClient.id} clientName={activeClient.name} initialClaimId={lifeClaimId} startNew={startNew} />}
+        </div>
+      )}
+    </div>
   )
 }
 

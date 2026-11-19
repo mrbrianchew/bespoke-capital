@@ -1,13 +1,14 @@
 'use client'
 import React, { useEffect, useState, useRef, useMemo, useCallback, Suspense } from 'react'
 import { createPortal } from 'react-dom'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { buildProtectionSnapshot, ProtectionSnapshot } from '@/lib/protectionSnapshot'
 import { saveFactFindingSection } from '@/lib/factFindingSave'
 import { getUsdSgdRate } from '@/lib/fxRate'
 import { getLatestHistoryByPolicy, getHistoryForPolicy, addCorrection, PolicyHistoryEntry } from '@/lib/policyServiceHistory'
 import ProtectionOverview from './ProtectionOverview'
+import { LifeClaim, LIFE_COLUMNS, TYPE_LABEL, STAGE_LABEL, OUTCOME_LABEL, claimMatchesPolicy } from '@/lib/lifeClaims'
 import DateInput from '@/components/DateInput'
 import { useConfirm } from '@/components/ConfirmDialog'
 import PolicyModal, { Policy, InsCategory, InsPolicyType, InsCompany, InsProduct, emptyPolicy, CAT_COLORS, CAT_SHORT, FREQ, STATUS_OPTS, PAY_MODES, fmt, fmtPremium, RiskMgmtData, EMPTY_RM } from '@/components/PolicyModal'
@@ -137,6 +138,17 @@ function ProtectionPage() {
   // for "might have changed since a Service Request was resolved on
   // another tab/page" — RLS keeps this scoped to the advisor's own clients).
   const [policyHistoryMap, setPolicyHistoryMap] = useState<Record<string, PolicyHistoryEntry>>({})
+  // Read-only Death / TPD / CI claim badges per policy (never changes the policy's own status).
+  const [lifeClaims, setLifeClaims] = useState<LifeClaim[]>([])
+  useEffect(() => {
+    if (!activeClient?.id) { setLifeClaims([]); return }
+    const cid = activeClient.id
+    const load = () => { supabase.from('life_claims').select(LIFE_COLUMNS).eq('client_id', cid).then(({ data, error }) => { setLifeClaims(error ? [] : ((data || []) as LifeClaim[])) }) }
+    load()
+    window.addEventListener('focus', load)
+    return () => window.removeEventListener('focus', load)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeClient?.id])
   async function refreshPolicyHistory(cid: string) {
     const map = await getLatestHistoryByPolicy(supabase, cid)
     setPolicyHistoryMap(map)
@@ -937,6 +949,7 @@ async function revokeShare(token: string, clear: () => void) {
                             onDelete={delPolicy}
                             onReorder={reorderPolicies}
                             historyMap={policyHistoryMap}
+                            lifeClaims={lifeClaims}
                             personKeys={isDependent&&childKeys?childKeys:[key]}
                             allPeople={allPeople}
                           />
@@ -1010,6 +1023,7 @@ async function revokeShare(token: string, clear: () => void) {
                                 onEdit={openEdit}
                                 onDelete={delPolicy}
                                 historyMap={policyHistoryMap}
+                            lifeClaims={lifeClaims}
                               />
                             </div>
                           )
@@ -1829,8 +1843,29 @@ function MobilePolicyCard({p,front,hidden,onEdit,onDelete}:{p:Policy;front:{labe
   )
 }
 
-function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,historyMap,personKeys,allPeople}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void;onReorder?:(orderedIds:string[])=>void;historyMap?:Record<string,PolicyHistoryEntry>;personKeys?:string[];allPeople?:{key:string;label:string}[]}) {
+function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,historyMap,lifeClaims,personKeys,allPeople}:{policies:Policy[];catShort:Record<string,string>;catColors:Record<string,string>;onEdit:(p:Policy)=>void;onDelete:(id:string)=>void;onReorder?:(orderedIds:string[])=>void;historyMap?:Record<string,PolicyHistoryEntry>;lifeClaims?:LifeClaim[];personKeys?:string[];allPeople?:{key:string;label:string}[]}) {
   const narrow = useNarrow(760)
+  const router = useRouter()
+  function LifeClaimBadge({p}:{p:Policy}) {
+    const mine = (lifeClaims||[]).filter(c=>claimMatchesPolicy(c,{id:p.id,policyNo:p.policyNo}))
+    if (mine.length===0) return null
+    return (
+      <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:3}}>
+        {mine.map(c=>{
+          const open = c.stage!=='outcome'
+          const text = c.stage==='outcome' && c.outcome
+            ? (c.outcome==='approved' ? `${TYPE_LABEL[c.claim_type]} claim approved` : `${OUTCOME_LABEL[c.outcome]} · ${TYPE_LABEL[c.claim_type]}`)
+            : `${TYPE_LABEL[c.claim_type]} claim · ${STAGE_LABEL[c.stage]}`
+          return (
+            <button key={c.id} onClick={()=>router.push(`/dashboard/servicing/claims?lifeClaimId=${c.id}`)} title="Open this claim"
+              style={{fontSize:9.5,fontWeight:600,color:open?'var(--gold-tag)':'var(--ink3)',background:open?'rgba(168,131,74,.12)':'var(--cream2)',border:'none',borderRadius:10,padding:'2px 8px',cursor:'pointer',whiteSpace:'nowrap'}}>
+              ◆ {text}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
   // Joint-account helpers — personKeys is the tab(s) this table is rendering
   // for (a single key normally, several for a grouped Dependents tab). Only
   // Endowment/Annuity/Investment/ILP policies ever carry jointOwners.
@@ -1999,6 +2034,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
               </div>}
               {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
               <ServicingUpdateLine policyId={p.id}/>
+              <LifeClaimBadge p={p}/>
             </div>
             {/* Brief description */}
             <div style={{fontSize:11,color:'var(--ink3)',lineHeight:1.4,paddingRight:8}}>
@@ -2130,6 +2166,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
                 </div>}
                 {p.policyNo&&<div style={{fontSize:10,color:'var(--ink3)',marginTop:1,fontFamily:'DM Mono,monospace'}}>{p.policyNo}</div>}
               <ServicingUpdateLine policyId={p.id}/>
+              <LifeClaimBadge p={p}/>
               </div>
               {/* Death Benefit */}
               <div style={{fontFamily:'DM Mono,monospace',fontSize:11,color:deathBen>0?'var(--ink)':'var(--ink3)'}}>
@@ -2278,6 +2315,7 @@ function PolicyTable({policies,catShort,catColors,onEdit,onDelete,onReorder,hist
                 Joint · {Math.round(frac*100)}/{100-Math.round(frac*100)} with {coOwner}
               </div>}
               <ServicingUpdateLine policyId={p.id}/>
+              <LifeClaimBadge p={p}/>
             </div>
             {/* Death Benefit */}
             <div style={{fontFamily:'DM Mono,monospace',fontSize:12,color:'var(--ink)'}}>

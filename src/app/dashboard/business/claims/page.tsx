@@ -11,6 +11,10 @@ import { CSS } from '@dnd-kit/utilities'
 import { useToast } from '@/components/Toast'
 import { useConfirm } from '@/components/ConfirmDialog'
 import { logClientActivity } from '@/lib/logClientActivity'
+import {
+  LifeClaim, LifeChecklistItem, LifeTodo, WaitInfo, LIFE_COLUMNS, TYPE_LABEL, OUTCOME_LABEL,
+  waitInfo, policyLabel as lifePolicyLabel, personLabel as lifePersonLabel, hasOverdueTodo, sgDate,
+} from '@/lib/lifeClaims'
 
 const CREATOR_ID = process.env.NEXT_PUBLIC_CREATOR_ID
 
@@ -187,6 +191,24 @@ interface CardData {
   lastActivityDays: number | null
 }
 
+// Death / TPD / CI cards share the same four columns (see src/lib/lifeClaims.ts).
+// With client -> Documents Collection, With insurer -> Insurer Assessment,
+// Outcome -> Approved (approved / partly approved) or Rejected (declined / withdrawn).
+// 'Submitted to Insurer' stays medical-only.
+interface LifeCardData {
+  claim: LifeClaim
+  clientName: string
+  subtitle: string
+  wait: WaitInfo
+  overdue: boolean
+}
+
+function lifeZone(c: LifeClaim): DropZone {
+  if (c.stage === 'with_client') return 'docs'
+  if (c.stage === 'with_insurer') return 'assessment'
+  return c.outcome === 'approved' || c.outcome === 'partly_approved' ? 'resolved-approved' : 'resolved-rejected'
+}
+
 const T = {
   gold: 'var(--gold)', goldText: 'var(--gold-tag)', goldSoft: 'rgba(168,131,74,.12)',
   emerald: 'var(--emerald)', emeraldSoft: 'rgba(42,94,70,.12)',
@@ -212,7 +234,7 @@ function useNarrow(breakpoint: number): boolean {
 }
 
 export default function BusinessClaimsBoardPage() {
-  const { advisor, clients, authLoading, setActiveClient } = useDashboard()
+  const { advisor, clients, authLoading, setActiveClient, spouseNames } = useDashboard()
   const router = useRouter()
   const supabase = createClient()
   const toast = useToast()
@@ -295,6 +317,15 @@ export default function BusinessClaimsBoardPage() {
   const [allTodosLite, setAllTodosLite] = useState<FollowupTodo[]>([])
   const [notesLite, setNotesLite] = useState<{ line_item_id: string; created_at: string }[]>([])
 
+  // ── Death / TPD / CI claims (separate tables; medical logic above is untouched) ──
+  const [lifeClaims, setLifeClaims] = useState<LifeClaim[]>([])
+  const [lifeChecklist, setLifeChecklist] = useState<LifeChecklistItem[]>([])
+  const [lifeTodos, setLifeTodos] = useState<LifeTodo[]>([])
+  const [kindFilter, setKindFilter] = useState<'all' | 'medical' | 'life'>('all')
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const [showLifePick, setShowLifePick] = useState(false)
+  const [lifePickSearch, setLifePickSearch] = useState('')
+
   // Route/feature guard — mirrors the per-client Medical Claims page's rule
   // so direct URL access without both flags doesn't work either.
   useEffect(() => {
@@ -365,6 +396,31 @@ export default function BusinessClaimsBoardPage() {
       setLoading(false)
     }
     load()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, hasAccess])
+
+  // Life & CI load. Failure (e.g. migration not run yet) just leaves the
+  // Life side empty — the medical board keeps working.
+  useEffect(() => {
+    if (authLoading || !hasAccess) return
+    let cancelled = false
+    async function loadLife() {
+      const cRes = await supabase.from('life_claims').select(LIFE_COLUMNS)
+      if (cancelled || cRes.error) return
+      const rows = (cRes.data || []) as LifeClaim[]
+      setLifeClaims(rows)
+      const ids = rows.map(r => r.id)
+      if (ids.length === 0) { setLifeChecklist([]); setLifeTodos([]); return }
+      const [ck, td] = await Promise.all([
+        supabase.from('life_claim_checklist').select('id, life_claim_id, label, done, sort').in('life_claim_id', ids),
+        supabase.from('life_claim_todos').select('*').in('life_claim_id', ids),
+      ])
+      if (cancelled) return
+      setLifeChecklist((ck.data || []) as LifeChecklistItem[])
+      setLifeTodos((td.data || []) as LifeTodo[])
+    }
+    loadLife()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, hasAccess])
@@ -517,6 +573,88 @@ export default function BusinessClaimsBoardPage() {
     if (error) toast('Could not update: ' + error.message, 'error')
   }
 
+  const lifeColumns = useMemo(() => {
+    const buckets: Record<ColumnId, LifeCardData[]> = { docs: [], submitted: [], assessment: [], resolved: [] }
+    lifeClaims.forEach(claim => {
+      const zone = lifeZone(claim)
+      const col: ColumnId | null = zone === 'docs' ? 'docs' : zone === 'assessment' ? 'assessment'
+        : ((daysSince(claim.updated_at) ?? 0) <= RESOLVED_VISIBLE_DAYS ? 'resolved' : null)
+      if (!col) return
+      const docs = lifeChecklist.filter(i => i.life_claim_id === claim.id)
+      const clientName = clientsById[claim.client_id] || 'Unknown client'
+      buckets[col].push({
+        claim, clientName,
+        subtitle: `${lifePersonLabel(claim.life_assured_person, clientName, spouseNames[claim.client_id])} · ${lifePolicyLabel(claim)}`,
+        wait: waitInfo(claim, docs.filter(d => d.done).length, docs.length),
+        overdue: claim.stage !== 'outcome' && hasOverdueTodo(lifeTodos.filter(t => t.life_claim_id === claim.id)),
+      })
+    })
+    ;(Object.keys(buckets) as ColumnId[]).forEach(col => {
+      buckets[col].sort((a, b) => col === 'resolved'
+        ? new Date(b.claim.updated_at).getTime() - new Date(a.claim.updated_at).getTime()
+        : a.claim.date_notified.localeCompare(b.claim.date_notified)) // oldest notification first
+    })
+    return buckets
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lifeClaims, lifeChecklist, lifeTodos, clientsById, spouseNames])
+
+  const lifeFollowupRows = useMemo(() => {
+    const byId: Record<string, LifeClaim> = {}
+    lifeClaims.forEach(c => { byId[c.id] = c })
+    return lifeTodos
+      .filter(t => !t.done && byId[t.life_claim_id] && byId[t.life_claim_id].stage !== 'outcome')
+      .map(todo => ({ todo, claim: byId[todo.life_claim_id] }))
+      .sort((a, b) => (a.todo.due_date || '9999-12-31').localeCompare(b.todo.due_date || '9999-12-31'))
+  }, [lifeClaims, lifeTodos])
+
+  const showMedical = kindFilter !== 'life'
+  const showLife = kindFilter !== 'medical'
+  const medCards = (col: ColumnId) => showMedical ? columns[col] : []
+  const lifeCards = (col: ColumnId) => showLife ? lifeColumns[col] : []
+
+  async function toggleLifeTodoDone(todoId: string, done: boolean) {
+    setLifeTodos(prev => prev.map(t => t.id === todoId ? { ...t, done } : t))
+    const { error } = await supabase.from('life_claim_todos').update({ done }).eq('id', todoId)
+    if (error) toast('Could not update: ' + error.message, 'error')
+  }
+
+  function openLife(claim: LifeClaim, extra = '') {
+    const client = clients.find(c => c.id === claim.client_id)
+    if (client) {
+      setActiveClient(client)
+      localStorage.setItem('selectedClientId', client.id)
+    }
+    router.push(`/dashboard/servicing/claims?lifeClaimId=${claim.id}${extra}`)
+  }
+
+  function startLifeClaim(client: ClientRow) {
+    setActiveClient(client)
+    localStorage.setItem('selectedClientId', client.id)
+    router.push('/dashboard/servicing/claims?tab=life&new=1')
+  }
+
+  async function moveLife(id: string, zone: DropZone) {
+    const claim = lifeClaims.find(c => c.id === id)
+    if (!claim || lifeZone(claim) === zone) return
+    if (zone === 'submitted') { toast('Death / TPD / CI claims go from Documents Collection straight to Insurer Assessment.', 'info'); return }
+    const base: Partial<LifeClaim> =
+      zone === 'docs' ? { stage: 'with_client', outcome: null }
+      : zone === 'assessment' ? { stage: 'with_insurer', outcome: null }
+      : zone === 'resolved-approved' ? { stage: 'outcome', outcome: 'approved' }
+      : { stage: 'outcome', outcome: 'declined' }
+    const patch = { ...base, updated_at: new Date().toISOString() }
+    setLifeClaims(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
+    const { error } = await supabase.from('life_claims').update(patch).eq('id', id)
+    if (error) { toast('Move failed: ' + error.message, 'error'); return }
+    if ((zone === 'resolved-approved' || zone === 'resolved-rejected') && advisor?.id) {
+      logClientActivity(supabase, {
+        clientId: claim.client_id, advisorId: advisor.id, type: 'claim_status',
+        title: `${TYPE_LABEL[claim.claim_type]} claim ${zone === 'resolved-approved' ? 'approved' : 'declined'} — ${lifePolicyLabel(claim)}`,
+        description: null, sourceTable: 'life_claims', sourceId: id,
+      })
+    }
+  }
+
   const columns = useMemo(() => {
     const buckets: Record<ColumnId, CardData[]> = { docs: [], submitted: [], assessment: [], resolved: [] }
     lineItems.forEach(item => {
@@ -582,6 +720,7 @@ export default function BusinessClaimsBoardPage() {
     if (!over) return
     const id = active.id as string
     const zone = over.id as DropZone
+    if (id.indexOf('life:') === 0) { moveLife(id.slice(5), zone); return }
     const item = lineItems.find(i => i.id === id)
     if (!item || effectiveZone(item) === zone) return // no-op: dropped back where it started
     if (zone === 'resolved-rejected' && !item.rejection_reason) {
@@ -822,6 +961,7 @@ export default function BusinessClaimsBoardPage() {
   if (!hasAccess) return null
 
   const totalInProgress = columns.docs.length + columns.submitted.length + columns.assessment.length
+  const lifeOpenCount = lifeClaims.filter(c => c.stage !== 'outcome').length
 
   return (
     <div style={{ padding: 24, background: 'var(--cream)', minHeight: '100%', borderRadius: 16 }}>
@@ -830,13 +970,27 @@ export default function BusinessClaimsBoardPage() {
           <div style={{ fontSize: 9.5, letterSpacing: 1.4, textTransform: 'uppercase', color: T.gold, fontWeight: 700 }}>Business Dashboard</div>
           <div className="font-serif" style={{ fontSize: 26, marginTop: 5, color: T.text }}>Claims Board</div>
           <div style={{ fontSize: 12.5, color: T.textFaint, marginTop: 4 }}>
-            {loading ? 'Loading…' : `${totalInProgress} claim line item${totalInProgress === 1 ? '' : 's'} in progress across all clients`}
+            {loading ? 'Loading…' : `${totalInProgress} claim line item${totalInProgress === 1 ? '' : 's'} in progress across all clients${lifeOpenCount > 0 ? ` · ${lifeOpenCount} Death / TPD / CI` : ''}`}
           </div>
         </div>
-        <button onClick={() => { setShowAddClaim(true); setAddClaimSearch(''); setAddClaimError(''); setAddClaimClient(null); setAddClaimPerson(null) }}
-          style={{ padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--charcoal)', border: 'none', borderRadius: 8, cursor: 'pointer', flexShrink: 0 }}>
-          + Add Claim
-        </button>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button onClick={() => setShowAddMenu(v => !v)}
+            style={{ padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'white', background: 'var(--charcoal)', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
+            + Add Claim ▾
+          </button>
+          {showAddMenu && (
+            <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: 'white', border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 210, overflow: 'hidden' }}>
+              <button onClick={() => { setShowAddMenu(false); setShowAddClaim(true); setAddClaimSearch(''); setAddClaimError(''); setAddClaimClient(null); setAddClaimPerson(null) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', fontSize: 12.5, background: 'none', border: 'none', cursor: 'pointer', color: T.text }}>
+                Medical claim
+              </button>
+              <button onClick={() => { setShowAddMenu(false); setLifePickSearch(''); setShowLifePick(true) }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', fontSize: 12.5, background: 'none', border: 'none', borderTop: `1px solid ${T.line}`, cursor: 'pointer', color: T.text }}>
+                Death / TPD / CI claim
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${T.line}` }}>
@@ -847,7 +1001,7 @@ export default function BusinessClaimsBoardPage() {
           color: activeTab === 'followups' ? T.goldText : T.textFaint,
           borderBottom: activeTab === 'followups' ? `2px solid ${T.gold}` : '2px solid transparent',
         }}>
-          Upcoming follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length}` : ''}
+          Upcoming follow-ups{(followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length + lifeFollowupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length) > 0 ? ` · ${followupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length + needsFollowupRows.length + lifeFollowupRows.filter(r => weekBucket(r.todo.due_date) !== 'later').length}` : ''}
         </button>
         <button onClick={() => setActiveTab('board')} style={{
           padding: '9px 16px', fontSize: 12.5, fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer',
@@ -862,15 +1016,12 @@ export default function BusinessClaimsBoardPage() {
         <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13 }}>Loading claims…</div>
       ) : activeTab === 'followups' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 620 }}>
-          {followupRows.length === 0 && needsFollowupRows.length === 0 && (
+          {followupRows.length === 0 && needsFollowupRows.length === 0 && lifeFollowupRows.length === 0 && (
             <div style={{ padding: 40, textAlign: 'center', color: T.textFaint, fontSize: 13, fontStyle: 'italic' }}>
               Nothing pending — every follow-up is checked off.
             </div>
           )}
           {(() => {
-            const todayRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'today')
-            const weekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'week')
-            const nextWeekRows = followupRows.filter(r => weekBucket(r.todo.due_date) === 'nextweek')
             const renderRow = ({ todo, card }: { todo: FollowupTodo; card: CardData }) => {
               const label = dueLabel(todo.due_date)
               const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
@@ -900,6 +1051,44 @@ export default function BusinessClaimsBoardPage() {
                 </div>
               )
             }
+            const renderLifeRow = ({ todo, claim }: { todo: LifeTodo; claim: LifeClaim }) => {
+              const label = dueLabel(todo.due_date)
+              const barColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.gold : T.line
+              const badgeColor = label.kind === 'overdue' ? T.rose : label.kind === 'today' ? T.goldText : T.textFaint
+              const badgeBg = label.kind === 'overdue' ? T.roseSoft : label.kind === 'today' ? T.goldSoft : 'transparent'
+              const clientName = clientsById[claim.client_id] || 'Unknown client'
+              return (
+                <div key={todo.id} onClick={() => openLife(claim)} style={{
+                  background: 'white', border: `1px solid ${T.line}`, borderLeft: `3px solid ${barColor}`,
+                  borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                }}>
+                  <input type="checkbox" onClick={e => e.stopPropagation()}
+                    onChange={e => toggleLifeTodoDone(todo.id, e.target.checked)}
+                    style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>
+                      {clientName} · {TYPE_LABEL[claim.claim_type]} · {lifePolicyLabel(claim)}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textFaint, marginTop: 2 }}>{todo.text}</div>
+                  </div>
+                  <div style={{
+                    fontSize: 10.5, fontWeight: label.kind === 'upcoming' || label.kind === 'none' ? 400 : 700,
+                    color: badgeColor, background: badgeBg, padding: badgeBg === 'transparent' ? 0 : '3px 9px',
+                    borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
+                    {label.text}
+                  </div>
+                </div>
+              )
+            }
+            // Medical and Life & CI to-dos share each section, ordered by due date.
+            const rowsFor = (bucket: 'today' | 'week' | 'nextweek') => [
+              ...followupRows.filter(r => weekBucket(r.todo.due_date) === bucket).map(r => ({ due: r.todo.due_date, node: renderRow(r) })),
+              ...lifeFollowupRows.filter(r => weekBucket(r.todo.due_date) === bucket).map(r => ({ due: r.todo.due_date, node: renderLifeRow(r) })),
+            ].sort((a, b) => (a.due || '9999-12-31').localeCompare(b.due || '9999-12-31')).map(x => x.node)
+            const todayRows = rowsFor('today')
+            const weekRows = rowsFor('week')
+            const nextWeekRows = rowsFor('nextweek')
             return (
               <>
                 {todayRows.length > 0 && (
@@ -908,7 +1097,7 @@ export default function BusinessClaimsBoardPage() {
                       Today · {todayRows.length}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {todayRows.map(renderRow)}
+                      {todayRows}
                     </div>
                   </div>
                 )}
@@ -952,7 +1141,7 @@ export default function BusinessClaimsBoardPage() {
                       This week · {weekRows.length}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {weekRows.map(renderRow)}
+                      {weekRows}
                     </div>
                   </div>
                 )}
@@ -962,7 +1151,7 @@ export default function BusinessClaimsBoardPage() {
                       Next week · {nextWeekRows.length}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {nextWeekRows.map(renderRow)}
+                      {nextWeekRows}
                     </div>
                   </div>
                 )}
@@ -972,6 +1161,15 @@ export default function BusinessClaimsBoardPage() {
         </div>
       ) : (
         <>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            {([['all', 'All'], ['medical', 'Medical'], ['life', 'Life & CI']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setKindFilter(k)} style={{
+                padding: '5px 12px', fontSize: 11.5, fontWeight: 600, borderRadius: 999, cursor: 'pointer',
+                border: `1px solid ${kindFilter === k ? T.gold : T.line}`,
+                background: kindFilter === k ? T.goldSoft : 'white', color: kindFilter === k ? T.goldText : T.textFaint,
+              }}>{label}</button>
+            ))}
+          </div>
           <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: 'var(--cream2)', border: `1px solid ${T.line}`, borderRadius: 8, padding: 3, maxWidth: 220 }}>
             {(['list', 'board'] as const).map(v => (
               <button key={v} onClick={() => setBoardViewOverride(v)} style={{
@@ -990,11 +1188,26 @@ export default function BusinessClaimsBoardPage() {
                 <div key={col.id} style={{ marginBottom: 18 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textFaint, marginBottom: 8 }}>
                     <span>{col.title}</span>
-                    <span style={{ background: 'var(--cream2)', color: T.textDim, borderRadius: 10, padding: '1px 8px', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>{columns[col.id].length}</span>
+                    <span style={{ background: 'var(--cream2)', color: T.textDim, borderRadius: 10, padding: '1px 8px', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>{medCards(col.id).length + lifeCards(col.id).length}</span>
                   </div>
-                  {columns[col.id].length === 0 ? (
+                  {medCards(col.id).length + lifeCards(col.id).length === 0 && (
                     <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '4px 2px' }}>Nothing here</div>
-                  ) : columns[col.id].map(card => (
+                  )}
+                  {lifeCards(col.id).map(lc => (
+                    <div key={'life:' + lc.claim.id} onClick={() => openLife(lc.claim)} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: `1px solid ${T.line}`,
+                      borderLeft: `3px solid ${lc.claim.stage === 'outcome' ? (lifeZone(lc.claim) === 'resolved-approved' ? T.emerald : T.rose) : T.line}`,
+                      borderRadius: 10, padding: '11px 13px', marginBottom: 7, cursor: 'pointer',
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{lc.clientName} · {TYPE_LABEL[lc.claim.claim_type]}</div>
+                        <div style={{ fontSize: 11, color: T.textFaint, marginTop: 2 }}>{lc.subtitle}</div>
+                        {lc.wait.line && <div style={{ fontSize: 11, color: lc.wait.kind === 'your_move' ? T.goldText : T.textDim, fontWeight: lc.wait.kind === 'your_move' ? 700 : 400, marginTop: 2 }}>{lc.wait.line}</div>}
+                      </div>
+                      {lc.overdue && <span title="To-do overdue" style={{ width: 8, height: 8, borderRadius: '50%', background: T.rose, flexShrink: 0 }} />}
+                    </div>
+                  ))}
+                  {medCards(col.id).map(card => (
                     <div key={card.item.id} onClick={() => setEditingCard(card)} style={{
                       display: 'flex', alignItems: 'center', gap: 10, background: '#fff', border: `1px solid ${T.line}`,
                       borderLeft: `3px solid ${card.item.approved ? T.emerald : card.item.rejected ? T.rose : T.line}`,
@@ -1025,22 +1238,24 @@ export default function BusinessClaimsBoardPage() {
                         <div style={{ fontSize: 10.5, color: T.textFaint }}>{col.hint}</div>
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 700, color: T.textFaint, background: 'var(--cream2)', padding: '2px 8px', borderRadius: 999 }}>
-                        {columns[col.id].length}
+                        {medCards(col.id).length + lifeCards(col.id).length}
                       </span>
                     </div>
 
                     {col.id === 'resolved' ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                         <DropZoneList zone="resolved-approved" label="Approved" color={T.emerald}
-                          cards={columns.resolved.filter(c => c.item.approved)}
-                          draggingId={draggingId} onCardClick={setEditingCard} />
+                          cards={medCards('resolved').filter(c => c.item.approved)}
+                          lifeCards={lifeCards('resolved').filter(c => lifeZone(c.claim) === 'resolved-approved')}
+                          draggingId={draggingId} onCardClick={setEditingCard} onLifeClick={c => openLife(c)} />
                         <DropZoneList zone="resolved-rejected" label="Rejected" color={T.rose}
-                          cards={columns.resolved.filter(c => c.item.rejected)}
-                          draggingId={draggingId} onCardClick={setEditingCard} />
+                          cards={medCards('resolved').filter(c => c.item.rejected)}
+                          lifeCards={lifeCards('resolved').filter(c => lifeZone(c.claim) === 'resolved-rejected')}
+                          draggingId={draggingId} onCardClick={setEditingCard} onLifeClick={c => openLife(c)} />
                       </div>
                     ) : (
-                      <DropZoneList zone={col.id as DropZone} cards={columns[col.id]}
-                        draggingId={draggingId} onCardClick={setEditingCard} />
+                      <DropZoneList zone={col.id as DropZone} cards={medCards(col.id)} lifeCards={lifeCards(col.id)}
+                        draggingId={draggingId} onCardClick={setEditingCard} onLifeClick={c => openLife(c)} />
                     )}
                   </div>
                 ))}
@@ -1051,6 +1266,36 @@ export default function BusinessClaimsBoardPage() {
       )}
 
 
+      {showLifePick && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }} onClick={() => setShowLifePick(false)}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 12 }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px 20px 4px' }}>
+              <div className="font-serif" style={{ fontSize: 19, color: T.text }}>New Death / TPD / CI claim — Pick Client</div>
+              <div style={{ fontSize: 12, color: T.textFaint, marginTop: 4 }}>You will choose the type, life assured and policies next.</div>
+            </div>
+            <div style={{ padding: '14px 20px 0' }}>
+              <input autoFocus value={lifePickSearch} onChange={e => setLifePickSearch(e.target.value)} placeholder="Search clients…"
+                style={{ width: '100%', padding: '8px 10px', border: `1px solid ${T.line}`, borderRadius: 10, background: 'var(--cream)', color: T.text, fontSize: 13 }} />
+            </div>
+            <div style={{ maxHeight: 280, overflowY: 'auto', padding: '10px 12px 20px' }}>
+              {clients
+                .filter(c => c.name?.toLowerCase().includes(lifePickSearch.trim().toLowerCase()))
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => (
+                  <button key={c.id} onClick={() => { setShowLifePick(false); startLifeClaim(c) }}
+                    style={{ width: '100%', textAlign: 'left', padding: '9px 10px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: T.text }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--cream)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                    {c.name}
+                  </button>
+                ))}
+              {clients.filter(c => c.name?.toLowerCase().includes(lifePickSearch.trim().toLowerCase())).length === 0 && (
+                <div style={{ padding: '10px', fontSize: 12.5, color: T.textFaint }}>No clients found</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {rejectionPromptItemId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(26,24,22,0.6)' }}>
           <div style={{ width: '100%', maxWidth: 420, background: 'white', borderRadius: 12 }}>
@@ -1395,10 +1640,12 @@ function ModalField({ label, children }: { label: string; children: React.ReactN
   )
 }
 
-function DropZoneList({ zone, label, color, cards, draggingId, onCardClick }: {
+function DropZoneList({ zone, label, color, cards, lifeCards = [], draggingId, onCardClick, onLifeClick }: {
   zone: DropZone; label?: string; color?: string; cards: CardData[]
+  lifeCards?: LifeCardData[]
   draggingId: string | null
   onCardClick: (card: CardData) => void
+  onLifeClick?: (claim: LifeClaim) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: zone })
   return (
@@ -1411,12 +1658,16 @@ function DropZoneList({ zone, label, color, cards, draggingId, onCardClick }: {
       }}>
       {label && (
         <div style={{ fontSize: 10.5, fontWeight: 700, color: color || T.textFaint, textTransform: 'uppercase', letterSpacing: 0.4, padding: '0 4px' }}>
-          {label} · {cards.length}
+          {label} · {cards.length + lifeCards.length}
         </div>
       )}
-      {cards.length === 0 && (
+      {cards.length + lifeCards.length === 0 && (
         <div style={{ fontSize: 11.5, color: T.textFaint, fontStyle: 'italic', padding: '10px 4px' }}>Nothing here</div>
       )}
+      {lifeCards.map(lc => (
+        <LifeClaimCard key={'life:' + lc.claim.id} card={lc} dragging={draggingId === 'life:' + lc.claim.id}
+          onClick={() => onLifeClick && onLifeClick(lc.claim)} />
+      ))}
       {cards.map(card => (
         <ClaimCard key={card.item.id} card={card}
           dragging={draggingId === card.item.id}
@@ -1448,6 +1699,7 @@ function ClaimCard({ card, dragging, onClick }: {
       <div style={{ fontSize: 11, color: T.textFaint, marginTop: 1 }}>{card.lifeAssuredLabel} · {card.policyLabel}</div>
 
       <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap', marginTop: 8 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.textDim, background: 'var(--cream2)', padding: '2px 7px', borderRadius: 5 }}>Medical</span>
         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.goldText, background: T.goldSoft, padding: '2px 7px', borderRadius: 5 }}>
           {item.type || '—'}
         </span>
@@ -1475,6 +1727,45 @@ function ClaimCard({ card, dragging, onClick }: {
                 : `${days}d idle`}
             </span>
           )
+        )}
+      </div>
+    </button>
+  )
+}
+function LifeClaimCard({ card, dragging, onClick }: { card: LifeCardData; dragging: boolean; onClick: () => void }) {
+  const { claim, wait } = card
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: 'life:' + claim.id })
+  const days = daysSince(claim.date_notified)
+  return (
+    <button ref={setNodeRef} {...listeners} {...attributes} onClick={onClick} style={{
+      textAlign: 'left', width: '100%', cursor: 'grab', touchAction: 'none',
+      background: 'white', border: `1px solid ${T.line}`, borderRadius: 12, padding: 12,
+      opacity: dragging || isDragging ? 0.4 : 1,
+      transform: transform ? CSS.Translate.toString(transform) : undefined,
+      zIndex: isDragging ? 10 : undefined, position: isDragging ? 'relative' : undefined,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{card.clientName}</div>
+        {card.overdue && <span title="To-do overdue" style={{ width: 8, height: 8, borderRadius: '50%', background: T.rose, flexShrink: 0 }} />}
+      </div>
+      <div style={{ fontSize: 11, color: T.textFaint, marginTop: 1 }}>{card.subtitle}</div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap', marginTop: 8 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: T.goldText, background: T.goldSoft, padding: '2px 7px', borderRadius: 5 }}>
+          {TYPE_LABEL[claim.claim_type]}
+        </span>
+        {claim.insurer_ref && <span className="font-mono" style={{ fontSize: 10.5, color: T.textFaint }}>{claim.insurer_ref}</span>}
+      </div>
+      <div style={{ marginTop: 8 }}>
+        {claim.stage === 'outcome' ? (
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: lifeZone(claim) === 'resolved-approved' ? T.emerald : T.rose }}>
+            {claim.outcome ? OUTCOME_LABEL[claim.outcome] : 'Outcome not recorded'}
+            {claim.paid_amount ? ` · paid ${money(claim.paid_amount)}` : ''}
+          </span>
+        ) : (
+          <>
+            <div style={{ fontSize: 10.5, fontWeight: wait.kind === 'your_move' ? 700 : 400, color: wait.kind === 'your_move' ? T.goldText : T.textDim }}>{wait.line}</div>
+            {days !== null && <div style={{ fontSize: 10.5, color: T.textFaint, marginTop: 2 }}>Notified {sgDate(claim.date_notified)} · {days}d ago</div>}
+          </>
         )}
       </div>
     </button>
